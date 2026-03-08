@@ -370,8 +370,15 @@ export function registerSharePointContainerRoutes(
   console.log(`[SMART_STORAGE] Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} (REPLIT_DEPLOYMENT=${process.env.REPLIT_DEPLOYMENT}, NODE_ENV=${process.env.NODE_ENV})`);
   
   const smartFileStorage = {
-    async storeFile(...args: Parameters<typeof sharePointFileStorage.storeFile>) {
-      const [buffer, originalName, contentType, metadata, uploadedBy, fileId] = args;
+    async storeFile(
+      buffer: Buffer,
+      originalName: string,
+      contentType: string,
+      metadata: DocumentMetadata,
+      uploadedBy: string,
+      fileId?: string,
+      tenantId?: string
+    ) {
       const documentType = metadata.documentType;
       
       if (documentType === 'receipt') {
@@ -413,7 +420,7 @@ export function registerSharePointContainerRoutes(
       
       if (useLocalStorage) {
         console.log(`[SMART_STORAGE] [DEV] Routing ${documentType} to LOCAL storage for immediate testing`);
-        const result = await localFileStorage.storeFile(...args);
+        const result = await localFileStorage.storeFile(buffer, originalName, contentType, metadata, uploadedBy, fileId);
         console.log('[SMART_STORAGE] ✅ Local storage upload successful');
         return {
           ...result,
@@ -424,9 +431,9 @@ export function registerSharePointContainerRoutes(
         };
       } else {
         const env = isProduction ? '[PROD]' : '[DEV]';
-        console.log(`[SMART_STORAGE] ${env} Routing ${documentType} to SHAREPOINT (persistent storage)`);
+        console.log(`[SMART_STORAGE] ${env} Routing ${documentType} to SHAREPOINT (persistent storage) [tenant: ${tenantId || 'global'}]`);
         try {
-          const result = await sharePointFileStorage.storeFile(...args);
+          const result = await sharePointFileStorage.storeFile(buffer, originalName, contentType, metadata, uploadedBy, fileId, tenantId);
           console.log(`[SMART_STORAGE] ${env} ✅ SharePoint upload successful - File ID: ${result.id}`);
           return {
             ...result,
@@ -442,20 +449,20 @@ export function registerSharePointContainerRoutes(
       }
     },
     
-    async listFiles(filter?: any) {
+    async listFiles(filter?: any, tenantId?: string) {
       const localFiles = await localFileStorage.listFiles(filter).catch(() => []);
-      const sharePointFiles = await sharePointFileStorage.listFiles(filter).catch(() => []);
+      const sharePointFiles = await sharePointFileStorage.listFiles(filter, tenantId).catch(() => []);
       
       const allFiles = [...localFiles, ...sharePointFiles];
       const uniqueFiles = Array.from(
         new Map(allFiles.map(f => [f.id, f])).values()
       );
       
-      console.log(`[SMART_STORAGE] Listed ${localFiles.length} local + ${sharePointFiles.length} SharePoint = ${uniqueFiles.length} total files`);
+      console.log(`[SMART_STORAGE] Listed ${localFiles.length} local + ${sharePointFiles.length} SharePoint = ${uniqueFiles.length} total files [tenant: ${tenantId || 'global'}]`);
       return uniqueFiles;
     },
     
-    async getFileContent(fileId: string) {
+    async getFileContent(fileId: string, tenantId?: string) {
       try {
         const buffer = await receiptStorage.getReceipt(fileId);
         return { buffer, metadata: {} };
@@ -463,33 +470,33 @@ export function registerSharePointContainerRoutes(
         try {
           return await localFileStorage.getFileContent(fileId);
         } catch (error) {
-          console.log('[SMART_STORAGE] File not in local or receipt storage, trying SharePoint...');
-          return await sharePointFileStorage.getFileContent(fileId);
+          console.log(`[SMART_STORAGE] File not in local or receipt storage, trying SharePoint... [tenant: ${tenantId || 'global'}]`);
+          return await sharePointFileStorage.getFileContent(fileId, tenantId);
         }
       }
     },
     
-    async getFileMetadata(fileId: string) {
+    async getFileMetadata(fileId: string, tenantId?: string) {
       try {
         return await localFileStorage.getFileMetadata(fileId);
       } catch (error) {
         console.log('[SMART_STORAGE] Metadata not in local storage, trying SharePoint...');
-        return await sharePointFileStorage.getFileMetadata(fileId);
+        return await sharePointFileStorage.getFileMetadata(fileId, tenantId);
       }
     },
     
-    async deleteFile(fileId: string) {
+    async deleteFile(fileId: string, tenantId?: string) {
       const localSuccess = await localFileStorage.deleteFile(fileId).catch(() => false);
-      const sharePointSuccess = await sharePointFileStorage.deleteFile(fileId).catch(() => false);
+      const sharePointSuccess = await sharePointFileStorage.deleteFile(fileId, tenantId).catch(() => false);
       
       return localSuccess || sharePointSuccess;
     },
     
-    async updateMetadata(fileId: string, metadata: any) {
+    async updateMetadata(fileId: string, metadata: any, tenantId?: string) {
       try {
         return await localFileStorage.updateMetadata(fileId, metadata);
       } catch (error) {
-        return await sharePointFileStorage.updateMetadata(fileId, metadata);
+        return await sharePointFileStorage.updateMetadata(fileId, metadata, tenantId);
       }
     },
     
@@ -617,7 +624,8 @@ export function registerSharePointContainerRoutes(
       const filter: any = {};
       if (type) filter.documentType = type as string;
       
-      let files = await fileStorage.listFiles(filter);
+      const reqTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
+      let files = await fileStorage.listFiles(filter, reqTenantId);
       
       if (search) {
         const searchLower = (search as string).toLowerCase();
@@ -711,12 +719,15 @@ export function registerSharePointContainerRoutes(
         metadataVersion: 1
       };
 
+      const uploadTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
       const storedFile = await fileStorage.storeFile(
         req.file.buffer,
         req.file.originalname,
         req.file.mimetype,
         fileMetadata,
-        req.user!.email
+        req.user!.email,
+        undefined,
+        uploadTenantId
       );
       
       res.status(201).json(storedFile);
@@ -763,7 +774,8 @@ export function registerSharePointContainerRoutes(
   
   app.get("/api/files/:fileId/download", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
-      const fileData = await fileStorage.getFileContent(req.params.fileId);
+      const dlTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
+      const fileData = await fileStorage.getFileContent(req.params.fileId, dlTenantId);
       
       if (!fileData || !fileData.buffer) {
         return res.status(404).json({ message: "File not found" });
@@ -787,7 +799,8 @@ export function registerSharePointContainerRoutes(
   
   app.delete("/api/files/:fileId", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
-      const success = await fileStorage.deleteFile(req.params.fileId);
+      const delTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
+      const success = await fileStorage.deleteFile(req.params.fileId, delTenantId);
       
       if (!success) {
         return res.status(404).json({ message: "File not found" });
@@ -817,7 +830,8 @@ export function registerSharePointContainerRoutes(
   
   app.post("/api/files/validate", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
-      const files = await fileStorage.listFiles();
+      const valTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
+      const files = await fileStorage.listFiles(undefined, valTenantId);
       const issues: string[] = [];
       let totalFiles = 0;
       

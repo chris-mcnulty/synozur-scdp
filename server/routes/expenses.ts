@@ -846,12 +846,15 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
           };
 
           console.log('[RECEIPT_UPLOAD] Calling smartFileStorage.storeFile with documentType:', fileMetadata.documentType);
+          const userTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
           const uploadResult = await deps.smartFileStorage.storeFile(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
             fileMetadata,
-            userId
+            userId,
+            undefined,
+            userTenantId
           );
           console.log('[RECEIPT_UPLOAD] Upload successful, file ID:', uploadResult.id);
 
@@ -961,8 +964,9 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         let downloadBuffer: Buffer;
         
         if (attachment.driveId === 'receipt-storage' || attachment.driveId === 'local-storage') {
+          const dlTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
           console.log('[ATTACHMENT_DOWNLOAD] Fetching from receipt/local storage:', attachment.itemId);
-          const fileContent = await deps.smartFileStorage.getFileContent(attachment.itemId);
+          const fileContent = await deps.smartFileStorage.getFileContent(attachment.itemId, dlTenantId);
           if (!fileContent || !fileContent.buffer) {
             throw new Error('File content not found');
           }

@@ -1,0 +1,441 @@
+import { Storage } from "@google-cloud/storage";
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { SharePointFileStorage } from './sharepoint-file-storage.js';
+import type { DocumentMetadata } from './local-file-storage.js';
+import { storage } from '../storage.js';
+
+const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+
+export interface MigrationProgress {
+  tenantId: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  totalFiles: number;
+  migratedFiles: number;
+  failedFiles: number;
+  errors: Array<{ fileName: string; error: string }>;
+  startedAt: Date | null;
+  completedAt: Date | null;
+}
+
+export interface MigrationResult {
+  success: boolean;
+  message: string;
+  progress: MigrationProgress;
+}
+
+interface LocalFileEntry {
+  filePath: string;
+  fileName: string;
+  fullPath: string;
+  documentType: string;
+  metadata?: Record<string, any>;
+}
+
+export class SpeMigrationService {
+  private sharePointStorage: SharePointFileStorage;
+  private isProduction: boolean;
+  private activeProgress: Map<string, MigrationProgress> = new Map();
+
+  constructor() {
+    this.sharePointStorage = new SharePointFileStorage();
+    this.isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+  }
+
+  async getMigrationStatus(tenantId: string): Promise<MigrationProgress> {
+    const inMemory = this.activeProgress.get(tenantId);
+    if (inMemory) {
+      return inMemory;
+    }
+
+    const speConfig = await storage.getTenantSpeConfig(tenantId);
+    return {
+      tenantId,
+      status: (speConfig?.speMigrationStatus as MigrationProgress['status']) || 'pending',
+      totalFiles: 0,
+      migratedFiles: 0,
+      failedFiles: 0,
+      errors: [],
+      startedAt: speConfig?.speMigrationStartedAt || null,
+      completedAt: null,
+    };
+  }
+
+  async startMigration(tenantId: string): Promise<MigrationResult> {
+    const speConfig = await storage.getTenantSpeConfig(tenantId);
+    if (!speConfig) {
+      return {
+        success: false,
+        message: 'Tenant not found',
+        progress: this.createEmptyProgress(tenantId),
+      };
+    }
+
+    const containerId = this.isProduction
+      ? speConfig.speContainerIdProd
+      : speConfig.speContainerIdDev;
+
+    if (!containerId) {
+      return {
+        success: false,
+        message: `No SPE container configured for ${this.isProduction ? 'production' : 'development'}`,
+        progress: this.createEmptyProgress(tenantId),
+      };
+    }
+
+    if (speConfig.speMigrationStatus === 'in_progress') {
+      const existing = this.activeProgress.get(tenantId);
+      if (existing) {
+        return {
+          success: false,
+          message: 'Migration is already in progress',
+          progress: existing,
+        };
+      }
+    }
+
+    const progress: MigrationProgress = {
+      tenantId,
+      status: 'in_progress',
+      totalFiles: 0,
+      migratedFiles: 0,
+      failedFiles: 0,
+      errors: [],
+      startedAt: new Date(),
+      completedAt: null,
+    };
+
+    this.activeProgress.set(tenantId, progress);
+
+    await storage.updateTenantSpeConfig(tenantId, {
+      speMigrationStatus: 'in_progress',
+      speMigrationStartedAt: new Date(),
+    });
+
+    this.executeMigration(tenantId, containerId, progress).catch((err) => {
+      console.error(`[SPE-Migration] Unhandled error for tenant ${tenantId}:`, err);
+      progress.status = 'failed';
+      progress.errors.push({ fileName: '_migration', error: err instanceof Error ? err.message : String(err) });
+      storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'failed' }).catch(() => {});
+    });
+
+    return {
+      success: true,
+      message: 'Migration started',
+      progress,
+    };
+  }
+
+  private async executeMigration(
+    tenantId: string,
+    containerId: string,
+    progress: MigrationProgress
+  ): Promise<void> {
+    console.log(`[SPE-Migration] Starting migration for tenant ${tenantId} to container ${containerId.substring(0, 20)}...`);
+
+    try {
+      const files = await this.listSourceFiles(tenantId);
+      progress.totalFiles = files.length;
+
+      if (files.length === 0) {
+        console.log(`[SPE-Migration] No files found for tenant ${tenantId}. Marking migration complete.`);
+        progress.status = 'completed';
+        progress.completedAt = new Date();
+        await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'completed' });
+        this.activeProgress.delete(tenantId);
+        return;
+      }
+
+      console.log(`[SPE-Migration] Found ${files.length} files to migrate for tenant ${tenantId}`);
+
+      for (const file of files) {
+        try {
+          const buffer = await this.readSourceFile(file);
+          const contentType = this.guessContentType(file.fileName);
+          const metadata: DocumentMetadata = {
+            documentType: (file.documentType || 'receipt') as DocumentMetadata['documentType'],
+            createdByUserId: file.metadata?.createdByUserId || 'migration',
+            metadataVersion: 1,
+            projectId: file.metadata?.projectId,
+            clientId: file.metadata?.clientId,
+            clientName: file.metadata?.clientName,
+            projectCode: file.metadata?.projectCode,
+            amount: file.metadata?.amount ? parseFloat(file.metadata.amount) : undefined,
+            tags: file.metadata?.tags,
+          };
+
+          await this.sharePointStorage.storeFile(
+            buffer,
+            file.fileName,
+            contentType,
+            metadata,
+            'spe-migration',
+            undefined,
+            tenantId
+          );
+
+          progress.migratedFiles++;
+          console.log(`[SPE-Migration] Migrated ${progress.migratedFiles}/${progress.totalFiles}: ${file.fileName}`);
+        } catch (fileError) {
+          progress.failedFiles++;
+          const errorMsg = fileError instanceof Error ? fileError.message : String(fileError);
+          progress.errors.push({ fileName: file.fileName, error: errorMsg });
+          console.error(`[SPE-Migration] Failed to migrate ${file.fileName}:`, errorMsg);
+        }
+      }
+
+      if (progress.failedFiles === 0) {
+        progress.status = 'completed';
+        await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'completed' });
+      } else if (progress.migratedFiles > 0) {
+        progress.status = 'completed';
+        await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'completed' });
+        console.warn(`[SPE-Migration] Migration completed with ${progress.failedFiles} failures out of ${progress.totalFiles} files`);
+      } else {
+        progress.status = 'failed';
+        await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'failed' });
+      }
+
+      progress.completedAt = new Date();
+      console.log(`[SPE-Migration] Migration finished for tenant ${tenantId}: ${progress.migratedFiles} migrated, ${progress.failedFiles} failed`);
+    } catch (error) {
+      console.error(`[SPE-Migration] Migration failed for tenant ${tenantId}:`, error);
+      progress.status = 'failed';
+      progress.completedAt = new Date();
+      progress.errors.push({
+        fileName: '_migration',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'failed' });
+    } finally {
+      setTimeout(() => {
+        this.activeProgress.delete(tenantId);
+      }, 5 * 60 * 1000);
+    }
+  }
+
+  private async listSourceFiles(tenantId: string): Promise<LocalFileEntry[]> {
+    let files: LocalFileEntry[] = [];
+
+    if (this.isProduction) {
+      const objectStorageFiles = await this.listObjectStorageFiles(tenantId);
+      files.push(...objectStorageFiles);
+    } else {
+      const localFiles = await this.listLocalFiles();
+      files.push(...localFiles);
+    }
+
+    files = files.filter(f => {
+      if (!f.metadata?.tenantId) return true;
+      return f.metadata.tenantId === tenantId;
+    });
+
+    console.log(`[SPE-Migration] After tenant filtering: ${files.length} files for tenant ${tenantId}`);
+    return files;
+  }
+
+  private async listObjectStorageFiles(tenantId: string): Promise<LocalFileEntry[]> {
+    const files: LocalFileEntry[] = [];
+
+    try {
+      const privateObjectDir = process.env.PRIVATE_OBJECT_DIR;
+      if (!privateObjectDir) {
+        console.log('[SPE-Migration] PRIVATE_OBJECT_DIR not configured, skipping object storage scan');
+        return files;
+      }
+
+      const objectStorageClient = new Storage({
+        credentials: {
+          audience: "replit",
+          subject_token_type: "access_token",
+          token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
+          type: "external_account",
+          credential_source: {
+            url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
+            format: {
+              type: "json",
+              subject_token_field_name: "access_token",
+            },
+          },
+          universe_domain: "googleapis.com",
+        },
+        projectId: "",
+      });
+
+      const pathParts = privateObjectDir.split('/').filter(p => p);
+      if (pathParts.length < 1) return files;
+
+      const bucketName = pathParts[0];
+      const bucketPath = pathParts.slice(1).join('/');
+      const bucket = objectStorageClient.bucket(bucketName);
+
+      const docFolders = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports'];
+
+      for (const folder of docFolders) {
+        const prefix = bucketPath ? `${bucketPath}/${folder}/` : `${folder}/`;
+        try {
+          const [gcsFiles] = await bucket.getFiles({ prefix });
+          for (const gcsFile of gcsFiles) {
+            const fileName = path.basename(gcsFile.name);
+            if (!fileName) continue;
+
+            let metadata: Record<string, any> = {};
+            try {
+              const [fileMetadata] = await gcsFile.getMetadata();
+              metadata = (fileMetadata as any).metadata || {};
+            } catch {}
+
+            files.push({
+              filePath: gcsFile.name,
+              fileName,
+              fullPath: gcsFile.name,
+              documentType: this.folderToDocType(folder),
+              metadata,
+            });
+          }
+        } catch (err) {
+          console.log(`[SPE-Migration] Could not list ${folder} in object storage:`, err instanceof Error ? err.message : err);
+        }
+      }
+    } catch (error) {
+      console.error('[SPE-Migration] Error listing object storage files:', error);
+    }
+
+    return files;
+  }
+
+  private async listLocalFiles(): Promise<LocalFileEntry[]> {
+    const files: LocalFileEntry[] = [];
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+
+    const docFolders: Record<string, string> = {
+      receipts: 'receipt',
+      invoices: 'invoice',
+      contracts: 'contract',
+      statements: 'statementOfWork',
+      estimates: 'estimate',
+      change_orders: 'changeOrder',
+      reports: 'report',
+    };
+
+    for (const [folder, docType] of Object.entries(docFolders)) {
+      const folderPath = path.join(uploadsDir, folder);
+      try {
+        const entries = await fs.readdir(folderPath);
+        for (const entry of entries) {
+          if (entry.endsWith('.metadata.json')) continue;
+
+          const fullPath = path.join(folderPath, entry);
+          const stat = await fs.stat(fullPath);
+          if (!stat.isFile()) continue;
+
+          let metadata: Record<string, any> = {};
+          try {
+            const metadataPath = `${fullPath}.metadata.json`;
+            const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+            metadata = JSON.parse(metadataContent);
+          } catch {}
+
+          files.push({
+            filePath: path.join(folder, entry),
+            fileName: entry,
+            fullPath,
+            documentType: docType,
+            metadata,
+          });
+        }
+      } catch {
+      }
+    }
+
+    return files;
+  }
+
+  private async readSourceFile(file: LocalFileEntry): Promise<Buffer> {
+    if (this.isProduction) {
+      return this.readFromObjectStorage(file.fullPath);
+    } else {
+      return fs.readFile(file.fullPath);
+    }
+  }
+
+  private async readFromObjectStorage(objectPath: string): Promise<Buffer> {
+    const privateObjectDir = process.env.PRIVATE_OBJECT_DIR;
+    if (!privateObjectDir) {
+      throw new Error('PRIVATE_OBJECT_DIR not configured');
+    }
+
+    const pathParts = privateObjectDir.split('/').filter(p => p);
+    const bucketName = pathParts[0];
+
+    const objectStorageClient = new Storage({
+      credentials: {
+        audience: "replit",
+        subject_token_type: "access_token",
+        token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
+        type: "external_account",
+        credential_source: {
+          url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
+          format: {
+            type: "json",
+            subject_token_field_name: "access_token",
+          },
+        },
+        universe_domain: "googleapis.com",
+      },
+      projectId: "",
+    });
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectPath);
+    const [contents] = await file.download();
+    return contents;
+  }
+
+  private folderToDocType(folder: string): string {
+    const map: Record<string, string> = {
+      receipts: 'receipt',
+      invoices: 'invoice',
+      contracts: 'contract',
+      statements: 'statementOfWork',
+      estimates: 'estimate',
+      change_orders: 'changeOrder',
+      reports: 'report',
+    };
+    return map[folder] || 'receipt';
+  }
+
+  private guessContentType(fileName: string): string {
+    const ext = path.extname(fileName).toLowerCase();
+    const map: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.txt': 'text/plain',
+      '.csv': 'text/csv',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+    return map[ext] || 'application/octet-stream';
+  }
+
+  private createEmptyProgress(tenantId: string): MigrationProgress {
+    return {
+      tenantId,
+      status: 'pending',
+      totalFiles: 0,
+      migratedFiles: 0,
+      failedFiles: 0,
+      errors: [],
+      startedAt: null,
+      completedAt: null,
+    };
+  }
+}
+
+export const speMigrationService = new SpeMigrationService();

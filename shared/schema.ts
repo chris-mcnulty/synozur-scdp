@@ -161,6 +161,13 @@ export const tenants = pgTable("tenants", {
   // GL Invoice Number Sequence
   nextGlInvoiceNumber: integer("next_gl_invoice_number").default(1000),
 
+  // SharePoint Embedded (SPE) - Tenant-level container configuration
+  speContainerIdDev: text("spe_container_id_dev"),
+  speContainerIdProd: text("spe_container_id_prod"),
+  speStorageEnabled: boolean("spe_storage_enabled").default(false),
+  speMigrationStatus: text("spe_migration_status"),
+  speMigrationStartedAt: timestamp("spe_migration_started_at"),
+
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),

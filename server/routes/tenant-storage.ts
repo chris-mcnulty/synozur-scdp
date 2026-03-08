@@ -1,0 +1,261 @@
+import type { Express, Request, Response } from "express";
+import { z } from "zod";
+import { storage } from "../storage";
+import { containerCreator } from "../services/container-creator.js";
+import { graphClient } from "../services/graph-client.js";
+import { speMigrationService } from "../services/spe-migration.js";
+
+interface TenantStorageDeps {
+  requireAuth: any;
+  requireRole: (roles: string[]) => any;
+}
+
+const speConfigSchema = z.object({
+  speContainerIdDev: z.string().optional(),
+  speContainerIdProd: z.string().optional(),
+  speStorageEnabled: z.boolean().optional(),
+});
+
+export function registerTenantStorageRoutes(
+  app: Express,
+  deps: TenantStorageDeps
+): void {
+  const isProductionEnv = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+  const currentEnvLabel = isProductionEnv ? 'production' : 'development';
+
+  app.post("/api/tenants/:id/spe/create-container", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only manage storage for your own organization" });
+      }
+
+      if (!tenant.adminConsentGranted) {
+        return res.status(400).json({ message: "Admin consent must be granted before creating SPE containers. Please complete Azure AD admin consent first." });
+      }
+
+      const existingContainerId = isProductionEnv ? tenant.speContainerIdProd : tenant.speContainerIdDev;
+      if (existingContainerId) {
+        return res.status(409).json({
+          message: `A container is already configured for ${currentEnvLabel}. Use PATCH /api/tenants/:id/spe/config to update it.`,
+          containerId: existingContainerId,
+        });
+      }
+
+      const containerName = `${tenant.name}-${isProductionEnv ? 'Prod' : 'Dev'}`;
+      const result = await containerCreator.createContainer(
+        containerName,
+        `SPE container for ${tenant.name} (${currentEnvLabel})`
+      );
+
+      if (!result.success || !result.containerId) {
+        return res.status(500).json({
+          message: result.message,
+          details: result.details,
+        });
+      }
+
+      const updateField = isProductionEnv ? 'speContainerIdProd' : 'speContainerIdDev';
+      const updated = await storage.updateTenant(tenantId, {
+        [updateField]: result.containerId,
+      } as any);
+
+      res.status(201).json({
+        message: `SPE container created for ${currentEnvLabel}`,
+        containerId: result.containerId,
+        environment: currentEnvLabel,
+        containerName,
+        tenant: {
+          id: updated.id,
+          name: updated.name,
+          speContainerIdDev: updated.speContainerIdDev,
+          speContainerIdProd: updated.speContainerIdProd,
+          speStorageEnabled: updated.speStorageEnabled,
+        },
+      });
+    } catch (error) {
+      console.error("[SPE] Error creating container:", error);
+      res.status(500).json({
+        message: "Failed to create SPE container",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/api/tenants/:id/spe/verify", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only verify storage for your own organization" });
+      }
+
+      const containerId = isProductionEnv ? tenant.speContainerIdProd : tenant.speContainerIdDev;
+      if (!containerId) {
+        return res.status(400).json({
+          message: `No SPE container configured for ${currentEnvLabel}. Create or set one first.`,
+          environment: currentEnvLabel,
+        });
+      }
+
+      const connectivity = await graphClient.testConnectivity(undefined, containerId);
+
+      res.json({
+        environment: currentEnvLabel,
+        containerId,
+        authenticated: connectivity.authenticated,
+        containerAccessible: connectivity.containerAccessible ?? false,
+        error: connectivity.error,
+        status: connectivity.authenticated && connectivity.containerAccessible ? "healthy" : "error",
+      });
+    } catch (error) {
+      console.error("[SPE] Error verifying container:", error);
+      res.status(500).json({
+        message: "Failed to verify SPE container",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.patch("/api/tenants/:id/spe/config", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only configure storage for your own organization" });
+      }
+
+      const validated = speConfigSchema.parse(req.body);
+
+      if (validated.speStorageEnabled) {
+        const relevantContainerId = isProductionEnv
+          ? (validated.speContainerIdProd ?? tenant.speContainerIdProd)
+          : (validated.speContainerIdDev ?? tenant.speContainerIdDev);
+        if (!relevantContainerId) {
+          return res.status(400).json({
+            message: `Cannot enable SPE storage without a container configured for ${currentEnvLabel}.`,
+          });
+        }
+      }
+
+      const updates: Record<string, any> = {};
+      if (validated.speContainerIdDev !== undefined) updates.speContainerIdDev = validated.speContainerIdDev || null;
+      if (validated.speContainerIdProd !== undefined) updates.speContainerIdProd = validated.speContainerIdProd || null;
+      if (validated.speStorageEnabled !== undefined) updates.speStorageEnabled = validated.speStorageEnabled;
+
+      const updated = await storage.updateTenant(tenantId, updates as any);
+
+      res.json({
+        message: "SPE configuration updated",
+        tenant: {
+          id: updated.id,
+          name: updated.name,
+          speContainerIdDev: updated.speContainerIdDev,
+          speContainerIdProd: updated.speContainerIdProd,
+          speStorageEnabled: updated.speStorageEnabled,
+          speMigrationStatus: updated.speMigrationStatus,
+        },
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid configuration data", errors: error.errors });
+      }
+      console.error("[SPE] Error updating config:", error);
+      res.status(500).json({
+        message: "Failed to update SPE configuration",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/api/admin/tenants/:id/migrate-storage", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ message: "Only platform administrators can trigger storage migrations" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const result = await speMigrationService.startMigration(tenantId);
+
+      if (!result.success) {
+        return res.status(400).json({
+          message: result.message,
+          progress: result.progress,
+        });
+      }
+
+      res.status(202).json({
+        message: result.message,
+        progress: result.progress,
+      });
+    } catch (error) {
+      console.error("[SPE-Migration] Error starting migration:", error);
+      res.status(500).json({
+        message: "Failed to start storage migration",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.get("/api/admin/tenants/:id/migration-status", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only view migration status for your own organization" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const progress = await speMigrationService.getMigrationStatus(tenantId);
+
+      res.json({
+        tenantId,
+        tenantName: tenant.name,
+        environment: isProductionEnv ? 'production' : 'development',
+        progress,
+      });
+    } catch (error) {
+      console.error("[SPE-Migration] Error getting migration status:", error);
+      res.status(500).json({
+        message: "Failed to get migration status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+}

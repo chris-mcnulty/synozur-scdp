@@ -21,6 +21,7 @@ import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
+import { registerTenantStorageRoutes } from "./routes/tenant-storage.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
 import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
 import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO, insertAiConfigurationSchema } from "@shared/schema";
@@ -173,8 +174,10 @@ export async function registerRoutes(app: Express): Promise<void> {
   const localFileStorageInstance = new LocalFileStorage();
   const isProductionEnv = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
   const smartFileStorage = {
-    async storeFile(...args: Parameters<typeof sharePointFileStorage.storeFile>) {
-      const [buffer, originalName, contentType, metadata, uploadedBy, fileId] = args;
+    async storeFile(
+      buffer: Buffer, originalName: string, contentType: string,
+      metadata: DocumentMetadata, uploadedBy: string, fileId?: string, tenantId?: string
+    ) {
       const documentType = metadata.documentType;
       if (documentType === 'receipt') {
         const storedReceipt = await receiptStorage.storeReceipt(buffer, originalName, contentType, {
@@ -193,16 +196,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       const businessDocTypes = ['invoice', 'contract'];
       const useLocalStorage = !isProductionEnv && businessDocTypes.includes(documentType);
       if (useLocalStorage) {
-        const result = await localFileStorageInstance.storeFile(...args);
+        const result = await localFileStorageInstance.storeFile(buffer, originalName, contentType, metadata, uploadedBy, fileId);
         return { ...result, metadata: { ...result.metadata, tags: result.metadata.tags ? `${result.metadata.tags},LOCAL_STORAGE` : 'LOCAL_STORAGE' } };
       }
-      const result = await sharePointFileStorage.storeFile(...args);
+      const result = await sharePointFileStorage.storeFile(buffer, originalName, contentType, metadata, uploadedBy, fileId, tenantId);
       return { ...result, metadata: { ...result.metadata, tags: result.metadata.tags ? `${result.metadata.tags},SHAREPOINT_STORAGE` : 'SHAREPOINT_STORAGE' } };
     },
-    async getFileContent(fileId: string) {
+    async getFileContent(fileId: string, tenantId?: string) {
       try { const buffer = await receiptStorage.getReceipt(fileId); return { buffer, metadata: {} }; }
       catch { try { return await localFileStorageInstance.getFileContent(fileId); }
-      catch { return await sharePointFileStorage.getFileContent(fileId); } }
+      catch { return await sharePointFileStorage.getFileContent(fileId, tenantId); } }
     },
   };
 
@@ -227,6 +230,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register HubSpot CRM routes (extracted module)
   registerHubSpotRoutes(app, {
+    requireAuth,
+    requireRole,
+  });
+
+  // Register tenant SPE storage routes
+  registerTenantStorageRoutes(app, {
     requireAuth,
     requireRole,
   });
@@ -980,6 +989,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         invoiceDefaultDiscountType: (tenant as any).invoiceDefaultDiscountType,
         invoiceDefaultDiscountValue: (tenant as any).invoiceDefaultDiscountValue,
         branding: (tenant as any).branding || {},
+        speContainerIdDev: tenant.speContainerIdDev,
+        speContainerIdProd: tenant.speContainerIdProd,
+        speStorageEnabled: tenant.speStorageEnabled ?? false,
+        speMigrationStatus: tenant.speMigrationStatus,
+        speMigrationStartedAt: tenant.speMigrationStartedAt,
+        adminConsentGranted: tenant.adminConsentGranted ?? false,
+        serverEnvironment: (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production') ? 'production' : 'development',
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
@@ -8268,9 +8284,10 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       }
 
       // Delete existing document if present
+      const sowTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
       if (sow.documentUrl) {
         try {
-          await sharePointFileStorage.deleteFile(sow.documentUrl);
+          await sharePointFileStorage.deleteFile(sow.documentUrl, sowTenantId);
           console.log(`[SOW] Deleted previous document for SOW ${sow.id}`);
         } catch (error) {
           console.log(`[SOW] No previous document to delete`);
@@ -8295,7 +8312,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           tags: `${sow.type},sow,${project.code},${project.client?.name?.toLowerCase().replace(/\s+/g, '-')}`
         },
         req.user!.email,
-        sow.id // Use SOW ID as fileId for consistent lookup
+        sow.id, // Use SOW ID as fileId for consistent lookup
+        sowTenantId
       );
 
       // Update SOW with document info
@@ -8333,7 +8351,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(404).json({ message: "No document attached to this SOW" });
       }
 
-      const fileData = await sharePointFileStorage.getFileContent(sow.documentUrl);
+      const dlTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
+      const fileData = await sharePointFileStorage.getFileContent(sow.documentUrl, dlTenantId);
       if (!fileData) {
         return res.status(404).json({ message: "Document not found in storage" });
       }

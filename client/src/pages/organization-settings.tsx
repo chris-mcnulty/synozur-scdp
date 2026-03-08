@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database } from "lucide-react";
 import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
@@ -56,6 +56,13 @@ interface TenantSettings {
   defaultTaxRate: string | null;
   invoiceDefaultDiscountType: string | null;
   invoiceDefaultDiscountValue: string | null;
+  speContainerIdDev: string | null;
+  speContainerIdProd: string | null;
+  speStorageEnabled: boolean;
+  speMigrationStatus: string | null;
+  speMigrationStartedAt: string | null;
+  adminConsentGranted: boolean;
+  serverEnvironment: 'production' | 'development';
 }
 
 const brandingSchema = z.object({
@@ -545,6 +552,283 @@ function HubSpotIntegrationCard() {
               </Button>
             </div>
           </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSettings }) {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const [devContainerId, setDevContainerId] = useState(tenantSettings.speContainerIdDev || "");
+  const [prodContainerId, setProdContainerId] = useState(tenantSettings.speContainerIdProd || "");
+  const [verifyResult, setVerifyResult] = useState<{ status: string; error?: string } | null>(null);
+
+  useEffect(() => {
+    setDevContainerId(tenantSettings.speContainerIdDev || "");
+    setProdContainerId(tenantSettings.speContainerIdProd || "");
+  }, [tenantSettings.speContainerIdDev, tenantSettings.speContainerIdProd]);
+
+  const isPlatformAdmin = user?.platformRole === 'global_admin' || user?.platformRole === 'constellation_admin';
+  const isProduction = tenantSettings.serverEnvironment === 'production';
+  const currentEnvLabel = isProduction ? 'production' : 'development';
+  const currentContainerId = isProduction ? tenantSettings.speContainerIdProd : tenantSettings.speContainerIdDev;
+
+  const createContainerMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/tenants/${tenantSettings.id}/spe/create-container`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      toast({ title: "Container created", description: `SPE container created for ${currentEnvLabel}: ${data.containerId}` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create container", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/tenants/${tenantSettings.id}/spe/verify`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      setVerifyResult(data);
+      if (data.status === "healthy") {
+        toast({ title: "Container verified", description: "SPE container is accessible and healthy." });
+      } else {
+        toast({ title: "Verification failed", description: data.error || "Container is not accessible.", variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      setVerifyResult({ status: "error", error: error.message });
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateConfigMutation = useMutation({
+    mutationFn: (config: { speContainerIdDev?: string; speContainerIdProd?: string; speStorageEnabled?: boolean }) =>
+      apiRequest(`/api/tenants/${tenantSettings.id}/spe/config`, {
+        method: "PATCH",
+        body: JSON.stringify(config),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      toast({ title: "Configuration updated", description: "SPE storage configuration has been saved." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update configuration", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const migrateMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/migrate-storage`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      toast({ title: "Migration started", description: "File migration to SPE has been initiated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Migration failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleSaveContainerIds = () => {
+    updateConfigMutation.mutate({
+      speContainerIdDev: devContainerId || undefined,
+      speContainerIdProd: prodContainerId || undefined,
+    });
+  };
+
+  const handleToggleEnabled = (enabled: boolean) => {
+    if (enabled && !currentContainerId) {
+      toast({
+        title: "Cannot enable SPE",
+        description: `Configure a container ID for ${currentEnvLabel} first.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    updateConfigMutation.mutate({ speStorageEnabled: enabled });
+  };
+
+  return (
+    <Card className="border-2">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <HardDrive className="h-5 w-5" />
+            SharePoint Embedded Document Storage
+          </CardTitle>
+          {tenantSettings.speStorageEnabled ? (
+            <Badge variant="outline" className="text-green-600 border-green-600">
+              <CheckCircle className="h-3 w-3 mr-1" />
+              Enabled
+            </Badge>
+          ) : currentContainerId ? (
+            <Badge variant="outline" className="text-orange-600 border-orange-600">
+              Configured (Disabled)
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">
+              Not Configured
+            </Badge>
+          )}
+        </div>
+        <CardDescription>
+          Store invoices, expense receipts, and project files in your organization's own SharePoint Embedded container.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-lg border p-3 bg-muted/30">
+          <div className="flex items-center gap-2 mb-2">
+            <Info className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium">Current Environment: <Badge variant="secondary">{currentEnvLabel}</Badge></span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Container operations apply to the {currentEnvLabel} environment. Each environment uses a separate container.
+          </p>
+        </div>
+
+        {!tenantSettings.adminConsentGranted && (
+          <Alert>
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              Azure AD admin consent must be granted before creating SPE containers. Complete admin consent setup in your Azure portal first.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="space-y-3 border-t pt-3">
+          <p className="text-sm font-medium">Container IDs</p>
+          <div className="grid grid-cols-1 gap-3">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium w-24 shrink-0">Development</label>
+              <Input
+                value={devContainerId}
+                onChange={(e) => setDevContainerId(e.target.value)}
+                placeholder="Enter dev container ID"
+                className="flex-1 font-mono text-xs"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium w-24 shrink-0">Production</label>
+              <Input
+                value={prodContainerId}
+                onChange={(e) => setProdContainerId(e.target.value)}
+                placeholder="Enter prod container ID"
+                className="flex-1 font-mono text-xs"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSaveContainerIds}
+              disabled={updateConfigMutation.isPending}
+            >
+              {updateConfigMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+              Save Container IDs
+            </Button>
+            {currentContainerId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setVerifyResult(null); verifyMutation.mutate(); }}
+                disabled={verifyMutation.isPending}
+              >
+                {verifyMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                Verify Access
+              </Button>
+            )}
+          </div>
+
+          {verifyResult && (
+            <div className={`rounded-lg border p-3 ${verifyResult.status === "healthy" ? "bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
+              <div className="flex items-center gap-2">
+                {verifyResult.status === "healthy" ? (
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                )}
+                <span className="text-sm font-medium">
+                  {verifyResult.status === "healthy" ? "Container is healthy and accessible" : `Verification failed: ${verifyResult.error || "Container not accessible"}`}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {tenantSettings.adminConsentGranted && !currentContainerId && (
+          <div className="border-t pt-3">
+            <Button
+              onClick={() => createContainerMutation.mutate()}
+              disabled={createContainerMutation.isPending}
+              className="w-full"
+            >
+              {createContainerMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Database className="h-4 w-4 mr-2" />
+              )}
+              {createContainerMutation.isPending ? "Creating Container..." : `Create Container for ${currentEnvLabel}`}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Creates a new SPE container named "{tenantSettings.name}-{isProduction ? 'Prod' : 'Dev'}"
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between py-2 border-t pt-3">
+          <div>
+            <p className="text-sm font-medium">Enable SPE Storage</p>
+            <p className="text-xs text-muted-foreground">Route document storage through this tenant's SPE container</p>
+          </div>
+          <Switch
+            checked={tenantSettings.speStorageEnabled}
+            onCheckedChange={handleToggleEnabled}
+            disabled={updateConfigMutation.isPending}
+          />
+        </div>
+
+        {isPlatformAdmin && tenantSettings.speStorageEnabled && (
+          <div className="border-t pt-3 space-y-2">
+            <p className="text-sm font-medium">File Migration</p>
+            <p className="text-xs text-muted-foreground">
+              Migrate existing files from Replit Object Storage to this tenant's SPE container.
+            </p>
+            {tenantSettings.speMigrationStatus && (
+              <div className="flex items-center gap-2">
+                <Badge variant={
+                  tenantSettings.speMigrationStatus === 'completed' ? 'default' :
+                  tenantSettings.speMigrationStatus === 'in_progress' ? 'secondary' :
+                  tenantSettings.speMigrationStatus === 'failed' ? 'destructive' : 'outline'
+                }>
+                  {tenantSettings.speMigrationStatus === 'in_progress' && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                  {tenantSettings.speMigrationStatus}
+                </Badge>
+                {tenantSettings.speMigrationStartedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    Started: {new Date(tenantSettings.speMigrationStartedAt).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => migrateMutation.mutate()}
+              disabled={migrateMutation.isPending || tenantSettings.speMigrationStatus === 'in_progress'}
+            >
+              {migrateMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+              {tenantSettings.speMigrationStatus === 'in_progress' ? "Migration In Progress..." : "Start Migration"}
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -1575,22 +1859,7 @@ export default function OrganizationSettings() {
                     </CardContent>
                   </Card>
 
-                  <Card className="border border-dashed">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <FileText className="h-5 w-5" />
-                          SharePoint Document Storage
-                        </CardTitle>
-                        <Badge variant="secondary">Platform-managed</Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">
-                        Document storage for invoices, expense receipts, and project files is managed through the platform's SharePoint Embedded connection.
-                      </p>
-                    </CardContent>
-                  </Card>
+                  {tenantSettings && <DocumentStorageCard tenantSettings={tenantSettings} />}
                 </CardContent>
               </Card>
             </TabsContent>
