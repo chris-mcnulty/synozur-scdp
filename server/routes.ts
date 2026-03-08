@@ -995,6 +995,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         speMigrationStatus: tenant.speMigrationStatus,
         speMigrationStartedAt: tenant.speMigrationStartedAt,
         adminConsentGranted: tenant.adminConsentGranted ?? false,
+        azureTenantId: tenant.azureTenantId || null,
         serverEnvironment: (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production') ? 'production' : 'development',
       });
     } catch (error: any) {
@@ -10152,12 +10153,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       }
 
       const userEmail = tokenResponse.account.username;
+      const azureAdTenantId = tokenResponse.account.tenantId;
       console.log("[SSO-CALLBACK] Token exchange successful for user:", userEmail);
       console.log("[SSO-CALLBACK] Token details:", {
         hasAccessToken: !!tokenResponse.accessToken,
         hasRefreshToken: !!(tokenResponse as any).refreshToken,
         expiresOn: tokenResponse.expiresOn,
-        scopes: tokenResponse.scopes
+        scopes: tokenResponse.scopes,
+        azureTenantId: azureAdTenantId
       });
 
       // Look up user in database by email (case-insensitive)
@@ -10175,6 +10178,19 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         email: dbUser.email,
         role: dbUser.role
       });
+
+      if (azureAdTenantId && dbUser.primaryTenantId) {
+        const [userTenant] = await db.select()
+          .from(tenants)
+          .where(eq(tenants.id, dbUser.primaryTenantId))
+          .limit(1);
+        if (userTenant && !userTenant.azureTenantId) {
+          await db.update(tenants)
+            .set({ azureTenantId: azureAdTenantId })
+            .where(eq(tenants.id, userTenant.id));
+          console.log(`[SSO-CALLBACK] Auto-populated azureTenantId=${azureAdTenantId} for tenant ${userTenant.slug}`);
+        }
+      }
 
       // Create session with actual database user ID and SSO tokens
       const { createSession } = await import("./session-store.js");

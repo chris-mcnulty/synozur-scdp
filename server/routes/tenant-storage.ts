@@ -43,6 +43,15 @@ export function registerTenantStorageRoutes(
         return res.status(400).json({ message: "Admin consent must be granted before creating SPE containers. Please complete Azure AD admin consent first." });
       }
 
+      if (!tenant.azureTenantId) {
+        return res.status(400).json({ message: "Azure AD Tenant ID is not set for this organization. An admin must sign in via SSO first to auto-populate it, or set it manually in Platform Settings." });
+      }
+
+      const azureTenantIdRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!azureTenantIdRegex.test(tenant.azureTenantId)) {
+        return res.status(400).json({ message: "Azure AD Tenant ID is not a valid GUID. Please correct it in Platform Settings." });
+      }
+
       const existingContainerId = isProductionEnv ? tenant.speContainerIdProd : tenant.speContainerIdDev;
       if (existingContainerId) {
         return res.status(409).json({
@@ -54,7 +63,8 @@ export function registerTenantStorageRoutes(
       const containerName = `${tenant.name}-${isProductionEnv ? 'Prod' : 'Dev'}`;
       const result = await containerCreator.createContainer(
         containerName,
-        `SPE container for ${tenant.name} (${currentEnvLabel})`
+        `SPE container for ${tenant.name} (${currentEnvLabel})`,
+        tenant.azureTenantId!
       );
 
       if (!result.success || !result.containerId) {

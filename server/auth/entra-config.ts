@@ -124,6 +124,51 @@ export const clientCredentialsMsalInstance = isConfigured
   ? new ConfidentialClientApplication(clientCredentialsMsalConfig)
   : null;
 
+const tenantMsalCache = new Map<string, ConfidentialClientApplication>();
+
+export function getClientCredentialsMsalForTenant(azureTenantId: string): ConfidentialClientApplication | null {
+  if (!isConfigured) return null;
+
+  const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!guidRegex.test(azureTenantId)) {
+    console.error(`[ENTRA-CONFIG] Invalid Azure tenant ID format: ${azureTenantId}`);
+    return null;
+  }
+
+  if (azureTenantId === clientCredentialsTenantId) return clientCredentialsMsalInstance;
+
+  const cached = tenantMsalCache.get(azureTenantId);
+  if (cached) return cached;
+
+  let config: Configuration;
+  if (hasCertificateAuth) {
+    const privateKeyBase64 = process.env.AZURE_CERTIFICATE_PRIVATE_KEY!;
+    const privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8');
+    config = {
+      auth: {
+        clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+        authority: `https://login.microsoftonline.com/${azureTenantId}`,
+        clientCertificate: {
+          thumbprint: process.env.AZURE_CERTIFICATE_THUMBPRINT!.replace(/:/g, ''),
+          privateKey,
+        },
+      },
+    };
+  } else {
+    config = {
+      auth: {
+        clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+        authority: `https://login.microsoftonline.com/${azureTenantId}`,
+        clientSecret: process.env.AZURE_CLIENT_SECRET || 'placeholder',
+      },
+    };
+  }
+
+  const instance = new ConfidentialClientApplication(config);
+  tenantMsalCache.set(azureTenantId, instance);
+  return instance;
+}
+
 // Determine the base URL - always use HTTPS in production
 const getBaseUrl = () => {
   // If explicit redirect URI is set, extract base URL from it

@@ -62,6 +62,7 @@ interface TenantSettings {
   speMigrationStatus: string | null;
   speMigrationStartedAt: string | null;
   adminConsentGranted: boolean;
+  azureTenantId: string | null;
   serverEnvironment: 'production' | 'development';
 }
 
@@ -741,6 +742,15 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
           <p className="text-xs text-muted-foreground">
             Container operations apply to the {currentEnvLabel} environment. Each environment uses a separate container.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-medium text-muted-foreground">Azure AD Tenant:</span>
+          {tenantSettings.azureTenantId ? (
+            <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-xs">{tenantSettings.azureTenantId}</code>
+          ) : (
+            <span className="text-orange-600 dark:text-orange-400">Not set — will auto-populate when an admin signs in via SSO</span>
+          )}
         </div>
 
         {!tenantSettings.adminConsentGranted && (

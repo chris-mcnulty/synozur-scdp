@@ -3,7 +3,7 @@
  * Creates new SharePoint Embedded containers for the application
  */
 
-import { clientCredentialsMsalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
+import { clientCredentialsMsalInstance, clientCredentialsRequest, getClientCredentialsMsalForTenant } from '../auth/entra-config.js';
 
 export interface ContainerCreationResult {
   success: boolean;
@@ -21,13 +21,13 @@ export class ContainerCreator {
    */
   async createContainer(
     containerName: string,
-    description?: string
+    description?: string,
+    azureTenantId?: string
   ): Promise<ContainerCreationResult> {
-    console.log('[ContainerCreator] Creating SharePoint Embedded container:', containerName);
+    console.log('[ContainerCreator] Creating SharePoint Embedded container:', containerName, azureTenantId ? `(tenant: ${azureTenantId})` : '(default tenant)');
     
     try {
-      // Get access token for Microsoft Graph
-      const accessToken = await this.getGraphAccessToken();
+      const accessToken = await this.getGraphAccessToken(azureTenantId);
       
       // Prepare container creation payload
       const payload = {
@@ -189,13 +189,17 @@ export class ContainerCreator {
   /**
    * Get access token for Microsoft Graph API
    */
-  private async getGraphAccessToken(): Promise<string> {
-    if (!clientCredentialsMsalInstance) {
+  private async getGraphAccessToken(azureTenantId?: string): Promise<string> {
+    const msalInstance = azureTenantId
+      ? getClientCredentialsMsalForTenant(azureTenantId)
+      : clientCredentialsMsalInstance;
+
+    if (!msalInstance) {
       throw new Error('MSAL client credentials instance not configured. Please check Azure AD environment variables.');
     }
 
     try {
-      const response = await clientCredentialsMsalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
+      const response = await msalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
       
       if (!response) {
         throw new Error('Failed to acquire access token - no response received');
