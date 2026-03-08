@@ -3,7 +3,7 @@
  * Creates new SharePoint Embedded containers for the application
  */
 
-import { msalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
+import { clientCredentialsMsalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
 
 export interface ContainerCreationResult {
   success: boolean;
@@ -92,10 +92,10 @@ export class ContainerCreator {
       if (!permissionResult.success) {
         console.warn('[ContainerCreator] Failed to grant permissions:', permissionResult.message);
         return {
-          success: false,
-          message: `Container created but failed to grant permissions: ${permissionResult.message}`,
+          success: true,
+          message: `Container created but permissions need to be granted manually: ${permissionResult.message}`,
           containerId: container.id,
-          details: { container, permissionError: permissionResult.message }
+          details: { container, permissionWarning: permissionResult.message }
         };
       }
       
@@ -190,12 +190,12 @@ export class ContainerCreator {
    * Get access token for Microsoft Graph API
    */
   private async getGraphAccessToken(): Promise<string> {
-    if (!msalInstance) {
-      throw new Error('MSAL instance not configured. Please check Azure AD environment variables.');
+    if (!clientCredentialsMsalInstance) {
+      throw new Error('MSAL client credentials instance not configured. Please check Azure AD environment variables.');
     }
 
     try {
-      const response = await msalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
+      const response = await clientCredentialsMsalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
       
       if (!response) {
         throw new Error('Failed to acquire access token - no response received');

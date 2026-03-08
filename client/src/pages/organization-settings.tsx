@@ -746,8 +746,22 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
         {!tenantSettings.adminConsentGranted && (
           <Alert>
             <Shield className="h-4 w-4" />
-            <AlertDescription>
-              Azure AD admin consent must be granted before creating SPE containers. Complete admin consent setup in your Azure portal first.
+            <AlertDescription className="flex items-center justify-between">
+              <span>Azure AD admin consent must be granted before creating SPE containers. Complete admin consent setup in your Azure portal first.</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-3 shrink-0"
+                onClick={() => {
+                  updateConfigMutation.mutate({
+                    adminConsentGranted: true,
+                  });
+                }}
+                disabled={updateConfigMutation.isPending}
+              >
+                <CheckCircle className="h-3 w-3 mr-1" />
+                Mark Consent Complete
+              </Button>
             </AlertDescription>
           </Alert>
         )}

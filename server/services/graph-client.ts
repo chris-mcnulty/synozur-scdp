@@ -1,4 +1,4 @@
-import { msalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
+import { clientCredentialsMsalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
 
 // SharePoint Embedded container interfaces
 export interface FileStorageContainer {
@@ -181,8 +181,8 @@ export class GraphClient {
   private readonly cacheLifetime = 5 * 60 * 1000; // 5 minutes
 
   constructor() {
-    if (!msalInstance) {
-      console.warn('[GraphClient] MSAL instance not configured. Please check Azure AD environment variables.');
+    if (!clientCredentialsMsalInstance) {
+      console.warn('[GraphClient] MSAL client credentials instance not configured. Please check Azure AD environment variables.');
     }
   }
 
@@ -227,12 +227,12 @@ export class GraphClient {
       return this.accessToken;
     }
 
-    if (!msalInstance) {
-      throw new Error('MSAL instance not configured. Please check Azure AD environment variables.');
+    if (!clientCredentialsMsalInstance) {
+      throw new Error('MSAL client credentials instance not configured. Please check Azure AD environment variables.');
     }
 
     try {
-      const response = await msalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
+      const response = await clientCredentialsMsalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
       
       if (!response) {
         throw new Error('Failed to acquire access token - no response received');
@@ -1725,11 +1725,11 @@ export async function registerContainerTypePermissions(
     });
 
     // Get access token for SharePoint API
-    if (!msalInstance) {
-      throw new Error('MSAL instance not initialized');
+    if (!clientCredentialsMsalInstance) {
+      throw new Error('MSAL client credentials instance not initialized');
     }
     
-    const tokenResponse = await msalInstance.acquireTokenByClientCredential({
+    const tokenResponse = await clientCredentialsMsalInstance.acquireTokenByClientCredential({
       scopes: ['https://graph.microsoft.com/.default'],
       skipCache: false,
     });

@@ -89,6 +89,41 @@ export const clientCredentialsRequest = {
   scopes: appOnlyGraphScopes,
 };
 
+// Separate MSAL instance for client credentials flow (requires specific tenant, not 'common')
+// Client credentials flow CANNOT use 'common'/'organizations'/'consumers' — must be a real tenant GUID
+const envTenantId = process.env.AZURE_TENANT_ID;
+const clientCredentialsTenantId = (envTenantId && envTenantId !== 'common' && envTenantId !== 'organizations' && envTenantId !== 'consumers')
+  ? envTenantId
+  : defaultTenantId;
+
+let clientCredentialsMsalConfig: Configuration;
+if (hasCertificateAuth) {
+  const privateKeyBase64 = process.env.AZURE_CERTIFICATE_PRIVATE_KEY!;
+  const privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8');
+  clientCredentialsMsalConfig = {
+    auth: {
+      clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+      authority: `https://login.microsoftonline.com/${clientCredentialsTenantId}`,
+      clientCertificate: {
+        thumbprint: process.env.AZURE_CERTIFICATE_THUMBPRINT!.replace(/:/g, ''),
+        privateKey: privateKey,
+      },
+    },
+  };
+} else {
+  clientCredentialsMsalConfig = {
+    auth: {
+      clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+      authority: `https://login.microsoftonline.com/${clientCredentialsTenantId}`,
+      clientSecret: process.env.AZURE_CLIENT_SECRET || 'placeholder',
+    },
+  };
+}
+
+export const clientCredentialsMsalInstance = isConfigured
+  ? new ConfidentialClientApplication(clientCredentialsMsalConfig)
+  : null;
+
 // Determine the base URL - always use HTTPS in production
 const getBaseUrl = () => {
   // If explicit redirect URI is set, extract base URL from it

@@ -14,6 +14,7 @@ const speConfigSchema = z.object({
   speContainerIdDev: z.string().optional(),
   speContainerIdProd: z.string().optional(),
   speStorageEnabled: z.boolean().optional(),
+  adminConsentGranted: z.boolean().optional(),
 });
 
 export function registerTenantStorageRoutes(
@@ -164,6 +165,13 @@ export function registerTenantStorageRoutes(
       if (validated.speContainerIdDev !== undefined) updates.speContainerIdDev = validated.speContainerIdDev || null;
       if (validated.speContainerIdProd !== undefined) updates.speContainerIdProd = validated.speContainerIdProd || null;
       if (validated.speStorageEnabled !== undefined) updates.speStorageEnabled = validated.speStorageEnabled;
+      if (validated.adminConsentGranted !== undefined) {
+        updates.adminConsentGranted = validated.adminConsentGranted;
+        if (validated.adminConsentGranted) {
+          updates.adminConsentGrantedAt = new Date();
+          updates.adminConsentGrantedBy = currentUser?.id || null;
+        }
+      }
 
       const updated = await storage.updateTenant(tenantId, updates as any);
 
@@ -176,6 +184,7 @@ export function registerTenantStorageRoutes(
           speContainerIdProd: updated.speContainerIdProd,
           speStorageEnabled: updated.speStorageEnabled,
           speMigrationStatus: updated.speMigrationStatus,
+          adminConsentGranted: updated.adminConsentGranted,
         },
       });
     } catch (error) {
