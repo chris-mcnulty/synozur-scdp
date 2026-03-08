@@ -22,7 +22,7 @@ import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./rou
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
-import { invalidateProviderCache, ReplitAIProvider, AzureOpenAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
+import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
 import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO, insertAiConfigurationSchema } from "@shared/schema";
 
 // Initialize SharePoint storage with database access
@@ -12708,12 +12708,10 @@ Return a JSON response:
   app.get("/api/admin/ai-config/options", requireAuth, requirePlatformAdmin, async (req, res) => {
     try {
       const replitProvider = new ReplitAIProvider();
-      const azureProvider = new AzureOpenAIProvider();
       const foundryProvider = new AzureFoundryProvider();
 
       const providerStatus: Record<string, { name: string; configured: boolean; displayName: string }> = {
         [AI_PROVIDERS.REPLIT]: { name: AI_PROVIDERS.REPLIT, configured: replitProvider.isConfigured(), displayName: 'Replit AI (OpenAI)' },
-        [AI_PROVIDERS.AZURE_OPENAI]: { name: AI_PROVIDERS.AZURE_OPENAI, configured: azureProvider.isConfigured(), displayName: 'Azure OpenAI' },
         [AI_PROVIDERS.AZURE_FOUNDRY]: { name: AI_PROVIDERS.AZURE_FOUNDRY, configured: foundryProvider.isConfigured(), displayName: 'Azure AI Foundry' },
       };
 

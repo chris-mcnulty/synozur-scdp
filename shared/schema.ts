@@ -3024,7 +3024,7 @@ export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
 export const AI_MODELS: Record<string, readonly string[]> = {
   replit_ai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4', 'claude-opus-4'],
   azure_openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4'],
-  azure_foundry: ['gpt-5.2', 'gpt-5.4', 'gpt-4o', 'gpt-4o-mini', 'gpt-5'],
+  azure_foundry: ['gpt-5.4', 'gpt-5.2', 'gpt-4o'],
   openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
   anthropic: ['claude-sonnet-4', 'claude-opus-4', 'claude-3.5-sonnet', 'claude-3-haiku'],
 } as const;
