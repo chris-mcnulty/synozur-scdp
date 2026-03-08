@@ -12686,7 +12686,7 @@ Return a JSON response:
         }
       }
 
-      const allowedFields = ['activeProvider', 'activeModel', 'providerConfig', 'enableStreaming', 'maxTokensPerRequest', 'monthlyTokenBudget'];
+      const allowedFields = ['activeProvider', 'activeModel', 'providerConfig', 'enableStreaming', 'maxTokensPerRequest', 'monthlyTokenBudget', 'alertThresholds', 'alertEnabled'];
       const updates: Record<string, any> = {};
       for (const key of allowedFields) {
         if (req.body[key] !== undefined) {
@@ -12791,6 +12791,17 @@ Return a JSON response:
     } catch (error: any) {
       console.error("[AI_USAGE] Error fetching detailed AI usage:", error);
       res.status(500).json({ message: "Failed to fetch detailed AI usage" });
+    }
+  });
+
+  app.get("/api/admin/ai-usage/alerts", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const periodMonth = req.query.periodMonth as string | undefined;
+      const alerts = await storage.getAiUsageAlerts(periodMonth);
+      res.json(alerts);
+    } catch (error: any) {
+      console.error("[AI_ALERTS] Error fetching usage alerts:", error);
+      res.status(500).json({ message: "Failed to fetch usage alerts" });
     }
   });
 

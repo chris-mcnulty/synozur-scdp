@@ -66,7 +66,8 @@ import {
   deliverableStatusHistory, type DeliverableStatusHistory, type InsertDeliverableStatusHistory,
   aiConfiguration, type AiConfiguration, type InsertAiConfiguration,
   aiUsageLogs, type AiUsageLog, type InsertAiUsageLog,
-  aiUsageSummaries, type AiUsageSummary, type InsertAiUsageSummary
+  aiUsageSummaries, type AiUsageSummary, type InsertAiUsageSummary,
+  aiUsageAlerts, type AiUsageAlert, type InsertAiUsageAlert
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1101,6 +1102,11 @@ export interface IStorage {
     byFeature: Record<string, { requests: number; tokens: number; cost: number }>;
     dailyUsage: Array<{ date: string; requests: number; tokens: number; cost: number }>;
   }>;
+  getMonthlyTokenTotal(periodMonth: string): Promise<number>;
+  getAiUsageAlert(periodMonth: string, thresholdPercent: number): Promise<AiUsageAlert | undefined>;
+  createAiUsageAlert(alert: InsertAiUsageAlert): Promise<AiUsageAlert>;
+  getAiUsageAlerts(periodMonth?: string): Promise<AiUsageAlert[]>;
+  getPlatformAdminEmails(): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -12035,6 +12041,61 @@ export class DatabaseStorage implements IStorage {
       byFeature,
       dailyUsage: dailyRows.map(r => ({ date: r.date, requests: r.requests, tokens: r.tokens, cost: r.cost })),
     };
+  }
+
+  async getMonthlyTokenTotal(periodMonth: string): Promise<number> {
+    const [year, month] = periodMonth.split('-').map(Number);
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+
+    const result = await db.select({
+      total: sql<number>`coalesce(sum(${aiUsageLogs.totalTokens}), 0)::int`,
+    }).from(aiUsageLogs)
+      .where(and(
+        gte(aiUsageLogs.createdAt, startDate),
+        lte(aiUsageLogs.createdAt, endDate),
+      ));
+
+    return result[0]?.total ?? 0;
+  }
+
+  async getAiUsageAlert(periodMonth: string, thresholdPercent: number): Promise<AiUsageAlert | undefined> {
+    const [result] = await db.select().from(aiUsageAlerts)
+      .where(and(
+        eq(aiUsageAlerts.periodMonth, periodMonth),
+        eq(aiUsageAlerts.thresholdPercent, thresholdPercent),
+      ))
+      .limit(1);
+    return result;
+  }
+
+  async createAiUsageAlert(alert: InsertAiUsageAlert): Promise<AiUsageAlert> {
+    const [result] = await db.insert(aiUsageAlerts).values(alert).returning();
+    return result;
+  }
+
+  async getAiUsageAlerts(periodMonth?: string): Promise<AiUsageAlert[]> {
+    if (periodMonth) {
+      return db.select().from(aiUsageAlerts)
+        .where(eq(aiUsageAlerts.periodMonth, periodMonth))
+        .orderBy(desc(aiUsageAlerts.alertedAt));
+    }
+    return db.select().from(aiUsageAlerts)
+      .orderBy(desc(aiUsageAlerts.alertedAt))
+      .limit(50);
+  }
+
+  async getPlatformAdminEmails(): Promise<string[]> {
+    const admins = await db.select({ email: users.email })
+      .from(users)
+      .where(and(
+        or(
+          eq(users.platformRole, 'global_admin'),
+          eq(users.platformRole, 'constellation_admin'),
+        ),
+        isNotNull(users.email),
+      ));
+    return admins.map(a => a.email).filter(Boolean) as string[];
   }
 }
 

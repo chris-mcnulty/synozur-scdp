@@ -29,6 +29,7 @@ import {
   Save,
   RefreshCw,
   TrendingUp,
+  Bell,
 } from "lucide-react";
 import type { AI_MODELS, AI_MODEL_INFO } from "@shared/schema";
 
@@ -46,6 +47,18 @@ interface AiConfig {
   enableStreaming: boolean;
   maxTokensPerRequest: number;
   monthlyTokenBudget: number | null;
+  alertThresholds: number[] | null;
+  alertEnabled: boolean | null;
+}
+
+interface AiUsageAlert {
+  id: string;
+  periodMonth: string;
+  thresholdPercent: number;
+  tokenUsageAtAlert: number;
+  monthlyBudget: number;
+  alertedAt: string;
+  notifiedEmails: string[] | null;
 }
 
 interface AiOptions {
@@ -133,6 +146,8 @@ function ModelConfigSection() {
   const [enableStreaming, setEnableStreaming] = useState(true);
   const [maxTokens, setMaxTokens] = useState("4096");
   const [monthlyBudget, setMonthlyBudget] = useState("");
+  const [alertEnabled, setAlertEnabled] = useState(true);
+  const [alertThresholds, setAlertThresholds] = useState("75, 90, 100");
 
   const isInitialized = selectedProvider !== "";
 
@@ -142,6 +157,8 @@ function ModelConfigSection() {
     setEnableStreaming(config.enableStreaming ?? true);
     setMaxTokens(String(config.maxTokensPerRequest || 4096));
     setMonthlyBudget(config.monthlyTokenBudget ? String(config.monthlyTokenBudget) : "");
+    setAlertEnabled(config.alertEnabled ?? true);
+    setAlertThresholds((config.alertThresholds ?? [75, 90, 100]).join(", "));
   }
 
   const updateMutation = useMutation({
@@ -161,12 +178,19 @@ function ModelConfigSection() {
   });
 
   const handleSave = () => {
+    const parsedThresholds = alertThresholds
+      .split(",")
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n) && n > 0 && n <= 200);
+
     updateMutation.mutate({
       activeProvider: selectedProvider,
       activeModel: selectedModel,
       enableStreaming,
       maxTokensPerRequest: parseInt(maxTokens, 10) || 4096,
       monthlyTokenBudget: monthlyBudget ? parseInt(monthlyBudget, 10) : null,
+      alertThresholds: parsedThresholds.length > 0 ? parsedThresholds : [75, 90, 100],
+      alertEnabled,
     });
   };
 
@@ -258,6 +282,32 @@ function ModelConfigSection() {
               <p className="text-xs text-muted-foreground">Leave empty for unlimited</p>
             </div>
           </div>
+
+          {monthlyBudget && (
+            <>
+              <Separator />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="flex items-center justify-between space-x-4">
+                  <div>
+                    <Label>Usage Alerts</Label>
+                    <p className="text-xs text-muted-foreground">Email platform admins when thresholds are crossed</p>
+                  </div>
+                  <Switch checked={alertEnabled} onCheckedChange={setAlertEnabled} />
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Alert Thresholds (%)</Label>
+                  <Input
+                    value={alertThresholds}
+                    onChange={(e) => setAlertThresholds(e.target.value)}
+                    placeholder="75, 90, 100"
+                    disabled={!alertEnabled}
+                  />
+                  <p className="text-xs text-muted-foreground">Comma-separated percentages. Alerts send once per threshold per month.</p>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={updateMutation.isPending}>
@@ -554,7 +604,64 @@ function UsageDashboardSection() {
           )}
         </CardContent>
       </Card>
+
+      <AlertHistorySection />
     </div>
+  );
+}
+
+function AlertHistorySection() {
+  const { data: alerts, isLoading } = useQuery<AiUsageAlert[]>({
+    queryKey: ["/api/admin/ai-usage/alerts"],
+  });
+
+  if (isLoading) return <Skeleton className="h-32 w-full" />;
+  if (!alerts || alerts.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Bell className="w-4 h-4" />
+          Alert History
+        </CardTitle>
+        <CardDescription>Usage threshold alerts that have been sent</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Threshold</TableHead>
+                <TableHead className="text-right">Usage at Alert</TableHead>
+                <TableHead className="text-right">Budget</TableHead>
+                <TableHead>Notified</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {alerts.map((alert) => (
+                <TableRow key={alert.id}>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(alert.alertedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </TableCell>
+                  <TableCell className="text-sm">{alert.periodMonth}</TableCell>
+                  <TableCell>
+                    <Badge variant={alert.thresholdPercent >= 100 ? "destructive" : "outline"} className="text-xs">
+                      {alert.thresholdPercent}%
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right text-sm">{formatNumber(alert.tokenUsageAtAlert)}</TableCell>
+                  <TableCell className="text-right text-sm">{formatNumber(alert.monthlyBudget)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{alert.notifiedEmails?.length || 0} admin(s)</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

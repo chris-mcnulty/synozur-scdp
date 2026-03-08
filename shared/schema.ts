@@ -3067,6 +3067,8 @@ export const aiConfiguration = pgTable("ai_configuration", {
   enableStreaming: boolean("enable_streaming").default(true),
   maxTokensPerRequest: integer("max_tokens_per_request").default(4096),
   monthlyTokenBudget: integer("monthly_token_budget"),
+  alertThresholds: jsonb("alert_thresholds").$type<number[]>().default([75, 90, 100]),
+  alertEnabled: boolean("alert_enabled").default(true),
   updatedBy: varchar("updated_by").references(() => users.id),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -3148,6 +3150,25 @@ export const insertAiUsageSummarySchema = createInsertSchema(aiUsageSummaries).o
 });
 export type InsertAiUsageSummary = z.infer<typeof insertAiUsageSummarySchema>;
 export type AiUsageSummary = typeof aiUsageSummaries.$inferSelect;
+
+export const aiUsageAlerts = pgTable("ai_usage_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  periodMonth: varchar("period_month", { length: 7 }).notNull(),
+  thresholdPercent: integer("threshold_percent").notNull(),
+  tokenUsageAtAlert: integer("token_usage_at_alert").notNull(),
+  monthlyBudget: integer("monthly_budget").notNull(),
+  alertedAt: timestamp("alerted_at").defaultNow().notNull(),
+  notifiedEmails: jsonb("notified_emails").$type<string[]>(),
+}, (table) => ({
+  periodThresholdUnique: uniqueIndex("idx_ai_alert_period_threshold_unique").on(table.periodMonth, table.thresholdPercent),
+}));
+
+export const insertAiUsageAlertSchema = createInsertSchema(aiUsageAlerts).omit({
+  id: true,
+  alertedAt: true,
+});
+export type InsertAiUsageAlert = z.infer<typeof insertAiUsageAlertSchema>;
+export type AiUsageAlert = typeof aiUsageAlerts.$inferSelect;
 
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {

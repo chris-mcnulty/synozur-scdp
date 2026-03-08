@@ -2,6 +2,7 @@ import { getAIProvider, getAIProviderAsync, ChatMessage, ChatCompletionResult } 
 import type { GroundingDocument, GroundingDocCategory } from '@shared/schema';
 import { GROUNDING_DOC_CATEGORY_LABELS, type AIFeature, AI_FEATURES } from '@shared/schema';
 import { calculateEstimatedCost } from './ai-pricing.js';
+import { checkUsageThresholds } from './ai-usage-alerts.js';
 import { storage } from '../storage.js';
 
 export type GroundingFeature = 'estimate_narrative' | 'estimate_generation' | 'invoice_narrative' | 'status_report' | 'sub_sow' | 'changelog' | 'general';
@@ -92,6 +93,8 @@ export async function logAiUsage(
       errorCode: error ? 'ERROR' : null,
       errorMessage: error?.message?.substring(0, 500) || null,
     });
+
+    checkUsageThresholds().catch(() => {});
   } catch (logError) {
     console.error('[AI_USAGE] Failed to log AI usage (non-blocking):', logError);
   }
