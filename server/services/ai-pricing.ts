@@ -1,6 +1,8 @@
 import { AI_MODEL_INFO } from '@shared/schema';
 
 const COST_PER_1K_TOKENS: Record<string, { promptMicrodollars: number; completionMicrodollars: number }> = {
+  'gpt-5.4': { promptMicrodollars: 5000, completionMicrodollars: 15000 },
+  'gpt-5.2': { promptMicrodollars: 5000, completionMicrodollars: 15000 },
   'gpt-5': { promptMicrodollars: 5000, completionMicrodollars: 15000 },
   'gpt-4o': { promptMicrodollars: 2500, completionMicrodollars: 10000 },
   'gpt-4o-mini': { promptMicrodollars: 150, completionMicrodollars: 600 },

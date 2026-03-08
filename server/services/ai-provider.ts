@@ -180,7 +180,7 @@ export class AzureFoundryProvider implements IAIProvider {
   private deployment: string;
 
   constructor(deployment?: string) {
-    this.deployment = deployment || process.env.AZURE_FOUNDRY_DEPLOYMENT || 'gpt-4o';
+    this.deployment = deployment || process.env.AZURE_FOUNDRY_DEPLOYMENT || 'gpt-5.2';
     if (this.isConfigured()) {
       this.client = new OpenAI({
         baseURL: process.env.AZURE_FOUNDRY_OPENAI_ENDPOINT,

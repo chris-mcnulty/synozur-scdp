@@ -3024,7 +3024,7 @@ export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
 export const AI_MODELS: Record<string, readonly string[]> = {
   replit_ai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4', 'claude-opus-4'],
   azure_openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4'],
-  azure_foundry: ['gpt-4o', 'gpt-4o-mini', 'gpt-5'],
+  azure_foundry: ['gpt-5.2', 'gpt-5.4', 'gpt-4o', 'gpt-4o-mini', 'gpt-5'],
   openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
   anthropic: ['claude-sonnet-4', 'claude-opus-4', 'claude-3.5-sonnet', 'claude-3-haiku'],
 } as const;
@@ -3038,6 +3038,8 @@ export const AI_MODEL_INFO: Record<string, {
   costPer1kPrompt: number;
   costPer1kCompletion: number;
 }> = {
+  'gpt-5.4': { name: 'GPT-5.4', description: 'Latest and most capable OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
+  'gpt-5.2': { name: 'GPT-5.2', description: 'Advanced reasoning OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
   'gpt-5': { name: 'GPT-5', description: 'Most capable OpenAI model', costTier: 'high', providers: ['replit_ai', 'openai', 'azure_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
   'gpt-4o': { name: 'GPT-4o', description: 'Fast multimodal model', costTier: 'medium', providers: ['replit_ai', 'openai', 'azure_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.0025, costPer1kCompletion: 0.01 },
   'gpt-4o-mini': { name: 'GPT-4o Mini', description: 'Cost-effective for simple tasks', costTier: 'low', providers: ['replit_ai', 'openai', 'azure_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.00015, costPer1kCompletion: 0.0006 },
