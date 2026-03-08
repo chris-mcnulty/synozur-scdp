@@ -262,7 +262,20 @@
 - [ ] Weekly time entry suggestions based on patterns
 - [ ] Anomaly and duplicate detection
 - [ ] Estimate intelligence: similar project suggestions, risk identification
-- [ ] MCP server infrastructure with RBAC-enforced AI tools
+
+### MCP Server (Model Context Protocol)
+**Status:** Planned
+**Effort:** Medium (3-4 weeks)
+**Reference:** Vega MCP server configuration (successful pattern)
+
+- [ ] Design and deploy an MCP server for Constellation matching the Vega MCP server architecture
+- [ ] RBAC-enforced AI tools exposed via MCP protocol
+- [ ] Tenant-scoped data access through MCP endpoints
+- [ ] Project, estimate, invoice, and time entry query tools
+- [ ] Resource and capacity planning query tools
+- [ ] Financial reporting and KPI query tools
+- [ ] Read-only data access with role-based field filtering
+- [ ] Integration with AI assistants (Copilot, Claude, etc.) via MCP protocol
 
 ---
 
@@ -279,6 +292,19 @@
 - [ ] Cost rate validation with variance alerts
 - [ ] Approval and payment workflow
 - [ ] AP reporting (payment history, pending invoices, aging)
+
+### Cloud Deployment Migration: GCP → Azure
+**Status:** Planned — Replit engineering task
+**Effort:** Medium (coordination with Replit engineering)
+
+- [ ] Migrate Constellation hosting from GCP to Azure infrastructure
+- [ ] Coordinate with Replit engineering team for deployment target change
+- [ ] Validate all environment variables and secrets transfer correctly
+- [ ] Verify database connectivity and performance on Azure
+- [ ] Test SharePoint Embedded and Microsoft Graph API latency improvements (same-cloud advantage)
+- [ ] Validate AI Foundry endpoint connectivity from Azure-hosted environment
+- [ ] Update deployment documentation and runbooks
+- [ ] Smoke test all integrations (HubSpot, SendGrid, Outlook, SharePoint) post-migration
 
 ### Extended Integrations
 **Status:** Future
@@ -326,8 +352,8 @@
 |----------|-------|-------------|
 | P1 - High | 4 items | 24-32 weeks |
 | P2 - Important | 10 items | 24-34 weeks |
-| P3 - AI/Automation | 1 item | 8-12 weeks |
-| P4 - Platform | 6 items | 30+ weeks |
+| P3 - AI/Automation | 2 items | 11-16 weeks |
+| P4 - Platform | 7 items | 34+ weeks |
 
 ### Notes on Already Implemented Features (NOT in backlog)
 - ✅ Expense bulk upload with CSV/Excel

@@ -301,6 +301,43 @@ The following major features have been delivered and are live in production. See
 
 ## Near-Term Priorities (Q2 2026)
 
+### ☁️ Cloud Deployment Migration: GCP → Azure
+
+**Status:** 📋 Planned — Replit Engineering Task  
+**Target Completion:** Q2 2026  
+**Value Proposition:** Migrating Constellation's deployment infrastructure from GCP to Azure co-locates the application with its core dependencies (Azure AD, SharePoint Embedded, AI Foundry, Microsoft Graph), reducing latency for API calls, simplifying network architecture, and aligning with Synozur's Microsoft-first strategy.
+
+#### Deliverables
+- Coordinate with Replit engineering team for deployment target migration
+- Validate all environment variables, secrets, and database connectivity transfer
+- Verify SharePoint Embedded and Microsoft Graph API latency improvements (same-cloud advantage)
+- Validate AI Foundry endpoint connectivity from Azure-hosted environment
+- Smoke test all integrations (HubSpot, SendGrid, Outlook, SharePoint) post-migration
+- Update deployment documentation and runbooks
+
+**Note:** This is a Replit engineering task — the Constellation team provides requirements and validates the result, but the infrastructure change is executed by the Replit platform team.
+
+---
+
+### 🔌 MCP Server (Model Context Protocol)
+
+**Status:** 📋 Planned  
+**Target Completion:** Q2 2026  
+**Reference:** Vega MCP server configuration (successful production pattern)  
+**Value Proposition:** Expose Constellation's project management, financial, and resource data through a standardized Model Context Protocol (MCP) server, enabling AI assistants (Copilot, Claude, etc.) to query and interact with Constellation data directly — matching the architecture already proven with Synozur's Vega product.
+
+#### Deliverables
+- Design and deploy an MCP server matching the Vega MCP server architecture
+- RBAC-enforced tool access with tenant-scoped data isolation
+- Query tools for projects, estimates, invoices, time entries, and expenses
+- Resource and capacity planning query tools
+- Financial reporting and KPI query tools
+- Read-only data access with role-based field filtering (hide cost rates from non-admin roles)
+- Integration with AI assistants via MCP protocol
+- Documentation and configuration guide for tenant administrators
+
+---
+
 ### 💹 Priority: QuickBooks Online Integration for Consultants
 
 **Status:** 📋 Planned  
@@ -723,6 +760,10 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ## Recent Roadmap Updates
 
+**March 8, 2026 — Cloud Migration & MCP Server**
+- Added Cloud Deployment Migration (GCP → Azure) to Near-Term Q2 2026 priorities — Replit engineering task to co-locate hosting with Azure-dependent services (SharePoint, AI Foundry, Graph API)
+- Added MCP Server (Model Context Protocol) to Near-Term Q2 2026 priorities — design and deploy a Constellation MCP server matching the successful Vega MCP server architecture for AI assistant integration
+
 **March 1, 2026 — Program Estimates, CRM Integration & Roadmap Advancement**
 - Added Program Estimates & Staffing Blocks to Recently Completed (new "Program" estimate type with week-based blocks, Gantt view, PM Wizard)
 - Added Portfolio Manager Role to Recently Completed (new role tier with cross-project portfolio visibility)
@@ -789,6 +830,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-*Last Updated: March 1, 2026*  
+*Last Updated: March 8, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
