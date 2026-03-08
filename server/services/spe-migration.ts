@@ -2,6 +2,7 @@ import { Storage } from "@google-cloud/storage";
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { SharePointFileStorage } from './sharepoint-file-storage.js';
+import { GraphClient } from './graph-client.js';
 import type { DocumentMetadata } from './local-file-storage.js';
 import { storage } from '../storage.js';
 
@@ -294,6 +295,11 @@ export class SpeMigrationService {
       return { success: false, uploadOk: false, downloadOk: false, deleteOk: false, error: `No SPE container configured for ${this.isProduction ? 'production' : 'development'}` };
     }
 
+    const tenant = await storage.getTenant(tenantId);
+    const azureTenantId = tenant?.azureTenantId || undefined;
+    const graphClient = new GraphClient(azureTenantId);
+    console.log(`[SPE-Test] Testing container ${containerId.substring(0, 20)}... with Azure tenant: ${azureTenantId ? azureTenantId.substring(0, 8) + '...' : 'default'}`);
+
     const testContent = `SPE test file - ${new Date().toISOString()} - tenant: ${tenantId}`;
     const testBuffer = Buffer.from(testContent, 'utf-8');
     const testFileName = `_spe_test_${Date.now()}.txt`;
@@ -303,23 +309,19 @@ export class SpeMigrationService {
     let uploadedFileId = '';
 
     try {
-      const stored = await this.sharePointStorage.storeFile(
-        testBuffer,
+      const driveItem = await graphClient.uploadFile(
+        containerId,
+        containerId,
+        '/reports',
         testFileName,
-        'text/plain',
-        {
-          documentType: 'report',
-          createdByUserId: 'spe-test',
-          metadataVersion: 1,
-          tags: 'spe-test,auto-cleanup',
-        },
-        'spe-test',
+        testBuffer,
         undefined,
-        tenantId
+        undefined,
+        { DocumentType: 'report', CreatedByUserId: 'spe-test', MetadataVersion: 1 }
       );
       uploadOk = true;
-      uploadedFileId = stored.id;
-      console.log(`[SPE-Test] Upload OK: ${stored.id}`);
+      uploadedFileId = driveItem.id;
+      console.log(`[SPE-Test] Upload OK: ${driveItem.id}`);
     } catch (err) {
       return {
         success: false, uploadOk: false, downloadOk: false, deleteOk: false,
@@ -329,7 +331,7 @@ export class SpeMigrationService {
     }
 
     try {
-      const downloaded = await this.sharePointStorage.getFileContent(uploadedFileId, tenantId);
+      const downloaded = await graphClient.downloadFile(containerId, uploadedFileId);
       if (downloaded && downloaded.buffer) {
         const downloadedText = downloaded.buffer.toString('utf-8');
         downloadOk = downloadedText === testContent;
@@ -343,7 +345,8 @@ export class SpeMigrationService {
     }
 
     try {
-      deleteOk = await this.sharePointStorage.deleteFile(uploadedFileId, tenantId);
+      await graphClient.deleteFile(containerId, uploadedFileId);
+      deleteOk = true;
       console.log(`[SPE-Test] Delete OK: ${deleteOk}`);
     } catch (err) {
       console.error(`[SPE-Test] Delete test failed:`, err instanceof Error ? err.message : err);

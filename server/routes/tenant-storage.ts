@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { containerCreator } from "../services/container-creator.js";
-import { graphClient } from "../services/graph-client.js";
+import { GraphClient, graphClient } from "../services/graph-client.js";
 import { speMigrationService } from "../services/spe-migration.js";
 
 interface TenantStorageDeps {
@@ -124,7 +124,8 @@ export function registerTenantStorageRoutes(
         });
       }
 
-      const connectivity = await graphClient.testConnectivity(undefined, containerId);
+      const tenantGraphClient = tenant.azureTenantId ? new GraphClient(tenant.azureTenantId) : graphClient;
+      const connectivity = await tenantGraphClient.testConnectivity(undefined, containerId);
 
       res.json({
         environment: currentEnvLabel,

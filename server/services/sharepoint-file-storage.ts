@@ -26,6 +26,7 @@ export class SharePointFileStorage {
   private graphClient: GraphClient;
   private containerId: string;
   private isProduction: boolean;
+  private tenantGraphClients = new Map<string, GraphClient>();
 
   constructor() {
     this.graphClient = new GraphClient();
@@ -47,13 +48,23 @@ export class SharePointFileStorage {
     }
   }
 
-  async getContainerForTenant(tenantId?: string): Promise<string> {
+  private getGraphClientForAzureTenant(azureTenantId: string): GraphClient {
+    let client = this.tenantGraphClients.get(azureTenantId);
+    if (!client) {
+      client = new GraphClient(azureTenantId);
+      this.tenantGraphClients.set(azureTenantId, client);
+    }
+    return client;
+  }
+
+  async getContainerForTenant(tenantId?: string): Promise<{ containerId: string; azureTenantId?: string }> {
     if (tenantId) {
       try {
         const [tenant] = await db.select({
           speContainerIdDev: tenants.speContainerIdDev,
           speContainerIdProd: tenants.speContainerIdProd,
           speStorageEnabled: tenants.speStorageEnabled,
+          azureTenantId: tenants.azureTenantId,
         }).from(tenants).where(eq(tenants.id, tenantId));
 
         if (tenant && tenant.speStorageEnabled) {
@@ -63,7 +74,7 @@ export class SharePointFileStorage {
 
           if (tenantContainer) {
             console.log(`[SharePointStorage] Using tenant-specific container for tenant ${tenantId}: ${tenantContainer.substring(0, 20)}...`);
-            return tenantContainer;
+            return { containerId: tenantContainer, azureTenantId: tenant.azureTenantId || undefined };
           }
         }
       } catch (error) {
@@ -71,7 +82,14 @@ export class SharePointFileStorage {
       }
     }
 
-    return this.containerId;
+    return { containerId: this.containerId };
+  }
+
+  private resolveGraphClient(azureTenantId?: string): GraphClient {
+    if (azureTenantId) {
+      return this.getGraphClientForAzureTenant(azureTenantId);
+    }
+    return this.graphClient;
   }
 
   /**
@@ -86,10 +104,11 @@ export class SharePointFileStorage {
     fileId?: string,
     tenantId?: string
   ): Promise<StoredFile> {
-    const resolvedContainerId = await this.getContainerForTenant(tenantId);
+    const { containerId: resolvedContainerId, azureTenantId } = await this.getContainerForTenant(tenantId);
     if (!resolvedContainerId) {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
+    const client = this.resolveGraphClient(azureTenantId);
 
     console.log('[SharePointStorage] Starting file upload:', {
       fileName: originalName,
@@ -97,14 +116,12 @@ export class SharePointFileStorage {
       contentType,
       documentType: metadata.documentType,
       containerId: resolvedContainerId.substring(0, 20) + '...',
-      tenantId: tenantId || 'global'
+      tenantId: tenantId || 'global',
+      azureTenantId: azureTenantId ? azureTenantId.substring(0, 8) + '...' : 'default'
     });
 
     try {
-      // Generate folder path based on document type
       const folderPath = this.getFolderPath(metadata.documentType);
-      
-      // Sanitize filename
       const sanitizedName = this.sanitizeFileName(originalName);
       const fileName = fileId ? `${fileId}_${sanitizedName}` : `${Date.now()}_${sanitizedName}`;
       
@@ -114,25 +131,23 @@ export class SharePointFileStorage {
         fileSize: buffer.length
       });
       
-      // Prepare metadata for SharePoint columns with proper types
       const sharePointMetadata: Record<string, string | number | boolean | null> = {
         DocumentType: metadata.documentType,
         CreatedByUserId: metadata.createdByUserId,
-        MetadataVersion: metadata.metadataVersion // Keep as number
+        MetadataVersion: metadata.metadataVersion
       };
       
-      // Only add optional fields if they have values
       if (metadata.clientId) sharePointMetadata.ClientId = metadata.clientId;
       if (metadata.clientName) sharePointMetadata.ClientName = metadata.clientName;
       if (metadata.projectId) sharePointMetadata.ProjectId = metadata.projectId;
       if (metadata.projectCode) sharePointMetadata.ProjectCode = metadata.projectCode;
-      if (metadata.amount !== undefined) sharePointMetadata.Amount = metadata.amount; // Keep as number
+      if (metadata.amount !== undefined) sharePointMetadata.Amount = metadata.amount;
       if (metadata.tags) sharePointMetadata.Tags = metadata.tags;
       if (metadata.effectiveDate) sharePointMetadata.EffectiveDate = metadata.effectiveDate.toISOString();
       if (metadata.estimateId) sharePointMetadata.EstimateId = metadata.estimateId;
       if (metadata.changeOrderId) sharePointMetadata.ChangeOrderId = metadata.changeOrderId;
 
-      const driveItem = await this.graphClient.uploadFile(
+      const driveItem = await client.uploadFile(
         resolvedContainerId,
         resolvedContainerId,
         folderPath,
@@ -148,7 +163,6 @@ export class SharePointFileStorage {
         webUrl: driveItem.webUrl
       });
 
-      // Return stored file info
       return {
         id: driveItem.id,
         fileName,
@@ -163,10 +177,8 @@ export class SharePointFileStorage {
     } catch (error) {
       console.error('[SharePointStorage] Upload failed:', error);
       
-      // Enhanced error message for common issues
       let errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
-      // Check for specific SharePoint Embedded errors
       if (errorMessage.includes('not supported for AAD accounts')) {
         errorMessage = `SharePoint Embedded API error: The container may not be properly configured as a SharePoint Embedded container. Container ID: ${resolvedContainerId.substring(0, 20)}... Please verify the container is a SharePoint Embedded container, not a regular SharePoint site.`;
       } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
@@ -183,13 +195,14 @@ export class SharePointFileStorage {
    * Get file metadata by ID
    */
   async getFileMetadata(fileId: string, tenantId?: string): Promise<StoredFile | null> {
-    const resolvedContainerId = await this.getContainerForTenant(tenantId);
+    const { containerId: resolvedContainerId, azureTenantId } = await this.getContainerForTenant(tenantId);
     if (!resolvedContainerId) {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
+    const client = this.resolveGraphClient(azureTenantId);
 
     try {
-      const driveItem = await this.graphClient.getItem(resolvedContainerId, fileId) as DriveItemWithMetadata;
+      const driveItem = await client.getItem(resolvedContainerId, fileId) as DriveItemWithMetadata;
       
       // Extract metadata from SharePoint columns
       const listItem = driveItem.listItem;
@@ -231,10 +244,11 @@ export class SharePointFileStorage {
    * Get file content and metadata
    */
   async getFileContent(fileId: string, tenantId?: string): Promise<{ buffer: Buffer; metadata: StoredFile } | null> {
-    const resolvedContainerId = await this.getContainerForTenant(tenantId);
+    const { containerId: resolvedContainerId, azureTenantId } = await this.getContainerForTenant(tenantId);
     if (!resolvedContainerId) {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
+    const client = this.resolveGraphClient(azureTenantId);
 
     try {
       const fileMetadata = await this.getFileMetadata(fileId, tenantId);
@@ -242,7 +256,7 @@ export class SharePointFileStorage {
         return null;
       }
 
-      const downloadResult = await this.graphClient.downloadFile(resolvedContainerId, fileId);
+      const downloadResult = await client.downloadFile(resolvedContainerId, fileId);
       
       return {
         buffer: downloadResult.buffer,
@@ -258,7 +272,7 @@ export class SharePointFileStorage {
    * List files with optional filtering
    */
   async listFiles(filter?: { documentType?: string; clientId?: string; projectId?: string }, tenantId?: string): Promise<StoredFile[]> {
-    const resolvedContainerId = await this.getContainerForTenant(tenantId);
+    const { containerId: resolvedContainerId, azureTenantId } = await this.getContainerForTenant(tenantId);
     if (!resolvedContainerId) {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
@@ -276,7 +290,7 @@ export class SharePointFileStorage {
         filters.push(`fields/ProjectId eq '${filter.projectId}'`);
       }
 
-      const allItems = await this.listAllFiles(resolvedContainerId);
+      const allItems = await this.listAllFiles(resolvedContainerId, azureTenantId);
       console.log(`[SharePointStorage] listFiles - Retrieved ${allItems.length} total items`);
 
       // Count items without metadata
@@ -339,13 +353,14 @@ export class SharePointFileStorage {
    * Delete file from SharePoint
    */
   async deleteFile(fileId: string, tenantId?: string): Promise<boolean> {
-    const resolvedContainerId = await this.getContainerForTenant(tenantId);
+    const { containerId: resolvedContainerId, azureTenantId } = await this.getContainerForTenant(tenantId);
     if (!resolvedContainerId) {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
+    const client = this.resolveGraphClient(azureTenantId);
 
     try {
-      await this.graphClient.deleteFile(resolvedContainerId, fileId);
+      await client.deleteFile(resolvedContainerId, fileId);
       return true;
     } catch (error) {
       console.error('[SharePointStorage] Failed to delete file:', error);
@@ -357,7 +372,7 @@ export class SharePointFileStorage {
    * Update file metadata
    */
   async updateMetadata(fileId: string, metadata: Partial<DocumentMetadata>, tenantId?: string): Promise<boolean> {
-    const resolvedContainerId = await this.getContainerForTenant(tenantId);
+    const { containerId: resolvedContainerId } = await this.getContainerForTenant(tenantId);
     if (!resolvedContainerId) {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
@@ -391,13 +406,14 @@ export class SharePointFileStorage {
    * Get storage statistics
    */
   async getStorageStats(tenantId?: string): Promise<any> {
-    const resolvedContainerId = await this.getContainerForTenant(tenantId);
+    const { containerId: resolvedContainerId, azureTenantId } = await this.getContainerForTenant(tenantId);
     if (!resolvedContainerId) {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
+    const client = this.resolveGraphClient(azureTenantId);
 
     try {
-      const container = await this.graphClient.getFileStorageContainer(resolvedContainerId);
+      const container = await client.getFileStorageContainer(resolvedContainerId);
       const allFiles = await this.listFiles(undefined, tenantId);
 
       const stats = {
@@ -463,15 +479,16 @@ export class SharePointFileStorage {
   /**
    * List all files recursively from all folder types
    */
-  private async listAllFiles(containerId: string): Promise<any[]> {
+  private async listAllFiles(containerId: string, azureTenantId?: string): Promise<any[]> {
     console.log('[SharePointStorage] listAllFiles - Starting to list files from all folders');
+    const client = this.resolveGraphClient(azureTenantId);
     const allFiles: any[] = [];
     const folderTypes = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports'];
     
     for (const folder of folderTypes) {
       try {
         console.log(`[SharePointStorage] listAllFiles - Listing files from /${folder}`);
-        const files = await this.graphClient.listFiles(containerId, `/${folder}`);
+        const files = await client.listFiles(containerId, `/${folder}`);
         console.log(`[SharePointStorage] listAllFiles - Found ${files.length} files in /${folder}`);
         if (files.length > 0) {
           const sampleFile = files[0] as any;

@@ -1,4 +1,4 @@
-import { clientCredentialsMsalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
+import { clientCredentialsMsalInstance, clientCredentialsRequest, getClientCredentialsMsalForTenant } from '../auth/entra-config.js';
 
 // SharePoint Embedded container interfaces
 export interface FileStorageContainer {
@@ -174,14 +174,16 @@ export class GraphClient {
   private readonly maxRetries = 3;
   private readonly baseDelay = 1000; // 1 second
   private readonly graphBaseUrl = 'https://graph.microsoft.com/v1.0';
+  private azureTenantId?: string;
   
   // Cache for container information to reduce API calls
   private containerCache = new Map<string, FileStorageContainer>();
   private cacheExpiry = new Map<string, number>();
   private readonly cacheLifetime = 5 * 60 * 1000; // 5 minutes
 
-  constructor() {
-    if (!clientCredentialsMsalInstance) {
+  constructor(azureTenantId?: string) {
+    this.azureTenantId = azureTenantId;
+    if (!azureTenantId && !clientCredentialsMsalInstance) {
       console.warn('[GraphClient] MSAL client credentials instance not configured. Please check Azure AD environment variables.');
     }
   }
@@ -227,12 +229,18 @@ export class GraphClient {
       return this.accessToken;
     }
 
-    if (!clientCredentialsMsalInstance) {
-      throw new Error('MSAL client credentials instance not configured. Please check Azure AD environment variables.');
+    const msalInstance = this.azureTenantId
+      ? getClientCredentialsMsalForTenant(this.azureTenantId)
+      : clientCredentialsMsalInstance;
+
+    if (!msalInstance) {
+      throw new Error(this.azureTenantId
+        ? `MSAL instance not available for tenant ${this.azureTenantId}. Check Azure AD configuration.`
+        : 'MSAL client credentials instance not configured. Please check Azure AD environment variables.');
     }
 
     try {
-      const response = await clientCredentialsMsalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
+      const response = await msalInstance.acquireTokenByClientCredential(clientCredentialsRequest);
       
       if (!response) {
         throw new Error('Failed to acquire access token - no response received');
@@ -241,7 +249,7 @@ export class GraphClient {
       this.accessToken = response.accessToken;
       this.tokenExpiry = response.expiresOn?.getTime() || 0;
       
-      console.log('[GraphClient] Successfully authenticated with Microsoft Graph');
+      console.log(`[GraphClient] Successfully authenticated with Microsoft Graph${this.azureTenantId ? ` (tenant: ${this.azureTenantId.substring(0, 8)}...)` : ''}`);
       return this.accessToken;
     } catch (error) {
       console.error('[GraphClient] Authentication failed:', error);
