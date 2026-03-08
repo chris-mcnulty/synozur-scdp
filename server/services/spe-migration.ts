@@ -214,6 +214,130 @@ export class SpeMigrationService {
     }
   }
 
+  async getStorageInventory(tenantId: string): Promise<{
+    totalFiles: number;
+    totalSize: number;
+    byDocumentType: Record<string, number>;
+    files: Array<{ fileName: string; documentType: string; size: number; path: string }>;
+  }> {
+    const files = await this.listSourceFiles(tenantId);
+    const inventory: Array<{ fileName: string; documentType: string; size: number; path: string }> = [];
+    let totalSize = 0;
+    const byDocumentType: Record<string, number> = {};
+
+    for (const file of files) {
+      let size = 0;
+      try {
+        if (!this.isProduction) {
+          const fs = await import('fs/promises');
+          const stat = await fs.stat(file.fullPath);
+          size = stat.size;
+        }
+      } catch {}
+
+      totalSize += size;
+      byDocumentType[file.documentType] = (byDocumentType[file.documentType] || 0) + 1;
+      inventory.push({
+        fileName: file.fileName,
+        documentType: file.documentType,
+        size,
+        path: file.filePath,
+      });
+    }
+
+    return {
+      totalFiles: files.length,
+      totalSize,
+      byDocumentType,
+      files: inventory,
+    };
+  }
+
+  async testContainerAccess(tenantId: string): Promise<{
+    success: boolean;
+    uploadOk: boolean;
+    downloadOk: boolean;
+    deleteOk: boolean;
+    error?: string;
+    details?: string;
+  }> {
+    const speConfig = await storage.getTenantSpeConfig(tenantId);
+    if (!speConfig) {
+      return { success: false, uploadOk: false, downloadOk: false, deleteOk: false, error: 'Tenant not found' };
+    }
+
+    const containerId = this.isProduction
+      ? speConfig.speContainerIdProd
+      : speConfig.speContainerIdDev;
+
+    if (!containerId) {
+      return { success: false, uploadOk: false, downloadOk: false, deleteOk: false, error: `No SPE container configured for ${this.isProduction ? 'production' : 'development'}` };
+    }
+
+    const testContent = `SPE test file - ${new Date().toISOString()} - tenant: ${tenantId}`;
+    const testBuffer = Buffer.from(testContent, 'utf-8');
+    const testFileName = `_spe_test_${Date.now()}.txt`;
+    let uploadOk = false;
+    let downloadOk = false;
+    let deleteOk = false;
+    let uploadedFileId = '';
+
+    try {
+      const stored = await this.sharePointStorage.storeFile(
+        testBuffer,
+        testFileName,
+        'text/plain',
+        {
+          documentType: 'report',
+          createdByUserId: 'spe-test',
+          metadataVersion: 1,
+          tags: 'spe-test,auto-cleanup',
+        },
+        'spe-test',
+        undefined,
+        tenantId
+      );
+      uploadOk = true;
+      uploadedFileId = stored.id;
+      console.log(`[SPE-Test] Upload OK: ${stored.id}`);
+    } catch (err) {
+      return {
+        success: false, uploadOk: false, downloadOk: false, deleteOk: false,
+        error: 'Upload test failed',
+        details: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    try {
+      const downloaded = await this.sharePointStorage.getFileContent(uploadedFileId, tenantId);
+      if (downloaded && downloaded.buffer) {
+        const downloadedText = downloaded.buffer.toString('utf-8');
+        downloadOk = downloadedText === testContent;
+        if (!downloadOk) {
+          console.warn(`[SPE-Test] Download content mismatch: expected ${testContent.length} bytes, got ${downloadedText.length}`);
+        }
+      }
+      console.log(`[SPE-Test] Download OK: content match = ${downloadOk}`);
+    } catch (err) {
+      console.error(`[SPE-Test] Download test failed:`, err instanceof Error ? err.message : err);
+    }
+
+    try {
+      deleteOk = await this.sharePointStorage.deleteFile(uploadedFileId, tenantId);
+      console.log(`[SPE-Test] Delete OK: ${deleteOk}`);
+    } catch (err) {
+      console.error(`[SPE-Test] Delete test failed:`, err instanceof Error ? err.message : err);
+    }
+
+    return {
+      success: uploadOk && downloadOk && deleteOk,
+      uploadOk,
+      downloadOk,
+      deleteOk,
+      details: `Test file: ${testFileName}`,
+    };
+  }
+
   private async listSourceFiles(tenantId: string): Promise<LocalFileEntry[]> {
     let files: LocalFileEntry[] = [];
 

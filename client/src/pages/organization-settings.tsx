@@ -637,6 +637,53 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const [inventoryData, setInventoryData] = useState<{
+    totalFiles: number;
+    totalSize: number;
+    byDocumentType: Record<string, number>;
+    files: Array<{ fileName: string; documentType: string; size: number; path: string }>;
+  } | null>(null);
+
+  const inventoryMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/storage-inventory`),
+    onSuccess: (data: any) => {
+      setInventoryData(data);
+      toast({ title: "Inventory complete", description: `Found ${data.totalFiles} file(s) in existing storage.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to scan storage", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    uploadOk: boolean;
+    downloadOk: boolean;
+    deleteOk: boolean;
+    error?: string;
+    details?: string;
+  } | null>(null);
+
+  const testUploadMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/spe/test-upload`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      setTestResult(data);
+      if (data.success) {
+        toast({ title: "Test passed", description: "Upload, download, and cleanup all succeeded." });
+      } else {
+        toast({ title: "Test failed", description: data.error || "One or more steps failed.", variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      setTestResult({ success: false, uploadOk: false, downloadOk: false, deleteOk: false, error: error.message });
+      toast({ title: "Test failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleSaveContainerIds = () => {
     updateConfigMutation.mutate({
       speContainerIdDev: devContainerId || undefined,
@@ -796,11 +843,114 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
           />
         </div>
 
+        {currentContainerId && (
+          <div className="border-t pt-3 space-y-3">
+            <p className="text-sm font-medium">Test Container Access</p>
+            <p className="text-xs text-muted-foreground">
+              Upload a test file to the SPE container, download it back, and clean up. This confirms files can be saved and retrieved correctly before going live.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setTestResult(null); testUploadMutation.mutate(); }}
+              disabled={testUploadMutation.isPending}
+            >
+              {testUploadMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+              {testUploadMutation.isPending ? "Testing..." : "Run Test Upload"}
+            </Button>
+            {testResult && (
+              <div className={`rounded-lg border p-3 text-sm space-y-1 ${testResult.success ? "bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
+                <div className="flex items-center gap-2 font-medium">
+                  {testResult.success ? (
+                    <><CheckCircle className="h-4 w-4 text-green-600" /> All tests passed</>
+                  ) : (
+                    <><AlertTriangle className="h-4 w-4 text-red-600" /> {testResult.error || "Some tests failed"}</>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs pt-1">
+                  <div className={`flex items-center gap-1 ${testResult.uploadOk ? "text-green-600" : "text-red-600"}`}>
+                    {testResult.uploadOk ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />} Upload
+                  </div>
+                  <div className={`flex items-center gap-1 ${testResult.downloadOk ? "text-green-600" : "text-red-600"}`}>
+                    {testResult.downloadOk ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />} Download
+                  </div>
+                  <div className={`flex items-center gap-1 ${testResult.deleteOk ? "text-green-600" : "text-red-600"}`}>
+                    {testResult.deleteOk ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />} Cleanup
+                  </div>
+                </div>
+                {testResult.details && <p className="text-xs text-muted-foreground">{testResult.details}</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isPlatformAdmin && (
+          <div className="border-t pt-3 space-y-3">
+            <p className="text-sm font-medium">Existing Storage Inventory</p>
+            <p className="text-xs text-muted-foreground">
+              Scan current storage (Replit Object Storage / local) to see what files exist before migrating. Files are not modified — this is read-only.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setInventoryData(null); inventoryMutation.mutate(); }}
+              disabled={inventoryMutation.isPending}
+            >
+              {inventoryMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Database className="h-3 w-3 mr-1" />}
+              {inventoryMutation.isPending ? "Scanning..." : "Scan Storage"}
+            </Button>
+            {inventoryData && (
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{inventoryData.totalFiles} file(s) found</span>
+                  {inventoryData.totalSize > 0 && (
+                    <span className="text-xs text-muted-foreground">{(inventoryData.totalSize / 1024 / 1024).toFixed(2)} MB total</span>
+                  )}
+                </div>
+                {Object.keys(inventoryData.byDocumentType).length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(inventoryData.byDocumentType).map(([type, count]) => (
+                      <Badge key={type} variant="secondary" className="text-xs">
+                        {type}: {count}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {inventoryData.files.length > 0 && inventoryData.files.length <= 50 && (
+                  <div className="max-h-40 overflow-y-auto border rounded-md">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50 sticky top-0">
+                        <tr>
+                          <th className="text-left p-1.5 font-medium">File</th>
+                          <th className="text-left p-1.5 font-medium">Type</th>
+                          {inventoryData.totalSize > 0 && <th className="text-right p-1.5 font-medium">Size</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inventoryData.files.map((f, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="p-1.5 font-mono truncate max-w-[200px]">{f.fileName}</td>
+                            <td className="p-1.5">{f.documentType}</td>
+                            {inventoryData.totalSize > 0 && <td className="p-1.5 text-right">{(f.size / 1024).toFixed(1)} KB</td>}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {inventoryData.files.length > 50 && (
+                  <p className="text-xs text-muted-foreground">Showing summary only — {inventoryData.files.length} files is too many to list individually.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {isPlatformAdmin && tenantSettings.speStorageEnabled && (
           <div className="border-t pt-3 space-y-2">
             <p className="text-sm font-medium">File Migration</p>
             <p className="text-xs text-muted-foreground">
-              Migrate existing files from Replit Object Storage to this tenant's SPE container.
+              Migrate existing files from Replit Object Storage to this tenant's SPE container. Originals are preserved — migration is additive only.
             </p>
             {tenantSettings.speMigrationStatus && (
               <div className="flex items-center gap-2">

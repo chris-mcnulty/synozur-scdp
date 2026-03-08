@@ -227,6 +227,71 @@ export function registerTenantStorageRoutes(
     }
   });
 
+  app.get("/api/admin/tenants/:id/storage-inventory", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only view storage inventory for your own organization" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const inventory = await speMigrationService.getStorageInventory(tenantId);
+
+      res.json({
+        tenantId,
+        tenantName: tenant.name,
+        environment: isProductionEnv ? 'production' : 'development',
+        ...inventory,
+      });
+    } catch (error) {
+      console.error("[SPE-Inventory] Error getting storage inventory:", error);
+      res.status(500).json({
+        message: "Failed to get storage inventory",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/api/admin/tenants/:id/spe/test-upload", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only test storage for your own organization" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      console.log(`[SPE-Test] Running test upload for tenant ${tenantId} (${tenant.name})`);
+      const result = await speMigrationService.testContainerAccess(tenantId);
+
+      res.json({
+        tenantId,
+        tenantName: tenant.name,
+        environment: isProductionEnv ? 'production' : 'development',
+        ...result,
+      });
+    } catch (error) {
+      console.error("[SPE-Test] Error running test upload:", error);
+      res.status(500).json({
+        message: "Failed to run test upload",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.get("/api/admin/tenants/:id/migration-status", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = req.params.id;
