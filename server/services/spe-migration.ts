@@ -214,18 +214,36 @@ export class SpeMigrationService {
     }
   }
 
-  async getStorageInventory(tenantId: string): Promise<{
+  async getStorageInventory(tenantId: string, includeUntagged: boolean = false): Promise<{
     totalFiles: number;
     totalSize: number;
+    untaggedFiles: number;
     byDocumentType: Record<string, number>;
-    files: Array<{ fileName: string; documentType: string; size: number; path: string }>;
+    files: Array<{ fileName: string; documentType: string; size: number; path: string; tagged: boolean }>;
   }> {
-    const files = await this.listSourceFiles(tenantId);
-    const inventory: Array<{ fileName: string; documentType: string; size: number; path: string }> = [];
+    let allFiles: LocalFileEntry[] = [];
+    if (this.isProduction) {
+      allFiles = await this.listObjectStorageFiles(tenantId);
+    } else {
+      allFiles = await this.listLocalFiles();
+    }
+
+    let untaggedCount = 0;
+    const inventory: Array<{ fileName: string; documentType: string; size: number; path: string; tagged: boolean }> = [];
     let totalSize = 0;
     const byDocumentType: Record<string, number> = {};
 
-    for (const file of files) {
+    for (const file of allFiles) {
+      const hasTenantTag = !!file.metadata?.tenantId;
+      const belongsToTenant = hasTenantTag && file.metadata.tenantId === tenantId;
+      const isUntagged = !hasTenantTag;
+
+      if (isUntagged) untaggedCount++;
+
+      if (!belongsToTenant && !(isUntagged && includeUntagged)) {
+        continue;
+      }
+
       let size = 0;
       try {
         if (!this.isProduction) {
@@ -242,12 +260,14 @@ export class SpeMigrationService {
         documentType: file.documentType,
         size,
         path: file.filePath,
+        tagged: hasTenantTag,
       });
     }
 
     return {
-      totalFiles: files.length,
+      totalFiles: inventory.length,
       totalSize,
+      untaggedFiles: untaggedCount,
       byDocumentType,
       files: inventory,
     };
@@ -349,12 +369,13 @@ export class SpeMigrationService {
       files.push(...localFiles);
     }
 
+    const beforeFilter = files.length;
     files = files.filter(f => {
-      if (!f.metadata?.tenantId) return true;
+      if (!f.metadata?.tenantId) return false;
       return f.metadata.tenantId === tenantId;
     });
 
-    console.log(`[SPE-Migration] After tenant filtering: ${files.length} files for tenant ${tenantId}`);
+    console.log(`[SPE-Migration] Tenant filter: ${beforeFilter} total → ${files.length} for tenant ${tenantId} (excluded ${beforeFilter - files.length} untagged/other-tenant files)`);
     return files;
   }
 

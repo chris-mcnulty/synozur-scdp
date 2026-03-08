@@ -242,12 +242,14 @@ export function registerTenantStorageRoutes(
         return res.status(404).json({ message: "Tenant not found" });
       }
 
-      const inventory = await speMigrationService.getStorageInventory(tenantId);
+      const includeUntagged = isPlatformAdmin && req.query.includeUntagged === 'true';
+      const inventory = await speMigrationService.getStorageInventory(tenantId, includeUntagged);
 
       res.json({
         tenantId,
         tenantName: tenant.name,
         environment: isProductionEnv ? 'production' : 'development',
+        includeUntagged,
         ...inventory,
       });
     } catch (error) {

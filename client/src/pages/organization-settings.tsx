@@ -637,16 +637,18 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const [includeUntagged, setIncludeUntagged] = useState(false);
   const [inventoryData, setInventoryData] = useState<{
     totalFiles: number;
     totalSize: number;
+    untaggedFiles: number;
     byDocumentType: Record<string, number>;
-    files: Array<{ fileName: string; documentType: string; size: number; path: string }>;
+    files: Array<{ fileName: string; documentType: string; size: number; path: string; tagged: boolean }>;
   } | null>(null);
 
   const inventoryMutation = useMutation({
     mutationFn: () =>
-      apiRequest(`/api/admin/tenants/${tenantSettings.id}/storage-inventory`),
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/storage-inventory${includeUntagged ? '?includeUntagged=true' : ''}`),
     onSuccess: (data: any) => {
       setInventoryData(data);
       toast({ title: "Inventory complete", description: `Found ${data.totalFiles} file(s) in existing storage.` });
@@ -890,15 +892,26 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
             <p className="text-xs text-muted-foreground">
               Scan current storage (Replit Object Storage / local) to see what files exist before migrating. Files are not modified — this is read-only.
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setInventoryData(null); inventoryMutation.mutate(); }}
-              disabled={inventoryMutation.isPending}
-            >
-              {inventoryMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Database className="h-3 w-3 mr-1" />}
-              {inventoryMutation.isPending ? "Scanning..." : "Scan Storage"}
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setInventoryData(null); inventoryMutation.mutate(); }}
+                disabled={inventoryMutation.isPending}
+              >
+                {inventoryMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Database className="h-3 w-3 mr-1" />}
+                {inventoryMutation.isPending ? "Scanning..." : "Scan Storage"}
+              </Button>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeUntagged}
+                  onChange={(e) => setIncludeUntagged(e.target.checked)}
+                  className="rounded border-muted-foreground"
+                />
+                Include untagged files
+              </label>
+            </div>
             {inventoryData && (
               <div className="rounded-lg border p-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -907,6 +920,11 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                     <span className="text-xs text-muted-foreground">{(inventoryData.totalSize / 1024 / 1024).toFixed(2)} MB total</span>
                   )}
                 </div>
+                {inventoryData.untaggedFiles > 0 && (
+                  <p className="text-xs text-orange-600 dark:text-orange-400">
+                    {inventoryData.untaggedFiles} file(s) have no tenant tag. {!includeUntagged ? "Check \"Include untagged files\" and re-scan to see them." : "Shown below — these need tenant tags before migration."}
+                  </p>
+                )}
                 {Object.keys(inventoryData.byDocumentType).length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(inventoryData.byDocumentType).map(([type, count]) => (
@@ -923,6 +941,7 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                         <tr>
                           <th className="text-left p-1.5 font-medium">File</th>
                           <th className="text-left p-1.5 font-medium">Type</th>
+                          <th className="text-left p-1.5 font-medium">Tagged</th>
                           {inventoryData.totalSize > 0 && <th className="text-right p-1.5 font-medium">Size</th>}
                         </tr>
                       </thead>
@@ -931,6 +950,7 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                           <tr key={i} className="border-t">
                             <td className="p-1.5 font-mono truncate max-w-[200px]">{f.fileName}</td>
                             <td className="p-1.5">{f.documentType}</td>
+                            <td className="p-1.5">{f.tagged ? <CheckCircle className="h-3 w-3 text-green-600" /> : <AlertTriangle className="h-3 w-3 text-orange-500" />}</td>
                             {inventoryData.totalSize > 0 && <td className="p-1.5 text-right">{(f.size / 1024).toFixed(1)} KB</td>}
                           </tr>
                         ))}
