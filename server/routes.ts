@@ -22,6 +22,8 @@ import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./rou
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
+import { invalidateProviderCache, ReplitAIProvider, AzureOpenAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
+import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO, insertAiConfigurationSchema } from "@shared/schema";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -1509,7 +1511,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           const result = await aiService.customPrompt(
             "You summarize software release notes into friendly, non-technical overviews for business users. Return valid JSON only.",
             `Summarize these release notes from the last two weeks into a friendly, non-technical overview. Combine all versions into a single cohesive summary. Group into 3-5 highlights with emoji icons. Format as JSON: { "summary": "brief overview sentence", "highlights": [{ "icon": "emoji", "title": "short title", "description": "1-2 sentence description" }] }\n\nRelease notes:\n${relevantSection}`,
-            { temperature: 0.5, maxTokens: 1024, responseFormat: "json", groundingContext: clGroundingCtx }
+            { temperature: 0.5, maxTokens: 1024, responseFormat: "json", groundingContext: clGroundingCtx, usageCtx: { tenantId: clTenantId, userId: (req.user as any)?.id, feature: 'other' as any } }
           );
 
           if (result.content && result.content.trim()) {
@@ -3991,6 +3993,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         temperature: 0.6,
         maxTokens: maxTokensByStyle[reportStyle] || 4096,
         groundingContext: srGroundingCtx,
+        usageCtx: { tenantId: srTenantId, userId: (req.user as any)?.id, feature: 'status_report' as any },
       });
 
       res.json({
@@ -7742,6 +7745,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           temperature: 0.6,
           maxTokens: maxTokensByStyle[reportStyle] || 8192,
           groundingContext: groundingCtx,
+          usageCtx: { tenantId: pptxTenantId, userId: (req.user as any)?.id, feature: 'pptx_report' as any },
         });
         aiReport = result.content;
         console.log(`[PPTX] AI report generated: ${aiReport.length} chars, first 200: ${aiReport.substring(0, 200)}`);
@@ -10401,10 +10405,11 @@ SUPPORT TICKET SUGGESTION:
 
 IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.`;
 
+      const helpTenantId = (req.user as any)?.tenantId;
       const result = await aiService.customPrompt(
         systemPrompt,
         validated.message,
-        { temperature: 0.3, maxTokens: 2500, responseFormat: 'json' }
+        { temperature: 0.3, maxTokens: 2500, responseFormat: 'json', usageCtx: { tenantId: helpTenantId, userId: (req.user as any)?.id, feature: 'help_chat' as any } }
       );
 
       let parsed: any;
@@ -11533,9 +11538,11 @@ Return valid JSON in this exact format:
 ${trimmedNarrative}${existingNote}`;
 
       const { aiService } = await import('./services/ai-service.js');
+      const delTenantId = (req.user as any)?.tenantId;
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         responseFormat: 'json',
         maxTokens: 4096,
+        usageCtx: { tenantId: delTenantId, userId: (req.user as any)?.id, feature: 'deliverable_extraction' as any },
       });
 
       const parsed = JSON.parse(result.content);
@@ -11700,11 +11707,13 @@ Provide a JSON response with:
         return res.status(400).json({ message: "AI suggestions are available for risks and issues" });
       }
 
+      const raTenantId = (req.user as any)?.tenantId;
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
         maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
+        usageCtx: { tenantId: raTenantId, userId: (req.user as any)?.id, feature: 'raidd_analysis' as any },
       });
 
       if (!result.content || result.content.trim().length === 0) {
@@ -11783,6 +11792,7 @@ Only include fields relevant to each item type. Be specific and actionable.`;
         maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
+        usageCtx: { tenantId, userId: (req.user as any)?.id, feature: 'raidd_analysis' as any },
       });
 
       if (!result.content || result.content.trim().length === 0) {
@@ -11858,6 +11868,7 @@ Extract decisions broadly — look for statements about choices, directions, agr
         maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
+        usageCtx: { tenantId, userId: (req.user as any)?.id, feature: 'raidd_analysis' as any },
       });
 
       if (!result.content || result.content.trim().length === 0) {
@@ -11934,6 +11945,7 @@ Return a JSON response:
         maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
+        usageCtx: { tenantId, userId: (req.user as any)?.id, feature: 'raidd_analysis' as any },
       });
 
       if (!result.content || result.content.trim().length === 0) {
@@ -12635,6 +12647,152 @@ Return a JSON response:
     } catch (error: any) {
       console.error("Error syncing existing tickets:", error);
       return res.status(500).json({ error: "Failed to sync existing tickets", message: error?.message });
+    }
+  });
+
+  // ============================================================================
+  // AI Admin API Endpoints
+  // ============================================================================
+
+  app.get("/api/admin/ai-config", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const config = await storage.getAiConfiguration();
+      res.json(config || {
+        activeProvider: 'replit_ai',
+        activeModel: 'gpt-5',
+        enableStreaming: true,
+        maxTokensPerRequest: 4096,
+        monthlyTokenBudget: null,
+        providerConfig: null,
+      });
+    } catch (error: any) {
+      console.error("[AI_CONFIG] Error fetching AI configuration:", error);
+      res.status(500).json({ message: "Failed to fetch AI configuration" });
+    }
+  });
+
+  app.patch("/api/admin/ai-config", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const SUPPORTED_PROVIDERS = new Set([AI_PROVIDERS.REPLIT, AI_PROVIDERS.AZURE_OPENAI, AI_PROVIDERS.AZURE_FOUNDRY]);
+
+      if (req.body.activeProvider && !SUPPORTED_PROVIDERS.has(req.body.activeProvider)) {
+        return res.status(400).json({ message: `Unsupported provider: ${req.body.activeProvider}. Supported: ${[...SUPPORTED_PROVIDERS].join(', ')}` });
+      }
+      if (req.body.activeModel && req.body.activeProvider) {
+        const providerModels = AI_MODELS[req.body.activeProvider];
+        if (providerModels && !providerModels.includes(req.body.activeModel)) {
+          return res.status(400).json({ message: `Model '${req.body.activeModel}' is not supported by provider '${req.body.activeProvider}'` });
+        }
+      }
+
+      const allowedFields = ['activeProvider', 'activeModel', 'providerConfig', 'enableStreaming', 'maxTokensPerRequest', 'monthlyTokenBudget'];
+      const updates: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if (req.body[key] !== undefined) {
+          updates[key] = req.body[key];
+        }
+      }
+      updates.updatedBy = currentUser?.id || null;
+
+      const config = await storage.updateAiConfiguration(updates);
+      invalidateProviderCache();
+      console.log(`[AI_CONFIG] Configuration updated by ${currentUser?.email || currentUser?.id}: provider=${config.activeProvider}, model=${config.activeModel}`);
+      res.json(config);
+    } catch (error: any) {
+      console.error("[AI_CONFIG] Error updating AI configuration:", error);
+      res.status(500).json({ message: "Failed to update AI configuration" });
+    }
+  });
+
+  app.get("/api/admin/ai-config/options", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const replitProvider = new ReplitAIProvider();
+      const azureProvider = new AzureOpenAIProvider();
+      const foundryProvider = new AzureFoundryProvider();
+
+      const providerStatus: Record<string, { name: string; configured: boolean; displayName: string }> = {
+        [AI_PROVIDERS.REPLIT]: { name: AI_PROVIDERS.REPLIT, configured: replitProvider.isConfigured(), displayName: 'Replit AI (OpenAI)' },
+        [AI_PROVIDERS.AZURE_OPENAI]: { name: AI_PROVIDERS.AZURE_OPENAI, configured: azureProvider.isConfigured(), displayName: 'Azure OpenAI' },
+        [AI_PROVIDERS.AZURE_FOUNDRY]: { name: AI_PROVIDERS.AZURE_FOUNDRY, configured: foundryProvider.isConfigured(), displayName: 'Azure AI Foundry' },
+      };
+
+      res.json({
+        providers: providerStatus,
+        models: AI_MODELS,
+        modelInfo: AI_MODEL_INFO,
+        features: AI_FEATURES,
+      });
+    } catch (error: any) {
+      console.error("[AI_CONFIG] Error fetching AI options:", error);
+      res.status(500).json({ message: "Failed to fetch AI configuration options" });
+    }
+  });
+
+  app.get("/api/admin/ai-usage", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const tenantId = req.query.tenantId as string | undefined;
+
+      const stats = await storage.getAiUsageStats({
+        tenantId,
+        startDate: thirtyDaysAgo,
+        endDate: now,
+        limit: 50,
+      });
+
+      res.json({
+        period: { start: thirtyDaysAgo.toISOString(), end: now.toISOString() },
+        totalRequests: stats.totalRequests,
+        totalTokens: stats.totalTokens,
+        totalCostMicrodollars: stats.totalCostMicrodollars,
+        totalCostDollars: stats.totalCostMicrodollars / 1_000_000,
+        byModel: stats.byModel,
+        byFeature: stats.byFeature,
+        dailyUsage: stats.dailyUsage,
+        recentLogs: stats.logs,
+      });
+    } catch (error: any) {
+      console.error("[AI_USAGE] Error fetching AI usage stats:", error);
+      res.status(500).json({ message: "Failed to fetch AI usage statistics" });
+    }
+  });
+
+  app.get("/api/admin/ai-usage/detailed", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const tenantId = req.query.tenantId as string | undefined;
+      const feature = req.query.feature as string | undefined;
+      const provider = req.query.provider as string | undefined;
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+
+      const stats = await storage.getAiUsageStats({
+        tenantId,
+        feature,
+        provider,
+        startDate,
+        endDate,
+        limit,
+        offset,
+      });
+
+      res.json({
+        logs: stats.logs,
+        totalRequests: stats.totalRequests,
+        totalTokens: stats.totalTokens,
+        totalCostMicrodollars: stats.totalCostMicrodollars,
+        totalCostDollars: stats.totalCostMicrodollars / 1_000_000,
+        byModel: stats.byModel,
+        byFeature: stats.byFeature,
+        pagination: { limit, offset, total: stats.totalRequests },
+      });
+    } catch (error: any) {
+      console.error("[AI_USAGE] Error fetching detailed AI usage:", error);
+      res.status(500).json({ message: "Failed to fetch detailed AI usage" });
     }
   });
 

@@ -1,6 +1,8 @@
-import { getAIProvider, ChatMessage, ChatCompletionResult } from './ai-provider.js';
+import { getAIProvider, getAIProviderAsync, ChatMessage, ChatCompletionResult } from './ai-provider.js';
 import type { GroundingDocument, GroundingDocCategory } from '@shared/schema';
-import { GROUNDING_DOC_CATEGORY_LABELS } from '@shared/schema';
+import { GROUNDING_DOC_CATEGORY_LABELS, type AIFeature, AI_FEATURES } from '@shared/schema';
+import { calculateEstimatedCost } from './ai-pricing.js';
+import { storage } from '../storage.js';
 
 export type GroundingFeature = 'estimate_narrative' | 'estimate_generation' | 'invoice_narrative' | 'status_report' | 'sub_sow' | 'changelog' | 'general';
 
@@ -47,6 +49,52 @@ export function buildGroundingContext(docs: GroundingDocument[], feature?: Groun
   if (sections.length === 0) return '';
 
   return `\n\n## Grounding Knowledge Base\nThe following knowledge documents provide context and guidelines. Use them to inform your response style, methodology, and domain knowledge.\n\n${sections.join('\n\n')}`;
+}
+
+export interface AiUsageContext {
+  tenantId?: string;
+  userId?: string;
+  feature: AIFeature;
+}
+
+export async function logAiUsage(
+  context: AiUsageContext,
+  provider: { getProviderName(): string; getProviderModel(): string },
+  result: ChatCompletionResult | null,
+  latencyMs: number,
+  error?: Error
+): Promise<void> {
+  try {
+    const providerNameMap: Record<string, string> = {
+      'Replit AI (OpenAI)': 'replit_ai',
+      'Azure OpenAI': 'azure_openai',
+      'Azure AI Foundry': 'azure_foundry',
+    };
+    const providerKey = providerNameMap[provider.getProviderName()] || provider.getProviderName();
+    const model = provider.getProviderModel();
+
+    const promptTokens = result?.promptTokens ?? 0;
+    const completionTokens = result?.completionTokens ?? 0;
+    const totalTokens = result?.totalTokens ?? 0;
+    const estimatedCost = calculateEstimatedCost(model, promptTokens, completionTokens, providerKey);
+
+    await storage.createAiUsageLog({
+      tenantId: context.tenantId || null,
+      userId: context.userId || null,
+      provider: providerKey,
+      model,
+      feature: context.feature,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      estimatedCostMicrodollars: estimatedCost,
+      latencyMs,
+      errorCode: error ? 'ERROR' : null,
+      errorMessage: error?.message?.substring(0, 500) || null,
+    });
+  } catch (logError) {
+    console.error('[AI_USAGE] Failed to log AI usage (non-blocking):', logError);
+  }
 }
 
 export interface EstimateGenerationInput {
@@ -319,8 +367,8 @@ Use markdown formatting with headers and bullet points for clarity.`
     return getAIProvider().getProviderName();
   }
 
-  async generateEstimateDraft(input: EstimateGenerationInput): Promise<EstimateLineItemSuggestion[]> {
-    const provider = getAIProvider();
+  async generateEstimateDraft(input: EstimateGenerationInput, usageCtx?: AiUsageContext): Promise<EstimateLineItemSuggestion[]> {
+    const provider = await getAIProviderAsync();
 
     const userMessage = `Generate an estimate for the following project:
 
@@ -336,11 +384,19 @@ Provide a comprehensive work breakdown with realistic hour estimates. Return as 
       { role: 'user', content: userMessage }
     ];
 
-    const result = await provider.chatCompletion({
-      messages,
-      maxTokens: 4096,
-      responseFormat: 'json'
-    });
+    const startTime = Date.now();
+    let result: ChatCompletionResult;
+    try {
+      result = await provider.chatCompletion({
+        messages,
+        maxTokens: 4096,
+        responseFormat: 'json'
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.ESTIMATE_GENERATION }, provider, result, Date.now() - startTime);
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.ESTIMATE_GENERATION }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
 
     try {
       const parsed = JSON.parse(result.content);
@@ -351,8 +407,8 @@ Provide a comprehensive work breakdown with realistic hour estimates. Return as 
     }
   }
 
-  async generateEstimateFromNarrative(input: EstimateGenerationInput): Promise<GeneratedEstimateStructure> {
-    const provider = getAIProvider();
+  async generateEstimateFromNarrative(input: EstimateGenerationInput, usageCtx?: AiUsageContext): Promise<GeneratedEstimateStructure> {
+    const provider = await getAIProviderAsync();
 
     const narrativeContent = input.narrativeText || input.projectDescription;
     const truncatedNarrative = narrativeContent.substring(0, 100000);
@@ -384,12 +440,20 @@ Generate a complete hierarchical estimate structure with epics, stages, and line
       { role: 'user', content: userMessage }
     ];
 
-    const result = await provider.chatCompletion({
-      messages,
-      maxTokens: 16384,
-      temperature: 0.4,
-      responseFormat: 'json'
-    });
+    const startTime = Date.now();
+    let result: ChatCompletionResult;
+    try {
+      result = await provider.chatCompletion({
+        messages,
+        maxTokens: 16384,
+        temperature: 0.4,
+        responseFormat: 'json'
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.ESTIMATE_FROM_NARRATIVE }, provider, result, Date.now() - startTime);
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.ESTIMATE_FROM_NARRATIVE }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
 
     try {
       const parsed = JSON.parse(result.content);
@@ -455,8 +519,8 @@ Generate a complete hierarchical estimate structure with epics, stages, and line
     }
   }
 
-  async naturalLanguageReport(input: NaturalLanguageReportInput): Promise<string> {
-    const provider = getAIProvider();
+  async naturalLanguageReport(input: NaturalLanguageReportInput, usageCtx?: AiUsageContext): Promise<string> {
+    const provider = await getAIProviderAsync();
 
     const userMessage = `User Query: ${input.query}
 
@@ -471,17 +535,23 @@ Please provide a helpful response to the user's query based on the available con
       { role: 'user', content: userMessage }
     ];
 
-    const result = await provider.chatCompletion({
-      messages,
-      temperature: 0.5,
-      maxTokens: 2048
-    });
-
-    return result.content;
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        temperature: 0.5,
+        maxTokens: 2048
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.REPORT_QUERY }, provider, result, Date.now() - startTime);
+      return result.content;
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.REPORT_QUERY }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
   }
 
-  async generateInvoiceNarrative(input: InvoiceNarrativeInput, groundingContext?: string): Promise<string> {
-    const provider = getAIProvider();
+  async generateInvoiceNarrative(input: InvoiceNarrativeInput, groundingContext?: string, usageCtx?: AiUsageContext): Promise<string> {
+    const provider = await getAIProviderAsync();
 
     const lineItemsSummary = input.lineItems.map(item => 
       `- ${item.description}${item.hours ? ` (${item.hours} hours)` : ''}: $${item.amount.toFixed(2)}`
@@ -506,17 +576,23 @@ Write a professional narrative suitable for the invoice.`;
       { role: 'user', content: userMessage }
     ];
 
-    const result = await provider.chatCompletion({
-      messages,
-      temperature: 0.6,
-      maxTokens: 1024
-    });
-
-    return result.content;
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        temperature: 0.6,
+        maxTokens: 1024
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.INVOICE_NARRATIVE }, provider, result, Date.now() - startTime);
+      return result.content;
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.INVOICE_NARRATIVE }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
   }
 
-  async generateEstimateNarrative(input: EstimateNarrativeInput, groundingContext?: string): Promise<string> {
-    const provider = getAIProvider();
+  async generateEstimateNarrative(input: EstimateNarrativeInput, groundingContext?: string, usageCtx?: AiUsageContext): Promise<string> {
+    const provider = await getAIProviderAsync();
 
     // Extract assumptions from all line item comments
     const assumptionPatterns = [
@@ -660,16 +736,22 @@ Please generate a professional proposal narrative that addresses all six key cli
       { role: 'user', content: userMessage }
     ];
 
-    const result = await provider.chatCompletion({
-      messages,
-      maxTokens: 16384
-    });
-
-    return result.content;
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        maxTokens: 16384
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.ESTIMATE_NARRATIVE }, provider, result, Date.now() - startTime);
+      return result.content;
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.ESTIMATE_NARRATIVE }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
   }
 
-  async generateSubSOWNarrative(input: SubSOWNarrativeInput, groundingContext?: string): Promise<string> {
-    const provider = getAIProvider();
+  async generateSubSOWNarrative(input: SubSOWNarrativeInput, groundingContext?: string, usageCtx?: AiUsageContext): Promise<string> {
+    const provider = await getAIProviderAsync();
 
     // Group assignments by epic
     const epicGroups = new Map<string, typeof input.assignments>();
@@ -729,35 +811,49 @@ Please generate a professional Sub-SOW narrative suitable for inclusion in a sub
       { role: 'user', content: userMessage }
     ];
 
-    const result = await provider.chatCompletion({
-      messages,
-      maxTokens: 16384
-    });
-
-    return result.content;
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        maxTokens: 16384
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.SUB_SOW_NARRATIVE }, provider, result, Date.now() - startTime);
+      return result.content;
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.SUB_SOW_NARRATIVE }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
   }
 
-  async chat(userMessage: string, context?: string): Promise<ChatCompletionResult> {
-    const provider = getAIProvider();
+  async chat(userMessage: string, context?: string, usageCtx?: AiUsageContext): Promise<ChatCompletionResult> {
+    const provider = await getAIProviderAsync();
 
     const messages: ChatMessage[] = [
       { role: 'system', content: this.systemPrompts.general + (context ? `\n\nContext:\n${context}` : '') },
       { role: 'user', content: userMessage }
     ];
 
-    return provider.chatCompletion({
-      messages,
-      temperature: 0.7,
-      maxTokens: 2048
-    });
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        temperature: 0.7,
+        maxTokens: 2048
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.HELP_CHAT }, provider, result, Date.now() - startTime);
+      return result;
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.HELP_CHAT }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
   }
 
   async customPrompt(
     systemPrompt: string,
     userMessage: string,
-    options?: { temperature?: number; maxTokens?: number; responseFormat?: 'text' | 'json'; groundingContext?: string }
+    options?: { temperature?: number; maxTokens?: number; responseFormat?: 'text' | 'json'; groundingContext?: string; usageCtx?: AiUsageContext }
   ): Promise<ChatCompletionResult> {
-    const provider = getAIProvider();
+    const provider = await getAIProviderAsync();
 
     const systemContent = systemPrompt + (options?.groundingContext || '');
     const messages: ChatMessage[] = [
@@ -765,11 +861,19 @@ Please generate a professional Sub-SOW narrative suitable for inclusion in a sub
       { role: 'user', content: userMessage }
     ];
 
-    return provider.chatCompletion({
-      messages,
-      maxTokens: options?.maxTokens ?? 2048,
-      responseFormat: options?.responseFormat
-    });
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        maxTokens: options?.maxTokens ?? 2048,
+        responseFormat: options?.responseFormat
+      });
+      logAiUsage(options?.usageCtx || { feature: AI_FEATURES.CUSTOM }, provider, result, Date.now() - startTime);
+      return result;
+    } catch (error: any) {
+      logAiUsage(options?.usageCtx || { feature: AI_FEATURES.CUSTOM }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
   }
 }
 

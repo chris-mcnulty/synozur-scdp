@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import { db } from "../db.js";
+import { aiConfiguration } from "@shared/schema";
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -23,15 +25,15 @@ export interface IAIProvider {
   chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult>;
   isConfigured(): boolean;
   getProviderName(): string;
+  getProviderModel(): string;
 }
 
-// Replit AI Integrations provider using OpenAI SDK
-// This uses Replit's AI Integrations service, which provides OpenAI-compatible API access
-// without requiring your own API key - charges are billed to your Replit credits
 export class ReplitAIProvider implements IAIProvider {
   private client: OpenAI | null = null;
+  private model: string;
 
-  constructor() {
+  constructor(model?: string) {
+    this.model = model || 'gpt-5';
     if (this.isConfigured()) {
       this.client = new OpenAI({
         baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
@@ -49,6 +51,10 @@ export class ReplitAIProvider implements IAIProvider {
     return 'Replit AI (OpenAI)';
   }
 
+  getProviderModel(): string {
+    return this.model;
+  }
+
   async chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
     if (!this.client) {
       console.error('[AI_PROVIDER] Replit AI not configured. BASE_URL:', !!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL, 'API_KEY:', !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY);
@@ -57,7 +63,7 @@ export class ReplitAIProvider implements IAIProvider {
 
     const maxTokens = params.maxTokens ?? 4096;
     const requestParams: OpenAI.ChatCompletionCreateParams = {
-      model: "gpt-5",
+      model: this.model,
       messages: params.messages.map(m => ({
         role: m.role,
         content: m.content,
@@ -102,7 +108,6 @@ export class ReplitAIProvider implements IAIProvider {
   }
 }
 
-// Azure OpenAI provider (for users who want to use their own Azure OpenAI deployment)
 export class AzureOpenAIProvider implements IAIProvider {
   private endpoint: string;
   private apiKey: string;
@@ -122,6 +127,10 @@ export class AzureOpenAIProvider implements IAIProvider {
 
   getProviderName(): string {
     return 'Azure OpenAI';
+  }
+
+  getProviderModel(): string {
+    return this.deployment;
   }
 
   async chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
@@ -166,24 +175,143 @@ export class AzureOpenAIProvider implements IAIProvider {
   }
 }
 
-export type AIProviderType = 'replit' | 'azure' | 'openai' | 'anthropic';
+export class AzureFoundryProvider implements IAIProvider {
+  private client: OpenAI | null = null;
+  private deployment: string;
 
-export function createAIProvider(type?: AIProviderType): IAIProvider {
+  constructor(deployment?: string) {
+    this.deployment = deployment || process.env.AZURE_FOUNDRY_DEPLOYMENT || 'gpt-4o';
+    if (this.isConfigured()) {
+      this.client = new OpenAI({
+        baseURL: process.env.AZURE_FOUNDRY_OPENAI_ENDPOINT,
+        apiKey: process.env.AZURE_FOUNDRY_API_KEY,
+        defaultHeaders: {
+          'api-key': process.env.AZURE_FOUNDRY_API_KEY || '',
+        },
+        timeout: 120000,
+      });
+    }
+  }
+
+  isConfigured(): boolean {
+    return !!(process.env.AZURE_FOUNDRY_OPENAI_ENDPOINT && process.env.AZURE_FOUNDRY_API_KEY);
+  }
+
+  getProviderName(): string {
+    return 'Azure AI Foundry';
+  }
+
+  getProviderModel(): string {
+    return this.deployment;
+  }
+
+  async chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
+    if (!this.client) {
+      console.error('[AI_PROVIDER] Azure Foundry not configured. ENDPOINT:', !!process.env.AZURE_FOUNDRY_OPENAI_ENDPOINT, 'API_KEY:', !!process.env.AZURE_FOUNDRY_API_KEY);
+      throw new Error('Azure AI Foundry is not configured. Please set AZURE_FOUNDRY_OPENAI_ENDPOINT and AZURE_FOUNDRY_API_KEY environment variables.');
+    }
+
+    const maxTokens = params.maxTokens ?? 4096;
+    const requestParams: OpenAI.ChatCompletionCreateParams = {
+      model: this.deployment,
+      messages: params.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
+      max_completion_tokens: maxTokens,
+    };
+
+    if (params.responseFormat === 'json') {
+      requestParams.response_format = { type: 'json_object' };
+    }
+
+    const totalInputChars = params.messages.reduce((sum, m) => sum + m.content.length, 0);
+    console.log(`[AI_PROVIDER] [Foundry] Starting request: model=${this.deployment}, ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${maxTokens}`);
+    const startTime = Date.now();
+
+    try {
+      const response = await this.client.chat.completions.create(requestParams);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      const content = response.choices?.[0]?.message?.content || '';
+      const finishReason = response.choices?.[0]?.finish_reason || 'unknown';
+      console.log(`[AI_PROVIDER] [Foundry] Request completed in ${duration}s, tokens: ${response.usage?.total_tokens || 0}, finish_reason: ${finishReason}, output_chars: ${content.length}`);
+
+      if (!content) {
+        console.error(`[AI_PROVIDER] [Foundry] Empty response. finish_reason: ${finishReason}, choices: ${JSON.stringify(response.choices)}`);
+        throw new Error(`AI returned an empty response (finish_reason: ${finishReason}). The request may have been too large. Try a smaller estimate or try again.`);
+      }
+
+      return {
+        content,
+        totalTokens: response.usage?.total_tokens || 0,
+        promptTokens: response.usage?.prompt_tokens || 0,
+        completionTokens: response.usage?.completion_tokens || 0,
+      };
+    } catch (error: any) {
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.error(`[AI_PROVIDER] [Foundry] Error after ${duration}s:`, error.message);
+      if (error.message?.includes('AI returned an empty response')) {
+        throw error;
+      }
+      throw new Error(`Azure Foundry AI request failed after ${duration}s: ${error.message}`);
+    }
+  }
+}
+
+export type AIProviderType = 'replit' | 'azure' | 'foundry' | 'openai' | 'anthropic';
+
+let cachedConfig: { provider: string; model: string; fetchedAt: number } | null = null;
+const CONFIG_CACHE_TTL_MS = 60_000;
+
+async function getConfigFromDb(): Promise<{ provider: string; model: string } | null> {
+  try {
+    if (cachedConfig && (Date.now() - cachedConfig.fetchedAt) < CONFIG_CACHE_TTL_MS) {
+      return { provider: cachedConfig.provider, model: cachedConfig.model };
+    }
+    const rows = await db.select().from(aiConfiguration).limit(1);
+    if (rows.length > 0) {
+      const config = rows[0];
+      cachedConfig = {
+        provider: config.activeProvider,
+        model: config.activeModel,
+        fetchedAt: Date.now(),
+      };
+      return { provider: config.activeProvider, model: config.activeModel };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function invalidateProviderCache(): void {
+  cachedConfig = null;
+  defaultProvider = null;
+}
+
+export function createAIProvider(type?: AIProviderType, model?: string): IAIProvider {
   const providerType = type || (process.env.AI_PROVIDER as AIProviderType);
 
-  // If explicit provider type specified, use it
   if (providerType === 'azure') {
     return new AzureOpenAIProvider();
   }
-  
-  if (providerType === 'replit') {
-    return new ReplitAIProvider();
+
+  if (providerType === 'foundry') {
+    return new AzureFoundryProvider(model);
   }
 
-  // Auto-detect: prefer Replit AI Integrations if configured, then Azure
-  const replitProvider = new ReplitAIProvider();
+  if (providerType === 'replit') {
+    return new ReplitAIProvider(model);
+  }
+
+  const replitProvider = new ReplitAIProvider(model);
   if (replitProvider.isConfigured()) {
     return replitProvider;
+  }
+
+  const foundryProvider = new AzureFoundryProvider(model);
+  if (foundryProvider.isConfigured()) {
+    return foundryProvider;
   }
 
   const azureProvider = new AzureOpenAIProvider();
@@ -191,8 +319,18 @@ export function createAIProvider(type?: AIProviderType): IAIProvider {
     return azureProvider;
   }
 
-  // Default to Replit provider (will show not configured error if used)
   return replitProvider;
+}
+
+function mapProviderNameToType(providerName: string): AIProviderType | undefined {
+  const mapping: Record<string, AIProviderType> = {
+    'replit_ai': 'replit',
+    'azure_openai': 'azure',
+    'azure_foundry': 'foundry',
+    'openai': 'openai',
+    'anthropic': 'anthropic',
+  };
+  return mapping[providerName];
 }
 
 let defaultProvider: IAIProvider | null = null;
@@ -202,4 +340,19 @@ export function getAIProvider(): IAIProvider {
     defaultProvider = createAIProvider();
   }
   return defaultProvider;
+}
+
+export async function getAIProviderAsync(): Promise<IAIProvider> {
+  const config = await getConfigFromDb();
+  if (config) {
+    const providerType = mapProviderNameToType(config.provider);
+    if (providerType) {
+      const provider = createAIProvider(providerType, config.model);
+      if (provider.isConfigured()) {
+        return provider;
+      }
+      console.warn(`[AI_PROVIDER] Config-driven provider '${config.provider}' is not configured, falling back to auto-detect`);
+    }
+  }
+  return getAIProvider();
 }

@@ -2989,6 +2989,164 @@ export const insertDeliverableStatusHistorySchema = createInsertSchema(deliverab
 export type InsertDeliverableStatusHistory = z.infer<typeof insertDeliverableStatusHistorySchema>;
 export type DeliverableStatusHistory = typeof deliverableStatusHistory.$inferSelect;
 
+// ============================================================================
+// AI MODEL MANAGEMENT & USAGE TRACKING (Following Vega Pattern)
+// ============================================================================
+
+export const AI_PROVIDERS = {
+  REPLIT: 'replit_ai',
+  AZURE_OPENAI: 'azure_openai',
+  AZURE_FOUNDRY: 'azure_foundry',
+  OPENAI: 'openai',
+  ANTHROPIC: 'anthropic',
+} as const;
+
+export type AIProvider = typeof AI_PROVIDERS[keyof typeof AI_PROVIDERS];
+
+export const AI_FEATURES = {
+  ESTIMATE_GENERATION: 'estimate_generation',
+  ESTIMATE_NARRATIVE: 'estimate_narrative',
+  ESTIMATE_FROM_NARRATIVE: 'estimate_from_narrative',
+  INVOICE_NARRATIVE: 'invoice_narrative',
+  STATUS_REPORT: 'status_report',
+  PPTX_REPORT: 'pptx_report',
+  DELIVERABLE_EXTRACTION: 'deliverable_extraction',
+  HELP_CHAT: 'help_chat',
+  REPORT_QUERY: 'report_query',
+  RAIDD_ANALYSIS: 'raidd_analysis',
+  SUB_SOW_NARRATIVE: 'sub_sow_narrative',
+  CUSTOM: 'custom',
+  OTHER: 'other',
+} as const;
+
+export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
+
+export const AI_MODELS: Record<string, readonly string[]> = {
+  replit_ai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4', 'claude-opus-4'],
+  azure_openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4'],
+  azure_foundry: ['gpt-4o', 'gpt-4o-mini', 'gpt-5'],
+  openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+  anthropic: ['claude-sonnet-4', 'claude-opus-4', 'claude-3.5-sonnet', 'claude-3-haiku'],
+} as const;
+
+export const AI_MODEL_INFO: Record<string, {
+  name: string;
+  description: string;
+  costTier: 'free' | 'low' | 'medium' | 'high';
+  providers: string[];
+  contextWindow: number;
+  costPer1kPrompt: number;
+  costPer1kCompletion: number;
+}> = {
+  'gpt-5': { name: 'GPT-5', description: 'Most capable OpenAI model', costTier: 'high', providers: ['replit_ai', 'openai', 'azure_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015 },
+  'gpt-4o': { name: 'GPT-4o', description: 'Fast multimodal model', costTier: 'medium', providers: ['replit_ai', 'openai', 'azure_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.0025, costPer1kCompletion: 0.01 },
+  'gpt-4o-mini': { name: 'GPT-4o Mini', description: 'Cost-effective for simple tasks', costTier: 'low', providers: ['replit_ai', 'openai', 'azure_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.00015, costPer1kCompletion: 0.0006 },
+  'gpt-4-turbo': { name: 'GPT-4 Turbo', description: 'Enhanced GPT-4 with vision', costTier: 'medium', providers: ['openai', 'azure_openai'], contextWindow: 128000, costPer1kPrompt: 0.01, costPer1kCompletion: 0.03 },
+  'gpt-4': { name: 'GPT-4', description: 'Original GPT-4 model', costTier: 'medium', providers: ['openai', 'azure_openai'], contextWindow: 8192, costPer1kPrompt: 0.03, costPer1kCompletion: 0.06 },
+  'claude-sonnet-4': { name: 'Claude Sonnet 4', description: 'Fast balanced Anthropic model', costTier: 'medium', providers: ['replit_ai', 'anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
+  'claude-opus-4': { name: 'Claude Opus 4', description: 'Most capable Anthropic model', costTier: 'high', providers: ['replit_ai', 'anthropic'], contextWindow: 200000, costPer1kPrompt: 0.015, costPer1kCompletion: 0.075 },
+  'claude-3.5-sonnet': { name: 'Claude 3.5 Sonnet', description: 'Previous gen balanced model', costTier: 'medium', providers: ['anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
+  'claude-3-haiku': { name: 'Claude 3 Haiku', description: 'Fast and cost-effective', costTier: 'low', providers: ['anthropic'], contextWindow: 200000, costPer1kPrompt: 0.00025, costPer1kCompletion: 0.00125 },
+};
+
+export type AIProviderConfig = {
+  azureFoundryEndpoint?: string;
+  azureFoundryDeployment?: string;
+  azureOpenAIEndpoint?: string;
+  azureOpenAIDeployment?: string;
+  customEndpoint?: string;
+};
+
+export const aiConfiguration = pgTable("ai_configuration", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  activeProvider: text("active_provider").notNull().default('replit_ai'),
+  activeModel: text("active_model").notNull().default('gpt-5'),
+  providerConfig: jsonb("provider_config").$type<AIProviderConfig>(),
+  enableStreaming: boolean("enable_streaming").default(true),
+  maxTokensPerRequest: integer("max_tokens_per_request").default(4096),
+  monthlyTokenBudget: integer("monthly_token_budget"),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertAiConfigurationSchema = createInsertSchema(aiConfiguration).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAiConfiguration = z.infer<typeof insertAiConfigurationSchema>;
+export type AiConfiguration = typeof aiConfiguration.$inferSelect;
+
+export const aiUsageLogs = pgTable("ai_usage_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  modelVersion: text("model_version"),
+  deploymentName: text("deployment_name"),
+  feature: text("feature").notNull(),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  estimatedCostMicrodollars: integer("estimated_cost_microdollars"),
+  latencyMs: integer("latency_ms"),
+  wasStreaming: boolean("was_streaming").default(false),
+  requestId: text("request_id"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("idx_ai_usage_tenant").on(table.tenantId),
+  featureIdx: index("idx_ai_usage_feature").on(table.feature),
+  createdIdx: index("idx_ai_usage_created").on(table.createdAt),
+  providerIdx: index("idx_ai_usage_provider").on(table.provider),
+}));
+
+export const aiUsageLogsRelations = relations(aiUsageLogs, ({ one }) => ({
+  tenant: one(tenants, { fields: [aiUsageLogs.tenantId], references: [tenants.id] }),
+  user: one(users, { fields: [aiUsageLogs.userId], references: [users.id] }),
+}));
+
+export const insertAiUsageLogSchema = createInsertSchema(aiUsageLogs).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
+export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
+
+export const aiUsageSummaries = pgTable("ai_usage_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+  periodType: text("period_type").notNull(),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  totalRequests: integer("total_requests").notNull().default(0),
+  totalPromptTokens: integer("total_prompt_tokens").notNull().default(0),
+  totalCompletionTokens: integer("total_completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  totalCostMicrodollars: integer("total_cost_microdollars").notNull().default(0),
+  usageByModel: jsonb("usage_by_model").$type<Record<string, { requests: number; tokens: number; costMicrodollars: number }>>(),
+  usageByFeature: jsonb("usage_by_feature").$type<Record<string, { requests: number; tokens: number; costMicrodollars: number }>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("idx_ai_summary_tenant").on(table.tenantId),
+  periodIdx: index("idx_ai_summary_period").on(table.periodType, table.periodStart),
+}));
+
+export const aiUsageSummariesRelations = relations(aiUsageSummaries, ({ one }) => ({
+  tenant: one(tenants, { fields: [aiUsageSummaries.tenantId], references: [tenants.id] }),
+}));
+
+export const insertAiUsageSummarySchema = createInsertSchema(aiUsageSummaries).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertAiUsageSummary = z.infer<typeof insertAiUsageSummarySchema>;
+export type AiUsageSummary = typeof aiUsageSummaries.$inferSelect;
+
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
   default: DEFAULT_VOCABULARY,

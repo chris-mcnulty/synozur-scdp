@@ -45,7 +45,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Strategy**: Multi-tier with SharePoint Online (primary for business documents) and Replit Object Storage (for legacy data).
 
 ### Core Features
-- **AI Integration**: Uses Replit AI (OpenAI GPT-5 compatible) for estimate/invoice narrative generation and report queries.
+- **AI Integration**: Multi-provider AI with Replit AI (OpenAI GPT-5 compatible), Azure OpenAI, and Azure AI Foundry. Config-driven provider/model selection via `aiConfiguration` table with 60s cache. Usage logging to `aiUsageLogs` table with per-request cost tracking in microdollars. Admin UI at `/ai-settings` (platform admin only) for model configuration and usage analytics. Provider selection: `getAIProviderAsync()` reads from DB config, falls back to env-var auto-detection (Replit → Foundry → Azure OpenAI). Key files: `server/services/ai-provider.ts`, `server/services/ai-pricing.ts`, `server/services/ai-service.ts`. All AI calls log tenant, user, feature, tokens, cost, and latency.
 - **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence. Four estimate types: `detailed` (line items), `program` (week-based staffing blocks for >$1M programs), `block` (simple lump sum), and `retainer` (monthly hours). Estimate-level sharing via `estimate_shares` table allows PMs to grant read-only access to specific users; shared viewers see line items and Gantt but not cost rates or margin data. **Estimate from Narrative**: AI-powered feature that generates structured estimates (epics, stages, line items with roles/hours/rates) from pasted proposal/SOW text, guided by an `estimate_generation` grounding document managed through the Grounding Docs UI. UI component: `client/src/components/estimates/narrative-estimate-generator.tsx`. Endpoints: `POST /api/ai/generate-estimate-from-narrative` and `/apply`.
 - **Program Estimate Type**: Week-based staffing block estimates for large programs. Each block = role × duration weeks × utilization % (20/40/60/80/100 → 8–40 hrs/wk). Same epic/stage/workstream hierarchy and three-factor contingency system as detailed estimates. Two new nullable columns added to `estimate_line_items`: `duration_weeks` and `utilization_percent`. Includes a Gantt timeline view.
 - **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download. Auto-generated GL invoice numbers.
@@ -85,7 +85,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **PDF Generation**: Puppeteer.
 - **Document Storage**: Replit Object Storage, Microsoft SharePoint Online, Microsoft SharePoint Embedded.
 - **Email Notifications**: Outlook/Microsoft 365 via Microsoft Graph Client.
-- **AI Integration**: Replit AI (OpenAI GPT-5 compatible API), Azure OpenAI.
+- **AI Integration**: Replit AI (OpenAI GPT-5 compatible API), Azure OpenAI, Azure AI Foundry.
 - **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database.
 - **Airport Codes**: IATA 3-letter code database.
 - **Exchange Rates**: Open Exchange Rates API.

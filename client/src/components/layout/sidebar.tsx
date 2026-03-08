@@ -119,7 +119,7 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects", "/my-raidd"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
-  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
+  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
 
@@ -263,6 +263,7 @@ export function Sidebar() {
                 <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
                 <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />
                 <SidebarItem href="/ai-grounding" icon={<Brain />} label="AI Grounding" />
+                <SidebarItem href="/ai-settings" icon={<Brain />} label="AI Settings" requiredRoles={["admin"]} />
               </CollapsibleSection>
             )}
             

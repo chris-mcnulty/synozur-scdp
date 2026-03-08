@@ -63,7 +63,10 @@ import {
   crmObjectMappings, type CrmObjectMapping, type InsertCrmObjectMapping,
   crmSyncLog, type CrmSyncLog, type InsertCrmSyncLog,
   projectDeliverables, type ProjectDeliverable, type InsertProjectDeliverable,
-  deliverableStatusHistory, type DeliverableStatusHistory, type InsertDeliverableStatusHistory
+  deliverableStatusHistory, type DeliverableStatusHistory, type InsertDeliverableStatusHistory,
+  aiConfiguration, type AiConfiguration, type InsertAiConfiguration,
+  aiUsageLogs, type AiUsageLog, type InsertAiUsageLog,
+  aiUsageSummaries, type AiUsageSummary, type InsertAiUsageSummary
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1076,6 +1079,28 @@ export interface IStorage {
   deleteProjectDeliverable(id: string): Promise<void>;
   getDeliverableStatusHistory(deliverableId: string): Promise<(DeliverableStatusHistory & { changedByName?: string })[]>;
   createDeliverableStatusHistory(data: InsertDeliverableStatusHistory): Promise<DeliverableStatusHistory>;
+
+  // AI Configuration & Usage
+  getAiConfiguration(): Promise<AiConfiguration | undefined>;
+  updateAiConfiguration(config: Partial<InsertAiConfiguration>): Promise<AiConfiguration>;
+  createAiUsageLog(log: InsertAiUsageLog): Promise<AiUsageLog>;
+  getAiUsageStats(filters: {
+    tenantId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    feature?: string;
+    provider?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    logs: AiUsageLog[];
+    totalRequests: number;
+    totalTokens: number;
+    totalCostMicrodollars: number;
+    byModel: Record<string, { requests: number; tokens: number; cost: number }>;
+    byFeature: Record<string, { requests: number; tokens: number; cost: number }>;
+    dailyUsage: Array<{ date: string; requests: number; tokens: number; cost: number }>;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -11903,6 +11928,113 @@ export class DatabaseStorage implements IStorage {
   async createDeliverableStatusHistory(data: InsertDeliverableStatusHistory): Promise<DeliverableStatusHistory> {
     const [result] = await db.insert(deliverableStatusHistory).values(data).returning();
     return result;
+  }
+
+  // AI Configuration & Usage
+  async getAiConfiguration(): Promise<AiConfiguration | undefined> {
+    const rows = await db.select().from(aiConfiguration).limit(1);
+    return rows[0];
+  }
+
+  async updateAiConfiguration(config: Partial<InsertAiConfiguration>): Promise<AiConfiguration> {
+    const existing = await this.getAiConfiguration();
+    if (existing) {
+      const [updated] = await db.update(aiConfiguration)
+        .set({ ...config, updatedAt: new Date() })
+        .where(eq(aiConfiguration.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(aiConfiguration)
+      .values(config as InsertAiConfiguration)
+      .returning();
+    return created;
+  }
+
+  async createAiUsageLog(log: InsertAiUsageLog): Promise<AiUsageLog> {
+    const [result] = await db.insert(aiUsageLogs).values(log).returning();
+    return result;
+  }
+
+  async getAiUsageStats(filters: {
+    tenantId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    feature?: string;
+    provider?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    logs: AiUsageLog[];
+    totalRequests: number;
+    totalTokens: number;
+    totalCostMicrodollars: number;
+    byModel: Record<string, { requests: number; tokens: number; cost: number }>;
+    byFeature: Record<string, { requests: number; tokens: number; cost: number }>;
+    dailyUsage: Array<{ date: string; requests: number; tokens: number; cost: number }>;
+  }> {
+    const conditions: SQL[] = [];
+    if (filters.tenantId) conditions.push(eq(aiUsageLogs.tenantId, filters.tenantId));
+    if (filters.startDate) conditions.push(gte(aiUsageLogs.createdAt, filters.startDate));
+    if (filters.endDate) conditions.push(lte(aiUsageLogs.createdAt, filters.endDate));
+    if (filters.feature) conditions.push(eq(aiUsageLogs.feature, filters.feature));
+    if (filters.provider) conditions.push(eq(aiUsageLogs.provider, filters.provider));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const logs = await db.select().from(aiUsageLogs)
+      .where(whereClause)
+      .orderBy(desc(aiUsageLogs.createdAt))
+      .limit(filters.limit ?? 100)
+      .offset(filters.offset ?? 0);
+
+    const aggregateRows = await db.select({
+      totalRequests: sql<number>`count(*)::int`,
+      totalTokens: sql<number>`coalesce(sum(${aiUsageLogs.totalTokens}), 0)::int`,
+      totalCost: sql<number>`coalesce(sum(${aiUsageLogs.estimatedCostMicrodollars}), 0)::int`,
+    }).from(aiUsageLogs).where(whereClause);
+    const agg = aggregateRows[0] || { totalRequests: 0, totalTokens: 0, totalCost: 0 };
+
+    const modelRows = await db.select({
+      model: aiUsageLogs.model,
+      requests: sql<number>`count(*)::int`,
+      tokens: sql<number>`coalesce(sum(${aiUsageLogs.totalTokens}), 0)::int`,
+      cost: sql<number>`coalesce(sum(${aiUsageLogs.estimatedCostMicrodollars}), 0)::int`,
+    }).from(aiUsageLogs).where(whereClause).groupBy(aiUsageLogs.model);
+    const byModel: Record<string, { requests: number; tokens: number; cost: number }> = {};
+    for (const row of modelRows) {
+      byModel[row.model] = { requests: row.requests, tokens: row.tokens, cost: row.cost };
+    }
+
+    const featureRows = await db.select({
+      feature: aiUsageLogs.feature,
+      requests: sql<number>`count(*)::int`,
+      tokens: sql<number>`coalesce(sum(${aiUsageLogs.totalTokens}), 0)::int`,
+      cost: sql<number>`coalesce(sum(${aiUsageLogs.estimatedCostMicrodollars}), 0)::int`,
+    }).from(aiUsageLogs).where(whereClause).groupBy(aiUsageLogs.feature);
+    const byFeature: Record<string, { requests: number; tokens: number; cost: number }> = {};
+    for (const row of featureRows) {
+      byFeature[row.feature] = { requests: row.requests, tokens: row.tokens, cost: row.cost };
+    }
+
+    const dailyRows = await db.select({
+      date: sql<string>`to_char(${aiUsageLogs.createdAt}, 'YYYY-MM-DD')`,
+      requests: sql<number>`count(*)::int`,
+      tokens: sql<number>`coalesce(sum(${aiUsageLogs.totalTokens}), 0)::int`,
+      cost: sql<number>`coalesce(sum(${aiUsageLogs.estimatedCostMicrodollars}), 0)::int`,
+    }).from(aiUsageLogs).where(whereClause)
+      .groupBy(sql`to_char(${aiUsageLogs.createdAt}, 'YYYY-MM-DD')`)
+      .orderBy(sql`to_char(${aiUsageLogs.createdAt}, 'YYYY-MM-DD')`);
+
+    return {
+      logs,
+      totalRequests: agg.totalRequests,
+      totalTokens: agg.totalTokens,
+      totalCostMicrodollars: agg.totalCost,
+      byModel,
+      byFeature,
+      dailyUsage: dailyRows.map(r => ({ date: r.date, requests: r.requests, tokens: r.tokens, cost: r.cost })),
+    };
   }
 }
 

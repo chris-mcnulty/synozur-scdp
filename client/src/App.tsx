@@ -51,6 +51,7 @@ import PortfolioTimelinePage from "@/pages/portfolio-timeline-page";
 import PortfolioRaidd from "@/pages/portfolio-raidd";
 import MyRaidd from "@/pages/my-raidd";
 import CrmDeals from "@/pages/crm-deals";
+import AiSettings from "@/pages/ai-settings";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -340,6 +341,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={["admin", "pm"]}>
             <TenantGroundingDocs />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/ai-settings">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin"]}>
+            <AiSettings />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
