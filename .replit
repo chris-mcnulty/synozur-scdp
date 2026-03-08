@@ -128,3 +128,5 @@ AZURE_REDIRECT_URI = "https://fe536eef-aa4a-4f38-9444-a53b449002d7-00-2w4rayqj9t
 
 [userenv.shared]
 APP_PUBLIC_URL = "https://scdp.synozur.com"
+AZURE_FOUNDRY_ENDPOINT = "https://synozur-constellationai-resource.services.ai.azure.com/api/projects/synozur-constellationAI"
+AZURE_FOUNDRY_OPENAI_ENDPOINT = "https://synozur-constellationai-resource.openai.azure.com/openai/v1"
