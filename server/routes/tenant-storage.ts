@@ -182,6 +182,87 @@ export function registerTenantStorageRoutes(
     }
   });
 
+  app.post("/api/tenants/:id/spe/reset", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+      const { deleteFromAzure } = req.body || {};
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ message: "Only platform administrators can reset SPE containers" });
+      }
+
+      const currentContainerId = isProductionEnv ? tenant.speContainerIdProd : tenant.speContainerIdDev;
+      const currentEnvLabel = isProductionEnv ? "Production" : "Development";
+
+      if (!currentContainerId) {
+        return res.status(400).json({
+          message: `No SPE container configured for ${currentEnvLabel} environment`,
+        });
+      }
+
+      const result: {
+        containerId: string;
+        environment: string;
+        disconnected: boolean;
+        deleted: boolean;
+        deleteMessage?: string;
+        storageDisabled: boolean;
+      } = {
+        containerId: currentContainerId,
+        environment: currentEnvLabel,
+        disconnected: false,
+        deleted: false,
+        storageDisabled: false,
+      };
+
+      if (deleteFromAzure && tenant.azureTenantId) {
+        console.log(`[SPE] Deleting container ${currentContainerId} from Azure for tenant ${tenantId}...`);
+        const deleteResult = await containerCreator.deleteContainer(currentContainerId, tenant.azureTenantId);
+        result.deleted = deleteResult.success;
+        result.deleteMessage = deleteResult.message;
+        if (!deleteResult.success) {
+          console.warn(`[SPE] Container delete failed but proceeding with disconnect: ${deleteResult.message}`);
+        }
+      }
+
+      const configUpdate: any = {
+        speStorageEnabled: false,
+      };
+      if (isProductionEnv) {
+        configUpdate.speContainerIdProd = null;
+      } else {
+        configUpdate.speContainerIdDev = null;
+      }
+
+      await storage.updateTenantSpeConfig(tenantId, configUpdate);
+      result.disconnected = true;
+      result.storageDisabled = true;
+
+      console.log(`[SPE] Container reset complete for tenant ${tenantId}:`, result);
+
+      res.json({
+        success: true,
+        message: deleteFromAzure
+          ? `Container ${currentContainerId} has been ${result.deleted ? 'deleted from Azure and ' : ''}disconnected from this tenant`
+          : `Container ${currentContainerId} has been disconnected from this tenant (container still exists in Azure)`,
+        ...result,
+      });
+    } catch (error) {
+      console.error("[SPE] Error resetting container:", error);
+      res.status(500).json({
+        message: "Failed to reset SPE container",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.patch("/api/tenants/:id/spe/config", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = req.params.id;

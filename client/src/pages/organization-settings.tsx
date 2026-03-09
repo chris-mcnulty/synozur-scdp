@@ -659,6 +659,29 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [deleteFromAzure, setDeleteFromAzure] = useState(false);
+  const [resetResult, setResetResult] = useState<{ success: boolean; message: string; deleted?: boolean } | null>(null);
+
+  const resetContainerMutation = useMutation({
+    mutationFn: (opts: { deleteFromAzure: boolean }) =>
+      apiRequest(`/api/tenants/${tenantSettings.id}/spe/reset`, {
+        method: "POST",
+        body: JSON.stringify({ deleteFromAzure: opts.deleteFromAzure }),
+      }),
+    onSuccess: (data: any) => {
+      setResetResult(data);
+      setShowResetConfirm(false);
+      setDeleteFromAzure(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      toast({ title: "Container reset", description: data.message });
+    },
+    onError: (error: Error) => {
+      setResetResult({ success: false, message: error.message });
+      toast({ title: "Reset failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const [registerResult, setRegisterResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const registerContainerTypeMutation = useMutation({
@@ -953,6 +976,81 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                   </div>
                 </div>
                 {testResult.details && <p className="text-xs text-muted-foreground">{testResult.details}</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isPlatformAdmin && currentContainerId && (
+          <div className="border-t pt-3 space-y-3">
+            <p className="text-sm font-medium text-red-600 dark:text-red-400">Reset Container</p>
+            <p className="text-xs text-muted-foreground">
+              Disconnect the current SPE container from this tenant. This disables SPE storage and clears the container ID, allowing you to create a new one. Optionally, you can also permanently delete the container and all its files from Azure.
+            </p>
+            {!showResetConfirm ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                onClick={() => { setResetResult(null); setShowResetConfirm(true); }}
+              >
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Reset Container
+              </Button>
+            ) : (
+              <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 p-4 space-y-3">
+                <p className="text-sm font-medium text-red-700 dark:text-red-300">
+                  Are you sure you want to reset the container for {currentEnvLabel}?
+                </p>
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  Container ID: <code className="bg-red-100 dark:bg-red-900/40 px-1 rounded">{currentContainerId}</code>
+                </p>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deleteFromAzure}
+                    onChange={(e) => setDeleteFromAzure(e.target.checked)}
+                    className="rounded border-red-400"
+                  />
+                  <span className="text-red-700 dark:text-red-300">
+                    Also permanently delete the container and all its files from Azure
+                  </span>
+                </label>
+                {deleteFromAzure && (
+                  <p className="text-xs text-red-600 dark:text-red-400 font-medium pl-6">
+                    This action cannot be undone. All documents stored in this container will be permanently lost.
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => resetContainerMutation.mutate({ deleteFromAzure })}
+                    disabled={resetContainerMutation.isPending}
+                  >
+                    {resetContainerMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RotateCcw className="h-3 w-3 mr-1" />}
+                    {resetContainerMutation.isPending ? "Resetting..." : deleteFromAzure ? "Delete & Reset" : "Disconnect Only"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setShowResetConfirm(false); setDeleteFromAzure(false); }}
+                    disabled={resetContainerMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+            {resetResult && (
+              <div className={`rounded-lg border p-3 text-sm ${resetResult.success ? "bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
+                <div className="flex items-center gap-2 font-medium">
+                  {resetResult.success ? (
+                    <><CheckCircle className="h-4 w-4 text-green-600" /> {resetResult.message}</>
+                  ) : (
+                    <><AlertTriangle className="h-4 w-4 text-red-600" /> {resetResult.message}</>
+                  )}
+                </div>
               </div>
             )}
           </div>

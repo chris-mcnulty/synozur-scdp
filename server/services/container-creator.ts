@@ -198,6 +198,88 @@ export class ContainerCreator {
   }
 
   /**
+   * Delete a SharePoint Embedded container via the Graph API.
+   * This permanently removes the container and all its contents.
+   */
+  async deleteContainer(
+    containerId: string,
+    azureTenantId?: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const accessToken = await this.getGraphAccessToken(azureTenantId);
+
+      console.log(`[ContainerCreator] Deleting container ${containerId}...`);
+      const response = await fetch(
+        `${this.graphBaseUrl}/storage/fileStorage/containers/${containerId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (response.status === 204 || response.status === 200) {
+        console.log(`[ContainerCreator] Container ${containerId} deleted successfully`);
+        return {
+          success: true,
+          message: `Container ${containerId} has been permanently deleted`,
+        };
+      }
+
+      if (response.status === 404) {
+        return {
+          success: true,
+          message: `Container ${containerId} was already deleted or does not exist`,
+        };
+      }
+
+      const errorText = await response.text();
+      console.error(`[ContainerCreator] Delete failed: ${response.status}`, errorText);
+      return {
+        success: false,
+        message: `Failed to delete container: ${response.status} — ${errorText}`,
+      };
+    } catch (error) {
+      console.error('[ContainerCreator] Delete container error:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Get container details (name, file count, size) from the Graph API.
+   */
+  async getContainerInfo(
+    containerId: string,
+    azureTenantId?: string
+  ): Promise<{ success: boolean; displayName?: string; error?: string }> {
+    try {
+      const accessToken = await this.getGraphAccessToken(azureTenantId);
+      const response = await fetch(
+        `${this.graphBaseUrl}/storage/fileStorage/containers/${containerId}`,
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!response.ok) {
+        return { success: false, error: `Container not found or inaccessible (${response.status})` };
+      }
+
+      const data = await response.json();
+      return {
+        success: true,
+        displayName: data.displayName,
+      };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
    * Public method to register the container type in a specific tenant's SharePoint.
    * Can be called separately for tenants that already have containers but need
    * the container type registered (e.g., containers created before this step was added).
