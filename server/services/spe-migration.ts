@@ -538,12 +538,16 @@ export class SpeMigrationService {
     }
 
     const beforeFilter = files.length;
+    let untaggedIncluded = 0;
     files = files.filter(f => {
-      if (!f.metadata?.tenantId) return false;
+      if (!f.metadata?.tenantId) {
+        untaggedIncluded++;
+        return true;
+      }
       return f.metadata.tenantId === tenantId;
     });
 
-    console.log(`[SPE-Migration] Tenant filter: ${beforeFilter} total → ${files.length} for tenant ${tenantId} (excluded ${beforeFilter - files.length} untagged/other-tenant files)`);
+    console.log(`[SPE-Migration] Tenant filter: ${beforeFilter} total → ${files.length} for tenant ${tenantId} (${untaggedIncluded} untagged files included, ${beforeFilter - files.length} other-tenant files excluded)`);
     return files;
   }
 
