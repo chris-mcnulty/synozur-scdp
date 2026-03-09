@@ -84,8 +84,9 @@ export class SharePointFileStorage {
           return result;
         }
       } catch (error) {
-        console.warn(`[SharePointStorage] Failed to look up tenant container for ${tenantId}, falling back:`, error instanceof Error ? error.message : error);
+        console.warn(`[SharePointStorage] Failed to look up tenant container for ${tenantId}, falling back to global:`, error instanceof Error ? error.message : error);
       }
+      return { containerId: this.containerId };
     }
 
     try {

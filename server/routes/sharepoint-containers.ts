@@ -557,25 +557,61 @@ export function registerSharePointContainerRoutes(
       const filesAwaitingMigration = localFiles.filter(f => 
         f.metadata?.tags?.includes('LOCAL_STORAGE')
       ).length;
-      
-      res.json({
-        activeStorage: "Smart Routing (Business docs → Local, Debug docs → SharePoint)",
-        routingRules: {
-          localStorage: ["receipt", "invoice", "contract"],
-          sharePoint: ["statementOfWork", "estimate", "changeOrder", "report"]
-        },
-        localFileCount: localFiles.length,
-        sharePointFileCount: sharePointFiles.length,
-        localFilesByType: localByType,
-        sharePointFilesByType: sharePointByType,
-        filesAwaitingMigration,
-        containerIdConfigured: !!process.env.SHAREPOINT_CONTAINER_ID_DEV || !!process.env.SHAREPOINT_CONTAINER_ID_PROD,
-        notes: [
-          "Business documents (receipts, invoices, contracts) → Local storage for immediate use",
-          "Debug documents (SOWs, estimates, etc.) → SharePoint for Microsoft troubleshooting",
-          "All locally-stored files tagged with LOCAL_STORAGE for future migration"
-        ]
-      });
+
+      const user = (req as any).user;
+      const tenantId = user?.tenantId;
+      let speEnabled = false;
+      let tenantContainerId = '';
+      if (tenantId) {
+        try {
+          const speConfig = await storage.getTenantSpeConfig(tenantId);
+          speEnabled = speConfig?.speStorageEnabled === true;
+          const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+          tenantContainerId = (isProduction ? speConfig?.speContainerIdProd : speConfig?.speContainerIdDev) || '';
+        } catch {}
+      }
+
+      const allDocTypes = ["receipt", "invoice", "contract", "statementOfWork", "estimate", "changeOrder", "report"];
+
+      if (speEnabled) {
+        res.json({
+          activeStorage: "SharePoint Embedded (All document types → SPE)",
+          routingRules: {
+            localStorage: [],
+            sharePoint: allDocTypes
+          },
+          speEnabled: true,
+          tenantContainerId: tenantContainerId ? `${tenantContainerId.substring(0, 20)}...` : 'not set',
+          localFileCount: localFiles.length,
+          sharePointFileCount: sharePointFiles.length,
+          localFilesByType: localByType,
+          sharePointFilesByType: sharePointByType,
+          filesAwaitingMigration,
+          notes: [
+            "All document types are stored in SharePoint Embedded",
+            localFiles.length > 0 ? `${localFiles.length} legacy file(s) in local storage can be migrated` : "No legacy files in local storage"
+          ]
+        });
+      } else {
+        res.json({
+          activeStorage: "Smart Routing (Business docs → Local, Debug docs → SharePoint)",
+          routingRules: {
+            localStorage: ["receipt", "invoice", "contract"],
+            sharePoint: ["statementOfWork", "estimate", "changeOrder", "report"]
+          },
+          speEnabled: false,
+          localFileCount: localFiles.length,
+          sharePointFileCount: sharePointFiles.length,
+          localFilesByType: localByType,
+          sharePointFilesByType: sharePointByType,
+          filesAwaitingMigration,
+          notes: [
+            "Business documents (receipts, invoices, contracts) → Local storage",
+            "Other documents (SOWs, estimates, etc.) → SharePoint",
+            "Enable SPE in Organization Settings to route all types to SharePoint Embedded"
+          ]
+        });
+      }
     } catch (error) {
       res.status(500).json({
         message: "Failed to get storage info",
