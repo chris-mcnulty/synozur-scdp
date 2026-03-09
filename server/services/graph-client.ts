@@ -814,34 +814,39 @@ export class GraphClient {
     itemId: string,
     metadata: Record<string, string | number | boolean | null>
   ): Promise<void> {
+    const cleanedMetadata: Record<string, any> = {};
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value !== '' && value !== null && value !== undefined) {
+        cleanedMetadata[key] = value;
+      }
+    }
+    
+    if (Object.keys(cleanedMetadata).length === 0) return;
+
+    const driveId = await this.getContainerDriveId(containerId);
+    const endpoint = `${this.driveEndpoint(driveId)}/items/${itemId}/listItem/fields`;
+
     try {
-      // Filter out empty values and null fields
-      const cleanedMetadata: Record<string, any> = {};
-      for (const [key, value] of Object.entries(metadata)) {
-        // Skip empty strings, null, and undefined values
-        if (value !== '' && value !== null && value !== undefined) {
-          cleanedMetadata[key] = value;
-        }
-      }
-      
-      // Only update if there's metadata to set
-      if (Object.keys(cleanedMetadata).length > 0) {
-        const driveId = await this.getContainerDriveId(containerId);
-        await this.makeGraphRequest(
-          'PATCH',
-          `${this.driveEndpoint(driveId)}/items/${itemId}/listItem/fields`,
-          cleanedMetadata
-        );
-        console.log('[GraphClient] Metadata updated successfully for item:', itemId);
-      }
+      await this.makeGraphRequest('PATCH', endpoint, cleanedMetadata);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       if (msg.includes('is not recognized')) {
-        console.warn(`[GraphClient] Metadata field not recognized for item ${itemId} — schema columns may need initialization`);
+        let applied = 0;
+        for (const [key, value] of Object.entries(cleanedMetadata)) {
+          try {
+            await this.makeGraphRequest('PATCH', endpoint, { [key]: value });
+            applied++;
+          } catch (fieldErr) {
+            // skip unrecognized fields silently
+          }
+        }
+        if (applied > 0) {
+          console.log(`[GraphClient] Partial metadata: ${applied}/${Object.keys(cleanedMetadata).length} fields applied for item ${itemId}`);
+        }
       } else {
         console.warn('[GraphClient] Failed to update metadata for item', itemId, ':', msg);
+        throw error;
       }
-      throw error;
     }
   }
 
@@ -1625,7 +1630,7 @@ export class GraphClient {
         createdColumns.push(createdColumn);
         console.log(`[GraphClient] Created document metadata column: ${columnDef.name}`);
       } catch (error: any) {
-        if (error.message?.includes('already exists') || error.status === 409) {
+        if (error.message?.includes('already exists') || error.message?.includes('nameAlreadyExists') || error.status === 409) {
           console.log(`[GraphClient] Document metadata column ${columnDef.name} already exists, skipping`);
         } else {
           console.warn(`[GraphClient] Failed to create document metadata column ${columnDef.name}:`, error.message || error);
@@ -1639,14 +1644,6 @@ export class GraphClient {
   async initializeReceiptMetadataSchema(containerId: string): Promise<ColumnDefinition[]> {
     const receiptColumns: ColumnDefinition[] = [
       {
-        name: 'ProjectId',
-        displayName: 'Project ID',
-        columnType: 'text',
-        description: 'Project code this receipt belongs to',
-        required: true,
-        text: { maxLength: 50, allowMultipleLines: false }
-      },
-      {
         name: 'ExpenseId',
         displayName: 'Expense ID',
         columnType: 'text',
@@ -1659,7 +1656,7 @@ export class GraphClient {
         displayName: 'Uploaded By',
         columnType: 'text',
         description: 'User who uploaded this receipt',
-        required: true,
+        required: false,
         text: { maxLength: 255, allowMultipleLines: false }
       },
       {
@@ -1667,10 +1664,10 @@ export class GraphClient {
         displayName: 'Expense Category',
         columnType: 'choice',
         description: 'Type of expense category',
-        required: true,
+        required: false,
         choice: {
           choices: ['Travel', 'Meals', 'Accommodation', 'Equipment', 'Supplies', 'Software', 'Training', 'Other'],
-          allowFillInChoice: false
+          allowFillInChoice: true
         }
       },
       {
@@ -1678,38 +1675,24 @@ export class GraphClient {
         displayName: 'Receipt Date',
         columnType: 'dateTime',
         description: 'Date from the receipt',
-        required: true,
+        required: false,
         dateTime: { displayAs: 'DateTime', includeTime: false }
-      },
-      {
-        name: 'Amount',
-        displayName: 'Amount',
-        columnType: 'currency',
-        description: 'Receipt amount',
-        required: true,
-        currency: { lcid: 1033 }
       },
       {
         name: 'Currency',
         displayName: 'Currency',
-        columnType: 'choice',
+        columnType: 'text',
         description: 'Currency of the receipt',
-        required: true,
-        choice: {
-          choices: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'],
-          allowFillInChoice: false
-        }
+        required: false,
+        text: { maxLength: 10, allowMultipleLines: false }
       },
       {
         name: 'Status',
         displayName: 'Status',
-        columnType: 'choice',
+        columnType: 'text',
         description: 'Processing status of the receipt',
-        required: true,
-        choice: {
-          choices: ['pending', 'assigned', 'processed'],
-          allowFillInChoice: false
-        }
+        required: false,
+        text: { maxLength: 50, allowMultipleLines: false }
       },
       {
         name: 'Vendor',
@@ -1725,7 +1708,7 @@ export class GraphClient {
         columnType: 'text',
         description: 'Receipt description or notes',
         required: false,
-        text: { maxLength: 500, allowMultipleLines: true }
+        text: { maxLength: 255, allowMultipleLines: false }
       },
       {
         name: 'IsReimbursable',
@@ -1735,40 +1718,20 @@ export class GraphClient {
         required: false,
         boolean: {}
       },
-      {
-        name: 'Tags',
-        displayName: 'Tags',
-        columnType: 'text',
-        description: 'Additional tags for categorization',
-        required: false,
-        text: { maxLength: 500, allowMultipleLines: false }
-      }
     ];
 
     const createdColumns: ColumnDefinition[] = [];
     
-    // Create each column, handling existing columns gracefully
     for (const columnDef of receiptColumns) {
       try {
         const createdColumn = await this.createContainerColumn(containerId, columnDef);
         createdColumns.push(createdColumn);
         console.log(`[GraphClient] Created receipt metadata column: ${columnDef.name}`);
       } catch (error: any) {
-        if (error.message?.includes('already exists') || error.status === 409) {
+        if (error.message?.includes('already exists') || error.message?.includes('nameAlreadyExists') || error.status === 409) {
           console.log(`[GraphClient] Receipt metadata column ${columnDef.name} already exists, skipping`);
-          // Try to get the existing column
-          try {
-            const existingColumns = await this.listContainerColumns(containerId);
-            const existing = existingColumns.find(col => col.name === columnDef.name);
-            if (existing) {
-              createdColumns.push(existing);
-            }
-          } catch (getError) {
-            console.warn(`[GraphClient] Could not retrieve existing column ${columnDef.name}:`, getError);
-          }
         } else {
-          console.error(`[GraphClient] Failed to create receipt metadata column ${columnDef.name}:`, error);
-          throw error;
+          console.warn(`[GraphClient] Failed to create receipt metadata column ${columnDef.name}:`, error.message || error);
         }
       }
     }
