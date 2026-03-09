@@ -429,9 +429,13 @@ export function registerTenantStorageRoutes(
       }
 
       const azureTenantId = tenant.azureTenantId || undefined;
-      const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
 
-      console.log(`[SPE-Permissions] Granting owner permissions on container ${containerId.substring(0, 20)}... to app ${clientId}`);
+      const userEmail = currentUser?.email || currentUser?.username;
+      if (!userEmail) {
+        return res.status(400).json({ message: "Could not determine your email address for permission grant" });
+      }
+
+      console.log(`[SPE-Permissions] Granting owner permissions on container ${containerId.substring(0, 20)}... to user ${userEmail}`);
 
       const { GraphClient } = await import('../services/graph-client.js');
       const graphClient = new GraphClient(azureTenantId);
@@ -440,9 +444,8 @@ export function registerTenantStorageRoutes(
       const permissionPayload = {
         roles: ["owner"],
         grantedToV2: {
-          application: {
-            id: clientId,
-            displayName: "SCDP Application"
+          user: {
+            userPrincipalName: userEmail
           }
         }
       };
@@ -479,10 +482,10 @@ export function registerTenantStorageRoutes(
 
       res.json({
         success: true,
-        message: 'Owner permissions granted to application on the container',
+        message: `Owner permissions granted to ${userEmail} on the container. App-level access is managed via Container Type Registration.`,
         permissionId: permission.id,
         containerId,
-        appId: clientId,
+        userEmail,
       });
     } catch (error) {
       console.error("[SPE-Permissions] Error granting permissions:", error);

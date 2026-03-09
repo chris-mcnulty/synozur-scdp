@@ -1,7 +1,7 @@
 # Constellation - Synozur Consulting Delivery Platform (SCDP)
 
 ## Overview
-Constellation is a comprehensive platform for managing consulting project lifecycles. It streamlines operations, enhances efficiency, and provides robust management capabilities including estimation, resource allocation, time tracking, expense management, and automated invoice generation. The platform leverages AI for narrative generation and automated expense calculations to achieve an efficient and data-driven consulting practice. Key capabilities include improved file management, transparent quote displays, advanced resource management for capacity planning, and milestone-based invoice generation.
+Constellation is a comprehensive platform designed to manage the entire consulting project lifecycle, from estimation and resource allocation to time tracking, expense management, and automated invoice generation. It aims to enhance efficiency, streamline operations, and support data-driven consulting practices through features like AI-powered narrative generation and automated expense calculations. The platform prioritizes improved file management, transparent quote displays, advanced resource capacity planning, and milestone-based invoice generation.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -11,15 +11,12 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 **CRITICAL**: `attached_assets/` is ONLY for temporary scratch files. NEVER store application assets (logos, images, etc.) there. All permanent assets must live in the source tree (e.g., `client/src/assets/logos/`) so they survive cleanup and are included in published builds.
 **CRITICAL FONT RULE**: The ONLY font allowed in the application is the **Avenir Next Lt Pro** family. NEVER use Inter, system-ui, or any other font. Font files are in `client/public/fonts/`. The CSS `@font-face` declarations and Tailwind `fontFamily` config must always point to `'Avenir Next LT Pro'`.
 
-## Related Synozur Products
-- **Zenith**: Synozur's app for M365 AI content governance. Codebase: https://github.com/chris-mcnulty/synozur-zenith
-
 ## System Architecture
 
 ### Frontend
 - **Framework**: React 18 with TypeScript and Vite.
 - **UI**: Radix UI components with shadcn/ui design system, styled using Tailwind CSS.
-- **Key UI/UX Decisions**: Refactored estimate tables, mobile optimization, responsive navigation, user persona-based navigation, prominent quote totals, dark/light mode, and advanced project list/detail views with consolidated tabs and deep linking. Standardized project selectors.
+- **UI/UX Decisions**: Refactored estimate tables, mobile optimization, responsive navigation, user persona-based navigation, prominent quote totals, dark/light mode, and advanced project list/detail views with consolidated tabs and deep linking. Standardized project selectors.
 
 ### Backend
 - **Runtime**: Node.js with Express.js.
@@ -31,7 +28,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Database
 - **Type**: PostgreSQL.
 - **Schema Management**: Drizzle Kit.
-- **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses (with approval workflow), Invoices, Payment Milestones, Rate overrides, Project Engagements.
+- **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses, Invoices, Payment Milestones, Rate overrides, Project Engagements.
 
 ### Project Structure
 - **Monorepo**: Organized into `/client`, `/server`, and `/shared`.
@@ -39,46 +36,35 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Authentication & Authorization
 - **Production SSO**: Azure AD (Microsoft Entra ID).
 - **Development Auth**: Local email/password.
-- **Roles**: Six-tier hierarchy (admin, billing-admin, pm, portfolio-manager, employee, executive) with feature-based permissions. Portfolio-manager has PM-level access to ALL projects (not scoped to assigned ones), view-only expense access, and hidden external resource cost rates.
+- **Roles**: Six-tier hierarchy with feature-based permissions.
 
 ### Document Storage
-- **Strategy**: Multi-tier with SharePoint Online (primary for business documents) and Replit Object Storage (for legacy data).
-- **Tenant SPE Opt-in**: Each tenant can configure their own SharePoint Embedded (SPE) container (separate for dev/prod). Schema fields on `tenants`: `speContainerIdDev`, `speContainerIdProd`, `speStorageEnabled`, `speMigrationStatus`, `speMigrationStartedAt`, `adminConsentGranted`, `azureTenantId`. Container resolution: tenant SPE container → global env var fallback. Managed in Organization Settings > Document Storage card. Migration service (`server/services/spe-migration.ts`) migrates files from Replit Object Storage to tenant SPE containers. All file operations (smart storage layer) propagate `tenantId` from request context for tenant-scoped container resolution. Key files: `server/routes/tenant-storage.ts`, `server/services/spe-migration.ts`, `server/services/sharepoint-file-storage.ts` (`getContainerForTenant`).
-- **Per-Tenant Azure AD Isolation**: Each tenant's `azureTenantId` is auto-populated from the sign-in token (`tid` claim) on first SSO login. Container creation and **all file operations** (upload, download, delete, list, verify) use the tenant's own Azure AD tenant ID via `getClientCredentialsMsalForTenant()`, ensuring customer tenants never access Synozur's containers. `GraphClient` accepts optional `azureTenantId` in constructor to authenticate against the correct Azure AD tenant. `SharePointFileStorage` caches per-tenant `GraphClient` instances and resolves them via `getContainerForTenant()` which returns both `containerId` and `azureTenantId`. MSAL instances are cached per Azure AD tenant ID. The sign-in flow uses `common` authority (multi-tenant); client credentials flow uses per-tenant authority. SPE test upload bypasses `speStorageEnabled` gate and uses `GraphClient` directly with tenant credentials. Key files: `server/auth/entra-config.ts` (`getClientCredentialsMsalForTenant`), `server/services/container-creator.ts`, `server/services/graph-client.ts`, `server/services/sharepoint-file-storage.ts`.
-- **SPE Billing Model**: Container type `358aba7d-bb55-4ce0-a08d-e51f03d5edf1` is owned by Synozur's app registration. All SPE storage costs across all customer tenants bill back to Synozur's Azure subscription (the billing instrument attached to the container type in SharePoint Admin Center). Customers do NOT set up their own billing — the ISV (Synozur) pays Microsoft and passes costs to customers via service plan pricing. **Action Required**: Verify in SharePoint Admin Center whether the container type is Trial or Standard (paid). Trial containers expire after 30 days.
-- **Roadmap — SPE Container Management (HIGH PRIORITY)**: Platform admin dashboard for managing all SPE containers across all customer tenants. Features needed: (1) Cross-tenant container inventory with storage usage metrics (file count, total size, growth trends), (2) Cost tracking and allocation per tenant/container, (3) Container lifecycle actions — freeze (read-only), delete, purge for abuse/abandonment, (4) Usage alerts/thresholds to flag abnormal storage growth, (5) Container status monitoring (active, abandoned, over-limit). This is critical because all storage bills back to Synozur regardless of which tenant uses it.
+- **Strategy**: Multi-tier using SharePoint Embedded (primary) and Replit Object Storage (legacy fallback). A smart storage layer directs document types based on tenant configuration (`speStorageEnabled` flag).
+- **Tenant SPE Opt-in**: Tenants can configure individual SharePoint Embedded containers for document storage, with a migration service to move existing files.
+- **Per-Tenant Azure AD Isolation**: All file operations and container management are tenant-scoped, ensuring data isolation using each tenant's Azure AD tenant ID.
+- **SPE Billing**: All SharePoint Embedded storage costs are billed to Synozur, not directly to customers.
 
 ### Core Features
-- **AI Integration**: Multi-provider AI with Replit AI (OpenAI GPT-5 compatible) and Azure AI Foundry (GPT-5.4, GPT-5.2, GPT-4o). Config-driven provider/model selection via `aiConfiguration` table with 60s cache. Usage logging to `aiUsageLogs` table with per-request cost tracking in microdollars. **Usage Alerts**: Configurable monthly token budget with threshold-based email alerts (default 75%, 90%, 100%) sent to platform admins via SendGrid; tracked in `aiUsageAlerts` table to prevent duplicate alerts per threshold per month; debounced check (60s) runs after each AI call. Admin UI at `/ai-settings` (platform admin only) for model configuration, usage analytics, alert settings, and alert history. Provider selection: `getAIProviderAsync()` reads from DB config, falls back to env-var auto-detection (Replit → Foundry → Azure OpenAI). Key files: `server/services/ai-provider.ts`, `server/services/ai-pricing.ts`, `server/services/ai-service.ts`, `server/services/ai-usage-alerts.ts`. All AI calls log tenant, user, feature, tokens, cost, and latency. **Roadmap**: Per-feature model selection (use different models for different AI features, with global active model as default).
-- **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence. Four estimate types: `detailed` (line items), `program` (week-based staffing blocks for >$1M programs), `block` (simple lump sum), and `retainer` (monthly hours). Estimate-level sharing via `estimate_shares` table allows PMs to grant read-only access to specific users; shared viewers see line items and Gantt but not cost rates or margin data. **Estimate from Narrative**: AI-powered feature that generates structured estimates (epics, stages, line items with roles/hours/rates) from pasted proposal/SOW text, guided by an `estimate_generation` grounding document managed through the Grounding Docs UI. UI component: `client/src/components/estimates/narrative-estimate-generator.tsx`. Endpoints: `POST /api/ai/generate-estimate-from-narrative` and `/apply`.
-- **Program Estimate Type**: Week-based staffing block estimates for large programs. Each block = role × duration weeks × utilization % (20/40/60/80/100 → 8–40 hrs/wk). Same epic/stage/workstream hierarchy and three-factor contingency system as detailed estimates. Two new nullable columns added to `estimate_line_items`: `duration_weeks` and `utilization_percent`. Includes a Gantt timeline view.
-- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download. Auto-generated GL invoice numbers.
-- **Expense Approval Workflow**: Comprehensive system with finite state machine, role-based access, and automated per diem calculation.
-- **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.
-- **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks.
-- **Scheduled Jobs**: Background job system for expense reminders, time reminders, and Planner sync.
-- **Support Ticket Planner Integration**: Bidirectional sync between support tickets and Microsoft Planner tasks.
-- **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring.
-- **Contractor Expense Invoices**: Contractors can generate invoices from their expense reports for reimbursement.
-- **Retainer Estimates & Management**: New estimate type for monthly hour-block engagements with creation wizard, utilization tracking, and live retainer month management.
+- **AI Integration**: Multi-provider AI (Replit AI, Azure AI Foundry) with configurable model selection, usage logging, and cost tracking. Includes usage alerts for token budgets.
+- **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence. Includes detailed, program, block, and retainer estimate types. AI-powered generation of structured estimates from narrative text.
+- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, and expense receipt inclusion.
+- **Expense Approval Workflow**: Comprehensive system with finite state machine and role-based access.
+- **Resource Management**: Dual List/Timeline views, capacity planning, and conflict detection.
+- **Microsoft Planner Integration**: Bidirectional sync of project assignments with Microsoft Planner tasks.
+- **Scheduled Jobs**: Background system for reminders and Planner sync.
+- **Financial Reporting**: Comprehensive reports on revenue, cost, profit, and margins.
+- **Contractor Expense Invoices**: Contractors can generate invoices from expense reports.
 - **Project Rate Overrides**: Project-level billing and cost rate overrides.
-- **Deliverable Tracking**: `project_deliverables` table with status workflow (not-started/in-progress/in-review/accepted/rejected), owner assignment, target/delivered dates, epic/stage linking, sort order. `deliverable_status_history` table auto-logs every status change. AI narrative extraction from SOW/proposal text. Deliverables integrated into AI status reports and PPTX generation (dedicated Deliverables Tracker slide).
+- **Deliverable Tracking**: Management of project deliverables with status workflows, AI narrative extraction, and integration into reports.
 
 ### Multi-Tenancy
-- **Architecture**: UUID-based tenant IDs, tenant-scoped data isolation, service plans, and subdomain routing.
+- **Architecture**: UUID-based tenant IDs, data isolation, service plans, and subdomain routing.
 - **Automatic Tenant Assignment**: Users are auto-assigned to tenants on login.
-- **Platform Roles**: `global_admin` and `constellation_admin` can manage all tenants; regular `admin` role manages their own tenant only.
-- **Platform Admin UI**: Available for managing tenants, service plans, user assignments, airport codes, and OCONUS per diem rates.
-- **Settings Separation**: Tenant-specific settings managed in Organization Settings (`/organization-settings`). Platform-wide settings in System Settings (`/system-settings`). Rate resolution hierarchy: Project Overrides → User Rate Schedules → User Defaults → Organization Defaults → System Defaults.
-- **User Management Tenant Isolation**: User listings filtered by active tenant.
-- **Platform User Management**: Platform admins can manage user tenant memberships and role assignments.
-- **Invoice Footer & Email Branding**: Configurable tenant-level branding.
-- **Vocabulary Multi-tenancy**: `organizationVocabulary` is tenant-scoped with strict tenant isolation.
-- **Multi-Tenant Identity & Stakeholder Model**: Uses `users` table for global identity and `tenant_users` for tenant-specific access and roles, allowing multiple roles across tenants.
-
-### Reference Data (System-wide)
-- **Airport Code Reference Data**: `airport_codes` table.
-- **OCONUS Per Diem Rates**: `oconus_per_diem_rates` table.
+- **Platform Roles**: `global_admin` and `constellation_admin` roles for managing all tenants.
+- **Settings Separation**: Tenant-specific settings in Organization Settings; platform-wide settings in System Settings.
+- **User Management**: Tenant-isolated user listings and platform admin tools for managing user memberships across tenants.
+- **Branding & Vocabulary**: Configurable tenant-level branding and tenant-scoped vocabulary.
+- **Multi-Tenant Identity**: Uses a global `users` table and `tenant_users` for tenant-specific access and roles.
 
 ## External Dependencies
 
@@ -93,4 +79,4 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database.
 - **Airport Codes**: IATA 3-letter code database.
 - **Exchange Rates**: Open Exchange Rates API.
-- **HubSpot CRM Integration**: HubSpot API with **per-tenant OAuth 2.0** (Deals, Companies, Contacts, Deal Stage Updates, Revenue Sync, Activity Logging). **Platform-level credentials**: `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` stored as platform secrets (same HubSpot app for all tenants). **Per-tenant OAuth tokens**: Each tenant's `access_token`, `refresh_token`, `expires_at` stored in `crm_connections.settings` jsonb — each tenant authorizes their own HubSpot portal. Token auto-refresh with 5-minute buffer. OAuth routes: `/api/crm/hubspot/oauth/start`, `/callback`, `/disconnect`. All HubSpot client functions are tenant-scoped (first param = tenantId).
+- **HubSpot CRM Integration**: HubSpot API with per-tenant OAuth 2.0 for Deals, Companies, Contacts, and activity logging.

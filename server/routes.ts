@@ -174,12 +174,21 @@ export async function registerRoutes(app: Express): Promise<void> {
   const localFileStorageInstance = new LocalFileStorage();
   const isProductionEnv = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
   const smartFileStorage = {
+    async isSpeEnabledForTenant(tenantId?: string): Promise<boolean> {
+      if (!tenantId) return false;
+      try {
+        const speConfig = await storage.getTenantSpeConfig(tenantId);
+        return speConfig?.speStorageEnabled === true;
+      } catch { return false; }
+    },
     async storeFile(
       buffer: Buffer, originalName: string, contentType: string,
       metadata: DocumentMetadata, uploadedBy: string, fileId?: string, tenantId?: string
     ) {
       const documentType = metadata.documentType;
-      if (documentType === 'receipt') {
+      const speEnabled = await this.isSpeEnabledForTenant(tenantId);
+
+      if (documentType === 'receipt' && !speEnabled) {
         const storedReceipt = await receiptStorage.storeReceipt(buffer, originalName, contentType, {
           documentType: 'receipt', projectId: metadata.projectId, effectiveDate: metadata.effectiveDate,
           amount: metadata.amount, tags: metadata.tags, createdByUserId: metadata.createdByUserId,
@@ -193,8 +202,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           uploadedAt: new Date(), uploadedBy: uploadedBy
         };
       }
-      const businessDocTypes = ['invoice', 'contract'];
-      const useLocalStorage = !isProductionEnv && businessDocTypes.includes(documentType);
+      const businessDocTypes = ['invoice', 'contract', 'receipt'];
+      const useLocalStorage = !isProductionEnv && !speEnabled && businessDocTypes.includes(documentType);
       if (useLocalStorage) {
         const result = await localFileStorageInstance.storeFile(buffer, originalName, contentType, metadata, uploadedBy, fileId);
         return { ...result, metadata: { ...result.metadata, tags: result.metadata.tags ? `${result.metadata.tags},LOCAL_STORAGE` : 'LOCAL_STORAGE' } };

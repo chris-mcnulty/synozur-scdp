@@ -5,6 +5,8 @@ import { SharePointFileStorage } from './sharepoint-file-storage.js';
 import { GraphClient } from './graph-client.js';
 import type { DocumentMetadata } from './local-file-storage.js';
 import { storage } from '../storage.js';
+import { db } from '../db.js';
+import { sql } from 'drizzle-orm';
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 
@@ -134,6 +136,8 @@ export class SpeMigrationService {
   ): Promise<void> {
     console.log(`[SPE-Migration] Starting migration for tenant ${tenantId} to container ${containerId.substring(0, 20)}...`);
 
+    const fileIdMappings: Array<{ oldFileId: string; newFileId: string; fileName: string; documentType: string }> = [];
+
     try {
       const files = await this.listSourceFiles(tenantId);
       progress.totalFiles = files.length;
@@ -165,7 +169,7 @@ export class SpeMigrationService {
             tags: file.metadata?.tags,
           };
 
-          await this.sharePointStorage.storeFile(
+          const storedFile = await this.sharePointStorage.storeFile(
             buffer,
             file.fileName,
             contentType,
@@ -175,14 +179,26 @@ export class SpeMigrationService {
             tenantId
           );
 
+          fileIdMappings.push({
+            oldFileId: file.filePath || file.fullPath,
+            newFileId: storedFile.id,
+            fileName: file.fileName,
+            documentType: file.documentType,
+          });
+
           progress.migratedFiles++;
-          console.log(`[SPE-Migration] Migrated ${progress.migratedFiles}/${progress.totalFiles}: ${file.fileName}`);
+          console.log(`[SPE-Migration] Migrated ${progress.migratedFiles}/${progress.totalFiles}: ${file.fileName} → ${storedFile.id}`);
         } catch (fileError) {
           progress.failedFiles++;
           const errorMsg = fileError instanceof Error ? fileError.message : String(fileError);
           progress.errors.push({ fileName: file.fileName, error: errorMsg });
           console.error(`[SPE-Migration] Failed to migrate ${file.fileName}:`, errorMsg);
         }
+      }
+
+      if (fileIdMappings.length > 0) {
+        console.log(`[SPE-Migration] Updating ${fileIdMappings.length} database pointers...`);
+        await this.updateDatabasePointers(tenantId, fileIdMappings);
       }
 
       if (progress.failedFiles === 0) {
@@ -198,7 +214,7 @@ export class SpeMigrationService {
       }
 
       progress.completedAt = new Date();
-      console.log(`[SPE-Migration] Migration finished for tenant ${tenantId}: ${progress.migratedFiles} migrated, ${progress.failedFiles} failed`);
+      console.log(`[SPE-Migration] Migration finished for tenant ${tenantId}: ${progress.migratedFiles} migrated, ${progress.failedFiles} failed, ${fileIdMappings.length} pointers updated`);
     } catch (error) {
       console.error(`[SPE-Migration] Migration failed for tenant ${tenantId}:`, error);
       progress.status = 'failed';
@@ -213,6 +229,75 @@ export class SpeMigrationService {
         this.activeProgress.delete(tenantId);
       }, 5 * 60 * 1000);
     }
+  }
+
+  private async updateFilePointerInDb(
+    tableName: string,
+    columnName: string,
+    oldValue: string,
+    newValue: string,
+    tenantId?: string
+  ): Promise<number> {
+    try {
+      const tenantFilter = tenantId
+        ? sql` AND tenant_id = ${tenantId}`
+        : sql``;
+
+      const result = await db.execute(
+        sql`UPDATE ${sql.identifier(tableName)} SET ${sql.identifier(columnName)} = ${newValue} WHERE ${sql.identifier(columnName)} = ${oldValue}${tenantFilter}`
+      );
+
+      return (result as any).rowCount || 0;
+    } catch (error) {
+      console.warn(`[SPE-Migration] Could not update ${tableName}.${columnName}:`, error instanceof Error ? error.message : error);
+      return 0;
+    }
+  }
+
+  private async updateDatabasePointers(
+    tenantId: string,
+    mappings: Array<{ oldFileId: string; newFileId: string; fileName: string; documentType: string }>
+  ): Promise<void> {
+    let updatedCount = 0;
+
+    for (const mapping of mappings) {
+      try {
+        const { oldFileId, newFileId, fileName, documentType } = mapping;
+
+        if (documentType === 'receipt') {
+          const updated = await this.updateFilePointerInDb('expenses', 'receipt_url', oldFileId, newFileId, tenantId);
+          if (updated > 0) {
+            updatedCount += updated;
+            console.log(`[SPE-Migration] Updated ${updated} expense receipt pointer(s): ${oldFileId} → ${newFileId}`);
+          }
+          const pendingUpdated = await this.updateFilePointerInDb('pending_receipts', 'file_path', oldFileId, newFileId);
+          if (pendingUpdated > 0) {
+            updatedCount += pendingUpdated;
+            console.log(`[SPE-Migration] Updated ${pendingUpdated} pending receipt pointer(s)`);
+          }
+        }
+
+        if (documentType === 'invoice') {
+          const updated = await this.updateFilePointerInDb('invoice_batches', 'pdf_file_id', oldFileId, newFileId, tenantId);
+          if (updated > 0) {
+            updatedCount += updated;
+            console.log(`[SPE-Migration] Updated ${updated} invoice PDF pointer(s): ${oldFileId} → ${newFileId}`);
+          }
+        }
+
+        if (documentType === 'contract' || documentType === 'sow' || documentType === 'statementOfWork' || documentType === 'changeOrder') {
+          const updated = await this.updateFilePointerInDb('sows', 'document_url', oldFileId, newFileId, tenantId);
+          if (updated > 0) {
+            updatedCount += updated;
+            console.log(`[SPE-Migration] Updated ${updated} SOW/change order document pointer(s): ${oldFileId} → ${newFileId}`);
+          }
+        }
+      } catch (error) {
+        console.error(`[SPE-Migration] Failed to update pointer for ${mapping.fileName}:`, error);
+      }
+    }
+
+    console.log(`[SPE-Migration] Database pointer update complete: ${updatedCount} total records updated`);
   }
 
   async getStorageInventory(tenantId: string, includeUntagged: boolean = false): Promise<{

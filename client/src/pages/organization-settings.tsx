@@ -966,7 +966,7 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
             <div className="space-y-2">
               <p className="text-sm font-medium">Grant Container Permissions</p>
               <p className="text-xs text-muted-foreground">
-                Grants owner permissions to the application on the existing container. Required if the container was created externally or permissions are missing.
+                Grants your admin user owner permissions on the container (visible in SharePoint Admin Center). App-level access is handled by Container Type Registration above.
               </p>
               <Button
                 variant="outline"
