@@ -340,8 +340,11 @@ export class GraphClient {
         const errorData = JSON.parse(errorText) as GraphErrorResponse;
         if (errorData.error) {
           errorMessage = `${errorData.error.code}: ${errorData.error.message}`;
-          const isFieldNotRecognized = errorData.error.message?.includes('is not recognized');
-          if (!isFieldNotRecognized) {
+          const isExpectedError = 
+            errorData.error.message?.includes('is not recognized') ||
+            errorData.error.code === 'nameAlreadyExists' ||
+            response.status === 409;
+          if (!isExpectedError) {
             console.error('[GraphClient] Request failed:', {
               method,
               url: url.replace(/containers\/[^\/]+/, 'containers/***'),
@@ -356,12 +359,14 @@ export class GraphClient {
           }
         }
       } catch {
-        console.error('[GraphClient] Request failed:', {
-          method,
-          url: url.replace(/containers\/[^\/]+/, 'containers/***'),
-          status: response.status,
-          statusText: response.statusText
-        });
+        if (response.status !== 409) {
+          console.error('[GraphClient] Request failed:', {
+            method,
+            url: url.replace(/containers\/[^\/]+/, 'containers/***'),
+            status: response.status,
+            statusText: response.statusText
+          });
+        }
         errorMessage += ` - ${errorText}`;
       }
       
@@ -408,7 +413,10 @@ export class GraphClient {
         return this.withRetry(operation, operationName, retryCount + 1);
       }
       
-      console.error(`[GraphClient] ${operationName} failed after ${retryCount + 1} attempts:`, error);
+      const isExpectedConflict = error.status === 409 || error.message?.includes('nameAlreadyExists') || error.message?.includes('is not recognized');
+      if (!isExpectedConflict) {
+        console.error(`[GraphClient] ${operationName} failed after ${retryCount + 1} attempts:`, error);
+      }
       throw this.normalizeError(error);
     }
   }
