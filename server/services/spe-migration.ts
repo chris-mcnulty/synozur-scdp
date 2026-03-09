@@ -956,10 +956,11 @@ export class SpeMigrationService {
     const errors: string[] = [];
 
     const receiptRows = await db.execute(sql`
-      SELECT id, file_name, original_name, file_path, content_type, project_id, uploaded_by,
-             status, receipt_date, amount, currency, category, vendor, description, tenant_id
-      FROM pending_receipts
-      WHERE tenant_id = ${tenantId}
+      SELECT pr.id, pr.file_name, pr.original_name, pr.file_path, pr.content_type, pr.project_id, pr.uploaded_by,
+             pr.status, pr.receipt_date, pr.amount, pr.currency, pr.category, pr.vendor, pr.description
+      FROM pending_receipts pr
+      LEFT JOIN projects p ON pr.project_id = p.id
+      WHERE p.tenant_id = ${tenantId} OR pr.project_id IS NULL
     `);
     const receiptsByName = new Map<string, any>();
     for (const row of receiptRows.rows) {
