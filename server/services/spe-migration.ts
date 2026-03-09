@@ -586,34 +586,46 @@ export class SpeMigrationService {
       const bucketPath = pathParts.slice(1).join('/');
       const bucket = objectStorageClient.bucket(bucketName);
 
-      const docFolders = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports'];
+      const rootPrefix = bucketPath ? `${bucketPath}/` : '';
+      try {
+        const [allGcsFiles] = await bucket.getFiles({ prefix: rootPrefix, autoPaginate: true });
+        console.log(`[SPE-Migration] Total files in object storage under prefix '${rootPrefix}': ${allGcsFiles.length}`);
+        
+        const seenPaths = new Set<string>();
+        for (const gcsFile of allGcsFiles) {
+          const fileName = path.basename(gcsFile.name);
+          if (!fileName || fileName.endsWith('.metadata.json')) continue;
+          if (seenPaths.has(gcsFile.name)) continue;
+          seenPaths.add(gcsFile.name);
 
-      for (const folder of docFolders) {
-        const prefix = bucketPath ? `${bucketPath}/${folder}/` : `${folder}/`;
-        try {
-          const [gcsFiles] = await bucket.getFiles({ prefix });
-          for (const gcsFile of gcsFiles) {
-            const fileName = path.basename(gcsFile.name);
-            if (!fileName) continue;
+          const relativePath = rootPrefix ? gcsFile.name.replace(rootPrefix, '') : gcsFile.name;
+          const folder = relativePath.split('/')[0] || '';
+          const documentType = this.folderToDocType(folder);
 
-            let metadata: Record<string, any> = {};
-            try {
-              const [fileMetadata] = await gcsFile.getMetadata();
-              metadata = (fileMetadata as any).metadata || {};
-            } catch {}
+          let metadata: Record<string, any> = {};
+          try {
+            const [fileMetadata] = await gcsFile.getMetadata();
+            metadata = (fileMetadata as any).metadata || {};
+          } catch {}
 
-            files.push({
-              filePath: gcsFile.name,
-              fileName,
-              fullPath: gcsFile.name,
-              documentType: this.folderToDocType(folder),
-              metadata,
-            });
-          }
-        } catch (err) {
-          console.log(`[SPE-Migration] Could not list ${folder} in object storage:`, err instanceof Error ? err.message : err);
+          files.push({
+            filePath: gcsFile.name,
+            fileName,
+            fullPath: gcsFile.name,
+            documentType,
+            metadata,
+          });
         }
+        
+        const byFolder: Record<string, number> = {};
+        for (const f of files) {
+          byFolder[f.documentType] = (byFolder[f.documentType] || 0) + 1;
+        }
+        console.log(`[SPE-Migration] Files by type:`, JSON.stringify(byFolder));
+      } catch (err) {
+        console.error(`[SPE-Migration] Error listing all files in object storage:`, err instanceof Error ? err.message : err);
       }
+      console.log(`[SPE-Migration] Total files found: ${files.length}`);
     } catch (error) {
       console.error('[SPE-Migration] Error listing object storage files:', error);
     }
