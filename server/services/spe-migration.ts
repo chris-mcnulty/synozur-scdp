@@ -129,21 +129,47 @@ export class SpeMigrationService {
     };
   }
 
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+  }
+
+  private formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+
   private async executeMigration(
     tenantId: string,
     containerId: string,
     progress: MigrationProgress
   ): Promise<void> {
-    console.log(`[SPE-Migration] Starting migration for tenant ${tenantId} to container ${containerId.substring(0, 20)}...`);
+    const migrationStart = Date.now();
+    console.log(`${'='.repeat(80)}`);
+    console.log(`[SPE-Migration] ▶ MIGRATION STARTED`);
+    console.log(`[SPE-Migration]   Tenant: ${tenantId}`);
+    console.log(`[SPE-Migration]   Target container: ${containerId.substring(0, 25)}...`);
+    console.log(`[SPE-Migration]   Environment: ${this.isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+    console.log(`[SPE-Migration]   Time: ${new Date().toISOString()}`);
+    console.log(`${'='.repeat(80)}`);
 
     const fileIdMappings: Array<{ oldFileId: string; newFileId: string; fileName: string; documentType: string }> = [];
 
     try {
+      console.log(`[SPE-Migration] Phase 1/4: Scanning source files...`);
+      const scanStart = Date.now();
       const files = await this.listSourceFiles(tenantId);
-      progress.totalFiles = files.length;
+      const scanDuration = Date.now() - scanStart;
 
       if (files.length === 0) {
-        console.log(`[SPE-Migration] No files found for tenant ${tenantId}. Marking migration complete.`);
+        console.log(`[SPE-Migration] ⚠ No files found for tenant ${tenantId} (scan took ${this.formatDuration(scanDuration)})`);
+        console.log(`[SPE-Migration] ✓ Migration complete (nothing to migrate)`);
         progress.status = 'completed';
         progress.completedAt = new Date();
         await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'completed' });
@@ -151,9 +177,80 @@ export class SpeMigrationService {
         return;
       }
 
-      console.log(`[SPE-Migration] Found ${files.length} files to migrate for tenant ${tenantId}`);
+      const totalSize = files.reduce((sum, f) => sum + (f.size || 0), 0);
+      const byType: Record<string, number> = {};
+      files.forEach(f => { byType[f.documentType || 'unknown'] = (byType[f.documentType || 'unknown'] || 0) + 1; });
 
-      for (const file of files) {
+      console.log(`[SPE-Migration] Phase 1/4 complete (${this.formatDuration(scanDuration)})`);
+      console.log(`[SPE-Migration]   Found ${files.length} source files (${this.formatBytes(totalSize)} total)`);
+      console.log(`[SPE-Migration]   By type: ${Object.entries(byType).map(([t, c]) => `${t}: ${c}`).join(', ')}`);
+
+      console.log(`[SPE-Migration] Phase 2/4: Checking for already-migrated files in SPE container...`);
+      const dedupeStart = Date.now();
+      const existingFileNames = new Set<string>();
+      const tenant = await storage.getTenant(tenantId);
+      const azureTenantId = tenant?.azureTenantId || undefined;
+      const speGraphClient = new GraphClient(azureTenantId);
+
+      const speFolders = ['/receipts', '/invoices', '/contracts', '/statements', '/estimates', '/change_orders', '/reports'];
+      for (const folder of speFolders) {
+        try {
+          const existingFiles = await speGraphClient.listFiles(containerId, folder);
+          for (const f of existingFiles) {
+            if (f.name && !f.folder) {
+              existingFileNames.add(f.name.toLowerCase());
+            }
+          }
+          if (existingFiles.length > 0) {
+            console.log(`[SPE-Migration]   ${folder}: ${existingFiles.filter(f => !f.folder).length} file(s) already present`);
+          }
+        } catch {
+          // Folder doesn't exist yet, that's fine
+        }
+      }
+
+      const dedupeDuration = Date.now() - dedupeStart;
+      console.log(`[SPE-Migration] Phase 2/4 complete (${this.formatDuration(dedupeDuration)})`);
+      console.log(`[SPE-Migration]   Found ${existingFileNames.size} file(s) already in SPE container`);
+
+      const filesToMigrate = files.filter(f => {
+        const normalizedName = f.fileName.toLowerCase();
+        if (existingFileNames.has(normalizedName)) {
+          return false;
+        }
+        const prefixMatch = Array.from(existingFileNames).some(existing => 
+          existing.endsWith('_' + normalizedName) || existing.includes('_' + normalizedName)
+        );
+        return !prefixMatch;
+      });
+
+      const skippedCount = files.length - filesToMigrate.length;
+      progress.totalFiles = filesToMigrate.length;
+
+      if (skippedCount > 0) {
+        console.log(`[SPE-Migration]   Skipping ${skippedCount} file(s) already in SPE (resume mode)`);
+      }
+
+      if (filesToMigrate.length === 0) {
+        console.log(`[SPE-Migration] ✓ All ${files.length} files already migrated. Nothing to do.`);
+        progress.status = 'completed';
+        progress.completedAt = new Date();
+        progress.migratedFiles = skippedCount;
+        progress.totalFiles = files.length;
+        await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'completed' });
+        this.activeProgress.delete(tenantId);
+        return;
+      }
+
+      console.log(`[SPE-Migration] Phase 3/4: Uploading ${filesToMigrate.length} files to SPE container...`);
+      const uploadStart = Date.now();
+      let totalBytesUploaded = 0;
+
+      for (const file of filesToMigrate) {
+        const fileStart = Date.now();
+        const fileIndex = progress.migratedFiles + progress.failedFiles + 1;
+        const pct = Math.round((fileIndex / progress.totalFiles) * 100);
+
         try {
           const buffer = await this.readSourceFile(file);
           const contentType = this.guessContentType(file.fileName);
@@ -187,18 +284,37 @@ export class SpeMigrationService {
           });
 
           progress.migratedFiles++;
-          console.log(`[SPE-Migration] Migrated ${progress.migratedFiles}/${progress.totalFiles}: ${file.fileName} → ${storedFile.id}`);
+          totalBytesUploaded += buffer.length;
+          const fileDuration = Date.now() - fileStart;
+          console.log(`[SPE-Migration] [${pct}%] ${fileIndex}/${progress.totalFiles} ✓ ${file.fileName} (${this.formatBytes(buffer.length)}, ${this.formatDuration(fileDuration)}) → ${storedFile.id.substring(0, 12)}...`);
         } catch (fileError) {
           progress.failedFiles++;
           const errorMsg = fileError instanceof Error ? fileError.message : String(fileError);
           progress.errors.push({ fileName: file.fileName, error: errorMsg });
-          console.error(`[SPE-Migration] Failed to migrate ${file.fileName}:`, errorMsg);
+          const fileDuration = Date.now() - fileStart;
+          console.error(`[SPE-Migration] [${pct}%] ${fileIndex}/${progress.totalFiles} ✗ ${file.fileName} FAILED (${this.formatDuration(fileDuration)}): ${errorMsg}`);
         }
       }
 
+      const uploadDuration = Date.now() - uploadStart;
+      console.log(`[SPE-Migration] Phase 3/4 complete (${this.formatDuration(uploadDuration)})`);
+      console.log(`[SPE-Migration]   Uploaded: ${progress.migratedFiles} files (${this.formatBytes(totalBytesUploaded)})`);
+      if (skippedCount > 0) {
+        console.log(`[SPE-Migration]   Previously migrated: ${skippedCount} files (skipped)`);
+      }
+      if (progress.failedFiles > 0) {
+        console.log(`[SPE-Migration]   Failed: ${progress.failedFiles} files`);
+        progress.errors.forEach(e => console.log(`[SPE-Migration]     - ${e.fileName}: ${e.error}`));
+      }
+
       if (fileIdMappings.length > 0) {
-        console.log(`[SPE-Migration] Updating ${fileIdMappings.length} database pointers...`);
+        console.log(`[SPE-Migration] Phase 4/4: Updating ${fileIdMappings.length} database pointers...`);
+        const pointerStart = Date.now();
         await this.updateDatabasePointers(tenantId, fileIdMappings);
+        const pointerDuration = Date.now() - pointerStart;
+        console.log(`[SPE-Migration] Phase 4/4 complete (${this.formatDuration(pointerDuration)})`);
+      } else {
+        console.log(`[SPE-Migration] Phase 4/4: Skipped (no new uploads to update)`);
       }
 
       if (progress.failedFiles === 0) {
@@ -207,16 +323,28 @@ export class SpeMigrationService {
       } else if (progress.migratedFiles > 0) {
         progress.status = 'completed';
         await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'completed' });
-        console.warn(`[SPE-Migration] Migration completed with ${progress.failedFiles} failures out of ${progress.totalFiles} files`);
       } else {
         progress.status = 'failed';
         await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: 'failed' });
       }
 
       progress.completedAt = new Date();
-      console.log(`[SPE-Migration] Migration finished for tenant ${tenantId}: ${progress.migratedFiles} migrated, ${progress.failedFiles} failed, ${fileIdMappings.length} pointers updated`);
+      const totalDuration = Date.now() - migrationStart;
+      console.log(`${'='.repeat(80)}`);
+      console.log(`[SPE-Migration] ■ MIGRATION ${progress.status === 'completed' ? 'COMPLETED' : 'FAILED'}`);
+      console.log(`[SPE-Migration]   Total time: ${this.formatDuration(totalDuration)}`);
+      console.log(`[SPE-Migration]   Files: ${progress.migratedFiles} migrated, ${progress.failedFiles} failed, ${progress.totalFiles} total`);
+      console.log(`[SPE-Migration]   Data transferred: ${this.formatBytes(totalBytesUploaded)}`);
+      console.log(`[SPE-Migration]   DB pointers updated: ${fileIdMappings.length}`);
+      console.log(`${'='.repeat(80)}`);
     } catch (error) {
-      console.error(`[SPE-Migration] Migration failed for tenant ${tenantId}:`, error);
+      const totalDuration = Date.now() - migrationStart;
+      console.error(`${'='.repeat(80)}`);
+      console.error(`[SPE-Migration] ■ MIGRATION CRASHED after ${this.formatDuration(totalDuration)}`);
+      console.error(`[SPE-Migration]   Error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[SPE-Migration]   Stack: ${error instanceof Error ? error.stack : 'N/A'}`);
+      console.error(`[SPE-Migration]   Progress at crash: ${progress.migratedFiles} migrated, ${progress.failedFiles} failed of ${progress.totalFiles} total`);
+      console.error(`${'='.repeat(80)}`);
       progress.status = 'failed';
       progress.completedAt = new Date();
       progress.errors.push({
