@@ -105,7 +105,7 @@ export class ContainerCreator {
       // Without this, file operations (upload/download/delete) will fail with
       // "not supported for AAD accounts (no addressUrl for Microsoft.FileServices)"
       console.log('[ContainerCreator] Registering container type in tenant SharePoint...');
-      const registrationResult = await this.registerContainerTypeInTenant(accessToken);
+      const registrationResult = await this.registerContainerTypeInTenant(azureTenantId);
       if (!registrationResult.success) {
         console.warn('[ContainerCreator] Container type registration warning:', registrationResult.message);
       } else {
@@ -288,8 +288,7 @@ export class ContainerCreator {
     azureTenantId: string
   ): Promise<{ success: boolean; message: string }> {
     try {
-      const accessToken = await this.getGraphAccessToken(azureTenantId);
-      return await this.registerContainerTypeInTenant(accessToken);
+      return await this.registerContainerTypeInTenant(azureTenantId);
     } catch (error) {
       return {
         success: false,
@@ -301,25 +300,29 @@ export class ContainerCreator {
   /**
    * Register the container type in the consuming tenant's SharePoint.
    * This is required before file operations (upload/download/delete) can work.
-   * Uses the Graph API to discover the tenant's SharePoint root URL,
-   * then calls the SharePoint REST API to register the container type.
+   * 
+   * Two-step process with two different tokens:
+   * 1. Graph API token to discover the tenant's SharePoint hostname
+   * 2. SharePoint-scoped token to call the SharePoint REST API for registration
    */
   private async registerContainerTypeInTenant(
-    accessToken: string
+    azureTenantId?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Step 1: Discover the tenant's SharePoint root URL via Graph API
+      const graphToken = await this.getGraphAccessToken(azureTenantId);
       const rootSiteResponse = await fetch(
         `${this.graphBaseUrl}/sites/root`,
         {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
+          headers: { 'Authorization': `Bearer ${graphToken}` }
         }
       );
 
       if (!rootSiteResponse.ok) {
+        const errorText = await rootSiteResponse.text();
         return {
           success: false,
-          message: `Failed to discover SharePoint root site: HTTP ${rootSiteResponse.status}`
+          message: `Failed to discover SharePoint root site: HTTP ${rootSiteResponse.status} — ${errorText}`
         };
       }
 
@@ -335,7 +338,10 @@ export class ContainerCreator {
       const sharePointUrl = `https://${siteHostname}`;
       console.log('[ContainerCreator] Discovered SharePoint URL:', sharePointUrl);
 
-      // Step 2: Register the container type via SharePoint REST API
+      // Step 2: Acquire a SharePoint-scoped token (different from Graph token)
+      const spToken = await this.getSharePointAccessToken(sharePointUrl, azureTenantId);
+
+      // Step 3: Register the container type via SharePoint REST API
       const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
       const registrationUrl = `${sharePointUrl}/_api/v2.1/storageContainerTypes/${this.containerTypeId}/applicationPermissions`;
 
@@ -354,7 +360,7 @@ export class ContainerCreator {
       const registrationResponse = await fetch(registrationUrl, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${spToken}`,
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
@@ -415,6 +421,37 @@ export class ContainerCreator {
     } catch (error) {
       console.error('[ContainerCreator] Authentication failed:', error);
       throw new Error(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get access token scoped to a specific SharePoint host.
+   * SharePoint REST APIs (/_api/v2.1/...) require a token with audience
+   * set to the SharePoint URL, NOT the Graph API audience.
+   */
+  private async getSharePointAccessToken(sharePointUrl: string, azureTenantId?: string): Promise<string> {
+    const msalInstance = azureTenantId
+      ? getClientCredentialsMsalForTenant(azureTenantId)
+      : clientCredentialsMsalInstance;
+
+    if (!msalInstance) {
+      throw new Error('MSAL client credentials instance not configured.');
+    }
+
+    try {
+      const response = await msalInstance.acquireTokenByClientCredential({
+        scopes: [`${sharePointUrl}/.default`],
+      });
+
+      if (!response) {
+        throw new Error('Failed to acquire SharePoint access token - no response received');
+      }
+
+      console.log(`[ContainerCreator] Successfully acquired SharePoint token for ${sharePointUrl}`);
+      return response.accessToken;
+    } catch (error) {
+      console.error(`[ContainerCreator] SharePoint token acquisition failed for ${sharePointUrl}:`, error);
+      throw new Error(`SharePoint authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

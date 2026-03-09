@@ -1769,6 +1769,16 @@ export async function registerContainerTypePermissions(
     
     console.log('[GraphClient] Using SharePoint root site URL:', rootSiteUrl);
 
+    // Acquire a SharePoint-scoped token (different audience from Graph API)
+    const spTokenResponse = await msalInstance.acquireTokenByClientCredential({
+      scopes: [`${rootSiteUrl}/.default`],
+      skipCache: false,
+    });
+
+    if (!spTokenResponse?.accessToken) {
+      throw new Error('Failed to acquire SharePoint-scoped access token');
+    }
+
     // Construct the SharePoint REST API v2.1 endpoint
     const registrationUrl = `${rootSiteUrl}/_api/v2.1/storageContainerTypes/${containerTypeId}/applicationPermissions`;
     
@@ -1787,13 +1797,13 @@ export async function registerContainerTypePermissions(
 
     console.log('[GraphClient] Registration payload:', JSON.stringify(payload, null, 2));
 
-    // Make the PUT request to register permissions
+    // Make the PUT request to register permissions using SharePoint-scoped token
     const registrationResponse = await fetch(
       registrationUrl,
       {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${tokenResponse.accessToken}`,
+          'Authorization': `Bearer ${spTokenResponse.accessToken}`,
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
