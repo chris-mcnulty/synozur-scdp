@@ -727,15 +727,42 @@ export class SpeMigrationService {
 
       const rootPrefix = bucketPath ? `${bucketPath}/` : '';
       try {
-        const [allGcsFiles] = await bucket.getFiles({ prefix: rootPrefix, autoPaginate: true });
-        console.log(`[SPE-Migration] Total files in object storage under prefix '${rootPrefix}': ${allGcsFiles.length}`);
-        
+        const knownFolders = ['receipts/', 'invoices/', 'contracts/', 'statements/', 'estimates/', 'change_orders/', 'reports/'];
+        const allGcsFiles: any[] = [];
         const seenPaths = new Set<string>();
+
+        for (const folder of knownFolders) {
+          const folderPrefix = rootPrefix + folder;
+          let folderCount = 0;
+          let pageToken: string | undefined;
+          let pageNum = 0;
+
+          do {
+            pageNum++;
+            const opts: any = { prefix: folderPrefix, maxResults: 100, autoPaginate: false };
+            if (pageToken) opts.pageToken = pageToken;
+
+            const [pageFiles, nextQuery] = await bucket.getFiles(opts);
+            for (const f of pageFiles) {
+              if (!seenPaths.has(f.name)) {
+                seenPaths.add(f.name);
+                allGcsFiles.push(f);
+                folderCount++;
+              }
+            }
+            pageToken = nextQuery?.pageToken;
+          } while (pageToken && pageNum < 100);
+
+          if (folderCount > 0) {
+            console.log(`[SPE-Migration] Object storage folder '${folder}': ${folderCount} items${pageNum > 1 ? ` (${pageNum} pages)` : ''}`);
+          }
+        }
+
+        console.log(`[SPE-Migration] Total files in object storage: ${allGcsFiles.length}`);
+        
         for (const gcsFile of allGcsFiles) {
           const fileName = path.basename(gcsFile.name);
           if (!fileName || fileName.endsWith('.metadata.json')) continue;
-          if (seenPaths.has(gcsFile.name)) continue;
-          seenPaths.add(gcsFile.name);
 
           const relativePath = rootPrefix ? gcsFile.name.replace(rootPrefix, '') : gcsFile.name;
           const folder = relativePath.split('/')[0] || '';
