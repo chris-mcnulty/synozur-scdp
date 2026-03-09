@@ -652,6 +652,36 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const initSchemaMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/spe/initialize-schema`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      toast({ title: "Schema initialized", description: data.message || "Metadata columns have been created on the SPE container." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Schema initialization failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const retagMetadataMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/spe/retag-metadata`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      toast({
+        title: data.success ? "Metadata re-tagged" : "Re-tag completed with errors",
+        description: data.message || `Tagged: ${data.tagged}, Skipped: ${data.skipped}, Failed: ${data.failed}`,
+        variant: data.success ? "default" : "destructive",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Re-tag failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const [includeUntagged, setIncludeUntagged] = useState(false);
   const [inventoryData, setInventoryData] = useState<{
     totalFiles: number;
@@ -1392,6 +1422,24 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                   Reset Status
                 </Button>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => initSchemaMutation.mutate()}
+                disabled={initSchemaMutation.isPending}
+              >
+                {initSchemaMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Database className="h-3 w-3 mr-1" />}
+                Initialize Schema
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => retagMetadataMutation.mutate()}
+                disabled={retagMetadataMutation.isPending}
+              >
+                {retagMetadataMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                Re-tag Metadata
+              </Button>
             </div>
           </div>
         )}
