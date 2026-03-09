@@ -323,10 +323,12 @@ export class SpeMigrationService {
       uploadedFileId = driveItem.id;
       console.log(`[SPE-Test] Upload OK: ${driveItem.id}`);
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[SPE-Test] Upload failed:`, errMsg);
       return {
         success: false, uploadOk: false, downloadOk: false, deleteOk: false,
-        error: 'Upload test failed',
-        details: err instanceof Error ? err.message : String(err),
+        error: `Upload test failed: ${errMsg}`,
+        details: errMsg,
       };
     }
 

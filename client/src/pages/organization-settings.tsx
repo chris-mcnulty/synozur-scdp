@@ -975,7 +975,10 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                     {testResult.deleteOk ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />} Cleanup
                   </div>
                 </div>
-                {testResult.details && <p className="text-xs text-muted-foreground">{testResult.details}</p>}
+                {testResult.details && <p className="text-xs text-muted-foreground break-all">{testResult.details}</p>}
+                {!testResult.success && testResult.error && testResult.error !== testResult.details && (
+                  <p className="text-xs text-red-500 dark:text-red-400 break-all mt-1">Graph API Error: {testResult.error}</p>
+                )}
               </div>
             )}
           </div>

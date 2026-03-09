@@ -25,7 +25,6 @@ async function getClientCredentialsToken(credentials: PlannerCredentials): Promi
   const cached = tokenCaches.get(cacheKey);
   
   if (cached && cached.expiresAt > Date.now() + 60000) {
-    console.log('[PLANNER-AUTH] Using cached token');
     return cached.accessToken;
   }
 
