@@ -180,12 +180,45 @@ export class GraphClient {
   private containerCache = new Map<string, FileStorageContainer>();
   private cacheExpiry = new Map<string, number>();
   private readonly cacheLifetime = 5 * 60 * 1000; // 5 minutes
+  
+  private driveIdCache = new Map<string, string>();
+  private driveIdExpiry = new Map<string, number>();
 
   constructor(azureTenantId?: string) {
     this.azureTenantId = azureTenantId;
     if (!azureTenantId && !clientCredentialsMsalInstance) {
       console.warn('[GraphClient] MSAL client credentials instance not configured. Please check Azure AD environment variables.');
     }
+  }
+
+  getContainerTypeId(): string {
+    return '358aba7d-bb55-4ce0-a08d-e51f03d5edf1';
+  }
+
+  async getContainerDriveId(containerId: string): Promise<string> {
+    const now = Date.now();
+    const expiry = this.driveIdExpiry.get(containerId);
+    if (expiry && now < expiry && this.driveIdCache.has(containerId)) {
+      return this.driveIdCache.get(containerId)!;
+    }
+
+    const driveData = await this.makeGraphRequest<{ id: string; driveType: string }>(
+      'GET',
+      `/storage/fileStorage/containers/${containerId}/drive`
+    );
+    
+    if (!driveData?.id) {
+      throw new Error(`Could not resolve drive ID for container ${containerId}`);
+    }
+    
+    console.log(`[GraphClient] Resolved container ${containerId.substring(0, 15)}... to drive ${driveData.id.substring(0, 15)}... (type: ${driveData.driveType})`);
+    this.driveIdCache.set(containerId, driveData.id);
+    this.driveIdExpiry.set(containerId, now + this.cacheLifetime);
+    return driveData.id;
+  }
+
+  private driveEndpoint(driveId: string): string {
+    return `/drives/${driveId}`;
   }
 
   /**
@@ -716,23 +749,22 @@ export class GraphClient {
     const normalizedFolderPath = this.validateAndNormalizeFolderPath(folderPath, projectCode, expenseId);
     
     return this.withRetry(async () => {
-      // First, ensure the folder structure exists
-      await this.ensureFolderExists(containerId, normalizedFolderPath);
+      const driveId = await this.getContainerDriveId(containerId);
+      const drivePath = this.driveEndpoint(driveId);
       
-      // Construct the upload path
+      await this.ensureFolderExists(containerId, normalizedFolderPath, driveId);
+      
       const uploadPath = `${normalizedFolderPath}/${sanitizedFileName}`.replace(/\/+/g, '/');
       
-      // Upload the file
       let driveItem: DriveItem;
       
-      // For large files (>4MB), use resumable upload
       if (fileBuffer.length > 4 * 1024 * 1024) {
-        driveItem = await this.uploadLargeFileWithRetry(containerId, uploadPath, fileBuffer);
+        driveItem = await this.uploadLargeFileWithRetry(driveId, uploadPath, fileBuffer);
       } else {
-        // For small files, use simple upload with container endpoint
-        const uploadEndpoint = `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/content`;
+        const uploadEndpoint = `${drivePath}/root:${uploadPath}:/content`;
         console.log(`[GraphClient] Uploading file to SharePoint Embedded:`, {
           containerId,
+          driveId,
           uploadPath,
           fileName: sanitizedFileName,
           endpoint: uploadEndpoint,
@@ -779,10 +811,10 @@ export class GraphClient {
       
       // Only update if there's metadata to set
       if (Object.keys(cleanedMetadata).length > 0) {
-        // Update list item fields via PATCH request
+        const driveId = await this.getContainerDriveId(containerId);
         await this.makeGraphRequest(
           'PATCH',
-          `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listItem/fields`,
+          `${this.driveEndpoint(driveId)}/items/${itemId}/listItem/fields`,
           cleanedMetadata
         );
         console.log('[GraphClient] Metadata updated successfully for item:', itemId);
@@ -796,11 +828,10 @@ export class GraphClient {
   /**
    * Upload large file using resumable upload with proper retry logic
    */
-  private async uploadLargeFileWithRetry(containerId: string, uploadPath: string, fileBuffer: Buffer): Promise<DriveItem> {
-    // Create upload session with container endpoint
+  private async uploadLargeFileWithRetry(driveId: string, uploadPath: string, fileBuffer: Buffer): Promise<DriveItem> {
     const uploadSession = await this.makeGraphRequest<{uploadUrl: string}>(
       'POST',
-      `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/createUploadSession`,
+      `${this.driveEndpoint(driveId)}/root:${uploadPath}:/createUploadSession`,
       {
         item: {
           '@microsoft.graph.conflictBehavior': 'replace'
@@ -894,27 +925,26 @@ export class GraphClient {
   /**
    * Ensure folder structure exists, creating folders as needed with sanitized names
    */
-  private async ensureFolderExists(containerId: string, folderPath: string): Promise<void> {
+  private async ensureFolderExists(containerId: string, folderPath: string, driveId?: string): Promise<void> {
+    const resolvedDriveId = driveId || await this.getContainerDriveId(containerId);
+    const drivePath = this.driveEndpoint(resolvedDriveId);
     const pathParts = folderPath.split('/').filter(part => part.length > 0);
     let currentPath = '';
 
     for (const part of pathParts) {
-      // Sanitize the folder name before creating
       const sanitizedPart = this.sanitizePathSegment(part);
       currentPath += `/${sanitizedPart}`;
       
       try {
-        // Check if folder exists using container endpoint
-        await this.makeGraphRequest<DriveItem>('GET', `/storage/fileStorage/containers/${containerId}/drive/root:${currentPath}`);
+        await this.makeGraphRequest<DriveItem>('GET', `${drivePath}/root:${currentPath}`);
       } catch (error: any) {
         if (error.status === 404) {
-          // Folder doesn't exist, create it
           const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/')) || '/';
           const parentPathForApi = parentPath === '/' ? '' : `:${parentPath}:`;
           
           await this.makeGraphRequest<DriveItem>(
             'POST',
-            `/storage/fileStorage/containers/${containerId}/drive/root${parentPathForApi}/children`,
+            `${drivePath}/root${parentPathForApi}/children`,
             {
               name: sanitizedPart,
               folder: {},
@@ -947,8 +977,9 @@ export class GraphClient {
     }
 
     return this.withRetry(async () => {
-      // Get the file metadata first using container endpoint
-      const driveItem = await this.makeGraphRequest<DriveItem>('GET', `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`);
+      const driveId = await this.getContainerDriveId(containerId);
+      const drivePath = this.driveEndpoint(driveId);
+      const driveItem = await this.makeGraphRequest<DriveItem>('GET', `${drivePath}/items/${itemId}`);
       
       // Validate it's actually a file
       if (!driveItem.file) {
@@ -1022,11 +1053,11 @@ export class GraphClient {
    * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
   async deleteFile(driveIdOrContainerId: string, itemId: string): Promise<void> {
-    // For SharePoint Embedded, use the first parameter as containerId
     const containerId = driveIdOrContainerId;
     
     return this.withRetry(async () => {
-      await this.makeGraphRequest<void>('DELETE', `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`);
+      const driveId = await this.getContainerDriveId(containerId);
+      await this.makeGraphRequest<void>('DELETE', `${this.driveEndpoint(driveId)}/items/${itemId}`);
     }, `deleteFile(${itemId})`);
   }
 
@@ -1035,15 +1066,16 @@ export class GraphClient {
    * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
   async createFolder(driveIdOrContainerId: string, parentPath: string, folderName: string): Promise<DriveItem> {
-    // For SharePoint Embedded, use the first parameter as containerId
     const containerId = driveIdOrContainerId;
     
     return this.withRetry(async () => {
+      const driveId = await this.getContainerDriveId(containerId);
+      const drivePath = this.driveEndpoint(driveId);
       const parentPathForApi = parentPath === '/' ? '' : `:${parentPath}:`;
       
       return await this.makeGraphRequest<DriveItem>(
         'POST',
-        `/storage/fileStorage/containers/${containerId}/drive/root${parentPathForApi}/children`,
+        `${drivePath}/root${parentPathForApi}/children`,
         {
           name: folderName,
           folder: {},
@@ -1058,16 +1090,16 @@ export class GraphClient {
    * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
   async listFiles(driveIdOrContainerId: string, folderPath: string = '/'): Promise<DriveItem[]> {
-    // For SharePoint Embedded, use the first parameter as containerId
     const containerId = driveIdOrContainerId;
     
     return this.withRetry(async () => {
+      const driveId = await this.getContainerDriveId(containerId);
+      const drivePath = this.driveEndpoint(driveId);
       const pathForApi = folderPath === '/' ? '' : `:${folderPath}:`;
       
-      // Request with expanded listItem fields to get metadata for all files
       const response = await this.makeGraphRequest<GraphResponse<DriveItem>>(
         'GET',
-        `/storage/fileStorage/containers/${containerId}/drive/root${pathForApi}/children?$expand=listItem($expand=fields)`
+        `${drivePath}/root${pathForApi}/children?$expand=listItem($expand=fields)`
       );
       
       return response.value || [];
@@ -1079,14 +1111,13 @@ export class GraphClient {
    * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
   async getItem(driveIdOrContainerId: string, itemId: string): Promise<DriveItem> {
-    // For SharePoint Embedded, use the first parameter as containerId
     const containerId = driveIdOrContainerId;
     
     return this.withRetry(async () => {
-      // Request item with expanded listItem fields to get metadata
+      const driveId = await this.getContainerDriveId(containerId);
       return await this.makeGraphRequest<DriveItem>(
         'GET', 
-        `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}?$expand=listItem($expand=fields)`
+        `${this.driveEndpoint(driveId)}/items/${itemId}?$expand=listItem($expand=fields)`
       );
     }, `getItem(${itemId})`);
   }
@@ -1307,9 +1338,10 @@ export class GraphClient {
    */
   async getDocumentMetadata(containerId: string, itemId: string): Promise<DocumentMetadata> {
     return this.withRetry(async () => {
+      const driveId = await this.getContainerDriveId(containerId);
       const response = await this.makeGraphRequest<DocumentListItem>(
         'GET',
-        `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listitem/fields`
+        `${this.driveEndpoint(driveId)}/items/${itemId}/listitem/fields`
       );
       return response.fields || {};
     }, `getDocumentMetadata(${containerId}, ${itemId})`);
@@ -1341,9 +1373,10 @@ export class GraphClient {
         }
       }
 
+      const driveId = await this.getContainerDriveId(containerId);
       const response = await this.makeGraphRequest<DocumentListItem>(
         'PATCH',
-        `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listitem/fields`,
+        `${this.driveEndpoint(driveId)}/items/${itemId}/listitem/fields`,
         cleanMetadata
       );
       return response.fields || {};
@@ -1393,9 +1426,10 @@ export class GraphClient {
       
       const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
       
+      const driveId = await this.getContainerDriveId(containerId);
       const response = await this.makeGraphRequest<GraphResponse<DriveItemWithMetadata>>(
         'GET',
-        `/storage/fileStorage/containers/${containerId}/drive/root${pathForApi}/children${queryString}`
+        `${this.driveEndpoint(driveId)}/root${pathForApi}/children${queryString}`
       );
       
       return response.value || [];
@@ -1424,9 +1458,10 @@ export class GraphClient {
       
       const queryString = queryParams.join('&');
       
+      const driveId = await this.getContainerDriveId(containerId);
       const response = await this.makeGraphRequest<GraphResponse<DriveItemWithMetadata>>(
         'GET',
-        `/storage/fileStorage/containers/${containerId}/drive/root/search(q='${encodeURIComponent(query)}')?${queryString}`
+        `${this.driveEndpoint(driveId)}/root/search(q='${encodeURIComponent(query)}')?${queryString}`
       );
       
       return response.value || [];

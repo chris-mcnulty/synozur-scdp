@@ -431,8 +431,27 @@ export class SpeMigrationService {
     }
 
     try {
+      const driveId = await graphClient.getContainerDriveId(containerId);
+      diagnostics.driveIdResolved = `OK (${driveId.substring(0, 20)}...)`;
+      console.log(`[SPE-Test] Drive ID resolved: ${driveId.substring(0, 20)}...`);
+
+      const driveRootResp = await fetch(
+        `https://graph.microsoft.com/v1.0/drives/${driveId}/root`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      const driveRootData = await driveRootResp.json();
+      diagnostics.driveRootDirect = driveRootResp.ok
+        ? `OK (name: ${driveRootData.name}, childCount: ${driveRootData.folder?.childCount})`
+        : `FAIL ${driveRootResp.status}: ${driveRootData.error?.message || 'unknown'}`;
+      console.log(`[SPE-Test] Drive root (direct): ${diagnostics.driveRootDirect}`);
+    } catch (e) {
+      diagnostics.driveIdResolved = `Error: ${e instanceof Error ? e.message : e}`;
+      console.log(`[SPE-Test] Drive ID resolution failed: ${e instanceof Error ? e.message : e}`);
+    }
+
+    try {
       const regResp = await fetch(
-        `https://graph.microsoft.com/v1.0/storage/fileStorage/containerTypeRegistrations/${graphClient.getContainerTypeId?.() || '358aba7d-bb55-4ce0-a08d-e51f03d5edf1'}`,
+        `https://graph.microsoft.com/v1.0/storage/fileStorage/containerTypeRegistrations/${graphClient.getContainerTypeId()}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const regData = await regResp.json();
