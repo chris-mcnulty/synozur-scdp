@@ -385,6 +385,65 @@ export class SpeMigrationService {
     const graphClient = new GraphClient(azureTenantId);
     console.log(`[SPE-Test] Testing container ${containerId.substring(0, 20)}... with Azure tenant: ${azureTenantId ? azureTenantId.substring(0, 8) + '...' : 'default'}`);
 
+    const token = await graphClient.authenticate();
+
+    const diagnostics: Record<string, string> = {};
+    try {
+      const containerResp = await fetch(
+        `https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      const containerData = await containerResp.json();
+      diagnostics.containerStatus = containerResp.ok
+        ? `OK (${containerData.status}, type: ${containerData.containerTypeId})`
+        : `FAIL ${containerResp.status}: ${containerData.error?.message || 'unknown'}`;
+      console.log(`[SPE-Test] Container check: ${diagnostics.containerStatus}`);
+    } catch (e) {
+      diagnostics.containerStatus = `Error: ${e instanceof Error ? e.message : e}`;
+    }
+
+    try {
+      const driveResp = await fetch(
+        `https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}/drive`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      const driveData = await driveResp.json();
+      diagnostics.driveV1 = driveResp.ok
+        ? `OK (driveType: ${driveData.driveType}, id: ${driveData.id?.substring(0, 20)})`
+        : `FAIL ${driveResp.status}: ${driveData.error?.message || 'unknown'}`;
+      console.log(`[SPE-Test] Drive v1.0: ${diagnostics.driveV1}`);
+    } catch (e) {
+      diagnostics.driveV1 = `Error: ${e instanceof Error ? e.message : e}`;
+    }
+
+    try {
+      const betaDriveResp = await fetch(
+        `https://graph.microsoft.com/beta/storage/fileStorage/containers/${containerId}/drive`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      const betaDriveData = await betaDriveResp.json();
+      diagnostics.driveBeta = betaDriveResp.ok
+        ? `OK (driveType: ${betaDriveData.driveType}, id: ${betaDriveData.id?.substring(0, 20)})`
+        : `FAIL ${betaDriveResp.status}: ${betaDriveData.error?.message || 'unknown'}`;
+      console.log(`[SPE-Test] Drive beta: ${diagnostics.driveBeta}`);
+    } catch (e) {
+      diagnostics.driveBeta = `Error: ${e instanceof Error ? e.message : e}`;
+    }
+
+    try {
+      const regResp = await fetch(
+        `https://graph.microsoft.com/v1.0/storage/fileStorage/containerTypeRegistrations/${graphClient.getContainerTypeId?.() || '358aba7d-bb55-4ce0-a08d-e51f03d5edf1'}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      const regData = await regResp.json();
+      diagnostics.registration = regResp.ok
+        ? `OK (billing: ${regData.billingClassification}, grants: ${regData.applicationPermissionGrants?.length || 0})`
+        : `FAIL ${regResp.status}: ${regData.error?.message || 'unknown'}`;
+      console.log(`[SPE-Test] Registration: ${diagnostics.registration}`);
+    } catch (e) {
+      diagnostics.registration = `Error: ${e instanceof Error ? e.message : e}`;
+    }
+
     const testContent = `SPE test file - ${new Date().toISOString()} - tenant: ${tenantId}`;
     const testBuffer = Buffer.from(testContent, 'utf-8');
     const testFileName = `_spe_test_${Date.now()}.txt`;
@@ -413,7 +472,7 @@ export class SpeMigrationService {
       return {
         success: false, uploadOk: false, downloadOk: false, deleteOk: false,
         error: `Upload test failed: ${errMsg}`,
-        details: errMsg,
+        details: `Diagnostics: ${JSON.stringify(diagnostics)} | Error: ${errMsg}`,
       };
     }
 
