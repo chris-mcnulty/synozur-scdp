@@ -888,6 +888,60 @@ export function registerSharePointContainerRoutes(
     }
   });
   
+  app.post("/api/files/reorganize", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    try {
+      const tenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
+      const { containerId, azureTenantId } = await sharePointFileStorage.getContainerForTenant(tenantId);
+      if (!containerId) {
+        return res.status(400).json({ message: "No SPE container configured" });
+      }
+      const client = sharePointFileStorage.resolveGraphClient(azureTenantId);
+      
+      const docTypeToFolder: Record<string, string> = {
+        receipt: '/receipts', invoice: '/invoices', contract: '/contracts',
+        statementOfWork: '/statements', estimate: '/estimates',
+        changeOrder: '/change_orders', report: '/reports',
+      };
+
+      const allFiles = await sharePointFileStorage.listFiles(undefined, tenantId);
+      
+      let moved = 0;
+      let skipped = 0;
+      let failed = 0;
+      const errors: string[] = [];
+      const details: { file: string; from: string; to: string }[] = [];
+
+      for (const file of allFiles) {
+        const filePath = file.filePath || '';
+        const docType = file.metadata.documentType;
+        const correctFolder = docTypeToFolder[docType];
+        if (!correctFolder) { skipped++; continue; }
+        
+        if (filePath === correctFolder) {
+          skipped++;
+          continue;
+        }
+        
+        try {
+          console.log(`[REORGANIZE] Moving ${file.fileName} from ${filePath} to ${correctFolder}`);
+          await client.moveItem(containerId, file.id, correctFolder);
+          details.push({ file: file.fileName, from: filePath, to: correctFolder });
+          moved++;
+        } catch (err) {
+          console.error(`[REORGANIZE] Failed to move ${file.fileName}:`, err instanceof Error ? err.message : err);
+          errors.push(`${file.fileName}: ${err instanceof Error ? err.message : 'unknown error'}`);
+          failed++;
+        }
+      }
+      
+      console.log(`[REORGANIZE] Complete: ${moved} moved, ${skipped} already correct, ${failed} failed`);
+      res.json({ moved, skipped, failed, errors: errors.slice(0, 20), details: details.slice(0, 50), total: allFiles.length });
+    } catch (error) {
+      console.error("[REORGANIZE] Error:", error);
+      res.status(500).json({ message: "Failed to reorganize files", error: error instanceof Error ? error.message : 'unknown' });
+    }
+  });
+
   app.post("/api/files/validate", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
       const valTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;

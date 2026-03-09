@@ -1160,6 +1160,32 @@ export class GraphClient {
     }, `listFiles(${folderPath})`);
   }
 
+  async moveItem(driveIdOrContainerId: string, itemId: string, destinationFolderPath: string): Promise<DriveItem> {
+    const containerId = driveIdOrContainerId;
+    
+    return this.withRetry(async () => {
+      const driveId = await this.getContainerDriveId(containerId);
+      const drivePath = this.driveEndpoint(driveId);
+      
+      await this.ensureFolderExists(containerId, destinationFolderPath, driveId);
+      
+      const destFolder = await this.makeGraphRequest<DriveItem>(
+        'GET',
+        `${drivePath}/root:${destinationFolderPath}`
+      );
+      
+      return await this.makeGraphRequest<DriveItem>(
+        'PATCH',
+        `${drivePath}/items/${itemId}`,
+        {
+          parentReference: {
+            id: destFolder.id
+          }
+        }
+      );
+    }, `moveItem(${itemId} -> ${destinationFolderPath})`);
+  }
+
   /**
    * Get file/folder information from SharePoint Embedded container
    * Maintains backward compatibility by accepting driveId parameter but uses containerId internally

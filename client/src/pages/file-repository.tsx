@@ -250,7 +250,6 @@ export default function FileRepository() {
     }
   });
 
-  // Validate files mutation
   const validateMutation = useMutation({
     mutationFn: () => apiRequest("/api/files/validate", {
       method: "POST"
@@ -259,6 +258,27 @@ export default function FileRepository() {
       toast({
         title: "Validation complete",
         description: `Validated ${result.totalFiles} files. ${result.issues} issues found.`
+      });
+    }
+  });
+
+  const reorganizeMutation = useMutation({
+    mutationFn: () => apiRequest("/api/files/reorganize", {
+      method: "POST"
+    }),
+    onSuccess: (result: any) => {
+      toast({
+        title: "Reorganization complete",
+        description: `${result.moved} files moved, ${result.skipped} already correct, ${result.failed} failed`
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/files"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/files/stats"] });
+    },
+    onError: () => {
+      toast({
+        title: "Reorganization failed",
+        description: "Could not reorganize files",
+        variant: "destructive"
       });
     }
   });
@@ -413,6 +433,14 @@ export default function FileRepository() {
             >
               <CheckCircle className="w-4 h-4 mr-2" />
               Validate Files
+            </Button>
+            <Button
+              onClick={() => reorganizeMutation.mutate()}
+              variant="outline"
+              disabled={reorganizeMutation.isPending}
+            >
+              <FolderOpen className="w-4 h-4 mr-2" />
+              {reorganizeMutation.isPending ? "Reorganizing..." : "Reorganize Files"}
             </Button>
             <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
               <DialogTrigger asChild>
