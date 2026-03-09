@@ -117,20 +117,41 @@ export async function registerRoutes(app: Express): Promise<void> {
   // SharePoint configuration
   const getSharePointConfig = async () => {
     try {
-      // Import container configuration from entra-config
       const { getSharePointContainerConfig } = await import('./auth/entra-config.js');
       const containerConfig = getSharePointContainerConfig();
 
-      // Try to get container ID from system settings first, fallback to built-in configuration
-      let containerId = await storage.getSystemSettingValue('SHAREPOINT_CONTAINER_ID') || containerConfig.containerId || '';
+      let containerId = '';
 
-      // For backward compatibility with existing installations, if no container ID is set,
-      // use the drive ID as container ID (admin will need to update this)
+      const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+      try {
+        const { tenants } = await import('@shared/schema.js');
+        const { eq } = await import('drizzle-orm');
+        const { db } = await import('./db.js');
+        const speEnabledTenants = await db.select({
+          speContainerIdDev: tenants.speContainerIdDev,
+          speContainerIdProd: tenants.speContainerIdProd,
+          speStorageEnabled: tenants.speStorageEnabled,
+        }).from(tenants).where(eq(tenants.speStorageEnabled, true));
+
+        if (speEnabledTenants.length >= 1) {
+          const t = speEnabledTenants[0];
+          const tenantContainer = isProduction ? t.speContainerIdProd : t.speContainerIdDev;
+          if (tenantContainer) {
+            containerId = tenantContainer;
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[getSharePointConfig] Failed to look up tenant SPE config:', dbErr instanceof Error ? dbErr.message : dbErr);
+      }
+
+      if (!containerId) {
+        containerId = await storage.getSystemSettingValue('SHAREPOINT_CONTAINER_ID') || containerConfig.containerId || '';
+      }
+
       if (!containerId) {
         containerId = await storage.getSystemSettingValue('SHAREPOINT_DRIVE_ID') || process.env.SHAREPOINT_DRIVE_ID || '';
       }
 
-      // Legacy site ID for backward compatibility (will be ignored by new container APIs)
       const legacySiteId = await storage.getSystemSettingValue('SHAREPOINT_SITE_ID') || process.env.SHAREPOINT_SITE_ID;
 
       return {
@@ -138,16 +159,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         containerTypeId: containerConfig.containerTypeId,
         environment: containerConfig.environment,
         containerName: containerConfig.containerName,
-        // For backward compatibility, keep these properties but they'll use containerId internally
         siteId: legacySiteId || 'legacy-not-used',
-        driveId: containerId, // Map driveId to containerId for backward compatibility
+        driveId: containerId,
         configured: !!containerId
       };
     } catch (error) {
-      // Fallback to environment variables if configuration import fails
       let containerId = process.env.SHAREPOINT_CONTAINER_ID;
 
-      // For backward compatibility
       if (!containerId) {
         containerId = process.env.SHAREPOINT_DRIVE_ID;
       }

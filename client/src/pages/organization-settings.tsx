@@ -638,6 +638,20 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const resetMigrationMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/reset-migration-status`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      toast({ title: "Migration status reset", description: data.message || "You can now re-run the migration." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Reset failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const [includeUntagged, setIncludeUntagged] = useState(false);
   const [inventoryData, setInventoryData] = useState<{
     totalFiles: number;
@@ -1357,15 +1371,28 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                 )}
               </div>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => migrateMutation.mutate()}
-              disabled={migrateMutation.isPending || tenantSettings.speMigrationStatus === 'in_progress'}
-            >
-              {migrateMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
-              {tenantSettings.speMigrationStatus === 'in_progress' ? "Migration In Progress..." : "Start Migration"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => migrateMutation.mutate()}
+                disabled={migrateMutation.isPending || tenantSettings.speMigrationStatus === 'in_progress'}
+              >
+                {migrateMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                {tenantSettings.speMigrationStatus === 'in_progress' ? "Migration In Progress..." : "Start Migration"}
+              </Button>
+              {(tenantSettings.speMigrationStatus === 'in_progress' || tenantSettings.speMigrationStatus === 'failed') && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => resetMigrationMutation.mutate()}
+                  disabled={resetMigrationMutation.isPending}
+                >
+                  {resetMigrationMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RotateCcw className="h-3 w-3 mr-1" />}
+                  Reset Status
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </CardContent>

@@ -58,28 +58,55 @@ export class SharePointFileStorage {
   }
 
   async getContainerForTenant(tenantId?: string): Promise<{ containerId: string; azureTenantId?: string }> {
+    const lookupTenant = async (id: string) => {
+      const [tenant] = await db.select({
+        speContainerIdDev: tenants.speContainerIdDev,
+        speContainerIdProd: tenants.speContainerIdProd,
+        speStorageEnabled: tenants.speStorageEnabled,
+        azureTenantId: tenants.azureTenantId,
+      }).from(tenants).where(eq(tenants.id, id));
+      if (tenant && tenant.speStorageEnabled) {
+        const tenantContainer = this.isProduction
+          ? tenant.speContainerIdProd
+          : tenant.speContainerIdDev;
+        if (tenantContainer) {
+          return { containerId: tenantContainer, azureTenantId: tenant.azureTenantId || undefined };
+        }
+      }
+      return null;
+    };
+
     if (tenantId) {
       try {
-        const [tenant] = await db.select({
-          speContainerIdDev: tenants.speContainerIdDev,
-          speContainerIdProd: tenants.speContainerIdProd,
-          speStorageEnabled: tenants.speStorageEnabled,
-          azureTenantId: tenants.azureTenantId,
-        }).from(tenants).where(eq(tenants.id, tenantId));
-
-        if (tenant && tenant.speStorageEnabled) {
-          const tenantContainer = this.isProduction
-            ? tenant.speContainerIdProd
-            : tenant.speContainerIdDev;
-
-          if (tenantContainer) {
-            console.log(`[SharePointStorage] Using tenant-specific container for tenant ${tenantId}: ${tenantContainer.substring(0, 20)}...`);
-            return { containerId: tenantContainer, azureTenantId: tenant.azureTenantId || undefined };
-          }
+        const result = await lookupTenant(tenantId);
+        if (result) {
+          console.log(`[SharePointStorage] Using tenant-specific container for tenant ${tenantId}: ${result.containerId.substring(0, 20)}...`);
+          return result;
         }
       } catch (error) {
-        console.warn(`[SharePointStorage] Failed to look up tenant container for ${tenantId}, falling back to global:`, error instanceof Error ? error.message : error);
+        console.warn(`[SharePointStorage] Failed to look up tenant container for ${tenantId}, falling back:`, error instanceof Error ? error.message : error);
       }
+    }
+
+    try {
+      const speEnabledTenants = await db.select({
+        id: tenants.id,
+        speContainerIdDev: tenants.speContainerIdDev,
+        speContainerIdProd: tenants.speContainerIdProd,
+        speStorageEnabled: tenants.speStorageEnabled,
+        azureTenantId: tenants.azureTenantId,
+      }).from(tenants).where(eq(tenants.speStorageEnabled, true));
+
+      if (speEnabledTenants.length === 1) {
+        const t = speEnabledTenants[0];
+        const container = this.isProduction ? t.speContainerIdProd : t.speContainerIdDev;
+        if (container) {
+          console.log(`[SharePointStorage] No tenantId provided, using sole SPE-enabled tenant ${t.id}: ${container.substring(0, 20)}...`);
+          return { containerId: container, azureTenantId: t.azureTenantId || undefined };
+        }
+      }
+    } catch (error) {
+      console.warn(`[SharePointStorage] Failed to look up SPE-enabled tenants:`, error instanceof Error ? error.message : error);
     }
 
     return { containerId: this.containerId };

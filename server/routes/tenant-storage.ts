@@ -329,6 +329,38 @@ export function registerTenantStorageRoutes(
     }
   });
 
+  app.post("/api/admin/tenants/:id/reset-migration-status", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ message: "Only platform administrators can reset migration status" });
+      }
+
+      const speConfig = await storage.getTenantSpeConfig(tenantId);
+      if (!speConfig) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      await storage.updateTenantSpeConfig(tenantId, { speMigrationStatus: null });
+      console.log(`[SPE-Migration] Migration status reset for tenant ${tenantId} by ${currentUser?.email}`);
+
+      res.json({
+        success: true,
+        message: "Migration status has been reset. You can now re-run the migration.",
+        previousStatus: speConfig.speMigrationStatus,
+      });
+    } catch (error) {
+      console.error("[SPE-Migration] Error resetting migration status:", error);
+      res.status(500).json({
+        message: "Failed to reset migration status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.post("/api/admin/tenants/:id/migrate-storage", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = req.params.id;

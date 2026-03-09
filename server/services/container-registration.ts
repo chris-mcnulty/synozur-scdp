@@ -22,16 +22,33 @@ export class ContainerRegistrationService {
     this.graphClient = new GraphClient();
   }
 
-  /**
-   * Get configured container ID from environment
-   */
-  private getConfiguredContainerId(): string {
+  private async getConfiguredContainerId(): Promise<string> {
     const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
-    const containerId = isProduction 
+
+    try {
+      const { tenants } = await import('@shared/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const { db } = await import('../db.js');
+      const speEnabledTenants = await db.select({
+        speContainerIdDev: tenants.speContainerIdDev,
+        speContainerIdProd: tenants.speContainerIdProd,
+        speStorageEnabled: tenants.speStorageEnabled,
+      }).from(tenants).where(eq(tenants.speStorageEnabled, true));
+
+      if (speEnabledTenants.length >= 1) {
+        const t = speEnabledTenants[0];
+        const tenantContainer = isProduction ? t.speContainerIdProd : t.speContainerIdDev;
+        if (tenantContainer) {
+          return tenantContainer;
+        }
+      }
+    } catch (err) {
+      console.warn('[ContainerRegistration] Failed to look up tenant SPE config:', err instanceof Error ? err.message : err);
+    }
+
+    return isProduction
       ? process.env.SHAREPOINT_CONTAINER_ID_PROD || ''
       : process.env.SHAREPOINT_CONTAINER_ID_DEV || '';
-    
-    return containerId;
   }
 
   /**
@@ -44,7 +61,7 @@ export class ContainerRegistrationService {
   async registerContainerType(): Promise<ContainerTypeRegistrationResult> {
     console.log('[ContainerAccess] Verifying SharePoint Embedded container access via Graph API...');
     
-    const configuredContainerId = this.getConfiguredContainerId();
+    const configuredContainerId = await this.getConfiguredContainerId();
     
     console.log('[ContainerAccess] Container ID from environment:', {
       containerId: configuredContainerId,
