@@ -517,13 +517,24 @@ export class SharePointFileStorage {
       reports: 'report',
     };
 
+    const inferTypeFromPath = (folderPath: string): string | undefined => {
+      const segments = folderPath.split('/').filter(Boolean);
+      for (let i = segments.length - 1; i >= 0; i--) {
+        const seg = segments[i].toLowerCase();
+        if (folderToDocType[seg]) return folderToDocType[seg];
+      }
+      return undefined;
+    };
+
     const listRecursive = async (folderPath: string, inferredDocType: string, depth: number = 0): Promise<void> => {
       if (depth > 3) return;
       try {
         const items = await client.listFiles(containerId, folderPath);
         for (const item of items) {
           if ((item as any).folder) {
-            await listRecursive(`${folderPath}/${item.name}`, inferredDocType, depth + 1);
+            const subPath = `${folderPath}/${item.name}`;
+            const subType = inferTypeFromPath(subPath) || inferredDocType;
+            await listRecursive(subPath, subType, depth + 1);
           } else {
             (item as any)._inferredDocType = inferredDocType;
             (item as any)._folderPath = folderPath;
