@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +47,7 @@ interface StoredFile {
   id: string;
   fileName: string;
   originalName: string;
+  filePath?: string;
   size: number;
   contentType: string;
   metadata: {
@@ -60,6 +61,8 @@ interface StoredFile {
     tags?: string;
     createdByUserId: string;
     metadataVersion: number;
+    estimateId?: string;
+    changeOrderId?: string;
   };
   uploadedAt: string;
   uploadedBy: string;
@@ -93,6 +96,7 @@ export default function FileRepository() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState<string>("");
+  const [expandedFileId, setExpandedFileId] = useState<string | null>(null);
 
   // Fetch current user
   const { data: user } = useQuery<User>({
@@ -561,7 +565,7 @@ export default function FileRepository() {
                 <FileType className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats.byType?.receipt || 0}</div>
+                <div className="text-2xl font-bold">{stats.byDocumentType?.receipt || stats.byType?.receipt || 0}</div>
               </CardContent>
             </Card>
             <Card>
@@ -570,7 +574,7 @@ export default function FileRepository() {
                 <FileType className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats.byType?.invoice || 0}</div>
+                <div className="text-2xl font-bold">{stats.byDocumentType?.invoice || stats.byType?.invoice || 0}</div>
               </CardContent>
             </Card>
           </div>
@@ -679,9 +683,11 @@ export default function FileRepository() {
                   ) : (
                     files.map((file) => {
                       const project = sortedActiveProjects.find((p: any) => p.id === file.metadata.projectId);
+                      const isExpanded = expandedFileId === file.id;
                       return (
-                        <TableRow key={file.id}>
-                          <TableCell>
+                        <Fragment key={file.id}>
+                        <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => setExpandedFileId(isExpanded ? null : file.id)}>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox
                               checked={selectedFiles.includes(file.id)}
                               onCheckedChange={(checked) => {
@@ -701,22 +707,31 @@ export default function FileRepository() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="secondary">
+                            <Badge variant={file.metadata.documentType === 'invoice' ? 'default' : 'secondary'}>
                               {DOCUMENT_TYPES.find(t => t.value === file.metadata.documentType)?.label || file.metadata.documentType}
                             </Badge>
                           </TableCell>
-                          <TableCell>{project?.name || "-"}</TableCell>
+                          <TableCell>{project?.name || file.metadata.projectCode || "-"}</TableCell>
                           <TableCell>{formatFileSize(file.size)}</TableCell>
                           <TableCell>{formatDate(file.uploadedAt)}</TableCell>
                           <TableCell>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => downloadMutation.mutate(file.id)}
+                                disabled={downloadMutation.isPending}
                                 data-testid={`button-download-${file.id}`}
                               >
                                 <Download className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setExpandedFileId(isExpanded ? null : file.id)}
+                                title="View metadata"
+                              >
+                                <Eye className="h-4 w-4" />
                               </Button>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -745,6 +760,71 @@ export default function FileRepository() {
                             </div>
                           </TableCell>
                         </TableRow>
+                        {isExpanded && (
+                          <TableRow key={`${file.id}-meta`}>
+                            <TableCell colSpan={7} className="bg-muted/30 p-4">
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground block text-xs">File ID</span>
+                                  <span className="font-mono text-xs break-all">{file.id}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-xs">Content Type</span>
+                                  <span>{file.contentType}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-xs">Document Type</span>
+                                  <Badge variant={file.metadata.documentType === 'invoice' ? 'default' : 'secondary'}>
+                                    {DOCUMENT_TYPES.find(t => t.value === file.metadata.documentType)?.label || file.metadata.documentType}
+                                  </Badge>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-xs">Folder Path</span>
+                                  <span>{file.filePath || '-'}</span>
+                                </div>
+                                {file.metadata.clientName && (
+                                  <div>
+                                    <span className="text-muted-foreground block text-xs">Client</span>
+                                    <span>{file.metadata.clientName}</span>
+                                  </div>
+                                )}
+                                {file.metadata.projectCode && (
+                                  <div>
+                                    <span className="text-muted-foreground block text-xs">Project Code</span>
+                                    <span>{file.metadata.projectCode}</span>
+                                  </div>
+                                )}
+                                {file.metadata.amount != null && (
+                                  <div>
+                                    <span className="text-muted-foreground block text-xs">Amount</span>
+                                    <span>${file.metadata.amount.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                {file.metadata.effectiveDate && (
+                                  <div>
+                                    <span className="text-muted-foreground block text-xs">Effective Date</span>
+                                    <span>{formatDate(file.metadata.effectiveDate)}</span>
+                                  </div>
+                                )}
+                                {file.metadata.tags && (
+                                  <div>
+                                    <span className="text-muted-foreground block text-xs">Tags</span>
+                                    <span>{file.metadata.tags}</span>
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="text-muted-foreground block text-xs">Uploaded By</span>
+                                  <span>{file.uploadedBy || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-xs">Metadata Version</span>
+                                  <span>{file.metadata.metadataVersion || 1}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        </Fragment>
                       );
                     })
                   )}

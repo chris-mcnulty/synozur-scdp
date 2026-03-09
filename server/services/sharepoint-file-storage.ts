@@ -57,7 +57,7 @@ export class SharePointFileStorage {
     return client;
   }
 
-  async getContainerForTenant(tenantId?: string): Promise<{ containerId: string; azureTenantId?: string }> {
+  public async getContainerForTenant(tenantId?: string): Promise<{ containerId: string; azureTenantId?: string }> {
     const lookupTenant = async (id: string) => {
       const [tenant] = await db.select({
         speContainerIdDev: tenants.speContainerIdDev,
@@ -113,7 +113,7 @@ export class SharePointFileStorage {
     return { containerId: this.containerId };
   }
 
-  private resolveGraphClient(azureTenantId?: string): GraphClient {
+  public resolveGraphClient(azureTenantId?: string): GraphClient {
     if (azureTenantId) {
       return this.getGraphClientForAzureTenant(azureTenantId);
     }
@@ -321,20 +321,14 @@ export class SharePointFileStorage {
       const allItems = await this.listAllFiles(resolvedContainerId, azureTenantId);
       console.log(`[SharePointStorage] listFiles - Retrieved ${allItems.length} total items`);
 
-      // Count items without metadata
-      const itemsWithoutMetadata = allItems.filter((item: any) => !item.listItem?.fields).length;
-      if (itemsWithoutMetadata > 0) {
-        console.warn(`[SharePointStorage] listFiles - ${itemsWithoutMetadata} items have no listItem.fields and will be filtered out`);
-      }
-
-      // Filter based on criteria
+      // Filter based on criteria — include items even without listItem.fields
       const filteredItems = allItems.filter((item: any) => {
-        if (!item.listItem?.fields) return false;
-        const fields = item.listItem.fields;
+        const fields = item.listItem?.fields || {};
+        const docType = fields.DocumentType || item._inferredDocType || 'receipt';
         
-        if (filter?.documentType && fields.DocumentType !== filter.documentType) return false;
-        if (filter?.clientId && fields.ClientId !== filter.clientId) return false;
-        if (filter?.projectId && fields.ProjectId !== filter.projectId) return false;
+        if (filter?.documentType && docType !== filter.documentType) return false;
+        if (filter?.clientId && fields.ClientId && fields.ClientId !== filter.clientId) return false;
+        if (filter?.projectId && fields.ProjectId && fields.ProjectId !== filter.projectId) return false;
         
         return true;
       });
@@ -345,7 +339,7 @@ export class SharePointFileStorage {
         const fields = item.listItem?.fields || {};
         
         const metadata: DocumentMetadata = {
-          documentType: (fields.DocumentType as any) || 'receipt',
+          documentType: (fields.DocumentType as any) || item._inferredDocType || 'receipt',
           clientId: fields.ClientId as string,
           clientName: fields.ClientName as string,
           projectId: fields.ProjectId as string,
@@ -363,7 +357,7 @@ export class SharePointFileStorage {
           id: item.id,
           fileName: item.name,
           originalName: item.name,
-          filePath: item.webUrl || item.id,
+          filePath: item._folderPath || item.webUrl || item.id,
           size: item.size || 0,
           contentType: item.file?.mimeType || 'application/octet-stream',
           metadata,
@@ -513,14 +507,26 @@ export class SharePointFileStorage {
     const allFiles: any[] = [];
     const folderTypes = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports'];
     
-    const listRecursive = async (folderPath: string, depth: number = 0): Promise<void> => {
+    const folderToDocType: Record<string, string> = {
+      receipts: 'receipt',
+      invoices: 'invoice',
+      contracts: 'contract',
+      statements: 'statementOfWork',
+      estimates: 'estimate',
+      change_orders: 'changeOrder',
+      reports: 'report',
+    };
+
+    const listRecursive = async (folderPath: string, inferredDocType: string, depth: number = 0): Promise<void> => {
       if (depth > 3) return;
       try {
         const items = await client.listFiles(containerId, folderPath);
         for (const item of items) {
           if ((item as any).folder) {
-            await listRecursive(`${folderPath}/${item.name}`, depth + 1);
+            await listRecursive(`${folderPath}/${item.name}`, inferredDocType, depth + 1);
           } else {
+            (item as any)._inferredDocType = inferredDocType;
+            (item as any)._folderPath = folderPath;
             allFiles.push(item);
           }
         }
@@ -532,7 +538,7 @@ export class SharePointFileStorage {
     };
 
     for (const folder of folderTypes) {
-      await listRecursive(`/${folder}`, 0);
+      await listRecursive(`/${folder}`, folderToDocType[folder] || 'receipt', 0);
     }
     
     console.log(`[SharePointStorage] listAllFiles - Total files found: ${allFiles.length}`);

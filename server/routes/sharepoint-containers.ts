@@ -462,6 +462,34 @@ export function registerSharePointContainerRoutes(
       return uniqueFiles;
     },
     
+    async downloadFileDirect(fileId: string, tenantId?: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
+      try {
+        const buffer = await receiptStorage.getReceipt(fileId);
+        return { buffer, fileName: fileId, mimeType: 'application/octet-stream' };
+      } catch {
+        // not in receipt storage
+      }
+      try {
+        const local = await localFileStorage.getFileContent(fileId);
+        if (local?.buffer) {
+          const meta = local.metadata || {} as any;
+          return { buffer: local.buffer, fileName: meta.originalName || meta.fileName || fileId, mimeType: meta.contentType || 'application/octet-stream' };
+        }
+      } catch {
+        // not in local storage
+      }
+      try {
+        const { containerId, azureTenantId } = await sharePointFileStorage.getContainerForTenant(tenantId);
+        if (!containerId) return null;
+        const client = sharePointFileStorage.resolveGraphClient(azureTenantId);
+        const result = await client.downloadFile(containerId, fileId);
+        return { buffer: result.buffer, fileName: result.fileName, mimeType: result.mimeType };
+      } catch (error) {
+        console.error(`[SMART_STORAGE] downloadFileDirect failed for ${fileId}:`, error instanceof Error ? error.message : error);
+        return null;
+      }
+    },
+
     async getFileContent(fileId: string, tenantId?: string) {
       try {
         const buffer = await receiptStorage.getReceipt(fileId);
@@ -516,11 +544,13 @@ export function registerSharePointContainerRoutes(
       const localByType = 'byDocumentType' in localStats ? localStats.byDocumentType : {};
       const sharePointByType = 'byDocumentType' in sharePointStats ? sharePointStats.byDocumentType : {};
       
-      for (const [type, count] of Object.entries(localByType)) {
-        byDocumentType[type] = (byDocumentType[type] || 0) + (typeof count === 'number' ? count : 0);
+      for (const [type, val] of Object.entries(localByType)) {
+        const count = typeof val === 'number' ? val : (typeof val === 'object' && val && 'count' in val ? (val as any).count : 0);
+        byDocumentType[type] = (byDocumentType[type] || 0) + count;
       }
-      for (const [type, count] of Object.entries(sharePointByType)) {
-        byDocumentType[type] = (byDocumentType[type] || 0) + (typeof count === 'number' ? count : 0);
+      for (const [type, val] of Object.entries(sharePointByType)) {
+        const count = typeof val === 'number' ? val : (typeof val === 'object' && val && 'count' in val ? (val as any).count : 0);
+        byDocumentType[type] = (byDocumentType[type] || 0) + count;
       }
       
       return {
@@ -811,21 +841,15 @@ export function registerSharePointContainerRoutes(
   app.get("/api/files/:fileId/download", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
       const dlTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
-      const fileData = await fileStorage.getFileContent(req.params.fileId, dlTenantId);
+      
+      const fileData = await fileStorage.downloadFileDirect(req.params.fileId, dlTenantId);
       
       if (!fileData || !fileData.buffer) {
         return res.status(404).json({ message: "File not found" });
       }
       
-      const contentType = (fileData.metadata && 'contentType' in fileData.metadata) 
-        ? fileData.metadata.contentType 
-        : 'application/octet-stream';
-      const originalName = (fileData.metadata && 'originalName' in fileData.metadata)
-        ? fileData.metadata.originalName
-        : 'download';
-      
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+      res.setHeader('Content-Type', fileData.mimeType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileData.fileName || 'download')}"`);
       res.send(fileData.buffer);
     } catch (error) {
       console.error("[FILE REPOSITORY] Error downloading file:", error);
