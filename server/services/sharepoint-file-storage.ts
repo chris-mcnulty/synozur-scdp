@@ -513,25 +513,26 @@ export class SharePointFileStorage {
     const allFiles: any[] = [];
     const folderTypes = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports'];
     
-    for (const folder of folderTypes) {
+    const listRecursive = async (folderPath: string, depth: number = 0): Promise<void> => {
+      if (depth > 3) return;
       try {
-        console.log(`[SharePointStorage] listAllFiles - Listing files from /${folder}`);
-        const files = await client.listFiles(containerId, `/${folder}`);
-        console.log(`[SharePointStorage] listAllFiles - Found ${files.length} files in /${folder}`);
-        if (files.length > 0) {
-          const sampleFile = files[0] as any;
-          console.log(`[SharePointStorage] listAllFiles - Sample file from /${folder}:`, {
-            name: sampleFile.name,
-            id: sampleFile.id,
-            hasListItem: !!sampleFile.listItem,
-            hasFields: !!sampleFile.listItem?.fields
-          });
+        const items = await client.listFiles(containerId, folderPath);
+        for (const item of items) {
+          if ((item as any).folder) {
+            await listRecursive(`${folderPath}/${item.name}`, depth + 1);
+          } else {
+            allFiles.push(item);
+          }
         }
-        allFiles.push(...files);
       } catch (error) {
-        // Folder might not exist yet, continue
-        console.log(`[SharePointStorage] Could not list ${folder}:`, error instanceof Error ? error.message : error);
+        if (depth === 0) {
+          console.log(`[SharePointStorage] Could not list ${folderPath}:`, error instanceof Error ? error.message : error);
+        }
       }
+    };
+
+    for (const folder of folderTypes) {
+      await listRecursive(`/${folder}`, 0);
     }
     
     console.log(`[SharePointStorage] listAllFiles - Total files found: ${allFiles.length}`);
