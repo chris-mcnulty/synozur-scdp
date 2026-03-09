@@ -1719,7 +1719,7 @@ export class GraphClient {
 }
 
 /**
- * Register container type application permissions using SharePoint REST API v2.1
+ * Register container type application permissions using Microsoft Graph API
  * This grants the owning application permissions to all containers of this type
  */
 export async function registerContainerTypePermissions(
@@ -1728,7 +1728,7 @@ export async function registerContainerTypePermissions(
   azureTenantId?: string
 ): Promise<{ success: boolean; message: string }> {
   try {
-    console.log('[GraphClient] Registering container type permissions:', {
+    console.log('[GraphClient] Registering container type permissions via Graph API:', {
       containerTypeId,
       appId,
       azureTenantId: azureTenantId || 'default'
@@ -1751,60 +1751,26 @@ export async function registerContainerTypePermissions(
       throw new Error('Failed to acquire access token');
     }
 
-    // Discover the SharePoint root URL dynamically via Graph API
-    const rootSiteResponse = await fetch('https://graph.microsoft.com/v1.0/sites/root', {
-      headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
-    });
-
-    if (!rootSiteResponse.ok) {
-      const errorText = await rootSiteResponse.text();
-      throw new Error(`Failed to discover SharePoint root URL: ${rootSiteResponse.status} ${errorText}`);
-    }
-    const rootSite = await rootSiteResponse.json();
-    const hostname = rootSite.siteCollection?.hostname;
-    if (!hostname) {
-      throw new Error('SharePoint root site discovery returned no hostname');
-    }
-    const rootSiteUrl = `https://${hostname}`;
+    const registrationUrl = `https://graph.microsoft.com/v1.0/storage/fileStorage/containerTypeRegistrations/${containerTypeId}`;
     
-    console.log('[GraphClient] Using SharePoint root site URL:', rootSiteUrl);
-
-    // Acquire a SharePoint-scoped token (different audience from Graph API)
-    const spTokenResponse = await msalInstance.acquireTokenByClientCredential({
-      scopes: [`${rootSiteUrl}/.default`],
-      skipCache: false,
-    });
-
-    if (!spTokenResponse?.accessToken) {
-      throw new Error('Failed to acquire SharePoint-scoped access token');
-    }
-
-    // Construct the SharePoint REST API v2.1 endpoint
-    const registrationUrl = `${rootSiteUrl}/_api/v2.1/storageContainerTypes/${containerTypeId}/applicationPermissions`;
-    
-    console.log('[GraphClient] Registration URL:', registrationUrl);
-
-    // Prepare the payload
     const payload = {
-      value: [
+      applicationPermissionGrants: [
         {
           appId: appId,
-          delegated: ["full"],
-          appOnly: ["full"]
+          delegatedPermissions: ["full"],
+          applicationPermissions: ["full"]
         }
       ]
     };
 
-    console.log('[GraphClient] Registration payload:', JSON.stringify(payload, null, 2));
+    console.log('[GraphClient] Registration URL:', registrationUrl);
 
-    // Make the PUT request to register permissions using SharePoint-scoped token
     const registrationResponse = await fetch(
       registrationUrl,
       {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${spTokenResponse.accessToken}`,
-          'Accept': 'application/json',
+          'Authorization': `Bearer ${tokenResponse.accessToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
@@ -1815,7 +1781,7 @@ export async function registerContainerTypePermissions(
     console.log('[GraphClient] Registration response:', {
       status: registrationResponse.status,
       statusText: registrationResponse.statusText,
-      body: responseText
+      body: responseText.substring(0, 500)
     });
 
     if (!registrationResponse.ok) {
@@ -1823,7 +1789,7 @@ export async function registerContainerTypePermissions(
       try {
         const errorData = JSON.parse(responseText);
         if (errorData.error) {
-          errorMessage = errorData.error.message || errorMessage;
+          errorMessage = `${errorData.error.code || ''}: ${errorData.error.message || errorMessage}`;
         }
       } catch {
         errorMessage += `: ${responseText}`;
@@ -1835,9 +1801,15 @@ export async function registerContainerTypePermissions(
       };
     }
 
+    let resultInfo = '';
+    try {
+      const result = JSON.parse(responseText);
+      resultInfo = ` (billing: ${result.billingClassification || 'unknown'})`;
+    } catch {}
+
     return {
       success: true,
-      message: 'Container type permissions registered successfully. Your application now has full access to all containers of this type.'
+      message: `Container type permissions registered successfully${resultInfo}. Your application now has full access to all containers of this type.`
     };
 
   } catch (error: any) {

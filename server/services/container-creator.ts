@@ -140,17 +140,14 @@ export class ContainerCreator {
       // Get the application's client ID from environment
       const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
       
-      // Grant the application "owner" role on the container
       const permissionPayload = {
         roles: ["owner"],
-        grantedToIdentitiesV2: [
-          {
-            application: {
-              id: clientId,
-              displayName: "SCDP Application"
-            }
+        grantedToV2: {
+          application: {
+            id: clientId,
+            displayName: "SCDP Application"
           }
-        ]
+        }
       };
       
       console.log('[ContainerCreator] Granting owner permissions to app:', clientId);
@@ -298,70 +295,37 @@ export class ContainerCreator {
   }
 
   /**
-   * Register the container type in the consuming tenant's SharePoint.
+   * Register the container type in the consuming tenant via Microsoft Graph API.
    * This is required before file operations (upload/download/delete) can work.
    * 
-   * Two-step process with two different tokens:
-   * 1. Graph API token to discover the tenant's SharePoint hostname
-   * 2. SharePoint-scoped token to call the SharePoint REST API for registration
+   * Uses the Graph API containerTypeRegistrations endpoint (NOT the SharePoint REST API)
+   * which only requires a Graph-scoped token with FileStorageContainerTypeReg.Selected permission.
    */
   private async registerContainerTypeInTenant(
     azureTenantId?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
-      // Step 1: Discover the tenant's SharePoint root URL via Graph API
       const graphToken = await this.getGraphAccessToken(azureTenantId);
-      const rootSiteResponse = await fetch(
-        `${this.graphBaseUrl}/sites/root`,
-        {
-          headers: { 'Authorization': `Bearer ${graphToken}` }
-        }
-      );
-
-      if (!rootSiteResponse.ok) {
-        const errorText = await rootSiteResponse.text();
-        return {
-          success: false,
-          message: `Failed to discover SharePoint root site: HTTP ${rootSiteResponse.status} — ${errorText}`
-        };
-      }
-
-      const rootSite = await rootSiteResponse.json();
-      const siteHostname = rootSite.siteCollection?.hostname;
-      if (!siteHostname) {
-        return {
-          success: false,
-          message: 'Could not determine SharePoint hostname from root site response'
-        };
-      }
-
-      const sharePointUrl = `https://${siteHostname}`;
-      console.log('[ContainerCreator] Discovered SharePoint URL:', sharePointUrl);
-
-      // Step 2: Acquire a SharePoint-scoped token (different from Graph token)
-      const spToken = await this.getSharePointAccessToken(sharePointUrl, azureTenantId);
-
-      // Step 3: Register the container type via SharePoint REST API
       const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
-      const registrationUrl = `${sharePointUrl}/_api/v2.1/storageContainerTypes/${this.containerTypeId}/applicationPermissions`;
+
+      const registrationUrl = `${this.graphBaseUrl}/storage/fileStorage/containerTypeRegistrations/${this.containerTypeId}`;
 
       const payload = {
-        value: [
+        applicationPermissionGrants: [
           {
             appId: clientId,
-            delegated: ["full"],
-            appOnly: ["full"]
+            delegatedPermissions: ["full"],
+            applicationPermissions: ["full"]
           }
         ]
       };
 
-      console.log('[ContainerCreator] Registering container type at:', registrationUrl);
+      console.log('[ContainerCreator] Registering container type via Graph API:', registrationUrl);
 
       const registrationResponse = await fetch(registrationUrl, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${spToken}`,
-          'Accept': 'application/json',
+          'Authorization': `Bearer ${graphToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
@@ -373,20 +337,28 @@ export class ContainerCreator {
         try {
           const errorData = JSON.parse(errorText);
           if (errorData.error) {
-            errorMessage = errorData.error.message || errorMessage;
+            errorMessage = `${errorData.error.code || ''}: ${errorData.error.message || errorMessage}`;
           }
         } catch {
           errorMessage += `: ${errorText}`;
         }
+        console.error('[ContainerCreator] Container type registration failed:', errorMessage);
         return {
           success: false,
           message: `Container type registration failed: ${errorMessage}`
         };
       }
 
+      const result = await registrationResponse.json();
+      console.log('[ContainerCreator] Container type registered successfully:', {
+        id: result.id,
+        name: result.name,
+        billingClassification: result.billingClassification
+      });
+
       return {
         success: true,
-        message: `Container type registered in ${siteHostname}`
+        message: `Container type registered successfully (billing: ${result.billingClassification || 'unknown'})`
       };
     } catch (error) {
       console.error('[ContainerCreator] Error registering container type in tenant:', error);
