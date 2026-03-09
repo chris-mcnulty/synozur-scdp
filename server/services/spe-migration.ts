@@ -904,6 +904,113 @@ export class SpeMigrationService {
       completedAt: null,
     };
   }
+
+  async retagMetadata(
+    tenantId: string,
+    containerId: string,
+  ): Promise<{ success: boolean; message: string; tagged: number; skipped: number; failed: number; errors: string[] }> {
+    const tenant = await storage.getTenant(tenantId);
+    const azureTenantId = tenant?.azureTenantId || undefined;
+    const graphClient = new GraphClient(azureTenantId);
+
+    console.log(`[SPE-Retag] Initializing schema columns before re-tagging...`);
+    try {
+      await graphClient.initializeDocumentMetadataSchema(containerId);
+      await graphClient.initializeReceiptMetadataSchema(containerId);
+      console.log(`[SPE-Retag] Schema columns initialized`);
+    } catch (err) {
+      console.warn(`[SPE-Retag] Schema init warning:`, err instanceof Error ? err.message : err);
+    }
+
+    const speFolders = ['/receipts', '/invoices', '/contracts', '/statements', '/estimates', '/change_orders', '/reports'];
+    let tagged = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    const receiptRows = await db.execute(sql`
+      SELECT id, file_name, original_name, file_path, content_type, project_id, uploaded_by,
+             status, receipt_date, amount, currency, category, vendor, description, tenant_id
+      FROM pending_receipts
+      WHERE tenant_id = ${tenantId}
+    `);
+    const receiptsByName = new Map<string, any>();
+    for (const row of receiptRows.rows) {
+      const key = (row.file_name as string || '').toLowerCase();
+      if (key) receiptsByName.set(key, row);
+      const origKey = (row.original_name as string || '').toLowerCase();
+      if (origKey) receiptsByName.set(origKey, row);
+    }
+    console.log(`[SPE-Retag] Loaded ${receiptRows.rows.length} receipt records from DB`);
+
+    for (const folder of speFolders) {
+      try {
+        const files = await graphClient.listFiles(containerId, folder);
+        if (!files || files.length === 0) continue;
+
+        console.log(`[SPE-Retag] Processing ${files.length} files in ${folder}`);
+
+        for (const file of files) {
+          if (file.folder) continue;
+          const fileName = file.name || '';
+          const fileNameLower = fileName.toLowerCase();
+
+          const dbRecord = receiptsByName.get(fileNameLower);
+          if (!dbRecord) {
+            skipped++;
+            continue;
+          }
+
+          const folderType = folder.replace('/', '').replace('_', '');
+          const metadata: Record<string, string | number | boolean | null> = {
+            DocumentType: this.mapFolderToDocType(folder),
+          };
+
+          if (dbRecord.uploaded_by) metadata.CreatedByUserId = dbRecord.uploaded_by;
+          if (dbRecord.project_id) metadata.ProjectId = dbRecord.project_id;
+          if (dbRecord.amount) metadata.Amount = String(dbRecord.amount);
+          if (dbRecord.currency) metadata.Currency = dbRecord.currency;
+          if (dbRecord.category) metadata.ExpenseCategory = dbRecord.category;
+          if (dbRecord.vendor) metadata.Vendor = dbRecord.vendor;
+          if (dbRecord.description) metadata.Description = dbRecord.description;
+          if (dbRecord.status) metadata.Status = dbRecord.status;
+          if (dbRecord.receipt_date) metadata.ReceiptDate = dbRecord.receipt_date;
+          metadata.MetadataVersion = 1;
+
+          try {
+            await graphClient.updateFileMetadata(containerId, file.id, metadata);
+            tagged++;
+            if (tagged % 10 === 0) {
+              console.log(`[SPE-Retag]   Progress: ${tagged} tagged, ${skipped} skipped, ${failed} failed`);
+            }
+          } catch (err) {
+            failed++;
+            const msg = `${fileName}: ${err instanceof Error ? err.message : err}`;
+            if (errors.length < 20) errors.push(msg);
+          }
+        }
+      } catch (err) {
+        console.warn(`[SPE-Retag] Could not list files in ${folder}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    const message = `Re-tag complete: ${tagged} tagged, ${skipped} skipped (no DB match), ${failed} failed`;
+    console.log(`[SPE-Retag] ${message}`);
+    return { success: failed === 0, message, tagged, skipped, failed, errors };
+  }
+
+  private mapFolderToDocType(folder: string): string {
+    const map: Record<string, string> = {
+      '/receipts': 'receipt',
+      '/invoices': 'invoice',
+      '/contracts': 'contract',
+      '/statements': 'statementOfWork',
+      '/estimates': 'estimate',
+      '/change_orders': 'changeOrder',
+      '/reports': 'report',
+    };
+    return map[folder] || 'receipt';
+  }
 }
 
 export const speMigrationService = new SpeMigrationService();

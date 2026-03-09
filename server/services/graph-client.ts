@@ -1547,6 +1547,54 @@ export class GraphClient {
         required: false,
         text: { maxLength: 100, allowMultipleLines: false }
       },
+      {
+        name: 'ProjectId',
+        displayName: 'Project ID',
+        columnType: 'text',
+        description: 'Associated project ID',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'Amount',
+        displayName: 'Amount',
+        columnType: 'text',
+        description: 'Document amount value',
+        required: false,
+        text: { maxLength: 50, allowMultipleLines: false }
+      },
+      {
+        name: 'Tags',
+        displayName: 'Tags',
+        columnType: 'text',
+        description: 'Additional tags for categorization',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'EffectiveDate',
+        displayName: 'Effective Date',
+        columnType: 'dateTime',
+        description: 'Effective date of the document',
+        required: false,
+        dateTime: { displayAs: 'DateTime', includeTime: false }
+      },
+      {
+        name: 'EstimateId',
+        displayName: 'Estimate ID',
+        columnType: 'text',
+        description: 'Associated estimate ID',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'ChangeOrderId',
+        displayName: 'Change Order ID',
+        columnType: 'text',
+        description: 'Associated change order ID',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
     ];
 
     const createdColumns: ColumnDefinition[] = [];

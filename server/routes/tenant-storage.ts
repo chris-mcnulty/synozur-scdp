@@ -79,11 +79,24 @@ export function registerTenantStorageRoutes(
         [updateField]: result.containerId,
       } as any);
 
+      let schemaStatus = 'not initialized';
+      try {
+        const graphClient = new GraphClient(tenant.azureTenantId!);
+        const docCols = await graphClient.initializeDocumentMetadataSchema(result.containerId);
+        const receiptCols = await graphClient.initializeReceiptMetadataSchema(result.containerId);
+        schemaStatus = `initialized (${docCols.length} document + ${receiptCols.length} receipt columns)`;
+        console.log(`[SPE] Auto-initialized schema on new container ${result.containerId}: ${schemaStatus}`);
+      } catch (schemaErr) {
+        schemaStatus = `warning: ${schemaErr instanceof Error ? schemaErr.message : 'unknown error'}`;
+        console.warn(`[SPE] Schema auto-init warning for container ${result.containerId}:`, schemaErr);
+      }
+
       res.status(201).json({
         message: `SPE container created for ${currentEnvLabel}`,
         containerId: result.containerId,
         environment: currentEnvLabel,
         containerName,
+        schemaStatus,
         tenant: {
           id: updated.id,
           name: updated.name,
@@ -363,6 +376,33 @@ export function registerTenantStorageRoutes(
       console.error("[SPE-Schema] Error initializing schema:", error);
       res.status(500).json({
         message: "Failed to initialize schema",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/api/admin/tenants/:id/spe/retag-metadata", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ message: "Only platform administrators can re-tag metadata" });
+      }
+
+      const speConfig = await storage.getTenantSpeConfig(tenantId);
+      const containerId = isProductionEnv ? speConfig?.speContainerIdProd : speConfig?.speContainerIdDev;
+      if (!containerId) {
+        return res.status(404).json({ message: `Tenant has no SPE container configured for ${currentEnvLabel}` });
+      }
+
+      const result = await speMigrationService.retagMetadata(tenantId, containerId);
+      res.json(result);
+    } catch (error) {
+      console.error("[SPE-Retag] Error re-tagging metadata:", error);
+      res.status(500).json({
+        message: "Failed to re-tag metadata",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
