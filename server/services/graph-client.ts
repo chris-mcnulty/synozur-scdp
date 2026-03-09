@@ -336,24 +336,32 @@ export class GraphClient {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       
       // Enhanced logging for SharePoint Embedded errors
-      console.error('[GraphClient] Request failed:', {
-        method,
-        url: url.replace(/containers\/[^\/]+/, 'containers/***'),
-        status: response.status,
-        statusText: response.statusText
-      });
-      
       try {
         const errorData = JSON.parse(errorText) as GraphErrorResponse;
         if (errorData.error) {
           errorMessage = `${errorData.error.code}: ${errorData.error.message}`;
-          console.error('[GraphClient] Graph API error:', {
-            code: errorData.error.code,
-            message: errorData.error.message,
-            innerError: errorData.error.innerError
-          });
+          const isFieldNotRecognized = errorData.error.message?.includes('is not recognized');
+          if (!isFieldNotRecognized) {
+            console.error('[GraphClient] Request failed:', {
+              method,
+              url: url.replace(/containers\/[^\/]+/, 'containers/***'),
+              status: response.status,
+              statusText: response.statusText
+            });
+            console.error('[GraphClient] Graph API error:', {
+              code: errorData.error.code,
+              message: errorData.error.message,
+              innerError: errorData.error.innerError
+            });
+          }
         }
       } catch {
+        console.error('[GraphClient] Request failed:', {
+          method,
+          url: url.replace(/containers\/[^\/]+/, 'containers/***'),
+          status: response.status,
+          statusText: response.statusText
+        });
         errorMessage += ` - ${errorText}`;
       }
       
@@ -790,7 +798,7 @@ export class GraphClient {
         try {
           await this.updateFileMetadata(containerId, driveItem.id, metadata);
         } catch (error) {
-          console.warn('[GraphClient] Failed to update metadata, file uploaded but metadata not saved:', error);
+          // Metadata is non-critical — file was uploaded successfully
         }
       }
       
@@ -827,7 +835,12 @@ export class GraphClient {
         console.log('[GraphClient] Metadata updated successfully for item:', itemId);
       }
     } catch (error) {
-      console.error('[GraphClient] Failed to update metadata:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('is not recognized')) {
+        console.warn(`[GraphClient] Metadata field not recognized for item ${itemId} — schema columns may need initialization`);
+      } else {
+        console.warn('[GraphClient] Failed to update metadata for item', itemId, ':', msg);
+      }
       throw error;
     }
   }
@@ -1481,6 +1494,79 @@ export class GraphClient {
    * Initialize the receipt metadata schema for a container
    * Creates all the required columns for receipt processing
    */
+  async initializeDocumentMetadataSchema(containerId: string): Promise<ColumnDefinition[]> {
+    const documentColumns: ColumnDefinition[] = [
+      {
+        name: 'DocumentType',
+        displayName: 'Document Type',
+        columnType: 'choice',
+        description: 'Type of document stored',
+        required: false,
+        choice: {
+          choices: ['receipt', 'invoice', 'contract', 'statementOfWork', 'estimate', 'changeOrder', 'report'],
+          allowFillInChoice: true
+        }
+      },
+      {
+        name: 'CreatedByUserId',
+        displayName: 'Created By User ID',
+        columnType: 'text',
+        description: 'User ID who created this document',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'MetadataVersion',
+        displayName: 'Metadata Version',
+        columnType: 'number',
+        description: 'Schema version for metadata',
+        required: false,
+        number: { minimum: 0 }
+      },
+      {
+        name: 'ClientId',
+        displayName: 'Client ID',
+        columnType: 'text',
+        description: 'Associated client ID',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'ClientName',
+        displayName: 'Client Name',
+        columnType: 'text',
+        description: 'Associated client name',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'ProjectCode',
+        displayName: 'Project Code',
+        columnType: 'text',
+        description: 'Associated project code',
+        required: false,
+        text: { maxLength: 100, allowMultipleLines: false }
+      },
+    ];
+
+    const createdColumns: ColumnDefinition[] = [];
+    for (const columnDef of documentColumns) {
+      try {
+        const createdColumn = await this.createContainerColumn(containerId, columnDef);
+        createdColumns.push(createdColumn);
+        console.log(`[GraphClient] Created document metadata column: ${columnDef.name}`);
+      } catch (error: any) {
+        if (error.message?.includes('already exists') || error.status === 409) {
+          console.log(`[GraphClient] Document metadata column ${columnDef.name} already exists, skipping`);
+        } else {
+          console.warn(`[GraphClient] Failed to create document metadata column ${columnDef.name}:`, error.message || error);
+        }
+      }
+    }
+
+    return createdColumns;
+  }
+
   async initializeReceiptMetadataSchema(containerId: string): Promise<ColumnDefinition[]> {
     const receiptColumns: ColumnDefinition[] = [
       {

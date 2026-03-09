@@ -329,6 +329,45 @@ export function registerTenantStorageRoutes(
     }
   });
 
+  app.post("/api/admin/tenants/:id/spe/initialize-schema", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ message: "Only platform administrators can initialize schema" });
+      }
+
+      const speConfig = await storage.getTenantSpeConfig(tenantId);
+      const containerId = isProductionEnv ? speConfig?.speContainerIdProd : speConfig?.speContainerIdDev;
+      if (!containerId) {
+        return res.status(404).json({ message: `Tenant has no SPE container configured for ${currentEnvLabel}` });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      const azureTenantId = tenant?.azureTenantId || undefined;
+      const graphClient = new GraphClient(azureTenantId);
+
+      console.log(`[SPE-Schema] Initializing document + receipt schema for container ${containerId}`);
+      const docColumns = await graphClient.initializeDocumentMetadataSchema(containerId);
+      const receiptColumns = await graphClient.initializeReceiptMetadataSchema(containerId);
+
+      res.json({
+        success: true,
+        message: `Schema initialized: ${docColumns.length} document columns, ${receiptColumns.length} receipt columns`,
+        documentColumns: docColumns.map(c => c.name),
+        receiptColumns: receiptColumns.map(c => c.name),
+      });
+    } catch (error) {
+      console.error("[SPE-Schema] Error initializing schema:", error);
+      res.status(500).json({
+        message: "Failed to initialize schema",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.post("/api/admin/tenants/:id/reset-migration-status", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = req.params.id;

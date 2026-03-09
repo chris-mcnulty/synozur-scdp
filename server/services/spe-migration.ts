@@ -185,12 +185,23 @@ export class SpeMigrationService {
       console.log(`[SPE-Migration]   Found ${files.length} source files (${this.formatBytes(totalSize)} total)`);
       console.log(`[SPE-Migration]   By type: ${Object.entries(byType).map(([t, c]) => `${t}: ${c}`).join(', ')}`);
 
-      console.log(`[SPE-Migration] Phase 2/4: Checking for already-migrated files in SPE container...`);
+      console.log(`[SPE-Migration] Phase 2/4: Preparing SPE container (schema + dedup check)...`);
       const dedupeStart = Date.now();
       const existingFileNames = new Set<string>();
       const tenant = await storage.getTenant(tenantId);
       const azureTenantId = tenant?.azureTenantId || undefined;
       const speGraphClient = new GraphClient(azureTenantId);
+
+      try {
+        console.log(`[SPE-Migration]   Initializing document metadata schema columns...`);
+        const docColumns = await speGraphClient.initializeDocumentMetadataSchema(containerId);
+        console.log(`[SPE-Migration]   Document schema: ${docColumns.length} column(s) created/verified`);
+        const receiptColumns = await speGraphClient.initializeReceiptMetadataSchema(containerId);
+        console.log(`[SPE-Migration]   Receipt schema: ${receiptColumns.length} column(s) created/verified`);
+      } catch (schemaErr) {
+        console.warn(`[SPE-Migration]   Schema initialization warning: ${schemaErr instanceof Error ? schemaErr.message : schemaErr}`);
+        console.warn(`[SPE-Migration]   Migration will continue but metadata tagging may fail`);
+      }
 
       const speFolders = ['/receipts', '/invoices', '/contracts', '/statements', '/estimates', '/change_orders', '/reports'];
       for (const folder of speFolders) {
