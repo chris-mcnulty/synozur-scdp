@@ -999,8 +999,8 @@ export class SpeMigrationService {
           if (dbRecord.currency) metadata.Currency = dbRecord.currency;
           if (dbRecord.category) metadata.ExpenseCategory = dbRecord.category;
           if (dbRecord.vendor) metadata.Vendor = dbRecord.vendor;
-          if (dbRecord.description) metadata.Description = dbRecord.description;
-          if (dbRecord.status) metadata.Status = dbRecord.status;
+          if (dbRecord.description) metadata.FileDescription = dbRecord.description;
+          if (dbRecord.status) metadata.ReceiptStatus = dbRecord.status;
           if (dbRecord.receipt_date) metadata.ReceiptDate = dbRecord.receipt_date;
           metadata.MetadataVersion = 1;
 

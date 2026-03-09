@@ -1304,14 +1304,16 @@ export class GraphClient {
           };
           break;
 
-        case 'number':
-          columnRequest.number = {
+        case 'number': {
+          const numberConfig: any = {
             decimalPlaces: columnDefinition.number?.decimalPlaces || 0,
-            minimum: columnDefinition.number?.minimum,
-            maximum: columnDefinition.number?.maximum,
             showAsPercentage: columnDefinition.number?.showAsPercentage || false
           };
+          if (columnDefinition.number?.minimum !== undefined) numberConfig.minimum = columnDefinition.number.minimum;
+          if (columnDefinition.number?.maximum !== undefined) numberConfig.maximum = columnDefinition.number.maximum;
+          columnRequest.number = numberConfig;
           break;
+        }
 
         case 'currency':
           columnRequest.currency = {
@@ -1695,8 +1697,8 @@ export class GraphClient {
         text: { maxLength: 10, allowMultipleLines: false }
       },
       {
-        name: 'Status',
-        displayName: 'Status',
+        name: 'ReceiptStatus',
+        displayName: 'Receipt Status',
         columnType: 'text',
         description: 'Processing status of the receipt',
         required: false,
@@ -1711,8 +1713,8 @@ export class GraphClient {
         text: { maxLength: 255, allowMultipleLines: false }
       },
       {
-        name: 'Description',
-        displayName: 'Description',
+        name: 'FileDescription',
+        displayName: 'File Description',
         columnType: 'text',
         description: 'Receipt description or notes',
         required: false,
@@ -1775,7 +1777,7 @@ export class GraphClient {
       ReceiptDate: receiptData.receiptDate,
       Amount: receiptData.amount,
       Currency: receiptData.currency || 'USD',
-      Status: receiptData.status || 'pending',
+      ReceiptStatus: receiptData.status || 'pending',
     };
 
     // Add optional fields if provided
@@ -1786,7 +1788,7 @@ export class GraphClient {
       metadata.Vendor = receiptData.vendor;
     }
     if (receiptData.description) {
-      metadata.Description = receiptData.description;
+      metadata.FileDescription = receiptData.description;
     }
     if (receiptData.isReimbursable !== undefined) {
       metadata.IsReimbursable = receiptData.isReimbursable;
@@ -1807,7 +1809,7 @@ export class GraphClient {
     status: 'pending' | 'assigned' | 'processed',
     expenseId?: string
   ): Promise<DocumentMetadata> {
-    const metadata: DocumentMetadata = { Status: status };
+    const metadata: DocumentMetadata = { ReceiptStatus: status };
     
     // If assigning to an expense, include the expense ID
     if (status === 'assigned' && expenseId) {
@@ -1826,7 +1828,7 @@ export class GraphClient {
     limit?: number
   ): Promise<DriveItemWithMetadata[]> {
     const options: MetadataQueryOptions = {
-      filters: [{ field: 'Status', operator: 'eq', value: status }],
+      filters: [{ field: 'ReceiptStatus', operator: 'eq', value: status }],
       expand: ['listItem($expand=fields)']
     };
     
@@ -1850,7 +1852,7 @@ export class GraphClient {
     ];
     
     if (status) {
-      filters.push({ field: 'Status', operator: 'eq', value: status });
+      filters.push({ field: 'ReceiptStatus', operator: 'eq', value: status });
     }
     
     const options: MetadataQueryOptions = {
@@ -1874,7 +1876,7 @@ export class GraphClient {
     ];
     
     if (status) {
-      filters.push({ field: 'Status', operator: 'eq', value: status });
+      filters.push({ field: 'ReceiptStatus', operator: 'eq', value: status });
     }
     
     const options: MetadataQueryOptions = {

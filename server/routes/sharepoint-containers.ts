@@ -1461,7 +1461,7 @@ export function registerSharePointContainerRoutes(
       }
 
       const filters: any[] = [];
-      if (query.status) filters.push({ field: 'Status', operator: 'eq', value: query.status });
+      if (query.status) filters.push({ field: 'ReceiptStatus', operator: 'eq', value: query.status });
       if (query.projectId) filters.push({ field: 'ProjectId', operator: 'eq', value: query.projectId });
       if (query.uploadedBy) filters.push({ field: 'UploadedBy', operator: 'eq', value: query.uploadedBy });
       if (query.expenseCategory) filters.push({ field: 'ExpenseCategory', operator: 'eq', value: query.expenseCategory });
@@ -1511,7 +1511,7 @@ export function registerSharePointContainerRoutes(
         receipts = await graphClient.getReceiptsByUploader(containerId, query.uploadedBy, query.status);
       } else {
         const filters: any[] = [];
-        if (query.status) filters.push({ field: 'Status', operator: 'eq', value: query.status });
+        if (query.status) filters.push({ field: 'ReceiptStatus', operator: 'eq', value: query.status });
         if (query.projectId) filters.push({ field: 'ProjectId', operator: 'eq', value: query.projectId });
         if (query.uploadedBy) filters.push({ field: 'UploadedBy', operator: 'eq', value: query.uploadedBy });
         if (query.expenseCategory) filters.push({ field: 'ExpenseCategory', operator: 'eq', value: query.expenseCategory });
