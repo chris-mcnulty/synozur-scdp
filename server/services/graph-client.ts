@@ -1724,20 +1724,25 @@ export class GraphClient {
  */
 export async function registerContainerTypePermissions(
   containerTypeId: string,
-  appId: string
+  appId: string,
+  azureTenantId?: string
 ): Promise<{ success: boolean; message: string }> {
   try {
     console.log('[GraphClient] Registering container type permissions:', {
       containerTypeId,
-      appId
+      appId,
+      azureTenantId: azureTenantId || 'default'
     });
 
-    // Get access token for SharePoint API
-    if (!clientCredentialsMsalInstance) {
+    const msalInstance = azureTenantId
+      ? getClientCredentialsMsalForTenant(azureTenantId)
+      : clientCredentialsMsalInstance;
+
+    if (!msalInstance) {
       throw new Error('MSAL client credentials instance not initialized');
     }
     
-    const tokenResponse = await clientCredentialsMsalInstance.acquireTokenByClientCredential({
+    const tokenResponse = await msalInstance.acquireTokenByClientCredential({
       scopes: ['https://graph.microsoft.com/.default'],
       skipCache: false,
     });
@@ -1746,9 +1751,21 @@ export async function registerContainerTypePermissions(
       throw new Error('Failed to acquire access token');
     }
 
-    // Construct the root SharePoint site URL from the tenant
-    // For Synozur tenant, this is https://synozur.sharepoint.com
-    const rootSiteUrl = 'https://synozur.sharepoint.com';
+    // Discover the SharePoint root URL dynamically via Graph API
+    const rootSiteResponse = await fetch('https://graph.microsoft.com/v1.0/sites/root', {
+      headers: { 'Authorization': `Bearer ${tokenResponse.accessToken}` }
+    });
+
+    if (!rootSiteResponse.ok) {
+      const errorText = await rootSiteResponse.text();
+      throw new Error(`Failed to discover SharePoint root URL: ${rootSiteResponse.status} ${errorText}`);
+    }
+    const rootSite = await rootSiteResponse.json();
+    const hostname = rootSite.siteCollection?.hostname;
+    if (!hostname) {
+      throw new Error('SharePoint root site discovery returned no hostname');
+    }
+    const rootSiteUrl = `https://${hostname}`;
     
     console.log('[GraphClient] Using SharePoint root site URL:', rootSiteUrl);
 

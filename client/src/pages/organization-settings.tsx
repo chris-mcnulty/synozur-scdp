@@ -659,6 +659,27 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const [registerResult, setRegisterResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const registerContainerTypeMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/tenants/${tenantSettings.id}/spe/register-container-type`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      setRegisterResult(data);
+      if (data.success) {
+        toast({ title: "Container type registered", description: data.message || "Container type registered in tenant SharePoint." });
+      } else {
+        toast({ title: "Registration failed", description: data.message || "Could not register container type.", variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      setRegisterResult({ success: false, message: error.message });
+      toast({ title: "Registration failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const [testResult, setTestResult] = useState<{
     success: boolean;
     uploadOk: boolean;
@@ -871,6 +892,33 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
 
         {currentContainerId && (
           <div className="border-t pt-3 space-y-3">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Register Container Type</p>
+              <p className="text-xs text-muted-foreground">
+                Registers the SPE container type in this tenant's SharePoint. Required once before file operations work. This is automatically done during container creation, but can be re-run if needed.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setRegisterResult(null); registerContainerTypeMutation.mutate(); }}
+                disabled={registerContainerTypeMutation.isPending}
+              >
+                {registerContainerTypeMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Shield className="h-3 w-3 mr-1" />}
+                {registerContainerTypeMutation.isPending ? "Registering..." : "Register Container Type"}
+              </Button>
+              {registerResult && (
+                <div className={`rounded-lg border p-3 text-sm ${registerResult.success ? "bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
+                  <div className="flex items-center gap-2 font-medium">
+                    {registerResult.success ? (
+                      <><CheckCircle className="h-4 w-4 text-green-600" /> {registerResult.message}</>
+                    ) : (
+                      <><AlertTriangle className="h-4 w-4 text-red-600" /> {registerResult.message}</>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <p className="text-sm font-medium">Test Container Access</p>
             <p className="text-xs text-muted-foreground">
               Upload a test file to the SPE container, download it back, and clean up. This confirms files can be saved and retrieved correctly before going live.

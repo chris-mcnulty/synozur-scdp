@@ -144,6 +144,44 @@ export function registerTenantStorageRoutes(
     }
   });
 
+  app.post("/api/tenants/:id/spe/register-container-type", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only register container types for your own organization" });
+      }
+
+      if (!tenant.azureTenantId) {
+        return res.status(400).json({
+          message: "Azure Tenant ID not set. An admin must sign in via SSO first to auto-populate it.",
+        });
+      }
+
+      const result = await containerCreator.registerContainerTypeForTenant(tenant.azureTenantId);
+
+      res.json({
+        tenantId,
+        tenantName: tenant.name,
+        environment: currentEnvLabel,
+        ...result,
+      });
+    } catch (error) {
+      console.error("[SPE] Error registering container type:", error);
+      res.status(500).json({
+        message: "Failed to register container type",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.patch("/api/tenants/:id/spe/config", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = req.params.id;

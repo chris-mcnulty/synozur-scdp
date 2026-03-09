@@ -101,11 +101,22 @@ export class ContainerCreator {
       
       console.log('[ContainerCreator] Permissions granted successfully');
       
+      // CRITICAL: Register container type in the consuming tenant's SharePoint
+      // Without this, file operations (upload/download/delete) will fail with
+      // "not supported for AAD accounts (no addressUrl for Microsoft.FileServices)"
+      console.log('[ContainerCreator] Registering container type in tenant SharePoint...');
+      const registrationResult = await this.registerContainerTypeInTenant(accessToken);
+      if (!registrationResult.success) {
+        console.warn('[ContainerCreator] Container type registration warning:', registrationResult.message);
+      } else {
+        console.log('[ContainerCreator] Container type registered in tenant SharePoint');
+      }
+      
       return {
         success: true,
         message: 'SharePoint Embedded container created and permissions granted successfully',
         containerId: container.id,
-        details: container
+        details: { ...container, containerTypeRegistration: registrationResult }
       };
       
     } catch (error) {
@@ -179,6 +190,118 @@ export class ContainerCreator {
       
     } catch (error) {
       console.error('[ContainerCreator] Error granting permissions:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Public method to register the container type in a specific tenant's SharePoint.
+   * Can be called separately for tenants that already have containers but need
+   * the container type registered (e.g., containers created before this step was added).
+   */
+  async registerContainerTypeForTenant(
+    azureTenantId: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      const accessToken = await this.getGraphAccessToken(azureTenantId);
+      return await this.registerContainerTypeInTenant(accessToken);
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Register the container type in the consuming tenant's SharePoint.
+   * This is required before file operations (upload/download/delete) can work.
+   * Uses the Graph API to discover the tenant's SharePoint root URL,
+   * then calls the SharePoint REST API to register the container type.
+   */
+  private async registerContainerTypeInTenant(
+    accessToken: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      // Step 1: Discover the tenant's SharePoint root URL via Graph API
+      const rootSiteResponse = await fetch(
+        `${this.graphBaseUrl}/sites/root`,
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        }
+      );
+
+      if (!rootSiteResponse.ok) {
+        return {
+          success: false,
+          message: `Failed to discover SharePoint root site: HTTP ${rootSiteResponse.status}`
+        };
+      }
+
+      const rootSite = await rootSiteResponse.json();
+      const siteHostname = rootSite.siteCollection?.hostname;
+      if (!siteHostname) {
+        return {
+          success: false,
+          message: 'Could not determine SharePoint hostname from root site response'
+        };
+      }
+
+      const sharePointUrl = `https://${siteHostname}`;
+      console.log('[ContainerCreator] Discovered SharePoint URL:', sharePointUrl);
+
+      // Step 2: Register the container type via SharePoint REST API
+      const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+      const registrationUrl = `${sharePointUrl}/_api/v2.1/storageContainerTypes/${this.containerTypeId}/applicationPermissions`;
+
+      const payload = {
+        value: [
+          {
+            appId: clientId,
+            delegated: ["full"],
+            appOnly: ["full"]
+          }
+        ]
+      };
+
+      console.log('[ContainerCreator] Registering container type at:', registrationUrl);
+
+      const registrationResponse = await fetch(registrationUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!registrationResponse.ok) {
+        const errorText = await registrationResponse.text();
+        let errorMessage = `HTTP ${registrationResponse.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error) {
+            errorMessage = errorData.error.message || errorMessage;
+          }
+        } catch {
+          errorMessage += `: ${errorText}`;
+        }
+        return {
+          success: false,
+          message: `Container type registration failed: ${errorMessage}`
+        };
+      }
+
+      return {
+        success: true,
+        message: `Container type registered in ${siteHostname}`
+      };
+    } catch (error) {
+      console.error('[ContainerCreator] Error registering container type in tenant:', error);
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error'
