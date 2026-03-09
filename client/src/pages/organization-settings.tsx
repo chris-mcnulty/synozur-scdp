@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen } from "lucide-react";
 import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
@@ -703,6 +703,36 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const [containerBrowserPath, setContainerBrowserPath] = useState('/');
+  const [containerBrowserData, setContainerBrowserData] = useState<{
+    containerId: string;
+    folderPath: string;
+    files: Array<{
+      id: string;
+      name: string;
+      size: number;
+      isFolder: boolean;
+      childCount?: number;
+      mimeType?: string;
+      lastModified?: string;
+      webUrl?: string;
+      createdBy?: string;
+    }>;
+  } | null>(null);
+  const [showContainerBrowser, setShowContainerBrowser] = useState(false);
+
+  const browseContainerMutation = useMutation({
+    mutationFn: (folderPath: string) =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/spe/browse?folderPath=${encodeURIComponent(folderPath)}`),
+    onSuccess: (data: any) => {
+      setContainerBrowserData(data);
+      setContainerBrowserPath(data.folderPath || '/');
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to browse container", description: error.message, variant: "destructive" });
+    },
+  });
+
   const [grantPermResult, setGrantPermResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const grantPermissionsMutation = useMutation({
@@ -1027,6 +1057,123 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                 {!testResult.success && testResult.error && testResult.error !== testResult.details && (
                   <p className="text-xs text-red-500 dark:text-red-400 break-all mt-1">Graph API Error: {testResult.error}</p>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {currentContainerId && (
+          <div className="border-t pt-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Browse Container</p>
+                <p className="text-xs text-muted-foreground">
+                  View files and folders stored in the SPE container.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (!showContainerBrowser) {
+                    setShowContainerBrowser(true);
+                    setContainerBrowserPath('/');
+                    browseContainerMutation.mutate('/');
+                  } else {
+                    setShowContainerBrowser(false);
+                    setContainerBrowserData(null);
+                  }
+                }}
+                disabled={browseContainerMutation.isPending}
+              >
+                {browseContainerMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FolderOpen className="h-3 w-3 mr-1" />}
+                {showContainerBrowser ? "Close Browser" : "Open Browser"}
+              </Button>
+            </div>
+            {showContainerBrowser && (
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Path:</span>
+                  <button
+                    className="text-blue-600 dark:text-blue-400 hover:underline font-mono"
+                    onClick={() => browseContainerMutation.mutate('/')}
+                  >
+                    /
+                  </button>
+                  {containerBrowserPath !== '/' && containerBrowserPath.split('/').filter(Boolean).map((segment, idx, arr) => {
+                    const pathUpTo = '/' + arr.slice(0, idx + 1).join('/');
+                    return (
+                      <span key={pathUpTo} className="flex items-center gap-1">
+                        <span className="text-muted-foreground">/</span>
+                        <button
+                          className="text-blue-600 dark:text-blue-400 hover:underline font-mono"
+                          onClick={() => browseContainerMutation.mutate(pathUpTo)}
+                        >
+                          {segment}
+                        </button>
+                      </span>
+                    );
+                  })}
+                  {browseContainerMutation.isPending && <Loader2 className="h-3 w-3 animate-spin ml-2" />}
+                </div>
+                {containerBrowserData && (
+                  <div className="max-h-64 overflow-y-auto border rounded-md">
+                    {containerBrowserData.files.length === 0 ? (
+                      <p className="text-xs text-muted-foreground p-3 text-center">This folder is empty</p>
+                    ) : (
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left p-1.5 font-medium">Name</th>
+                            <th className="text-left p-1.5 font-medium">Type</th>
+                            <th className="text-right p-1.5 font-medium">Size</th>
+                            <th className="text-left p-1.5 font-medium">Modified</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {containerBrowserData.files
+                            .sort((a, b) => (a.isFolder === b.isFolder ? a.name.localeCompare(b.name) : a.isFolder ? -1 : 1))
+                            .map((f) => (
+                            <tr key={f.id} className="border-t hover:bg-muted/30">
+                              <td className="p-1.5">
+                                {f.isFolder ? (
+                                  <button
+                                    className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-mono"
+                                    onClick={() => {
+                                      const newPath = containerBrowserPath === '/'
+                                        ? `/${f.name}`
+                                        : `${containerBrowserPath}/${f.name}`;
+                                      browseContainerMutation.mutate(newPath);
+                                    }}
+                                  >
+                                    <FolderOpen className="h-3 w-3 text-amber-500" />
+                                    {f.name}
+                                    {f.childCount !== undefined && <span className="text-muted-foreground ml-1">({f.childCount})</span>}
+                                  </button>
+                                ) : (
+                                  <span className="flex items-center gap-1 font-mono truncate max-w-[250px]">
+                                    <FileText className="h-3 w-3 text-muted-foreground" />
+                                    {f.name}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-1.5 text-muted-foreground">{f.isFolder ? 'Folder' : (f.mimeType || '—')}</td>
+                              <td className="p-1.5 text-right text-muted-foreground">
+                                {f.isFolder ? '—' : f.size > 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : f.size > 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`}
+                              </td>
+                              <td className="p-1.5 text-muted-foreground">
+                                {f.lastModified ? new Date(f.lastModified).toLocaleDateString() : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {containerBrowserData ? `${containerBrowserData.files.length} item(s)` : 'Loading...'}
+                </p>
               </div>
             )}
           </div>

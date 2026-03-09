@@ -400,6 +400,59 @@ export function registerTenantStorageRoutes(
     }
   });
 
+  app.get("/api/admin/tenants/:id/spe/browse", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const speConfig = await storage.getTenantSpeConfig(tenantId);
+      const containerId = isProductionEnv
+        ? speConfig?.speContainerIdProd
+        : speConfig?.speContainerIdDev;
+
+      if (!containerId) {
+        return res.status(400).json({ message: "No SPE container configured for this environment" });
+      }
+
+      const folderPath = (req.query.folderPath as string) || '/';
+      const graphClient = new (await import('../services/graph-client.js')).GraphClient(tenant.azureTenantId || undefined);
+
+      const files = await graphClient.listFiles(containerId, folderPath);
+
+      res.json({
+        containerId,
+        folderPath,
+        files: files.map(f => ({
+          id: f.id,
+          name: f.name,
+          size: f.size || 0,
+          isFolder: !!f.folder,
+          childCount: f.folder?.childCount,
+          mimeType: f.file?.mimeType,
+          lastModified: f.lastModifiedDateTime,
+          webUrl: f.webUrl,
+          createdBy: f.createdBy?.user?.displayName,
+        })),
+      });
+    } catch (error) {
+      console.error("[SPE-Browse] Error browsing container:", error);
+      res.status(500).json({
+        message: "Failed to browse container",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.post("/api/admin/tenants/:id/spe/grant-permissions", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = req.params.id;
