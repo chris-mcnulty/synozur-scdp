@@ -1305,9 +1305,10 @@ export class GraphClient {
           break;
 
         case 'number': {
+          const decimalMap: Record<number, string> = { 0: 'none', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five' };
+          const decimalPlaces = decimalMap[columnDefinition.number?.decimalPlaces ?? 0] || 'automatic';
           const numberConfig: any = {
-            decimalPlaces: columnDefinition.number?.decimalPlaces || 0,
-            showAsPercentage: columnDefinition.number?.showAsPercentage || false
+            decimalPlaces,
           };
           if (columnDefinition.number?.minimum !== undefined) numberConfig.minimum = columnDefinition.number.minimum;
           if (columnDefinition.number?.maximum !== undefined) numberConfig.maximum = columnDefinition.number.maximum;
