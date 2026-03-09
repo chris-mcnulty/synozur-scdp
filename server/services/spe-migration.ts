@@ -451,7 +451,7 @@ export class SpeMigrationService {
 
     try {
       const regResp = await fetch(
-        `https://graph.microsoft.com/v1.0/storage/fileStorage/containerTypeRegistrations/${graphClient.getContainerTypeId()}`,
+        `https://graph.microsoft.com/beta/storage/fileStorage/containerTypeRegistrations/${graphClient.getContainerTypeId()}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const regData = await regResp.json();

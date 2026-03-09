@@ -202,19 +202,26 @@ export class GraphClient {
       return this.driveIdCache.get(containerId)!;
     }
 
-    const driveData = await this.makeGraphRequest<{ id: string; driveType: string }>(
-      'GET',
-      `/storage/fileStorage/containers/${containerId}/drive`
-    );
-    
-    if (!driveData?.id) {
-      throw new Error(`Could not resolve drive ID for container ${containerId}`);
+    try {
+      const driveData = await this.makeGraphRequest<{ id: string; driveType: string }>(
+        'GET',
+        `/storage/fileStorage/containers/${containerId}/drive`
+      );
+      
+      if (driveData?.id) {
+        console.log(`[GraphClient] Resolved container ${containerId.substring(0, 15)}... to drive ${driveData.id.substring(0, 15)}... (type: ${driveData.driveType})`);
+        this.driveIdCache.set(containerId, driveData.id);
+        this.driveIdExpiry.set(containerId, now + this.cacheLifetime);
+        return driveData.id;
+      }
+    } catch (error) {
+      console.warn(`[GraphClient] Drive resolution via container endpoint failed, using container ID directly as drive ID:`, error instanceof Error ? error.message : error);
     }
-    
-    console.log(`[GraphClient] Resolved container ${containerId.substring(0, 15)}... to drive ${driveData.id.substring(0, 15)}... (type: ${driveData.driveType})`);
-    this.driveIdCache.set(containerId, driveData.id);
+
+    console.log(`[GraphClient] Using container ID directly as drive ID: ${containerId.substring(0, 15)}...`);
+    this.driveIdCache.set(containerId, containerId);
     this.driveIdExpiry.set(containerId, now + this.cacheLifetime);
-    return driveData.id;
+    return containerId;
   }
 
   private driveEndpoint(driveId: string): string {
@@ -1786,7 +1793,7 @@ export async function registerContainerTypePermissions(
       throw new Error('Failed to acquire access token');
     }
 
-    const registrationUrl = `https://graph.microsoft.com/v1.0/storage/fileStorage/containerTypeRegistrations/${containerTypeId}`;
+    const registrationUrl = `https://graph.microsoft.com/beta/storage/fileStorage/containerTypeRegistrations/${containerTypeId}`;
     
     const payload = {
       applicationPermissionGrants: [

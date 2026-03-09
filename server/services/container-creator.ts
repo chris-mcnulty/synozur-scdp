@@ -308,7 +308,7 @@ export class ContainerCreator {
       const graphToken = await this.getGraphAccessToken(azureTenantId);
       const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
 
-      const registrationUrl = `${this.graphBaseUrl}/storage/fileStorage/containerTypeRegistrations/${this.containerTypeId}`;
+      const registrationUrl = `https://graph.microsoft.com/beta/storage/fileStorage/containerTypeRegistrations/${this.containerTypeId}`;
 
       const payload = {
         applicationPermissionGrants: [
