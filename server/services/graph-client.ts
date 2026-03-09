@@ -1117,12 +1117,33 @@ export class GraphClient {
       const drivePath = this.driveEndpoint(driveId);
       const pathForApi = folderPath === '/' ? '' : `:${folderPath}:`;
       
-      const response = await this.makeGraphRequest<GraphResponse<DriveItem>>(
-        'GET',
-        `${drivePath}/root${pathForApi}/children?$expand=listItem($expand=fields)`
-      );
+      const allItems: DriveItem[] = [];
+      let nextLink: string | undefined = `${drivePath}/root${pathForApi}/children?$expand=listItem($expand=fields)&$top=200`;
+      let pageNum = 0;
+
+      while (nextLink) {
+        pageNum++;
+        const response = await this.makeGraphRequest<GraphResponse<DriveItem>>(
+          'GET',
+          nextLink
+        );
+        
+        if (response.value) {
+          allItems.push(...response.value);
+        }
+        
+        nextLink = response['@odata.nextLink'];
+        if (nextLink && pageNum > 50) {
+          console.warn(`[GraphClient] listFiles pagination exceeded 50 pages for ${folderPath}, stopping`);
+          break;
+        }
+      }
+
+      if (pageNum > 1) {
+        console.log(`[GraphClient] listFiles(${folderPath}): ${allItems.length} items across ${pageNum} pages`);
+      }
       
-      return response.value || [];
+      return allItems;
     }, `listFiles(${folderPath})`);
   }
 
