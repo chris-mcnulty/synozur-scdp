@@ -10,6 +10,7 @@ import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompan
 interface InvoiceRouteDeps {
   requireAuth: any;
   requireRole: (roles: string[]) => any;
+  downloadFileDirect?: (fileId: string, tenantId?: string) => Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null>;
 }
 
 function getUserTenantId(req: Request): string | undefined {
@@ -1133,11 +1134,20 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
       for (const attachment of attachments) {
         try {
-          const buffer = await receiptStorage.getReceipt(attachment.itemId);
-          receiptFiles.push({
-            name: attachment.fileName,
-            buffer
-          });
+          let buffer: Buffer | null = null;
+          try {
+            buffer = await receiptStorage.getReceipt(attachment.itemId);
+          } catch {
+            if (deps.downloadFileDirect) {
+              const result = await deps.downloadFileDirect(attachment.itemId);
+              buffer = result?.buffer || null;
+            }
+          }
+          if (buffer) {
+            receiptFiles.push({ name: attachment.fileName, buffer });
+          } else {
+            console.warn(`[RECEIPTS_BUNDLE] Could not retrieve ${attachment.fileName} (${attachment.itemId})`);
+          }
         } catch (error) {
           console.error(`[RECEIPTS_BUNDLE] Failed to download ${attachment.fileName}:`, error);
         }

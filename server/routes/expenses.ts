@@ -18,7 +18,8 @@ interface ExpenseRouteDeps {
   requireRole: (roles: string[]) => any;
   smartFileStorage: {
     storeFile: (...args: any[]) => Promise<any>;
-    getFileContent: (fileId: string) => Promise<any>;
+    getFileContent: (fileId: string, tenantId?: string) => Promise<any>;
+    downloadFileDirect: (fileId: string, tenantId?: string) => Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null>;
   };
 }
 
@@ -966,11 +967,11 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         if (attachment.driveId === 'receipt-storage' || attachment.driveId === 'local-storage') {
           const dlTenantId = (req as any).user?.primaryTenantId || (req as any).user?.tenantId;
           console.log('[ATTACHMENT_DOWNLOAD] Fetching from receipt/local storage:', attachment.itemId);
-          const fileContent = await deps.smartFileStorage.getFileContent(attachment.itemId, dlTenantId);
-          if (!fileContent || !fileContent.buffer) {
+          const directResult = await deps.smartFileStorage.downloadFileDirect(attachment.itemId, dlTenantId);
+          if (!directResult || !directResult.buffer) {
             throw new Error('File content not found');
           }
-          downloadBuffer = fileContent.buffer;
+          downloadBuffer = directResult.buffer;
         } else {
           console.log('[ATTACHMENT_DOWNLOAD] Fetching from SharePoint:', attachment.driveId, attachment.itemId);
           const downloadResult = await graphClient.downloadFile(

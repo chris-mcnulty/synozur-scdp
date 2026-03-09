@@ -234,6 +234,29 @@ export async function registerRoutes(app: Express): Promise<void> {
       catch { try { return await localFileStorageInstance.getFileContent(fileId); }
       catch { return await sharePointFileStorage.getFileContent(fileId, tenantId); } }
     },
+    async downloadFileDirect(fileId: string, tenantId?: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
+      try {
+        const buffer = await receiptStorage.getReceipt(fileId);
+        return { buffer, fileName: fileId, mimeType: 'application/octet-stream' };
+      } catch { /* not in receipt storage */ }
+      try {
+        const local = await localFileStorageInstance.getFileContent(fileId);
+        if (local?.buffer) {
+          const meta = local.metadata || {} as any;
+          return { buffer: local.buffer, fileName: meta.originalName || meta.fileName || fileId, mimeType: meta.contentType || 'application/octet-stream' };
+        }
+      } catch { /* not in local storage */ }
+      try {
+        const { containerId, azureTenantId } = await sharePointFileStorage.getContainerForTenant(tenantId);
+        if (!containerId) return null;
+        const client = sharePointFileStorage.resolveGraphClient(azureTenantId);
+        const result = await client.downloadFile(containerId, fileId);
+        return { buffer: result.buffer, fileName: result.fileName, mimeType: result.mimeType };
+      } catch (error) {
+        console.error(`[SMART_STORAGE] downloadFileDirect failed for ${fileId}:`, error instanceof Error ? error.message : error);
+        return null;
+      }
+    },
   };
 
   // Register expense routes (extracted module)
@@ -249,10 +272,10 @@ export async function registerRoutes(app: Express): Promise<void> {
     requireRole,
   });
 
-  // Register invoice routes (extracted module)
   registerInvoiceRoutes(app, {
     requireAuth,
     requireRole,
+    downloadFileDirect: smartFileStorage.downloadFileDirect.bind(smartFileStorage),
   });
 
   // Register HubSpot CRM routes (extracted module)
