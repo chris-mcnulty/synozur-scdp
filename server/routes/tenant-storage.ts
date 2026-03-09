@@ -400,6 +400,99 @@ export function registerTenantStorageRoutes(
     }
   });
 
+  app.post("/api/admin/tenants/:id/spe/grant-permissions", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.params.id;
+      const currentUser = (req as any).user;
+
+      const isPlatformAdmin = currentUser?.platformRole === 'global_admin' || currentUser?.platformRole === 'constellation_admin';
+      if (!isPlatformAdmin && currentUser?.tenantId !== tenantId) {
+        return res.status(403).json({ message: "You can only manage storage for your own organization" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      const speConfig = await storage.getTenantSpeConfig(tenantId);
+      if (!speConfig) {
+        return res.status(404).json({ message: "SPE configuration not found" });
+      }
+
+      const containerId = isProductionEnv
+        ? speConfig.speContainerIdProd
+        : speConfig.speContainerIdDev;
+
+      if (!containerId) {
+        return res.status(400).json({ message: `No SPE container configured for ${isProductionEnv ? 'production' : 'development'}` });
+      }
+
+      const azureTenantId = tenant.azureTenantId || undefined;
+      const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+
+      console.log(`[SPE-Permissions] Granting owner permissions on container ${containerId.substring(0, 20)}... to app ${clientId}`);
+
+      const { GraphClient } = await import('../services/graph-client.js');
+      const graphClient = new GraphClient(azureTenantId);
+      const token = await graphClient.authenticate();
+
+      const permissionPayload = {
+        roles: ["owner"],
+        grantedToV2: {
+          application: {
+            id: clientId,
+            displayName: "SCDP Application"
+          }
+        }
+      };
+
+      const response = await fetch(
+        `https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}/permissions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(permissionPayload)
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error) {
+            errorMessage = `${errorData.error.code || ''}: ${errorData.error.message || errorMessage}`;
+          }
+        } catch {
+          errorMessage += `: ${errorText}`;
+        }
+        console.error('[SPE-Permissions] Failed to grant permissions:', errorMessage);
+        return res.status(response.status).json({ message: `Failed to grant permissions: ${errorMessage}` });
+      }
+
+      const permission = await response.json();
+      console.log('[SPE-Permissions] Permissions granted successfully:', permission.id);
+
+      res.json({
+        success: true,
+        message: 'Owner permissions granted to application on the container',
+        permissionId: permission.id,
+        containerId,
+        appId: clientId,
+      });
+    } catch (error) {
+      console.error("[SPE-Permissions] Error granting permissions:", error);
+      res.status(500).json({
+        message: "Failed to grant permissions",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
   app.post("/api/admin/tenants/:id/spe/test-upload", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = req.params.id;

@@ -703,6 +703,27 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
     },
   });
 
+  const [grantPermResult, setGrantPermResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const grantPermissionsMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/tenants/${tenantSettings.id}/spe/grant-permissions`, {
+        method: "POST",
+      }),
+    onSuccess: (data: any) => {
+      setGrantPermResult(data);
+      if (data.success) {
+        toast({ title: "Permissions granted", description: data.message || "Owner permissions granted on the container." });
+      } else {
+        toast({ title: "Permission grant failed", description: data.message || "Could not grant permissions.", variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      setGrantPermResult({ success: false, message: error.message });
+      toast({ title: "Permission grant failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const [testResult, setTestResult] = useState<{
     success: boolean;
     uploadOk: boolean;
@@ -936,6 +957,33 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
                       <><CheckCircle className="h-4 w-4 text-green-600" /> {registerResult.message}</>
                     ) : (
                       <><AlertTriangle className="h-4 w-4 text-red-600" /> {registerResult.message}</>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Grant Container Permissions</p>
+              <p className="text-xs text-muted-foreground">
+                Grants owner permissions to the application on the existing container. Required if the container was created externally or permissions are missing.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setGrantPermResult(null); grantPermissionsMutation.mutate(); }}
+                disabled={grantPermissionsMutation.isPending}
+              >
+                {grantPermissionsMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Shield className="h-3 w-3 mr-1" />}
+                {grantPermissionsMutation.isPending ? "Granting..." : "Grant Permissions"}
+              </Button>
+              {grantPermResult && (
+                <div className={`rounded-lg border p-3 text-sm ${grantPermResult.success ? "bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
+                  <div className="flex items-center gap-2 font-medium">
+                    {grantPermResult.success ? (
+                      <><CheckCircle className="h-4 w-4 text-green-600" /> {grantPermResult.message}</>
+                    ) : (
+                      <><AlertTriangle className="h-4 w-4 text-red-600" /> {grantPermResult.message}</>
                     )}
                   </div>
                 </div>
