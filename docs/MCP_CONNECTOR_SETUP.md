@@ -269,11 +269,21 @@ In the Copilot Studio test pane, try these prompts:
 - "What's the status of my reimbursements?"
 - "Give me a status report summary for project X"
 
-### 3.6 Publish
+### 3.6 Enable Teams channel
 
-1. Click **Publish** in Copilot Studio
-2. To make the agent available in Microsoft 365 Copilot (M365 Chat), go to **Channels** → enable **Microsoft 365 Copilot**
-3. The agent will appear as a plugin in M365 Copilot for users in your organization
+To allow the agent to post and respond in Teams chats and channels:
+
+1. In the agent, go to **Channels** → **Microsoft Teams**
+2. Click **Turn on Teams** to enable the Teams channel
+3. Optionally, click **Edit details** to customize the agent's icon, short description, and accent color as it appears in Teams
+4. Click **Availability** to control who can use the agent — you can limit it to specific security groups or make it available to the entire organization
+5. Once enabled, users can add the agent to a Teams chat or channel where it can respond to messages and queries
+
+### 3.7 Publish
+
+1. Click **Publish** in Copilot Studio to push the latest changes live
+2. To also make the agent available as a plugin in Microsoft 365 Copilot (M365 Chat), go to **Channels** → enable **Microsoft 365 Copilot**
+3. The agent will appear in both Teams and M365 Copilot for users in your organization
 
 ---
 
