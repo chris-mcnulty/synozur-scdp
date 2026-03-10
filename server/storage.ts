@@ -67,7 +67,8 @@ import {
   aiConfiguration, type AiConfiguration, type InsertAiConfiguration,
   aiUsageLogs, type AiUsageLog, type InsertAiUsageLog,
   aiUsageSummaries, type AiUsageSummary, type InsertAiUsageSummary,
-  aiUsageAlerts, type AiUsageAlert, type InsertAiUsageAlert
+  aiUsageAlerts, type AiUsageAlert, type InsertAiUsageAlert,
+  statusReports, type StatusReport, type InsertStatusReport
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1094,6 +1095,13 @@ export interface IStorage {
   deleteProjectDeliverable(id: string): Promise<void>;
   getDeliverableStatusHistory(deliverableId: string): Promise<(DeliverableStatusHistory & { changedByName?: string })[]>;
   createDeliverableStatusHistory(data: InsertDeliverableStatusHistory): Promise<DeliverableStatusHistory>;
+
+  // Status Reports
+  getStatusReports(projectId: string, tenantId: string): Promise<(StatusReport & { generatorName?: string })[]>;
+  getStatusReport(id: string): Promise<(StatusReport & { generatorName?: string }) | undefined>;
+  createStatusReport(data: InsertStatusReport): Promise<StatusReport>;
+  updateStatusReport(id: string, updates: Partial<InsertStatusReport>): Promise<StatusReport>;
+  deleteStatusReport(id: string): Promise<void>;
 
   // AI Configuration & Usage
   getAiConfiguration(): Promise<AiConfiguration | undefined>;
@@ -11982,6 +11990,52 @@ export class DatabaseStorage implements IStorage {
   async createDeliverableStatusHistory(data: InsertDeliverableStatusHistory): Promise<DeliverableStatusHistory> {
     const [result] = await db.insert(deliverableStatusHistory).values(data).returning();
     return result;
+  }
+
+  // Status Reports
+  async getStatusReports(projectId: string, tenantId: string): Promise<(StatusReport & { generatorName?: string })[]> {
+    const generatorAlias = alias(users, "generator");
+    const results = await db
+      .select({
+        report: statusReports,
+        generatorName: generatorAlias.name,
+      })
+      .from(statusReports)
+      .leftJoin(generatorAlias, eq(statusReports.generatedBy, generatorAlias.id))
+      .where(and(
+        eq(statusReports.projectId, projectId),
+        eq(statusReports.tenantId, tenantId)
+      ))
+      .orderBy(desc(statusReports.createdAt));
+    return results.map(r => ({ ...r.report, generatorName: r.generatorName || undefined }));
+  }
+
+  async getStatusReport(id: string): Promise<(StatusReport & { generatorName?: string }) | undefined> {
+    const generatorAlias = alias(users, "generator");
+    const results = await db
+      .select({
+        report: statusReports,
+        generatorName: generatorAlias.name,
+      })
+      .from(statusReports)
+      .leftJoin(generatorAlias, eq(statusReports.generatedBy, generatorAlias.id))
+      .where(eq(statusReports.id, id));
+    if (results.length === 0) return undefined;
+    return { ...results[0].report, generatorName: results[0].generatorName || undefined };
+  }
+
+  async createStatusReport(data: InsertStatusReport): Promise<StatusReport> {
+    const [result] = await db.insert(statusReports).values(data).returning();
+    return result;
+  }
+
+  async updateStatusReport(id: string, updates: Partial<InsertStatusReport>): Promise<StatusReport> {
+    const [result] = await db.update(statusReports).set(updates).where(eq(statusReports.id, id)).returning();
+    return result;
+  }
+
+  async deleteStatusReport(id: string): Promise<void> {
+    await db.delete(statusReports).where(eq(statusReports.id, id));
   }
 
   // AI Configuration & Usage

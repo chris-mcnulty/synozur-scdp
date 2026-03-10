@@ -372,6 +372,58 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
     }
   });
 
+  // ─── /mcp/projects/:projectId/status-reports (saved reports) ───
+  app.get("/mcp/projects/:projectId/status-reports", requireAuth, requireMcpTenant, requireRole(PROJECT_ROLES), async (req: Request, res: Response) => {
+    try {
+      const tenantId = requireTenantId(req);
+      const project = await storage.getProject(req.params.projectId);
+      if (!project || !verifyProjectTenant(project, tenantId)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const reports = await storage.getStatusReports(req.params.projectId, tenantId);
+      res.json({
+        projectId: req.params.projectId,
+        projectName: project.name,
+        count: reports.length,
+        reports: reports.map(r => ({
+          id: r.id,
+          title: r.title,
+          reportType: r.reportType,
+          reportStyle: r.reportStyle,
+          periodStart: r.periodStart,
+          periodEnd: r.periodEnd,
+          status: r.status,
+          generatedBy: r.generatorName || r.generatedBy,
+          createdAt: r.createdAt,
+          hasContent: !!r.reportContent,
+          speFileId: r.speFileId || null,
+        })),
+      });
+    } catch (error) {
+      console.error("[MCP] /mcp/projects/:projectId/status-reports error:", error);
+      res.status(500).json({ error: "Failed to retrieve status reports" });
+    }
+  });
+
+  // ─── /mcp/projects/:projectId/status-reports/:reportId ───
+  app.get("/mcp/projects/:projectId/status-reports/:reportId", requireAuth, requireMcpTenant, requireRole(PROJECT_ROLES), async (req: Request, res: Response) => {
+    try {
+      const tenantId = requireTenantId(req);
+      const project = await storage.getProject(req.params.projectId);
+      if (!project || !verifyProjectTenant(project, tenantId)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const report = await storage.getStatusReport(req.params.reportId);
+      if (!report || report.projectId !== req.params.projectId) {
+        return res.status(404).json({ error: "Status report not found" });
+      }
+      res.json(report);
+    } catch (error) {
+      console.error("[MCP] /mcp/projects/:projectId/status-reports/:reportId error:", error);
+      res.status(500).json({ error: "Failed to retrieve status report" });
+    }
+  });
+
   // ─── /mcp/projects/:projectId/m365-context ───
   app.get("/mcp/projects/:projectId/m365-context", requireAuth, requireMcpTenant, requireRole(PROJECT_ROLES), async (req: Request, res: Response) => {
     try {

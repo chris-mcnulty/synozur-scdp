@@ -5,6 +5,7 @@ import { useParams, Link, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { RaiddLogTab } from "@/components/raidd-log-tab";
 import { DeliverablesTab } from "@/components/project/deliverables-tab";
+import { StatusReportsTab } from "@/components/project/status-reports-tab";
 import { Button } from "@/components/ui/button";
 
 // Error Boundary for catching render errors
@@ -2113,6 +2114,7 @@ export default function ProjectDetail() {
                 <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
                 <TabsTrigger value="raidd" data-testid="tab-raidd">RAIDD</TabsTrigger>
                 <TabsTrigger value="deliverables" data-testid="tab-deliverables">Deliverables</TabsTrigger>
+                <TabsTrigger value="status-reports" data-testid="tab-status-reports">Status Reports</TabsTrigger>
               </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -4450,6 +4452,10 @@ export default function ProjectDetail() {
                 .filter((e: any) => e.status === 'active' && e.user)
                 .map((e: any) => ({ id: e.user.id, name: e.user.name || e.user.email }))}
             />
+          </TabsContent>
+
+          <TabsContent value="status-reports" className="space-y-6">
+            <StatusReportsTab projectId={id || ''} />
           </TabsContent>
           
             </Tabs>

@@ -4069,26 +4069,120 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         usageCtx: { tenantId: srTenantId, userId: (req.user as any)?.id, feature: 'status_report' as any },
       });
 
+      const reportMetadata = {
+        projectName: project.name,
+        clientName: project.client?.name || "Unknown",
+        startDate,
+        endDate,
+        style: reportStyle,
+        totalHours,
+        totalBillableHours,
+        totalExpenses,
+        teamMemberCount: teamMembers.size,
+        generatedAt: new Date().toISOString(),
+        generatedBy: user.name || user.email,
+        raidd: raiddCounts,
+      };
+
+      const savedReport = await storage.createStatusReport({
+        projectId,
+        tenantId: user.tenantId || null,
+        title: `${project.name} Status Report — ${startDate} to ${endDate}`,
+        reportType: "text",
+        reportStyle,
+        periodStart: startDate,
+        periodEnd: endDate,
+        reportContent: result.content,
+        status: "draft",
+        metadata: reportMetadata,
+        generatedBy: user.id,
+      });
+
       res.json({
         report: result.content,
-        metadata: {
-          projectName: project.name,
-          clientName: project.client?.name || "Unknown",
-          startDate,
-          endDate,
-          style: reportStyle,
-          totalHours,
-          totalBillableHours,
-          totalExpenses,
-          teamMemberCount: teamMembers.size,
-          generatedAt: new Date().toISOString(),
-          generatedBy: user.name || user.email,
-          raidd: raiddCounts,
-        },
+        savedReportId: savedReport.id,
+        metadata: reportMetadata,
       });
     } catch (error: any) {
       console.error("[STATUS-REPORT] Failed to generate status report:", error);
       res.status(500).json({ message: "Failed to generate status report: " + error.message });
+    }
+  });
+
+  // List saved status reports for a project
+  app.get("/api/projects/:projectId/status-reports", requireAuth, async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const user = req.user as any;
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = user.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      const reports = await storage.getStatusReports(projectId, tenantId || project.tenantId || "");
+      res.json(reports);
+    } catch (error: any) {
+      console.error("[STATUS-REPORTS] Failed to list status reports:", error);
+      res.status(500).json({ message: "Failed to list status reports" });
+    }
+  });
+
+  // Get a single saved status report
+  app.get("/api/projects/:projectId/status-reports/:reportId", requireAuth, async (req, res) => {
+    try {
+      const { projectId, reportId } = req.params;
+      const user = req.user as any;
+      const report = await storage.getStatusReport(reportId);
+      if (!report || report.projectId !== projectId) return res.status(404).json({ message: "Status report not found" });
+      if (user.tenantId && report.tenantId && report.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Status report not found" });
+      }
+      res.json(report);
+    } catch (error: any) {
+      console.error("[STATUS-REPORTS] Failed to get status report:", error);
+      res.status(500).json({ message: "Failed to get status report" });
+    }
+  });
+
+  // Update a saved status report (e.g., mark as final, edit content)
+  app.patch("/api/projects/:projectId/status-reports/:reportId", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const { projectId, reportId } = req.params;
+      const user = req.user as any;
+      const existing = await storage.getStatusReport(reportId);
+      if (!existing || existing.projectId !== projectId) return res.status(404).json({ message: "Status report not found" });
+      if (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Status report not found" });
+      }
+      const { status, reportContent, title } = req.body;
+      const updates: any = {};
+      if (status) updates.status = status;
+      if (reportContent !== undefined) updates.reportContent = reportContent;
+      if (title) updates.title = title;
+      const updated = await storage.updateStatusReport(reportId, updates);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[STATUS-REPORTS] Failed to update status report:", error);
+      res.status(500).json({ message: "Failed to update status report" });
+    }
+  });
+
+  // Delete a saved status report
+  app.delete("/api/projects/:projectId/status-reports/:reportId", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const { projectId, reportId } = req.params;
+      const user = req.user as any;
+      const existing = await storage.getStatusReport(reportId);
+      if (!existing || existing.projectId !== projectId) return res.status(404).json({ message: "Status report not found" });
+      if (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Status report not found" });
+      }
+      await storage.deleteStatusReport(reportId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[STATUS-REPORTS] Failed to delete status report:", error);
+      res.status(500).json({ message: "Failed to delete status report" });
     }
   });
 
@@ -8177,6 +8271,32 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             console.error('[CRM] Status report sync failed:', e.message);
           }
         })();
+
+        try {
+          await storage.createStatusReport({
+            projectId: req.params.id,
+            tenantId: tenantId || null,
+            title: `${project.name} PPTX Report — ${effectiveStartDate} to ${effectiveEndDate}`,
+            reportType: "pptx",
+            reportStyle,
+            periodStart: effectiveStartDate,
+            periodEnd: effectiveEndDate,
+            reportContent: aiReport || null,
+            status: "final",
+            metadata: {
+              projectName: project.name,
+              clientName: project.client?.name || "Unknown",
+              startDate: effectiveStartDate,
+              endDate: effectiveEndDate,
+              style: reportStyle,
+              generatedAt: new Date().toISOString(),
+              generatedBy: req.user!.name || req.user!.email,
+            },
+            generatedBy: req.user!.id,
+          });
+        } catch (saveErr: any) {
+          console.error("[PPTX] Failed to save report record to DB:", saveErr.message);
+        }
 
         const fileStream = fsNode.createReadStream(tmpFile);
         fileStream.pipe(res);

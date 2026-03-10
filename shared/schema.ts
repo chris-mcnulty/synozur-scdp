@@ -1103,6 +1103,41 @@ export const projectBudgetHistory = pgTable("project_budget_history", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Status Reports - Persisted status reports generated via AI
+export const statusReports = pgTable("status_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  title: text("title").notNull(),
+  reportType: text("report_type").notNull().default("text"), // text, pptx
+  reportStyle: text("report_style").notNull().default("detailed_update"), // executive_brief, detailed_update, client_facing
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  reportContent: text("report_content"), // Markdown content for text reports
+  status: text("status").notNull().default("draft"), // draft, final
+  speFileId: text("spe_file_id"),
+  speContainerId: text("spe_container_id"),
+  metadata: jsonb("metadata"), // { totalHours, totalBillableHours, totalExpenses, teamMemberCount, raidd counts, etc. }
+  generatedBy: varchar("generated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  projectIdx: index("idx_status_reports_project").on(table.projectId),
+  tenantIdx: index("idx_status_reports_tenant").on(table.tenantId),
+}));
+
+export const statusReportsRelations = relations(statusReports, ({ one }) => ({
+  project: one(projects, { fields: [statusReports.projectId], references: [projects.id] }),
+  tenant: one(tenants, { fields: [statusReports.tenantId], references: [tenants.id] }),
+  generator: one(users, { fields: [statusReports.generatedBy], references: [users.id] }),
+}));
+
+export const insertStatusReportSchema = createInsertSchema(statusReports).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertStatusReport = z.infer<typeof insertStatusReportSchema>;
+export type StatusReport = typeof statusReports.$inferSelect;
+
 // Invoice batches
 export const invoiceBatches = pgTable("invoice_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
