@@ -4,6 +4,7 @@ import { db } from "../db.js";
 import {
   projects, clients, invoiceBatches, invoiceLines, raiddEntries,
   projectPlannerConnections, crmObjectMappings, users,
+  estimates, expenses, reimbursementBatches,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray, sql, or, ilike } from "drizzle-orm";
 import {
@@ -50,6 +51,8 @@ const PROJECT_ROLES = ["admin", "pm", "portfolio-manager", "executive"];
 const PORTFOLIO_ROLES = ["admin", "portfolio-manager", "executive"];
 const FINANCIAL_ROLES = ["admin", "billing-admin", "executive"];
 const CRM_ROLES = ["admin", "pm", "executive"];
+const ESTIMATE_ROLES = ["admin", "pm", "portfolio-manager", "executive", "billing-admin"];
+const EXPENSE_ADMIN_ROLES = ["admin", "billing-admin", "executive"];
 
 function canViewOtherUsers(user: any): boolean {
   const managerRoles = ["admin", "pm", "portfolio-manager", "executive", "billing-admin"];
@@ -60,7 +63,7 @@ function canViewOtherUsers(user: any): boolean {
 }
 
 function verifyProjectTenant(project: any, tenantId: string): boolean {
-  if (project.tenantId && project.tenantId !== tenantId) return false;
+  if (!project.tenantId || project.tenantId !== tenantId) return false;
   return true;
 }
 
@@ -260,21 +263,112 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
     }
   });
 
-  // ─── /mcp/projects/:projectId/status-reports ───
-  app.get("/mcp/projects/:projectId/status-reports", requireAuth, requireMcpTenant, requireRole(PROJECT_ROLES), async (req: Request, res: Response) => {
+  // ─── /mcp/projects/:projectId/status-report-data ───
+  // Returns aggregated project data suitable for generating a status report
+  app.get("/mcp/projects/:projectId/status-report-data", requireAuth, requireMcpTenant, requireRole(PROJECT_ROLES), async (req: Request, res: Response) => {
     try {
       const tenantId = requireTenantId(req);
       const project = await storage.getProject(req.params.projectId);
       if (!project || !verifyProjectTenant(project, tenantId)) {
         return res.status(404).json({ error: "Project not found" });
       }
+
+      const now = new Date();
+      const defaultEnd = now.toISOString().split("T")[0];
+      const defaultStart = new Date(now.getTime() - 14 * 86400000).toISOString().split("T")[0];
+      const startDate = (req.query.startDate as string) || defaultStart;
+      const endDate = (req.query.endDate as string) || defaultEnd;
+
+      const [timeEntryData, expenseData, allocations, milestones, raiddData, deliverables] = await Promise.all([
+        storage.getTimeEntries({ projectId: req.params.projectId, startDate, endDate }),
+        storage.getExpenses({ projectId: req.params.projectId, startDate, endDate }),
+        storage.getProjectAllocations(req.params.projectId),
+        storage.getProjectMilestones(req.params.projectId),
+        storage.getRaiddEntries(req.params.projectId, {}),
+        storage.getProjectDeliverables(req.params.projectId),
+      ]);
+
+      const totalHours = timeEntryData.reduce((sum: number, te: any) => sum + Number(te.hours || 0), 0);
+      const totalBillableHours = timeEntryData.filter((te: any) => te.billable).reduce((sum: number, te: any) => sum + Number(te.hours || 0), 0);
+      const totalExpenses = expenseData.reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
+
+      const teamMembers = new Map<string, { name: string; hours: number; activities: string[] }>();
+      for (const te of timeEntryData) {
+        const key = (te as any).personId;
+        const existing = teamMembers.get(key) || { name: (te as any).person?.name || "Unknown", hours: 0, activities: [] };
+        existing.hours += Number((te as any).hours || 0);
+        if ((te as any).description && !existing.activities.includes((te as any).description)) {
+          existing.activities.push((te as any).description);
+        }
+        teamMembers.set(key, existing);
+      }
+
+      const openRisks = raiddData.filter((r: any) => r.type === "risk" && r.status !== "closed" && r.status !== "mitigated");
+      const openIssues = raiddData.filter((r: any) => r.type === "issue" && r.status !== "closed" && r.status !== "resolved");
+      const openActions = raiddData.filter((r: any) => r.type === "action" && r.status !== "closed" && r.status !== "completed");
+      const openDecisions = raiddData.filter((r: any) => r.type === "decision");
+
       res.json({
-        data: [],
-        message: "Stored status reports not yet implemented. Reports are currently generated on-demand via AI.",
+        data: {
+          project: {
+            id: project.id,
+            name: project.name,
+            code: (project as any).code,
+            status: project.status,
+            clientName: (project as any).client?.name,
+          },
+          period: { startDate, endDate },
+          hours: {
+            total: Math.round(totalHours * 10) / 10,
+            billable: Math.round(totalBillableHours * 10) / 10,
+            nonBillable: Math.round((totalHours - totalBillableHours) * 10) / 10,
+          },
+          expenses: {
+            total: Math.round(totalExpenses * 100) / 100,
+            count: expenseData.length,
+          },
+          team: Array.from(teamMembers.values()).sort((a, b) => b.hours - a.hours).map(m => ({
+            name: m.name,
+            hours: Math.round(m.hours * 10) / 10,
+            topActivities: m.activities.slice(0, 5),
+          })),
+          raidd: {
+            openRisks: openRisks.length,
+            openIssues: openIssues.length,
+            openActions: openActions.length,
+            decisions: openDecisions.length,
+            criticalItems: raiddData.filter((r: any) => r.priority === "critical" && r.status !== "closed").length,
+            items: raiddData.filter((r: any) => r.status !== "closed").map((r: any) => ({
+              type: r.type,
+              title: r.title,
+              priority: r.priority,
+              status: r.status,
+              owner: r.owner,
+            })),
+          },
+          milestones: milestones.map((m: any) => ({
+            name: m.name,
+            status: m.status,
+            dueDate: m.dueDate,
+            amount: m.amount ? Number(m.amount) : null,
+          })),
+          deliverables: deliverables.map((d: any) => ({
+            name: d.name,
+            status: d.status,
+            dueDate: d.dueDate,
+          })),
+          allocations: allocations.map((a: any) => ({
+            userName: a.user?.name,
+            role: a.role,
+            allocation: a.allocation,
+            startDate: a.plannedStartDate,
+            endDate: a.plannedEndDate,
+          })),
+        },
       });
     } catch (error: any) {
-      console.error("[MCP] /mcp/projects/:projectId/status-reports error:", error);
-      res.status(500).json({ error: "Failed to retrieve status reports" });
+      console.error("[MCP] /mcp/projects/:projectId/status-report-data error:", error);
+      res.status(500).json({ error: "Failed to retrieve status report data" });
     }
   });
 
@@ -527,6 +621,383 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
     } catch (error: any) {
       console.error("[MCP] /mcp/crm/deals/:dealId/linked-projects error:", error);
       res.status(500).json({ error: "Failed to retrieve linked projects" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // ESTIMATES
+  // ═══════════════════════════════════════════════════════════
+
+  // ─── /mcp/estimates ───
+  app.get("/mcp/estimates", requireAuth, requireMcpTenant, requireRole(ESTIMATE_ROLES), async (req: Request, res: Response) => {
+    try {
+      const tenantId = requireTenantId(req);
+      const includeArchived = req.query.includeArchived === "true";
+      let allEstimates = await storage.getEstimates(includeArchived, tenantId);
+
+      const search = req.query.search as string;
+      if (search) {
+        const lower = search.toLowerCase();
+        allEstimates = allEstimates.filter((e: any) =>
+          e.name?.toLowerCase().includes(lower) ||
+          e.client?.name?.toLowerCase().includes(lower)
+        );
+      }
+
+      const status = req.query.status as string;
+      if (status) {
+        allEstimates = allEstimates.filter((e: any) => e.status === status);
+      }
+
+      const clientId = req.query.clientId as string;
+      if (clientId) {
+        allEstimates = allEstimates.filter((e: any) => e.clientId === clientId);
+      }
+
+      const projectId = req.query.projectId as string;
+      if (projectId) {
+        allEstimates = allEstimates.filter((e: any) => e.projectId === projectId);
+      }
+
+      const estimateType = req.query.estimateType as string;
+      if (estimateType) {
+        allEstimates = allEstimates.filter((e: any) => e.estimateType === estimateType);
+      }
+
+      res.json({
+        data: allEstimates.map((e: any) => ({
+          id: e.id,
+          name: e.name,
+          status: e.status,
+          estimateType: e.estimateType,
+          pricingType: e.pricingType,
+          version: e.version,
+          clientId: e.clientId,
+          clientName: e.client?.name,
+          projectId: e.projectId,
+          projectName: e.project?.name,
+          totalHours: e.totalHours ? Number(e.totalHours) : null,
+          totalFees: e.totalFees ? Number(e.totalFees) : null,
+          presentedTotal: e.presentedTotal ? Number(e.presentedTotal) : null,
+          margin: e.margin ? Number(e.margin) : null,
+          netRevenue: e.netRevenue ? Number(e.netRevenue) : null,
+          estimateDate: e.estimateDate,
+          validUntil: e.validUntil,
+          archived: e.archived,
+          createdAt: e.createdAt,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[MCP] /mcp/estimates error:", error);
+      res.status(500).json({ error: "Failed to retrieve estimates" });
+    }
+  });
+
+  // ─── /mcp/estimates/:estimateId ───
+  app.get("/mcp/estimates/:estimateId", requireAuth, requireMcpTenant, requireRole(ESTIMATE_ROLES), async (req: Request, res: Response) => {
+    try {
+      const tenantId = requireTenantId(req);
+      const estimate = await storage.getEstimate(req.params.estimateId);
+      if (!estimate || (estimate as any).tenantId !== tenantId) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      const [epics, stages, milestones] = await Promise.all([
+        storage.getEstimateEpics(req.params.estimateId),
+        storage.getEstimateStages(req.params.estimateId),
+        storage.getEstimateMilestones(req.params.estimateId),
+      ]);
+
+      res.json({
+        data: {
+          id: estimate.id,
+          name: estimate.name,
+          status: estimate.status,
+          estimateType: estimate.estimateType,
+          pricingType: estimate.pricingType,
+          version: estimate.version,
+          clientId: estimate.clientId,
+          projectId: estimate.projectId,
+          totalHours: estimate.totalHours ? Number(estimate.totalHours) : null,
+          totalFees: estimate.totalFees ? Number(estimate.totalFees) : null,
+          presentedTotal: estimate.presentedTotal ? Number(estimate.presentedTotal) : null,
+          margin: estimate.margin ? Number(estimate.margin) : null,
+          netRevenue: estimate.netRevenue ? Number(estimate.netRevenue) : null,
+          blockHours: estimate.blockHours ? Number(estimate.blockHours) : null,
+          blockDollars: estimate.blockDollars ? Number(estimate.blockDollars) : null,
+          fixedPrice: estimate.fixedPrice ? Number(estimate.fixedPrice) : null,
+          estimateDate: estimate.estimateDate,
+          validUntil: estimate.validUntil,
+          potentialStartDate: estimate.potentialStartDate,
+          epicLabel: estimate.epicLabel,
+          stageLabel: estimate.stageLabel,
+          activityLabel: estimate.activityLabel,
+          referralFeeType: estimate.referralFeeType,
+          referralFeePaidTo: estimate.referralFeePaidTo,
+          referralFeeAmount: estimate.referralFeeAmount ? Number(estimate.referralFeeAmount) : null,
+          archived: estimate.archived,
+          createdAt: estimate.createdAt,
+          structure: {
+            epics: epics.map((ep: any) => ({
+              id: ep.id,
+              name: ep.name,
+              sortOrder: ep.sortOrder,
+            })),
+            stages: stages.map((st: any) => ({
+              id: st.id,
+              epicId: st.epicId,
+              name: st.name,
+              startDate: st.startDate,
+              endDate: st.endDate,
+              sortOrder: st.sortOrder,
+            })),
+          },
+          milestones: milestones.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            amount: m.amount ? Number(m.amount) : null,
+            percentage: m.percentage ? Number(m.percentage) : null,
+            dueDate: m.dueDate,
+          })),
+        },
+      });
+    } catch (error: any) {
+      console.error("[MCP] /mcp/estimates/:estimateId error:", error);
+      res.status(500).json({ error: "Failed to retrieve estimate" });
+    }
+  });
+
+  // ─── /mcp/estimates/:estimateId/line-items ───
+  app.get("/mcp/estimates/:estimateId/line-items", requireAuth, requireMcpTenant, requireRole(ESTIMATE_ROLES), async (req: Request, res: Response) => {
+    try {
+      const tenantId = requireTenantId(req);
+      const estimate = await storage.getEstimate(req.params.estimateId);
+      if (!estimate || (estimate as any).tenantId !== tenantId) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      const lineItems = await storage.getEstimateLineItems(req.params.estimateId);
+
+      const epicId = req.query.epicId as string;
+      const stageId = req.query.stageId as string;
+      let filtered = lineItems;
+      if (epicId) {
+        filtered = filtered.filter((li: any) => li.epicId === epicId);
+      }
+      if (stageId) {
+        filtered = filtered.filter((li: any) => li.stageId === stageId);
+      }
+
+      const [epics, stages] = await Promise.all([
+        storage.getEstimateEpics(req.params.estimateId),
+        storage.getEstimateStages(req.params.estimateId),
+      ]);
+      const epicMap = new Map(epics.map((e: any) => [e.id, e.name]));
+      const stageMap = new Map(stages.map((s: any) => [s.id, s.name]));
+
+      res.json({
+        data: filtered.map((li: any) => ({
+          id: li.id,
+          epicId: li.epicId,
+          epicName: epicMap.get(li.epicId) || null,
+          stageId: li.stageId,
+          stageName: stageMap.get(li.stageId) || null,
+          description: li.description,
+          roleName: li.role?.name,
+          assignedUserName: li.assignedUser?.name,
+          baseHours: li.baseHours ? Number(li.baseHours) : null,
+          adjustedHours: li.adjustedHours ? Number(li.adjustedHours) : null,
+          rate: li.rate ? Number(li.rate) : null,
+          costRate: li.costRate ? Number(li.costRate) : null,
+          totalAmount: li.totalAmount ? Number(li.totalAmount) : null,
+          totalCost: li.totalCost ? Number(li.totalCost) : null,
+          margin: li.margin ? Number(li.margin) : null,
+          marginPercent: li.marginPercent ? Number(li.marginPercent) : null,
+          size: li.size,
+          complexity: li.complexity,
+          confidence: li.confidence,
+          workstream: li.workstream,
+        })),
+        summary: {
+          totalLineItems: filtered.length,
+          totalHours: filtered.reduce((sum: number, li: any) => sum + Number(li.adjustedHours || li.baseHours || 0), 0),
+          totalAmount: filtered.reduce((sum: number, li: any) => sum + Number(li.totalAmount || 0), 0),
+          totalCost: filtered.reduce((sum: number, li: any) => sum + Number(li.totalCost || 0), 0),
+        },
+      });
+    } catch (error: any) {
+      console.error("[MCP] /mcp/estimates/:estimateId/line-items error:", error);
+      res.status(500).json({ error: "Failed to retrieve estimate line items" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // EXPENSES (individual items)
+  // ═══════════════════════════════════════════════════════════
+
+  // ─── /mcp/expenses ───
+  app.get("/mcp/expenses", requireAuth, requireMcpTenant, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const tenantId = requireTenantId(req);
+      const personId = (req.query.personId as string) || user.id;
+      if (personId !== user.id && !canViewOtherUsers(user)) {
+        return res.status(403).json({ error: "You can only view your own expenses" });
+      }
+
+      const allExpenses = await storage.getExpenses({
+        personId,
+        projectId: req.query.projectId as string,
+        startDate: req.query.from as string,
+        endDate: req.query.to as string,
+        tenantId,
+      });
+
+      let filtered = allExpenses.filter((e: any) => e.tenantId === tenantId);
+
+      const status = req.query.status as string;
+      if (status) {
+        filtered = filtered.filter((e: any) => e.approvalStatus === status);
+      }
+      const category = req.query.category as string;
+      if (category) {
+        filtered = filtered.filter((e: any) => e.category === category);
+      }
+      const billable = req.query.billable as string;
+      if (billable !== undefined && billable !== "") {
+        filtered = filtered.filter((e: any) => e.billable === (billable === "true"));
+      }
+
+      res.json({
+        data: filtered.map((e: any) => ({
+          id: e.id,
+          date: e.date,
+          category: e.category,
+          amount: Number(e.amount),
+          currency: e.currency,
+          description: e.description,
+          vendor: e.vendor,
+          billable: e.billable,
+          reimbursable: e.reimbursable,
+          approvalStatus: e.approvalStatus,
+          projectId: e.projectId,
+          projectName: e.project?.name,
+          clientName: e.project?.client?.name,
+          personName: e.person?.name,
+          quantity: e.quantity ? Number(e.quantity) : null,
+          unit: e.unit,
+          createdAt: e.createdAt,
+        })),
+        summary: {
+          totalItems: filtered.length,
+          totalAmount: filtered.reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0),
+          byCategory: Object.entries(
+            filtered.reduce((acc: Record<string, number>, e: any) => {
+              acc[e.category] = (acc[e.category] || 0) + Number(e.amount || 0);
+              return acc;
+            }, {} as Record<string, number>)
+          ).map(([category, total]) => ({ category, total })),
+        },
+      });
+    } catch (error: any) {
+      console.error("[MCP] /mcp/expenses error:", error);
+      res.status(500).json({ error: "Failed to retrieve expenses" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // REIMBURSEMENTS
+  // ═══════════════════════════════════════════════════════════
+
+  // ─── /mcp/reimbursements ───
+  app.get("/mcp/reimbursements", requireAuth, requireMcpTenant, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const tenantId = requireTenantId(req);
+
+      const batches = await storage.getReimbursementBatches({
+        status: req.query.status as string,
+        startDate: req.query.from as string,
+        endDate: req.query.to as string,
+        requestedForUserId: canViewOtherUsers(user) ? (req.query.userId as string) : undefined,
+        tenantId,
+      });
+
+      let filtered = batches;
+      if (!canViewOtherUsers(user)) {
+        filtered = filtered.filter((b: any) => b.requestedForUserId === user.id || b.requestedBy === user.id);
+      }
+
+      res.json({
+        data: filtered.map((b: any) => ({
+          id: b.id,
+          batchNumber: b.batchNumber,
+          status: b.status,
+          totalAmount: Number(b.totalAmount),
+          currency: b.currency,
+          description: b.description,
+          requestedForUser: b.requestedForUser?.name,
+          requester: b.requester?.name,
+          approvedBy: b.approver?.name,
+          processedBy: b.processor?.name,
+          paymentReferenceNumber: b.paymentReferenceNumber,
+          createdAt: b.createdAt,
+          processedAt: b.processedAt,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[MCP] /mcp/reimbursements error:", error);
+      res.status(500).json({ error: "Failed to retrieve reimbursements" });
+    }
+  });
+
+  // ─── /mcp/reimbursements/:batchId ───
+  app.get("/mcp/reimbursements/:batchId", requireAuth, requireMcpTenant, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const tenantId = requireTenantId(req);
+      const batch = await storage.getReimbursementBatch(req.params.batchId);
+      if (!batch || (batch as any).tenantId !== tenantId) {
+        return res.status(404).json({ error: "Reimbursement batch not found" });
+      }
+      if (!canViewOtherUsers(user) && (batch as any).requestedForUserId !== user.id && (batch as any).requestedBy !== user.id) {
+        return res.status(403).json({ error: "You can only view your own reimbursements" });
+      }
+
+      res.json({
+        data: {
+          id: batch.id,
+          batchNumber: batch.batchNumber,
+          status: batch.status,
+          totalAmount: Number(batch.totalAmount),
+          currency: batch.currency,
+          description: batch.description,
+          requestedForUser: (batch as any).requestedForUser?.name,
+          requester: (batch as any).requester?.name,
+          approvedBy: (batch as any).approver?.name,
+          processedBy: (batch as any).processor?.name,
+          paymentReferenceNumber: batch.paymentReferenceNumber,
+          createdAt: batch.createdAt,
+          processedAt: batch.processedAt,
+          lineItems: ((batch as any).lineItems || []).map((li: any) => ({
+            id: li.id,
+            status: li.status,
+            reviewNote: li.reviewNote,
+            expense: li.expense ? {
+              id: li.expense.id,
+              date: li.expense.date,
+              category: li.expense.category,
+              amount: Number(li.expense.amount),
+              description: li.expense.description,
+              vendor: li.expense.vendor,
+              projectName: li.expense.project?.name,
+            } : null,
+          })),
+        },
+      });
+    } catch (error: any) {
+      console.error("[MCP] /mcp/reimbursements/:batchId error:", error);
+      res.status(500).json({ error: "Failed to retrieve reimbursement batch" });
     }
   });
 }

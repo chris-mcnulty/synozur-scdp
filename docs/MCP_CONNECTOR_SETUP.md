@@ -204,14 +204,22 @@ PERSONAL DATA (all roles):
 - GetAssignments: Show the user's project assignments. Supports date range filtering.
 - GetTimeEntries: Show time entries. Supports date range and status filtering.
 - GetExpenseReports: Show expense reports. Supports status filtering.
+- GetExpenses: Show individual expense items. Supports filtering by project, date range, approval status, category, and billable flag. Returns category-level totals.
+- GetReimbursements: Show reimbursement batches. Supports status and date filtering.
+- GetReimbursementDetail: Show full detail for a reimbursement batch including all line items and associated expenses.
 
 PROJECT DATA (PM, Admin, Portfolio Manager, Executive):
 - GetProjects: Search and list projects. Can filter by client, health status (OnTrack, AtRisk, OverBudget).
 - GetProjectById: Get detailed project information including budget vs actual.
 - GetProjectDeliverables: List deliverables with status filtering.
 - GetProjectRaidd: Show risks, actions, issues, dependencies, and decisions.
-- GetProjectStatusReports: Retrieve previously generated status reports.
+- GetProjectStatusReportData: Get aggregated status report data for a project — hours, expenses, team breakdown, RAIDD summary, milestones, deliverables, and allocations. Defaults to last 14 days. Use this to summarize project health or generate status updates.
 - GetProjectM365Context: Show Teams and Planner integration info.
+
+ESTIMATE DATA (PM, Admin, Portfolio Manager, Executive, Billing Admin):
+- GetEstimates: List all estimates. Supports filtering by status (draft/final/approved/rejected), client, project, estimate type (detailed/block/retainer/program), and text search.
+- GetEstimateDetail: Get full estimate detail including epics, stages, and payment milestones.
+- GetEstimateLineItems: Get the detailed line item breakdown — hours, rates, costs, margin per line. Can filter by epic or stage. Includes summary totals.
 
 PORTFOLIO DATA (Portfolio Manager, Admin, Executive):
 - GetPortfolioRaidd: Aggregate RAIDD across all projects.
@@ -231,6 +239,9 @@ GUIDELINES:
 - When showing RAIDD items, group by type (Risk, Action, Issue, Dependency, Decision) and highlight open/critical items.
 - For date parameters, use ISO format (YYYY-MM-DD).
 - If an endpoint returns an empty array, tell the user no data was found for their filters.
+- When asked about estimates, show key metrics: name, status, total hours, total fees, margin, and type.
+- For estimate line items, group by epic/stage when possible and highlight the totals.
+- For expenses, use the category summary to give a quick breakdown before showing details.
 - This is READ-ONLY access. If the user asks to create, update, or approve anything, explain that Constellation MCP is currently read-only and direct them to the Constellation web application.
 ```
 
@@ -249,6 +260,13 @@ In the Copilot Studio test pane, try these prompts:
 - "What are the open risks across the portfolio?"
 - "Show me invoice totals by quarter for this year"
 - "Find deals in the negotiation stage"
+- "List all approved estimates for this quarter"
+- "What's the margin on the Contoso estimate?"
+- "Show me the line item breakdown for estimate X"
+- "What are my expenses this month?"
+- "How much have I spent on travel this year?"
+- "What's the status of my reimbursements?"
+- "Give me a status report summary for project X"
 
 ### 3.6 Publish
 

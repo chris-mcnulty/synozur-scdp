@@ -317,11 +317,11 @@
         }
       }
     },
-    "/projects/{projectId}/status-reports": {
+    "/projects/{projectId}/status-report-data": {
       "get": {
-        "operationId": "GetProjectStatusReports",
-        "summary": "Get project status reports",
-        "description": "Returns previously generated status reports for a project. Currently returns empty (reports are generated on-demand via AI). Requires PM, Admin, Portfolio Manager, or Executive role.",
+        "operationId": "GetProjectStatusReportData",
+        "summary": "Get aggregated status report data for a project",
+        "description": "Returns aggregated project data suitable for generating or summarizing a status report: hours worked, expenses, team breakdown, RAIDD summary, milestones, deliverables, and resource allocations. Defaults to the last 14 days. Requires PM, Admin, Portfolio Manager, or Executive role.",
         "parameters": [
           {
             "name": "projectId",
@@ -331,28 +331,88 @@
             "description": "The project ID."
           },
           {
-            "name": "from",
+            "name": "startDate",
             "in": "query",
             "type": "string",
             "required": false,
-            "description": "Start date filter (ISO format YYYY-MM-DD)."
+            "description": "Period start date (ISO format YYYY-MM-DD). Defaults to 14 days ago."
           },
           {
-            "name": "to",
+            "name": "endDate",
             "in": "query",
             "type": "string",
             "required": false,
-            "description": "End date filter (ISO format YYYY-MM-DD)."
+            "description": "Period end date (ISO format YYYY-MM-DD). Defaults to today."
           }
         ],
         "responses": {
           "200": {
-            "description": "List of status reports",
+            "description": "Aggregated status report data",
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } },
-                "message": { "type": "string" }
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "code": { "type": "string" },
+                        "status": { "type": "string" },
+                        "clientName": { "type": "string" }
+                      }
+                    },
+                    "period": {
+                      "type": "object",
+                      "properties": {
+                        "startDate": { "type": "string" },
+                        "endDate": { "type": "string" }
+                      }
+                    },
+                    "hours": {
+                      "type": "object",
+                      "properties": {
+                        "total": { "type": "number" },
+                        "billable": { "type": "number" },
+                        "nonBillable": { "type": "number" }
+                      }
+                    },
+                    "expenses": {
+                      "type": "object",
+                      "properties": {
+                        "total": { "type": "number" },
+                        "count": { "type": "integer" }
+                      }
+                    },
+                    "team": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "hours": { "type": "number" },
+                          "topActivities": { "type": "array", "items": { "type": "string" } }
+                        }
+                      }
+                    },
+                    "raidd": {
+                      "type": "object",
+                      "properties": {
+                        "openRisks": { "type": "integer" },
+                        "openIssues": { "type": "integer" },
+                        "openActions": { "type": "integer" },
+                        "decisions": { "type": "integer" },
+                        "criticalItems": { "type": "integer" },
+                        "items": { "type": "array", "items": { "type": "object" } }
+                      }
+                    },
+                    "milestones": { "type": "array", "items": { "type": "object" } },
+                    "deliverables": { "type": "array", "items": { "type": "object" } },
+                    "allocations": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
               }
             }
           }
@@ -652,6 +712,448 @@
               "type": "object",
               "properties": {
                 "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/estimates": {
+      "get": {
+        "operationId": "GetEstimates",
+        "summary": "List estimates",
+        "description": "Returns all estimates for the tenant. Supports filtering by status, client, project, estimate type, and text search. Requires PM, Admin, Portfolio Manager, Executive, or Billing Admin role.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Search by estimate name or client name."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by status: draft, final, approved, rejected."
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by client ID."
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by project ID."
+          },
+          {
+            "name": "estimateType",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by estimate type: detailed, block, retainer, program."
+          },
+          {
+            "name": "includeArchived",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Set to 'true' to include archived estimates. Defaults to false."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of estimates with summary fields",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "name": { "type": "string" },
+                      "status": { "type": "string" },
+                      "estimateType": { "type": "string" },
+                      "pricingType": { "type": "string" },
+                      "version": { "type": "integer" },
+                      "clientId": { "type": "string" },
+                      "clientName": { "type": "string" },
+                      "projectId": { "type": "string" },
+                      "projectName": { "type": "string" },
+                      "totalHours": { "type": "number" },
+                      "totalFees": { "type": "number" },
+                      "presentedTotal": { "type": "number" },
+                      "margin": { "type": "number" },
+                      "netRevenue": { "type": "number" },
+                      "estimateDate": { "type": "string" },
+                      "validUntil": { "type": "string" },
+                      "archived": { "type": "boolean" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/estimates/{estimateId}": {
+      "get": {
+        "operationId": "GetEstimateDetail",
+        "summary": "Get estimate detail",
+        "description": "Returns full estimate detail including structure (epics, stages) and payment milestones. Requires PM, Admin, Portfolio Manager, Executive, or Billing Admin role.",
+        "parameters": [
+          {
+            "name": "estimateId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The estimate ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estimate detail with structure and milestones",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "status": { "type": "string" },
+                    "estimateType": { "type": "string" },
+                    "pricingType": { "type": "string" },
+                    "totalHours": { "type": "number" },
+                    "totalFees": { "type": "number" },
+                    "presentedTotal": { "type": "number" },
+                    "margin": { "type": "number" },
+                    "netRevenue": { "type": "number" },
+                    "blockHours": { "type": "number" },
+                    "blockDollars": { "type": "number" },
+                    "fixedPrice": { "type": "number" },
+                    "structure": {
+                      "type": "object",
+                      "properties": {
+                        "epics": { "type": "array", "items": { "type": "object" } },
+                        "stages": { "type": "array", "items": { "type": "object" } }
+                      }
+                    },
+                    "milestones": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/estimates/{estimateId}/line-items": {
+      "get": {
+        "operationId": "GetEstimateLineItems",
+        "summary": "Get estimate line items",
+        "description": "Returns the detailed line item breakdown for an estimate — hours, rates, costs, roles, and margin per line. Supports filtering by epic or stage. Includes a summary with totals. Requires PM, Admin, Portfolio Manager, Executive, or Billing Admin role.",
+        "parameters": [
+          {
+            "name": "estimateId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The estimate ID."
+          },
+          {
+            "name": "epicId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter line items by epic ID."
+          },
+          {
+            "name": "stageId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter line items by stage ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of line items with summary totals",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "epicName": { "type": "string" },
+                      "stageName": { "type": "string" },
+                      "description": { "type": "string" },
+                      "roleName": { "type": "string" },
+                      "assignedUserName": { "type": "string" },
+                      "baseHours": { "type": "number" },
+                      "adjustedHours": { "type": "number" },
+                      "rate": { "type": "number" },
+                      "costRate": { "type": "number" },
+                      "totalAmount": { "type": "number" },
+                      "totalCost": { "type": "number" },
+                      "margin": { "type": "number" },
+                      "marginPercent": { "type": "number" }
+                    }
+                  }
+                },
+                "summary": {
+                  "type": "object",
+                  "properties": {
+                    "totalLineItems": { "type": "integer" },
+                    "totalHours": { "type": "number" },
+                    "totalAmount": { "type": "number" },
+                    "totalCost": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expenses": {
+      "get": {
+        "operationId": "GetExpenses",
+        "summary": "Get individual expense items",
+        "description": "Returns individual expense items (not grouped into reports). Supports filtering by person, project, date range, approval status, category, and billable flag. Includes a summary with totals broken down by category.",
+        "parameters": [
+          {
+            "name": "personId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "User ID to retrieve expenses for. Defaults to the authenticated user. Requires manager role to view other users."
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by project ID."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Start date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "End date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by approval status: draft, submitted, approved, rejected, reimbursed."
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by category: travel, hotel, meals, taxi, airfare, parking, entertainment, mileage, perdiem."
+          },
+          {
+            "name": "billable",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by billable status: 'true' or 'false'."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of expense items with summary",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "date": { "type": "string" },
+                      "category": { "type": "string" },
+                      "amount": { "type": "number" },
+                      "currency": { "type": "string" },
+                      "description": { "type": "string" },
+                      "vendor": { "type": "string" },
+                      "billable": { "type": "boolean" },
+                      "reimbursable": { "type": "boolean" },
+                      "approvalStatus": { "type": "string" },
+                      "projectName": { "type": "string" },
+                      "clientName": { "type": "string" },
+                      "personName": { "type": "string" }
+                    }
+                  }
+                },
+                "summary": {
+                  "type": "object",
+                  "properties": {
+                    "totalItems": { "type": "integer" },
+                    "totalAmount": { "type": "number" },
+                    "byCategory": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "category": { "type": "string" },
+                          "total": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reimbursements": {
+      "get": {
+        "operationId": "GetReimbursements",
+        "summary": "Get reimbursement batches",
+        "description": "Returns reimbursement batches. Regular users see only their own batches. Managers/admins can view all. Supports filtering by status, date range, and user.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by status: pending, under_review, processed."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Start date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "End date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by user ID (manager role required to view other users)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of reimbursement batches",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "batchNumber": { "type": "string" },
+                      "status": { "type": "string" },
+                      "totalAmount": { "type": "number" },
+                      "currency": { "type": "string" },
+                      "description": { "type": "string" },
+                      "requestedForUser": { "type": "string" },
+                      "requester": { "type": "string" },
+                      "paymentReferenceNumber": { "type": "string" },
+                      "processedAt": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reimbursements/{batchId}": {
+      "get": {
+        "operationId": "GetReimbursementDetail",
+        "summary": "Get reimbursement batch detail",
+        "description": "Returns full detail for a reimbursement batch including all line items with their associated expense data. Regular users can only view their own batches.",
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The reimbursement batch ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reimbursement batch detail with line items",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "batchNumber": { "type": "string" },
+                    "status": { "type": "string" },
+                    "totalAmount": { "type": "number" },
+                    "currency": { "type": "string" },
+                    "requestedForUser": { "type": "string" },
+                    "paymentReferenceNumber": { "type": "string" },
+                    "lineItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "status": { "type": "string" },
+                          "reviewNote": { "type": "string" },
+                          "expense": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "string" },
+                              "date": { "type": "string" },
+                              "category": { "type": "string" },
+                              "amount": { "type": "number" },
+                              "description": { "type": "string" },
+                              "vendor": { "type": "string" },
+                              "projectName": { "type": "string" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
