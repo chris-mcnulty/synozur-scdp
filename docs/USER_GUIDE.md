@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.5 | Last Updated: March 5, 2026
+Version 1.6 | Last Updated: March 10, 2026
 
 ---
 
@@ -755,12 +755,17 @@ Constellation integrates seamlessly with your Microsoft 365 environment to enhan
 - Stage-based buckets for organization
 - Assignment status synchronization
 
-**SharePoint Document Storage**
-- Project document repository
-- SOW and contract storage
-- Receipt and invoice storage
-- Metadata tagging for easy retrieval
-- Version control and history
+**SharePoint Embedded Document Storage**
+- Enterprise-grade document storage powered by SharePoint Embedded (SPE)
+- Per-tenant isolated containers with Azure AD scoping
+- Project document repository for SOW, contracts, receipts, and invoices
+- Smart storage layer automatically directs files to SPE or Object Storage based on tenant configuration
+- Intelligent document type inference from folder paths (e.g., receipts, invoices, contracts)
+- File Repository page with metadata panel, statistics dashboard, and document type breakdown
+- Direct file downloads via Microsoft Graph API for reliable receipt and invoice retrieval
+- File reorganization tools for organizing documents into proper folder structures
+- Container management interface for administrators
+- Metadata tagging for easy retrieval and version control
 
 ### Enabling M365 Integration
 

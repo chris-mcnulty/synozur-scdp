@@ -17,6 +17,45 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.03.10 (March 10, 2026)
+
+**Release Date:** March 10, 2026  
+**Status:** Production Release  
+**Codename:** SharePoint Embedded Storage
+
+This release completes the SharePoint Embedded (SPE) document storage integration, providing enterprise-grade file management with tenant-isolated containers, intelligent file type inference, and seamless receipt and invoice handling through Microsoft Graph API.
+
+#### ✨ New Features
+
+**SharePoint Embedded Document Storage**
+- Full **SharePoint Embedded (SPE)** integration as the primary document storage tier for tenants
+- Per-tenant SPE container provisioning with Azure AD tenant isolation
+- Smart storage layer that directs files to SPE or legacy Object Storage based on tenant configuration (`speStorageEnabled` flag)
+- Direct file download via Microsoft Graph API (`downloadFileDirect`) — no metadata lookup required
+
+**File Repository Enhancements**
+- New **File Repository** page with intelligent document type inference from folder paths (e.g., `/receipts/invoices/` → "invoice")
+- Expandable metadata panel in file table for viewing SharePoint document properties
+- File statistics dashboard with document type breakdown and storage metrics
+- **Reorganize Files** feature (`/api/files/reorganize`) to move files from nested paths to proper top-level SPE folders
+
+**Receipt & Invoice Pipeline**
+- End-to-end receipt download pipeline using `downloadFileDirect` for SPE-stored files
+- Expense "View Receipt" and invoice receipt bundler both use direct Graph API downloads
+- Reliable receipt inclusion in generated invoice PDFs from SPE storage
+
+**SPE Container Management**
+- Container management interface for administrators
+- Custom column support with SharePoint-safe naming (`ReceiptStatus`, `FileDescription` to avoid reserved names)
+- Proper decimal format handling for SharePoint number columns
+
+#### 🐛 Bug Fixes
+- Fixed file stats counts that showed `[object Object]` instead of numbers (byDocumentType object vs number mismatch)
+- Fixed nested file paths (`/receipts/receipts/`) — files now stored in correct top-level folders after reorganization
+- Fixed SPE upload `driveId` field set to `receipt-storage` for proper download routing
+
+---
+
 ### Version 1.2026.03.05 (March 5, 2026)
 
 **Release Date:** March 5, 2026  

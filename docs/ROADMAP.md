@@ -172,6 +172,20 @@ The following major features have been delivered and are live in production. See
 - CRM sync status tracking with error reporting
 - Company contact search and import capabilities
 
+### ✅ SharePoint Embedded Document Storage
+**Completed:** March 2026
+- Full SharePoint Embedded (SPE) integration as primary document storage tier
+- Per-tenant SPE container provisioning with Azure AD tenant isolation
+- Smart storage layer directing files to SPE or Object Storage based on tenant configuration
+- Direct file download via Microsoft Graph API (no metadata lookup required)
+- File Repository page with intelligent document type inference from folder paths
+- Expandable metadata panel and file statistics dashboard with document type breakdown
+- File reorganization tools to move files from nested to proper top-level SPE folders
+- End-to-end receipt download pipeline for SPE-stored files
+- Invoice receipt bundler using direct Graph API downloads
+- Container management interface for administrators
+- Custom column support with SharePoint-safe naming conventions
+
 ---
 
 ## Current Focus (Q1 2026)

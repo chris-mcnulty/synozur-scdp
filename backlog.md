@@ -1,11 +1,25 @@
 # Constellation Product Backlog
 
-**Last Updated**: March 1, 2026
+**Last Updated**: March 10, 2026
 **Version**: 4.0 — Cleaned up completed items, reprioritized based on current state.
 
 ---
 
-## ✅ Recently Completed (March 1, 2026)
+## ✅ Recently Completed (March 10, 2026)
+
+### SharePoint Embedded Document Storage ✅ COMPLETE
+- [x] Full SharePoint Embedded (SPE) integration as primary document storage tier
+- [x] Per-tenant SPE container provisioning with Azure AD tenant isolation
+- [x] Smart storage layer directing files based on tenant `speStorageEnabled` flag
+- [x] Direct file download via Microsoft Graph API (`downloadFileDirect`)
+- [x] File Repository page with document type inference from folder paths
+- [x] Expandable metadata panel and file statistics dashboard
+- [x] Reorganize Files endpoint to move files from nested to top-level SPE folders
+- [x] End-to-end receipt download pipeline for SPE-stored files
+- [x] Expense "View Receipt" and invoice receipt bundler using direct Graph API
+- [x] Container management interface for administrators
+- [x] Custom column support with SharePoint-safe naming conventions
+- [x] File stats and document type breakdown fixes
 
 ### Program Estimate Type ✅ COMPLETE
 - [x] New "Program" estimate type for large-scale engagements
@@ -211,17 +225,19 @@
 - [ ] Estimate-level override toggle (inherit vs custom)
 - [ ] Impact preview before applying changes
 
-### SharePoint Embedded UI
-**Status:** Backend complete, UI pending
+### SharePoint Embedded UI ✅ COMPLETE
+**Status:** Complete (March 10, 2026)
 **Effort:** Medium (3-4 weeks)
 
-- [ ] Container management interface
-- [ ] Document metadata templates and custom columns
-- [ ] Permission management interface
-- [ ] Document search with metadata filtering
-- [ ] Bulk document operations
-- [ ] Version history viewer
-- [ ] Document approval workflow
+- [x] Container management interface
+- [x] Document metadata templates and custom columns
+- [x] File Repository with document type inference and metadata panel
+- [x] Document search with metadata filtering
+- [x] File reorganization tools
+- [ ] Permission management interface — DEFERRED
+- [ ] Bulk document operations — DEFERRED
+- [ ] Version history viewer — DEFERRED
+- [ ] Document approval workflow — DEFERRED
 
 ### Document Management Enhancements
 **Status:** Planned
@@ -351,7 +367,7 @@
 | Priority | Items | Est. Effort |
 |----------|-------|-------------|
 | P1 - High | 4 items | 24-32 weeks |
-| P2 - Important | 10 items | 24-34 weeks |
+| P2 - Important | 9 items | 20-30 weeks |
 | P3 - AI/Automation | 2 items | 11-16 weeks |
 | P4 - Platform | 7 items | 34+ weeks |
 
@@ -374,3 +390,4 @@
 - ✅ Per Diem (CONUS + OCONUS)
 - ✅ "What's New" changelog modal
 - ✅ AI status reports with RAIDD
+- ✅ SharePoint Embedded document storage with File Repository

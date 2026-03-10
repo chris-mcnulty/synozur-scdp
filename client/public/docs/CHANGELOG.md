@@ -17,6 +17,77 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.03.10 (March 10, 2026)
+
+**Release Date:** March 10, 2026  
+**Status:** Production Release  
+**Codename:** SharePoint Embedded Storage
+
+This release completes the SharePoint Embedded (SPE) document storage integration, providing enterprise-grade file management with tenant-isolated containers, intelligent file type inference, and seamless receipt and invoice handling through Microsoft Graph API.
+
+#### ✨ New Features
+
+**SharePoint Embedded Document Storage**
+- Full **SharePoint Embedded (SPE)** integration as the primary document storage tier for tenants
+- Per-tenant SPE container provisioning with Azure AD tenant isolation
+- Smart storage layer that directs files to SPE or legacy Object Storage based on tenant configuration (`speStorageEnabled` flag)
+- Direct file download via Microsoft Graph API (`downloadFileDirect`) — no metadata lookup required
+
+**File Repository Enhancements**
+- New **File Repository** page with intelligent document type inference from folder paths (e.g., `/receipts/invoices/` → "invoice")
+- Expandable metadata panel in file table for viewing SharePoint document properties
+- File statistics dashboard with document type breakdown and storage metrics
+- **Reorganize Files** feature (`/api/files/reorganize`) to move files from nested paths to proper top-level SPE folders
+
+**Receipt & Invoice Pipeline**
+- End-to-end receipt download pipeline using `downloadFileDirect` for SPE-stored files
+- Expense "View Receipt" and invoice receipt bundler both use direct Graph API downloads
+- Reliable receipt inclusion in generated invoice PDFs from SPE storage
+
+**SPE Container Management**
+- Container management interface for administrators
+- Custom column support with SharePoint-safe naming (`ReceiptStatus`, `FileDescription` to avoid reserved names)
+- Proper decimal format handling for SharePoint number columns
+
+#### 🐛 Bug Fixes
+- Fixed file stats counts that showed `[object Object]` instead of numbers (byDocumentType object vs number mismatch)
+- Fixed nested file paths (`/receipts/receipts/`) — files now stored in correct top-level folders after reorganization
+- Fixed SPE upload `driveId` field set to `receipt-storage` for proper download routing
+
+---
+
+### Version 1.2026.03.05 (March 5, 2026)
+
+**Release Date:** March 5, 2026  
+**Status:** Production Release  
+**Codename:** Deliverable Tracking
+
+This release introduces the Deliverable Tracking system for managing project deliverables through their full lifecycle, from identification through client acceptance, with AI-powered extraction from proposal narratives and integration into status reports.
+
+#### ✨ New Features
+
+**Deliverable Tracking**
+- New **Deliverables** tab on the project detail page for tracking project deliverables
+- Full lifecycle status workflow: Not Started → In Progress → In Review → Accepted / Rejected
+- Every deliverable requires an assigned owner for clear accountability
+- Optional linking to Epics and Stages for traceability to the project plan
+- Target date and delivered date tracking
+- Automatic status history audit trail — every status change is recorded with timestamp and user
+- Sort order support for organizing deliverables by priority
+
+**AI Narrative Extraction**
+- **Extract from Narrative** feature: paste proposal or SOW text and let AI identify candidate deliverables
+- Review and select candidates before adding, with owner assignment during bulk creation
+- Existing deliverables are automatically filtered out to prevent duplicates
+
+**Status Report Integration**
+- Deliverables are now included in AI-generated markdown status reports
+- Deliverable data feeds into the PPTX status report generation
+- New **Deliverables Tracker** slide in PowerPoint reports with a color-coded status table showing name, owner, status, target date, and delivered date
+- Summary bar at top of slide shows counts by status (Accepted, In Review, In Progress, etc.)
+
+---
+
 ### Version 1.2026.03.01 (March 1, 2026)
 
 **Release Date:** March 1, 2026  
