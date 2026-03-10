@@ -243,7 +243,7 @@ export default function ProjectDetail() {
   const [location, navigate] = useLocation();
   const searchString = useSearch();
   
-  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd', 'deliverables'];
+  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd', 'deliverables', 'status-reports'];
   
   const selectedTab = useMemo(() => {
     const params = new URLSearchParams(searchString);
