@@ -184,7 +184,7 @@ const getBaseUrl = () => {
   
   // For production domains (always use HTTPS)
   if (process.env.NODE_ENV === 'production' || process.env.REPLIT_DOMAINS) {
-    return 'https://scdp.synozur.com';
+    return 'https://constellation.synozur.com';
   }
   
   // Only use HTTP for local development

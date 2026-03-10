@@ -66,7 +66,7 @@ Before starting, ensure you have:
      ```
      Development: http://localhost:5000/api/auth/callback
      Replit: https://[repl-name].[username].repl.co/api/auth/callback
-     Production: https://scdp.synozur.com/api/auth/callback
+     Production: https://constellation.synozur.com/api/auth/callback
      ```
 
 2. **Configure Logout URL**
@@ -676,7 +676,7 @@ process.env.AZURE_REDIRECT_URI
 `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
 
 // 3. Production domain
-"https://scdp.synozur.com"
+"https://constellation.synozur.com"
 
 // 4. Local development (lowest priority)
 "http://localhost:5000"

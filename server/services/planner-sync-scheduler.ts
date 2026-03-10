@@ -119,7 +119,7 @@ async function syncProjectToPlanner(
           }
         }
 
-        const baseUrl = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+        const baseUrl = process.env.APP_PUBLIC_URL || 'https://constellation.synozur.com';
         const assignmentLink = `${baseUrl}/projects/${projectId}?tab=delivery&assignmentId=${allocation.id}`;
         const originalNotes = allocation.notes || allocation.taskDescription || '';
         const hoursStr = allocation.hours ? `HOURS: ${allocation.hours}` : '';
@@ -445,7 +445,7 @@ async function syncSupportTicketsFromPlanner(): Promise<{ ticketsClosed: number;
                   const requester = await storage.getUser(ticket.userId);
                   if (requester?.email) {
                     const { emailService } = await import('./email-notification.js');
-                    const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+                    const APP_URL = process.env.APP_PUBLIC_URL || 'https://constellation.synozur.com';
                     const branding = { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl };
                     await emailService.notifySupportTicketClosed(
                       { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },

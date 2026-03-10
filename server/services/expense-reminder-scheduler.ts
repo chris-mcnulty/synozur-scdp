@@ -149,10 +149,10 @@ export async function runExpenseRemindersForTenant(
     }
 
     const appUrl = process.env.APP_URL 
-      || (process.env.REPLIT_DEPLOYMENT === '1' ? 'https://scdp.synozur.com' : null)
+      || (process.env.REPLIT_DEPLOYMENT === '1' ? 'https://constellation.synozur.com' : null)
       || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null)
       || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
-      || 'https://scdp.synozur.com';
+      || 'https://constellation.synozur.com';
 
     const branding = { 
       emailHeaderUrl: tenant.emailHeaderUrl, 

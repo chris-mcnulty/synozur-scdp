@@ -21,7 +21,7 @@ const SYNOZUR_APPS = [
     name: "Constellation",
     tagline: "Delivery & Financial Management",
     description: "Time, cost, progress tracking with estimates, invoicing, and reporting.",
-    url: "https://scdp.synozur.com",
+    url: "https://constellation.synozur.com",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
         <circle cx="12" cy="5" r="1.5" fill="currentColor" />

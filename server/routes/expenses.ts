@@ -1322,7 +1322,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
         const appUrl = process.env.APP_URL 
-          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://scdp.synozur.com' : null)
+          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
           || process.env.REPLIT_DEPLOYMENT_URL 
           || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
         const reportUrl = appUrl ? `${appUrl}/expenses?report=${submitted.id}` : undefined;
@@ -1378,7 +1378,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
         const appUrl = process.env.APP_URL 
-          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://scdp.synozur.com' : null)
+          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
           || process.env.REPLIT_DEPLOYMENT_URL 
           || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
         const reportUrl = appUrl ? `${appUrl}/expenses?report=${approved.id}` : undefined;
@@ -1422,7 +1422,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
         const appUrl = process.env.APP_URL 
-          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://scdp.synozur.com' : null)
+          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
           || process.env.REPLIT_DEPLOYMENT_URL 
           || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
         const reportUrl = appUrl ? `${appUrl}/expenses?report=${rejected.id}` : undefined;

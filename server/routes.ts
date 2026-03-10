@@ -4365,7 +4365,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           }
           
           // Get task notes with Constellation assignment link and hours
-          const baseUrl = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+          const baseUrl = process.env.APP_PUBLIC_URL || 'https://constellation.synozur.com';
           // Link directly to the specific assignment in the delivery/assignments tab
           const assignmentLink = `${baseUrl}/projects/${projectId}?tab=delivery&assignmentId=${allocation.id}`;
           const originalNotes = allocation.notes || allocation.taskDescription || '';
@@ -12284,7 +12284,7 @@ Return a JSON response:
               const bucketName = tenant.supportPlannerBucketName || 'Support Tickets';
               const bucket = await plannerService.getOrCreateBucket(tenant.supportPlannerPlanId, bucketName);
               
-              const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+              const APP_URL = process.env.APP_PUBLIC_URL || 'https://constellation.synozur.com';
               const ticketUrl = `${APP_URL}/support`;
               
               const taskTitle = `[#${ticket.ticketNumber}] ${ticket.subject}`;
@@ -12523,7 +12523,7 @@ Return a JSON response:
             if (requester?.email) {
               const { emailService } = await import("./services/email-notification.js");
               const tenant = ticket.tenantId ? await storage.getTenant(ticket.tenantId) : null;
-              const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+              const APP_URL = process.env.APP_PUBLIC_URL || 'https://constellation.synozur.com';
               const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
               await emailService.notifySupportTicketClosed(
                 { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },
@@ -12675,7 +12675,7 @@ Return a JSON response:
 
       const bucketName = tenant.supportPlannerBucketName || 'Support Tickets';
       const bucket = await plannerService.getOrCreateBucket(tenant.supportPlannerPlanId, bucketName);
-      const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+      const APP_URL = process.env.APP_PUBLIC_URL || 'https://constellation.synozur.com';
       const ticketUrl = `${APP_URL}/support`;
 
       let synced = 0;
