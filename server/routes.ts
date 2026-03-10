@@ -22,6 +22,7 @@ import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./rou
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
 import { registerTenantStorageRoutes } from "./routes/tenant-storage.js";
+import { registerMcpRoutes } from "./routes/mcp.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
 import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
 import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO, insertAiConfigurationSchema } from "@shared/schema";
@@ -286,6 +287,11 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register tenant SPE storage routes
   registerTenantStorageRoutes(app, {
+    requireAuth,
+    requireRole,
+  });
+
+  registerMcpRoutes(app, {
     requireAuth,
     requireRole,
   });
