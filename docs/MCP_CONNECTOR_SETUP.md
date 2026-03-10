@@ -140,9 +140,9 @@ Instead of creating each action manually, import the OpenAPI definition:
 1. When creating the connector, choose **New custom connector → Import an OpenAPI file** (instead of "Create from blank")
 2. Name: `Constellation MCP`
 3. Upload the file: [`docs/constellation-mcp-openapi.json`](constellation-mcp-openapi.json)
-4. Click **Import** — all 16 actions will be created automatically with correct operation IDs, parameters, and response schemas
+4. Click **Import** — all operations will be created automatically with correct operation IDs, parameters, and response schemas
 
-After import, review the **Definition** tab to confirm all actions are listed:
+After import, review the **Definition** tab to confirm all operations are listed:
 
 | Operation ID | Endpoint | Parameters |
 |-------------|----------|------------|
@@ -183,11 +183,11 @@ After import, review the **Definition** tab to confirm all actions are listed:
 3. Name: `Constellation Assistant`
 4. Description: `Queries Constellation project delivery data — assignments, time entries, projects, RAIDD, financials, and CRM deals.`
 
-### 3.2 Add the connector as a data source
+### 3.2 Add the connector as a tool
 
-1. In the agent, go to **Actions** → **Add an action**
-2. Select **Custom connector** → find `Constellation MCP`
-3. This imports all 16 operations as available tools
+1. In the agent, go to **Tools** → **Add a tool**
+2. Search for or select **Custom connector** → find `Constellation MCP`
+3. This imports all operations as available tools for the agent
 
 ### 3.3 Configure topics / instructions
 
