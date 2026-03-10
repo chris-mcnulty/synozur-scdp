@@ -25,38 +25,58 @@ If reusing Constellation's existing Entra app registration, skip to step 1.5.
 4. Redirect URI: Leave blank for now (added in step 1.4)
 5. Click **Register**
 
-### 1.2 Configure API permissions
+### 1.2 Expose an API on the Constellation app registration (do this FIRST)
+
+Before configuring permissions on the connector app, you must expose a custom scope on the **Constellation (SCDP-Content)** app registration itself:
+
+1. Go to **Azure Portal → Entra ID → App registrations**
+2. Open the **Constellation app registration** (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` / SCDP-Content)
+3. Go to **Expose an API**
+4. Click **Set** next to Application ID URI → set it to: `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`
+5. Click **Add a scope** with these values:
+   - Scope name: `access_as_user`
+   - Who can consent: **Admins and users**
+   - Admin consent display name: `Access Constellation MCP as signed-in user`
+   - Admin consent description: `Allows the Copilot connector to access Constellation MCP endpoints on behalf of the signed-in user`
+   - User consent display name: `Access Constellation on your behalf`
+   - User consent description: `Allows Copilot to read your Constellation project data`
+   - State: **Enabled**
+6. Click **Add scope**
+
+### 1.3 Configure API permissions on the connector app
+
+Now go back to the **connector app** you created in step 1.1:
 
 1. Go to **API permissions → Add a permission**
-2. Select **My APIs** → find the Constellation app registration
-3. Add the delegated permission scope (e.g. `user_impersonation` or `access_as_user`)
-4. If no custom scope exists, add one:
-   - Go to the Constellation app registration → **Expose an API**
-   - Set Application ID URI: `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (or your app's client ID)
-   - Add a scope: `access_as_user` (Admin and user consent, display name: "Access Constellation as signed-in user")
-5. Grant admin consent for your organization
+2. Select the **My APIs** tab — you should now see the Constellation app registration listed
+3. Select it, then check the **access_as_user** delegated permission
+4. Click **Add permissions**
+5. Click **Grant admin consent for [your organization]**
 
-### 1.3 Create a client secret
+### 1.4 Create a client secret
 
 1. Go to **Certificates & secrets → New client secret**
 2. Description: `Power Platform Connector`
 3. Expiration: 24 months
 4. Copy the **Value** immediately (you won't see it again)
 
-### 1.4 Add the Power Platform redirect URI
+### 1.5 Add the Power Platform redirect URI
 
 1. Go to **Authentication → Add a platform → Web**
 2. Redirect URI: `https://global.consent.azure-apim.net/redirect`
 3. Check **Access tokens** and **ID tokens** under Implicit grant
 4. Save
 
-### 1.5 If reusing the existing Constellation app registration
+### 1.6 If reusing the existing Constellation app registration (skip 1.1, 1.3–1.5)
 
-1. Go to the existing app registration (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`)
-2. Under **Authentication**, add the redirect URI: `https://global.consent.azure-apim.net/redirect`
-3. Ensure **Expose an API** has an Application ID URI and at least one delegated scope (e.g. `access_as_user`)
+If you are NOT creating a dedicated connector app and instead reusing Constellation's own app registration, you only need to:
+
+1. Complete **step 1.2** above (Expose an API) — this is required regardless
+2. Go to the existing app registration (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`)
+3. Under **Authentication**, add the redirect URI: `https://global.consent.azure-apim.net/redirect`
 4. Create a client secret if one doesn't already exist for the connector use case
 5. Note the **Client ID**, **Tenant ID** (use `common` for multi-tenant), and **Client Secret**
+6. In the Security tab of the Custom Connector (Part 2), use the same Client ID for both the connector and the resource
 
 ---
 
