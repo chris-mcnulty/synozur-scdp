@@ -322,6 +322,19 @@
 - [ ] Update deployment documentation and runbooks
 - [ ] Smoke test all integrations (HubSpot, SendGrid, Outlook, SharePoint) post-migration
 
+### SPE File Lifecycle & Orphan Cleanup
+**Status:** Design Required
+**Effort:** Medium (3-5 weeks)
+
+- [ ] Design cleanup strategy for SharePoint Embedded files tied to draft or deleted invoices, deleted expenses, and other transient artifacts
+- [ ] Identify and catalog all SPE file creation points (invoice PDFs, expense receipts, SOW documents, deliverable attachments, etc.)
+- [ ] Define retention policies: which files should be soft-deleted, hard-deleted, or archived when their parent record is removed
+- [ ] Build orphan detection service: find SPE files with no matching database record (e.g., invoice PDF exists but batch was deleted, receipt uploaded but expense was removed)
+- [ ] Implement periodic cleanup job (scheduled task) to flag or remove orphaned files based on retention rules
+- [ ] Consider discoverability impact: ensure deleted/draft artifacts are excluded from MCP and Copilot queries so AI assistants don't surface stale data
+- [ ] Add admin UI for reviewing orphaned files before permanent deletion (safety net)
+- [ ] Handle edge cases: files referenced by multiple records, files in tenant-specific vs shared containers, migration-era files with null tenantId
+
 ### Extended Integrations
 **Status:** Future
 
