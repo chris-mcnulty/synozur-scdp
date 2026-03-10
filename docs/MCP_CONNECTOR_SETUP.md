@@ -4,30 +4,32 @@ This guide walks through creating a Custom Connector in Power Platform and wirin
 
 ---
 
+## App Registration Architecture
+
+Three Entra ID app registrations are involved:
+
+| App | Purpose | Status |
+|-----|---------|--------|
+| **Constellation (SCDP-Content)** `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` | The API — owns the MCP endpoints, exposes the `access_as_user` scope | Exists |
+| **Constellation MCP Connector** | The OAuth client — used by the Power Platform Custom Connector to obtain tokens | Create in Part 1 |
+| **Constellation Copilot Agent** | The Copilot Studio agent — calls the connector actions on behalf of users | Create in Part 3 |
+
+**Token flow:** User → Copilot Agent → Connector (obtains token via OAuth using Connector app's Client ID) → Constellation API (validates token against its own `access_as_user` scope)
+
 ## Prerequisites
 
-- Constellation deployed and accessible at its production URL (e.g. `https://constellation.synozur.com`)
-- The existing Azure AD (Entra ID) app registration used by Constellation (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` / SCDP-Content) — or a dedicated app registration for the connector
+- Constellation deployed and accessible at `https://constellation.synozur.com`
+- Admin access to Azure Entra ID for the Synozur tenant (`b4fbeaf7-1c91-43bb-8031-49eb8d4175ee`)
 - A Power Platform environment with Copilot Studio access
 - Admin or Maker role in the Power Platform environment
 
 ---
 
-## Part 1: Azure AD App Registration (if using a dedicated registration)
+## Part 1: Azure AD App Registrations
 
-If reusing Constellation's existing Entra app registration, skip to step 1.5.
+### 1.1 Expose an API on the Constellation app registration (do this FIRST)
 
-### 1.1 Register a new app (optional — dedicated connector app)
-
-1. Go to **Azure Portal → Entra ID → App registrations → New registration**
-2. Name: `Constellation MCP Connector`
-3. Supported account types: **Accounts in any organizational directory** (multi-tenant, matching Constellation's `common` authority)
-4. Redirect URI: Leave blank for now (added in step 1.4)
-5. Click **Register**
-
-### 1.2 Expose an API on the Constellation app registration (do this FIRST)
-
-Before configuring permissions on the connector app, you must expose a custom scope on the **Constellation (SCDP-Content)** app registration itself:
+The Constellation app must declare itself as an API before other apps can request permission to call it:
 
 1. Go to **Azure Portal → Entra ID → App registrations**
 2. Open the **Constellation app registration** (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` / SCDP-Content)
@@ -42,45 +44,57 @@ Before configuring permissions on the connector app, you must expose a custom sc
    - User consent description: `Allows Copilot to read your Constellation project data`
    - State: **Enabled**
 6. Click **Add scope**
-7. **(Only if using a dedicated connector app from step 1.1):** Scroll down to **Authorized client applications** → click **Add a client application** → enter the connector app's Client ID → check the `access_as_user` scope → click **Add application**. This pre-authorizes the connector so users won't see a separate consent prompt. Skip this if reusing the same Constellation app registration.
 
-### 1.3 Configure API permissions on the connector app
+### 1.2 Register the Connector app
 
-> **Skip this step if reusing the Constellation app registration (step 1.6 path).** An app is implicitly authorized for its own exposed scopes — no self-permission needed.
+1. Go to **Azure Portal → Entra ID → App registrations → New registration**
+2. Name: `Constellation MCP Connector`
+3. Supported account types: **Accounts in this organizational directory only** (single-tenant — both apps are in the Synozur tenant)
+4. Redirect URI: Leave blank for now (added in step 1.5)
+5. Click **Register**
+6. Note the **Client ID** — this is the Connector app's Client ID (different from Constellation's)
 
-Now go back to the **connector app** you created in step 1.1:
+### 1.3 Grant the Connector app permission to call the Constellation API
+
+On the **Connector app** you just created:
 
 1. Go to **API permissions → Add a permission**
-2. Select the **APIs my organization uses** tab (not "My APIs" — multi-tenant registrations often don't appear under "My APIs")
-3. Search for the Constellation app by its display name (e.g. `SCDP-Content`) or paste the Client ID `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`
+2. Select the **APIs my organization uses** tab
+3. Search for `SCDP-Content` (or the Constellation app's display name) — if it doesn't appear, search by Client ID: `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`
 4. Select it → choose **Delegated permissions** → check **access_as_user**
 5. Click **Add permissions**
-6. Click **Grant admin consent for [your organization]**
+6. Click **Grant admin consent for Synozur**
 
-### 1.4 Create a client secret
+### 1.4 Create a client secret on the Connector app
+
+Still on the **Connector app**:
 
 1. Go to **Certificates & secrets → New client secret**
 2. Description: `Power Platform Connector`
 3. Expiration: 24 months
 4. Copy the **Value** immediately (you won't see it again)
 
-### 1.5 Add the Power Platform redirect URI
+### 1.5 Add the Power Platform redirect URI to the Connector app
+
+Still on the **Connector app**:
 
 1. Go to **Authentication → Add a platform → Web**
 2. Redirect URI: `https://global.consent.azure-apim.net/redirect`
 3. Check **Access tokens** and **ID tokens** under Implicit grant
 4. Save
 
-### 1.6 If reusing the existing Constellation app registration (skip 1.1, 1.3–1.5)
+### 1.6 Pre-authorize the Connector app on the Constellation registration
 
-If you are NOT creating a dedicated connector app and instead reusing Constellation's own app registration, you only need to:
+Go back to the **Constellation app** (`198aa0a6-...`):
 
-1. Complete **step 1.2** above (Expose an API) — this is required regardless
-2. Go to the existing app registration (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`)
-3. Under **Authentication**, add the redirect URI: `https://global.consent.azure-apim.net/redirect`
-4. Create a client secret if one doesn't already exist for the connector use case
-5. Note the **Client ID**, **Tenant ID** (use `common` for multi-tenant), and **Client Secret**
-6. In the Security tab of the Custom Connector (Part 2), use the same Client ID for both the connector and the resource
+1. Go to **Expose an API**
+2. Scroll down to **Authorized client applications**
+3. Click **Add a client application**
+4. Enter the **Connector app's Client ID** (from step 1.2)
+5. Check the `access_as_user` scope
+6. Click **Add application**
+
+This pre-authorizes the connector so users won't see a separate consent prompt when the connector acquires tokens.
 
 ---
 
@@ -106,13 +120,13 @@ If you are NOT creating a dedicated connector app and instead reusing Constellat
 |-------|-------|
 | Authentication type | OAuth 2.0 |
 | Identity Provider | Azure Active Directory |
-| Client ID | The **connector app's** Client ID (from step 1.1). If reusing the Constellation app registration (step 1.6 path), use `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` |
-| Client Secret | The client secret you created (from step 1.4, or step 1.6 if reusing) |
-| Authorization URL | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` |
-| Token URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
-| Refresh URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
-| Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` |
-| Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (this is always the **Constellation app's** Application ID URI, regardless of which app the connector uses) |
+| Client ID | The **Connector app's** Client ID (from step 1.2 — NOT the Constellation app's ID) |
+| Client Secret | The **Connector app's** client secret (from step 1.4) |
+| Authorization URL | `https://login.microsoftonline.com/b4fbeaf7-1c91-43bb-8031-49eb8d4175ee/oauth2/v2.0/authorize` (use Synozur tenant ID since the connector is single-tenant) |
+| Token URL | `https://login.microsoftonline.com/b4fbeaf7-1c91-43bb-8031-49eb8d4175ee/oauth2/v2.0/token` |
+| Refresh URL | `https://login.microsoftonline.com/b4fbeaf7-1c91-43bb-8031-49eb8d4175ee/oauth2/v2.0/token` |
+| Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` (the **Constellation app's** exposed scope) |
+| Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (the **Constellation app's** Application ID URI — this tells Azure which API the token is for) |
 
 ### 2.4 Definition tab — Add Actions
 
