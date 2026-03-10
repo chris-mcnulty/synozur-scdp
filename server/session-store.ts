@@ -148,6 +148,10 @@ async function getTenantContextModule() {
 
 // Shared authentication middleware - now async with tenant context
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  if (req.user && req.user.id) {
+    return next();
+  }
+
   const sessionId = req.headers['x-session-id'] as string;
   const requestPath = req.path;
   

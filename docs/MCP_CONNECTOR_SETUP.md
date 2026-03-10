@@ -172,19 +172,6 @@ After import, review the **Definition** tab to confirm all actions are listed:
 3. Test the `GetMyProfile` action — you should see your user profile with role and tenant info
 4. If it works, test `GetProjects` and `GetAssignments`
 
-### 2.6 Important: Session header
-
-Constellation uses `x-session-id` header-based auth. The connector's OAuth token needs to be translated to a session. You have two options:
-
-**Option A — Add a token-to-session policy (recommended)**
-Add a policy in the connector definition or an Azure API Management layer that:
-1. Takes the OAuth bearer token from the connector
-2. Calls Constellation's `/api/auth/sso/token-exchange` endpoint to get a session ID
-3. Passes the session ID as `x-session-id` header on MCP requests
-
-**Option B — Modify MCP routes to accept bearer tokens directly**
-Add middleware to `server/routes/mcp.ts` that accepts an `Authorization: Bearer <token>` header, validates the JWT against the Entra app registration, resolves the user, and creates/reuses a session. This is the cleaner long-term approach and matches the Vega pattern.
-
 ---
 
 ## Part 3: Create the Copilot Studio Agent
@@ -268,21 +255,6 @@ In the Copilot Studio test pane, try these prompts:
 1. Click **Publish** in Copilot Studio
 2. To make the agent available in Microsoft 365 Copilot (M365 Chat), go to **Channels** → enable **Microsoft 365 Copilot**
 3. The agent will appear as a plugin in M365 Copilot for users in your organization
-
----
-
-## Part 4: Auth Bridge (Option B — Bearer Token Support)
-
-To avoid the session-translation complexity, the recommended approach is to add bearer token support directly to the MCP routes. This is a code change in `server/routes/mcp.ts`:
-
-1. Add middleware that checks for `Authorization: Bearer <token>` header
-2. Validate the JWT against the Constellation Entra app registration (using `@azure/msal-node` or `jsonwebtoken` with JWKS)
-3. Extract the user's `oid` (object ID) and `tid` (tenant ID) from the token claims
-4. Look up the user in Constellation's database by their Entra `oid`
-5. Attach `req.user` and `req.tenantContext` just like `requireAuth` does with sessions
-6. Fall through to the existing `requireAuth` if no bearer token is present (backward compatible)
-
-This is the same pattern used by Vega and is the cleanest path for Copilot Studio integration.
 
 ---
 

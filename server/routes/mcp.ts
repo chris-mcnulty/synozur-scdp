@@ -11,6 +11,7 @@ import {
   getHubSpotDealById,
   isHubSpotConnected,
 } from "../services/hubspot-client.js";
+import { mcpBearerAuth } from "../auth/mcp-bearer-auth.js";
 
 interface McpRouteDeps {
   requireAuth: any;
@@ -64,6 +65,8 @@ function verifyProjectTenant(project: any, tenantId: string): boolean {
 }
 
 export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: McpRouteDeps) {
+
+  app.use("/mcp", mcpBearerAuth);
 
   // ─── /mcp/me ───
   app.get("/mcp/me", requireAuth, async (req: Request, res: Response) => {
