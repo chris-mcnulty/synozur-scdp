@@ -106,13 +106,13 @@ If you are NOT creating a dedicated connector app and instead reusing Constellat
 |-------|-------|
 | Authentication type | OAuth 2.0 |
 | Identity Provider | Azure Active Directory |
-| Client ID | Your app registration's Client ID |
-| Client Secret | The secret from step 1.3 or 1.5 |
+| Client ID | The **connector app's** Client ID (from step 1.1). If reusing the Constellation app registration (step 1.6 path), use `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` |
+| Client Secret | The client secret you created (from step 1.4, or step 1.6 if reusing) |
 | Authorization URL | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` |
 | Token URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
 | Refresh URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
 | Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` |
-| Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` |
+| Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (this is always the **Constellation app's** Application ID URI, regardless of which app the connector uses) |
 
 ### 2.4 Definition tab — Add Actions
 
