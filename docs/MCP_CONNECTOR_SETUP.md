@@ -49,7 +49,7 @@ The Constellation app must declare itself as an API before other apps can reques
 
 1. Go to **Azure Portal → Entra ID → App registrations → New registration**
 2. Name: `Constellation MCP Connector`
-3. Supported account types: **Accounts in this organizational directory only** (single-tenant — both apps are in the Synozur tenant)
+3. Supported account types: **Accounts in any organizational directory** (multi-tenant — matches Constellation's `common` authority so users from any Entra tenant that has Constellation accounts can authenticate)
 4. Redirect URI: Leave blank for now (added in step 1.5)
 5. Click **Register**
 6. Note the **Client ID** — this is the Connector app's Client ID (different from Constellation's)
@@ -122,9 +122,9 @@ This pre-authorizes the connector so users won't see a separate consent prompt w
 | Identity Provider | Azure Active Directory |
 | Client ID | The **Connector app's** Client ID (from step 1.2 — NOT the Constellation app's ID) |
 | Client Secret | The **Connector app's** client secret (from step 1.4) |
-| Authorization URL | `https://login.microsoftonline.com/b4fbeaf7-1c91-43bb-8031-49eb8d4175ee/oauth2/v2.0/authorize` (use Synozur tenant ID since the connector is single-tenant) |
-| Token URL | `https://login.microsoftonline.com/b4fbeaf7-1c91-43bb-8031-49eb8d4175ee/oauth2/v2.0/token` |
-| Refresh URL | `https://login.microsoftonline.com/b4fbeaf7-1c91-43bb-8031-49eb8d4175ee/oauth2/v2.0/token` |
+| Authorization URL | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` (use `common` — multi-tenant, matches Constellation's authority) |
+| Token URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
+| Refresh URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
 | Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` (the **Constellation app's** exposed scope) |
 | Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (the **Constellation app's** Application ID URI — this tells Azure which API the token is for) |
 
