@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.6 | Last Updated: March 10, 2026
+Version 1.7 | Last Updated: March 10, 2026
 
 ---
 
@@ -17,13 +17,14 @@ Version 1.6 | Last Updated: March 10, 2026
 7. [AI-Powered Status Reports](#ai-powered-status-reports)
 8. [Portfolio Management](#portfolio-management)
 9. [User Roles](#user-roles)
-10. [Common Workflows](#common-workflows)
-11. [Microsoft 365 Integration](#microsoft-365-integration)
-12. [HubSpot CRM Integration](#hubspot-crm-integration)
-13. [Settings & Preferences](#settings--preferences)
-14. [Tips & Best Practices](#tips--best-practices)
-15. [Troubleshooting](#troubleshooting)
-16. [Detailed Documentation](#detailed-documentation)
+10. [Constellation Copilot Agent](#constellation-copilot-agent)
+11. [Common Workflows](#common-workflows)
+12. [Microsoft 365 Integration](#microsoft-365-integration)
+13. [HubSpot CRM Integration](#hubspot-crm-integration)
+14. [Settings & Preferences](#settings--preferences)
+15. [Tips & Best Practices](#tips--best-practices)
+16. [Troubleshooting](#troubleshooting)
+17. [Detailed Documentation](#detailed-documentation)
 
 ---
 
@@ -514,6 +515,65 @@ The AI analyzes and summarizes:
 - **Copy** the report to clipboard for pasting into emails, Teams messages, or documents
 - **Download** as formatted text
 - Edit the text before sharing — AI output is a starting point you can refine
+
+### Saved Status Reports
+
+Starting in version 1.7, every generated status report (text and PPTX) is automatically saved to the database. You can access saved reports from the **Status Reports** tab on the project detail page.
+
+**Viewing Saved Reports:**
+1. Navigate to the project detail page
+2. Click the **Status Reports** tab
+3. The table shows all saved reports with title, type (text/PPTX), style, period, status, who generated it, and when
+
+**Managing Reports:**
+- **View**: Click the menu on any text report and select "View Report" to see the full content in a dialog
+- **Finalize**: Draft reports can be marked as "Final" to indicate they've been reviewed and approved for sharing
+- **Delete**: Remove reports you no longer need
+
+**Report Types:**
+- **Text**: Markdown-formatted AI narrative saved when you generate a status report from the Overview tab
+- **PPTX**: Saved when you export a PowerPoint status report — the AI-generated content is stored alongside the record
+
+Reports are scoped to your project and tenant, so you'll only see reports generated for projects you have access to.
+
+---
+
+## Constellation Copilot Agent
+
+Constellation includes a Copilot Agent that lets you query your project data conversationally through Microsoft Teams or Microsoft 365 Copilot. Instead of navigating to different pages, you can simply ask questions in natural language.
+
+### What You Can Ask
+
+The Copilot Agent can answer questions about:
+- **Your work**: assignments, time entries, expenses, and reimbursements
+- **Projects**: status, budget, milestones, deliverables, and RAIDD items
+- **Estimates**: summaries, line item breakdowns, hours, and margins
+- **Portfolio**: cross-project RAIDD, timeline, and resource views
+- **Financials**: invoices, aggregates by month/quarter/client
+- **CRM**: HubSpot deals and linked projects
+- **Status reports**: saved report history for any project
+
+### How It Works
+
+The agent uses a Power Platform Custom Connector to call Constellation's MCP server endpoints on your behalf. Your identity flows through from Teams/Copilot to Constellation, so you only see data you're authorized to access based on your role and tenant.
+
+### Getting Started
+
+1. Look for **Constellation Assistant** in your Teams app catalog or Microsoft 365 Copilot
+2. Add it to a chat or channel
+3. Start with a question like "Who am I in Constellation?" or "What are my assignments this week?"
+
+### Example Queries
+
+- "What are my assignments this week?"
+- "Show me all at-risk projects"
+- "What are the open risks across the portfolio?"
+- "Show me invoice totals by quarter for this year"
+- "What's the margin on the Contoso estimate?"
+- "How much have I spent on travel this year?"
+- "Give me a status report summary for project X"
+
+**Note:** The Copilot Agent provides read-only access. To create, edit, or approve records, use the Constellation web application.
 
 ---
 
@@ -1197,7 +1257,7 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: March 1, 2026*  
-*Version: 1.4*  
+*Last Updated: March 10, 2026*  
+*Version: 1.7*  
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

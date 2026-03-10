@@ -186,6 +186,15 @@ The following major features have been delivered and are live in production. See
 - Container management interface for administrators
 - Custom column support with SharePoint-safe naming conventions
 
+### ✅ MCP Server & Constellation Copilot Agent
+**Completed:** March 2026
+- MCP server with ~24 read-only endpoints under `/mcp` for AI assistant integration
+- Power Platform Custom Connector with OpenAPI spec import
+- Copilot Studio agent for conversational data access through Teams and M365 Copilot
+- Bearer token authentication via JWKS with multi-tenant Entra support
+- Persistent status report storage — AI-generated text and PPTX reports saved to database with Status Reports tab in project UI
+- GPT-5.4 support via Azure AI Foundry with multi-provider AI architecture
+
 ---
 
 ## Current Focus (Q1 2026)
@@ -333,22 +342,24 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-### 🔌 MCP Server (Model Context Protocol)
+### ✅ MCP Server & Copilot Agent
 
-**Status:** 📋 Planned  
-**Target Completion:** Q2 2026  
+**Status:** ✅ Complete  
+**Completed:** March 2026  
 **Reference:** Vega MCP server configuration (successful production pattern)  
-**Value Proposition:** Expose Constellation's project management, financial, and resource data through a standardized Model Context Protocol (MCP) server, enabling AI assistants (Copilot, Claude, etc.) to query and interact with Constellation data directly — matching the architecture already proven with Synozur's Vega product.
+**Value Proposition:** Expose Constellation's project management, financial, and resource data through a read-only MCP server, enabling AI assistants (Copilot, Claude, etc.) to query and interact with Constellation data directly — matching the architecture already proven with Synozur's Vega product.
 
-#### Deliverables
-- Design and deploy an MCP server matching the Vega MCP server architecture
-- RBAC-enforced tool access with tenant-scoped data isolation
-- Query tools for projects, estimates, invoices, time entries, and expenses
-- Resource and capacity planning query tools
-- Financial reporting and KPI query tools
-- Read-only data access with role-based field filtering (hide cost rates from non-admin roles)
-- Integration with AI assistants via MCP protocol
-- Documentation and configuration guide for tenant administrators
+#### Delivered
+- MCP server with ~24 read-only GET endpoints under `/mcp`
+- RBAC-enforced access with tenant-scoped data isolation
+- Query endpoints for user profile, assignments, time entries, expenses, projects, deliverables, RAIDD, estimates, invoices, CRM deals, portfolio views, and saved status reports
+- Bearer token authentication via JWKS (supports v1 and v2 Entra token issuers)
+- Power Platform Custom Connector with OpenAPI spec import
+- **Constellation Copilot Agent** in Copilot Studio — conversational access to all MCP data
+- Teams channel deployment for chat and channel-based agent interactions
+- Multi-tenant authentication (Entra `common` authority)
+- Connector setup guide at `docs/MCP_CONNECTOR_SETUP.md`
+- Endpoint reference at `docs/MCP_README.md`
 
 ---
 

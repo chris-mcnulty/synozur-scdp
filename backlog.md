@@ -1,11 +1,38 @@
 # Constellation Product Backlog
 
 **Last Updated**: March 10, 2026
-**Version**: 4.0 — Cleaned up completed items, reprioritized based on current state.
+**Version**: 5.0 — Added Copilot Agent, Persistent Status Reports, MCP Server v1.7 items.
 
 ---
 
 ## ✅ Recently Completed (March 10, 2026)
+
+### MCP Server & Constellation Copilot Agent ✅ COMPLETE
+- [x] MCP server with ~24 read-only GET endpoints under `/mcp`
+- [x] Bearer token authentication via JWKS (v1 + v2 Entra token issuers)
+- [x] Multi-tenant support (Entra `common` authority)
+- [x] RBAC-enforced access with tenant-scoped data isolation
+- [x] Power Platform Custom Connector with OpenAPI spec import
+- [x] Copilot Studio agent for conversational access through Teams and M365 Copilot
+- [x] Teams channel deployment for chat and channel-based interactions
+- [x] Connector setup guide (`docs/MCP_CONNECTOR_SETUP.md`)
+- [x] Endpoint reference (`docs/MCP_README.md`)
+
+### Persistent Status Reports ✅ COMPLETE
+- [x] `status_reports` table migrated to database
+- [x] AI-generated text reports auto-saved on generation
+- [x] PPTX export creates "final" status report record
+- [x] Status Reports tab on project detail page with list view
+- [x] View report content, mark as final, delete reports
+- [x] Full CRUD API at `/api/projects/:projectId/status-reports`
+- [x] MCP endpoints for saved status reports (list + detail)
+- [x] Project ownership and tenant isolation enforcement on all routes
+
+### AI Model Upgrade ✅ COMPLETE
+- [x] Azure AI Foundry integration with GPT-5.4 support
+- [x] Multi-provider AI architecture (Replit AI + Azure AI Foundry)
+- [x] Configurable model selection per request
+- [x] Usage logging and cost tracking per tenant
 
 ### SharePoint Embedded Document Storage ✅ COMPLETE
 - [x] Full SharePoint Embedded (SPE) integration as primary document storage tier
