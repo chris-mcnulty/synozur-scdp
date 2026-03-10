@@ -116,17 +116,20 @@ This pre-authorizes the connector so users won't see a separate consent prompt w
 
 ### 2.3 Security tab
 
+Select **OAuth 2.0** as the authentication type, then fill in:
+
 | Field | Value |
 |-------|-------|
-| Authentication type | OAuth 2.0 |
 | Identity Provider | Azure Active Directory |
 | Client ID | The **Connector app's** Client ID (from step 1.2 — NOT the Constellation app's ID) |
-| Client Secret | The **Connector app's** client secret (from step 1.4) |
-| Authorization URL | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` (use `common` — multi-tenant, matches Constellation's authority) |
-| Token URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
-| Refresh URL | `https://login.microsoftonline.com/common/oauth2/v2.0/token` |
-| Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` (the **Constellation app's** exposed scope) |
-| Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (the **Constellation app's** Application ID URI — this tells Azure which API the token is for) |
+| Secret options | **Use client secret** |
+| Client secret | The **Connector app's** client secret (from step 1.4) |
+| Authorization URL | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` |
+| Tenant ID | `common` (multi-tenant — matches Constellation's authority so users from any Entra directory can authenticate) |
+| Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (the **Constellation app's** Application ID URI — tells Azure which API the token is for) |
+| Enable on-behalf-of login | `false` |
+| Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` (the **Constellation app's** exposed scope from step 1.1) |
+| Redirect URL | Auto-generated after saving — copy this value and add it to the **Connector app's** Authentication redirect URIs in Entra (in addition to the `global.consent.azure-apim.net` URI from step 1.5) |
 
 ### 2.4 Definition tab — Add Actions
 
