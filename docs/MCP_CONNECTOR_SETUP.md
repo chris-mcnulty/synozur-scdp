@@ -42,6 +42,7 @@ Before configuring permissions on the connector app, you must expose a custom sc
    - User consent description: `Allows Copilot to read your Constellation project data`
    - State: **Enabled**
 6. Click **Add scope**
+7. **(Only if using a dedicated connector app from step 1.1):** Scroll down to **Authorized client applications** → click **Add a client application** → enter the connector app's Client ID → check the `access_as_user` scope → click **Add application**. This pre-authorizes the connector so users won't see a separate consent prompt. Skip this if reusing the same Constellation app registration.
 
 ### 1.3 Configure API permissions on the connector app
 
