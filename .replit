@@ -121,13 +121,13 @@ integrations = ["javascript_object_storage:1.0.0", "outlook:1.0.0", "sharepoint:
 
 [userenv.production]
 AZURE_CERTIFICATE_THUMBPRINT = "C9C587A1C4FC823872007C45EE6A001DCF1AFE68"
-AZURE_REDIRECT_URI = "https://scdp.synozur.com/api/auth/callback"
+AZURE_REDIRECT_URI = "https://constellation.synozur.com/api/auth/callback"
 
 [userenv.development]
 AZURE_REDIRECT_URI = "https://fe536eef-aa4a-4f38-9444-a53b449002d7-00-2w4rayqj9t1dp.spock.replit.dev/api/auth/callback"
 
 [userenv.shared]
-APP_PUBLIC_URL = "https://scdp.synozur.com"
+APP_PUBLIC_URL = "https://constellation.synozur.com"
 AZURE_FOUNDRY_ENDPOINT = "https://synozur-constellationai-resource.services.ai.azure.com/api/projects/synozur-constellationAI"
 AZURE_FOUNDRY_OPENAI_ENDPOINT = "https://synozur-constellationai-resource.cognitiveservices.azure.com/openai/v1"
 AZURE_FOUNDRY_DEPLOYMENT = "gpt-5.2"
