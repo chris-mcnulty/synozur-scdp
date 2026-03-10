@@ -120,7 +120,7 @@ export default function Login() {
     {
       icon: Blocks,
       title: "Microsoft 365 Integration",
-      description: "Deep integration with SharePoint, Outlook, and Microsoft Planner for bidirectional task synchronization.",
+      description: "SharePoint Embedded for secure, private document storage per organization. Outlook for notifications, Planner for task sync, and Azure AD for enterprise SSO.",
       highlight: false,
       color: "from-blue-500 to-cyan-600",
       lightColor: "bg-blue-500/10",
@@ -129,7 +129,7 @@ export default function Login() {
     {
       icon: Brain,
       title: "AI-Powered Intelligence",
-      description: "Leverage AI for estimate narratives, invoice descriptions, report queries, and data-driven insights.",
+      description: "Powered by Azure AI Foundry with advanced models including GPT-5.4. AI-generated estimate narratives, status reports, invoice descriptions, and smart insights.",
       highlight: false,
       color: "from-amber-500 to-orange-600",
       lightColor: "bg-amber-500/10",

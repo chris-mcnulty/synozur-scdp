@@ -44,7 +44,7 @@ const features = [
     icon: Blocks,
     title: "Microsoft 365 Integration",
     description:
-      "Deep integration with SharePoint for document management, Outlook for email notifications, and Microsoft Planner for bidirectional task synchronization.",
+      "SharePoint Embedded for secure, private document storage per organization. Outlook for email notifications, Planner for automatic task synchronization, and Azure AD for enterprise single sign-on.",
     highlight: false,
     color: "from-blue-500 to-cyan-600",
     lightColor: "bg-blue-50 dark:bg-blue-950/40",
@@ -54,7 +54,7 @@ const features = [
     icon: Brain,
     title: "AI-Powered Intelligence",
     description:
-      "Leverage AI for estimate narrative generation, invoice descriptions, report queries, and intelligent data-driven insights that accelerate your consulting practice.",
+      "Powered by Azure AI Foundry with advanced models including GPT-5.4. AI-generated estimate narratives, status reports, invoice descriptions, and smart insights that accelerate your consulting practice.",
     highlight: false,
     color: "from-amber-500 to-orange-600",
     lightColor: "bg-amber-50 dark:bg-amber-950/40",
