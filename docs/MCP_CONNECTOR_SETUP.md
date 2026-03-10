@@ -103,8 +103,10 @@ This pre-authorizes the connector so users won't see a separate consent prompt w
 ### 2.1 Open Power Platform Custom Connectors
 
 1. Go to **make.powerapps.com** → your environment
-2. Navigate to **Data → Custom Connectors → New custom connector → Create from blank**
+2. Navigate to **Data → Custom Connectors → New custom connector → Import an OpenAPI file**
 3. Name: `Constellation MCP`
+4. Upload: [`docs/constellation-mcp-openapi.json`](constellation-mcp-openapi.json)
+5. Click **Import** — this pre-populates the General, Definition, and Security tabs
 
 ### 2.2 General tab
 
@@ -131,156 +133,37 @@ Select **OAuth 2.0** as the authentication type, then fill in:
 | Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` (the **Constellation app's** exposed scope from step 1.1) |
 | Redirect URL | Auto-generated after saving — copy this value and add it to the **Connector app's** Authentication redirect URIs in Entra (in addition to the `global.consent.azure-apim.net` URI from step 1.5) |
 
-### 2.4 Definition tab — Add Actions
+### 2.4 Definition tab — Import from OpenAPI file
 
-Create one action per MCP endpoint. For each action:
+Instead of creating each action manually, import the OpenAPI definition:
 
-#### Action: GetMyProfile
-| Field | Value |
-|-------|-------|
-| Summary | Get my Constellation profile |
-| Operation ID | `GetMyProfile` |
-| Method | GET |
-| URL | `/me` |
-| Response | Import from sample: `{"data":{"id":"","email":"","name":"","role":"","platformRole":null,"tenantId":"","tenantName":"","tenantSlug":""}}` |
+1. When creating the connector, choose **New custom connector → Import an OpenAPI file** (instead of "Create from blank")
+2. Name: `Constellation MCP`
+3. Upload the file: [`docs/constellation-mcp-openapi.json`](constellation-mcp-openapi.json)
+4. Click **Import** — all 16 actions will be created automatically with correct operation IDs, parameters, and response schemas
 
-#### Action: GetAssignments
-| Field | Value |
-|-------|-------|
-| Summary | Get assignments |
-| Operation ID | `GetAssignments` |
-| Method | GET |
-| URL | `/assignments` |
-| Query parameters | `assigneeId` (optional, string), `from` (optional, string), `to` (optional, string) |
+After import, review the **Definition** tab to confirm all actions are listed:
 
-#### Action: GetTimeEntries
-| Field | Value |
-|-------|-------|
-| Summary | Get time entries |
-| Operation ID | `GetTimeEntries` |
-| Method | GET |
-| URL | `/time-entries` |
-| Query parameters | `assigneeId` (optional), `from` (optional), `to` (optional), `status` (optional) |
+| Operation ID | Endpoint | Parameters |
+|-------------|----------|------------|
+| `GetMyProfile` | `GET /me` | — |
+| `GetAssignments` | `GET /assignments` | assigneeId, from, to |
+| `GetTimeEntries` | `GET /time-entries` | assigneeId, from, to, status |
+| `GetExpenseReports` | `GET /expenses/reports` | submitterId, status |
+| `GetProjects` | `GET /projects` | search, clientId, health |
+| `GetProjectById` | `GET /projects/{projectId}` | projectId |
+| `GetProjectDeliverables` | `GET /projects/{projectId}/deliverables` | projectId, status |
+| `GetProjectRaidd` | `GET /projects/{projectId}/raidd` | projectId, type, status, priority |
+| `GetProjectStatusReports` | `GET /projects/{projectId}/status-reports` | projectId, from, to |
+| `GetProjectM365Context` | `GET /projects/{projectId}/m365-context` | projectId |
+| `GetPortfolioRaidd` | `GET /portfolio/raidd` | type, status, priority |
+| `GetPortfolioTimeline` | `GET /portfolio/timeline` | clientId, endingBefore |
+| `GetInvoices` | `GET /financial/invoices` | from, to, clientId |
+| `GetInvoiceAggregate` | `GET /financial/invoices/aggregate` | groupBy, from, to |
+| `GetCrmDeals` | `GET /crm/deals` | search, stage |
+| `GetCrmDealLinkedProjects` | `GET /crm/deals/{dealId}/linked-projects` | dealId |
 
-#### Action: GetExpenseReports
-| Field | Value |
-|-------|-------|
-| Summary | Get expense reports |
-| Operation ID | `GetExpenseReports` |
-| Method | GET |
-| URL | `/expenses/reports` |
-| Query parameters | `submitterId` (optional), `status` (optional) |
-
-#### Action: GetProjects
-| Field | Value |
-|-------|-------|
-| Summary | Search and list projects |
-| Operation ID | `GetProjects` |
-| Method | GET |
-| URL | `/projects` |
-| Query parameters | `search` (optional), `clientId` (optional), `health` (optional — OnTrack, AtRisk, OverBudget) |
-
-#### Action: GetProjectById
-| Field | Value |
-|-------|-------|
-| Summary | Get project details |
-| Operation ID | `GetProjectById` |
-| Method | GET |
-| URL | `/projects/{projectId}` |
-| Path parameters | `projectId` (required, string) |
-
-#### Action: GetProjectDeliverables
-| Field | Value |
-|-------|-------|
-| Summary | Get project deliverables |
-| Operation ID | `GetProjectDeliverables` |
-| Method | GET |
-| URL | `/projects/{projectId}/deliverables` |
-| Path parameters | `projectId` (required) |
-| Query parameters | `status` (optional — NotStarted, InProgress, InReview, Accepted, Rejected) |
-
-#### Action: GetProjectRaidd
-| Field | Value |
-|-------|-------|
-| Summary | Get project RAIDD entries |
-| Operation ID | `GetProjectRaidd` |
-| Method | GET |
-| URL | `/projects/{projectId}/raidd` |
-| Path parameters | `projectId` (required) |
-| Query parameters | `type` (optional), `status` (optional), `priority` (optional) |
-
-#### Action: GetProjectStatusReports
-| Field | Value |
-|-------|-------|
-| Summary | Get project status reports |
-| Operation ID | `GetProjectStatusReports` |
-| Method | GET |
-| URL | `/projects/{projectId}/status-reports` |
-| Path parameters | `projectId` (required) |
-| Query parameters | `from` (optional), `to` (optional) |
-
-#### Action: GetProjectM365Context
-| Field | Value |
-|-------|-------|
-| Summary | Get project Microsoft 365 context |
-| Operation ID | `GetProjectM365Context` |
-| Method | GET |
-| URL | `/projects/{projectId}/m365-context` |
-| Path parameters | `projectId` (required) |
-
-#### Action: GetPortfolioRaidd
-| Field | Value |
-|-------|-------|
-| Summary | Get portfolio RAIDD across all projects |
-| Operation ID | `GetPortfolioRaidd` |
-| Method | GET |
-| URL | `/portfolio/raidd` |
-| Query parameters | `status` (optional), `type` (optional), `priority` (optional) |
-
-#### Action: GetPortfolioTimeline
-| Field | Value |
-|-------|-------|
-| Summary | Get portfolio timeline |
-| Operation ID | `GetPortfolioTimeline` |
-| Method | GET |
-| URL | `/portfolio/timeline` |
-| Query parameters | `clientId` (optional), `endingBefore` (optional) |
-
-#### Action: GetInvoices
-| Field | Value |
-|-------|-------|
-| Summary | Get invoices |
-| Operation ID | `GetInvoices` |
-| Method | GET |
-| URL | `/financial/invoices` |
-| Query parameters | `from` (optional), `to` (optional), `clientId` (optional) |
-
-#### Action: GetInvoiceAggregate
-| Field | Value |
-|-------|-------|
-| Summary | Get invoice aggregate analytics |
-| Operation ID | `GetInvoiceAggregate` |
-| Method | GET |
-| URL | `/financial/invoices/aggregate` |
-| Query parameters | `from` (optional), `to` (optional), `groupBy` (optional — Month, Quarter, Client, Project) |
-
-#### Action: GetCrmDeals
-| Field | Value |
-|-------|-------|
-| Summary | Get CRM deals from HubSpot |
-| Operation ID | `GetCrmDeals` |
-| Method | GET |
-| URL | `/crm/deals` |
-| Query parameters | `search` (optional), `stage` (optional) |
-
-#### Action: GetCrmDealLinkedProjects
-| Field | Value |
-|-------|-------|
-| Summary | Get projects linked to a CRM deal |
-| Operation ID | `GetCrmDealLinkedProjects` |
-| Method | GET |
-| URL | `/crm/deals/{dealId}/linked-projects` |
-| Path parameters | `dealId` (required, string) |
+> **Note:** The OpenAPI file includes the OAuth security definition, but the Security tab values from step 2.3 (Client ID, Client Secret) still need to be filled in manually after import — Power Platform does not auto-populate secrets from the swagger file.
 
 ### 2.5 Test tab
 

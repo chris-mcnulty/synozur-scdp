@@ -1,0 +1,678 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Constellation MCP",
+    "description": "Read-only Model Context Protocol endpoints for Constellation consulting delivery platform. Provides tenant-scoped access to projects, assignments, time entries, expenses, RAIDD, financials, and CRM data.",
+    "version": "1.0.0"
+  },
+  "host": "constellation.synozur.com",
+  "basePath": "/mcp",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "paths": {
+    "/me": {
+      "get": {
+        "operationId": "GetMyProfile",
+        "summary": "Get my Constellation profile",
+        "description": "Returns the authenticated user's profile including role, tenant, and platform role. No special role required.",
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "email": { "type": "string" },
+                    "name": { "type": "string" },
+                    "role": { "type": "string" },
+                    "platformRole": { "type": "string" },
+                    "tenantId": { "type": "string" },
+                    "tenantName": { "type": "string" },
+                    "tenantSlug": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assignments": {
+      "get": {
+        "operationId": "GetAssignments",
+        "summary": "Get assignments",
+        "description": "Returns project assignments for the authenticated user (or another user if the caller has manager-level permissions). Supports date range filtering.",
+        "parameters": [
+          {
+            "name": "assigneeId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "User ID to retrieve assignments for. Defaults to the authenticated user. Requires manager role to view other users."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Start date filter (ISO format YYYY-MM-DD). Returns assignments ending on or after this date."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "End date filter (ISO format YYYY-MM-DD). Returns assignments starting on or before this date."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of assignments",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/time-entries": {
+      "get": {
+        "operationId": "GetTimeEntries",
+        "summary": "Get time entries",
+        "description": "Returns time entries for the authenticated user (or another user if the caller has manager-level permissions). Supports date range and status filtering.",
+        "parameters": [
+          {
+            "name": "assigneeId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "User ID to retrieve time entries for. Defaults to the authenticated user."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Start date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "End date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by status (e.g. Draft, Submitted, Approved)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of time entries",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expenses/reports": {
+      "get": {
+        "operationId": "GetExpenseReports",
+        "summary": "Get expense reports",
+        "description": "Returns expense reports for the authenticated user (or another user if the caller has manager-level permissions). Supports status filtering.",
+        "parameters": [
+          {
+            "name": "submitterId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "User ID to retrieve expense reports for. Defaults to the authenticated user."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by status (e.g. Draft, Submitted, Approved)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of expense reports",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "operationId": "GetProjects",
+        "summary": "Search and list projects",
+        "description": "Returns projects in the user's tenant. Supports search by name/code/client, client filtering, and budget health filtering. Requires PM, Admin, Portfolio Manager, or Executive role.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Search by project name, code, or client name."
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by client ID."
+          },
+          {
+            "name": "health",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by budget health status.",
+            "enum": ["OnTrack", "AtRisk", "OverBudget"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of projects",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}": {
+      "get": {
+        "operationId": "GetProjectById",
+        "summary": "Get project details",
+        "description": "Returns detailed information for a specific project including budget vs actual. Requires PM, Admin, Portfolio Manager, or Executive role.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The project ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project details",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "object" }
+              }
+            }
+          },
+          "404": { "description": "Project not found or not in user's tenant" }
+        }
+      }
+    },
+    "/projects/{projectId}/deliverables": {
+      "get": {
+        "operationId": "GetProjectDeliverables",
+        "summary": "Get project deliverables",
+        "description": "Returns deliverables for a project with optional status filtering. Requires PM, Admin, Portfolio Manager, or Executive role.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The project ID."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by deliverable status.",
+            "enum": ["NotStarted", "InProgress", "InReview", "Accepted", "Rejected"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of deliverables",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/raidd": {
+      "get": {
+        "operationId": "GetProjectRaidd",
+        "summary": "Get project RAIDD entries",
+        "description": "Returns Risks, Actions, Issues, Dependencies, and Decisions for a project. Supports filtering by type, status, and priority. Requires PM, Admin, Portfolio Manager, or Executive role.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The project ID."
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by RAIDD type (e.g. Risk, Action, Issue, Dependency, Decision)."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by status (e.g. Open, Closed, Mitigated)."
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by priority (e.g. Critical, High, Medium, Low)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of RAIDD entries",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/status-reports": {
+      "get": {
+        "operationId": "GetProjectStatusReports",
+        "summary": "Get project status reports",
+        "description": "Returns previously generated status reports for a project. Currently returns empty (reports are generated on-demand via AI). Requires PM, Admin, Portfolio Manager, or Executive role.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The project ID."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Start date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "End date filter (ISO format YYYY-MM-DD)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of status reports",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/m365-context": {
+      "get": {
+        "operationId": "GetProjectM365Context",
+        "summary": "Get project Microsoft 365 context",
+        "description": "Returns Teams and Planner integration info for a project. Requires PM, Admin, Portfolio Manager, or Executive role.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The project ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "M365 context",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": { "type": "string" },
+                    "projectName": { "type": "string" },
+                    "teamId": { "type": "string" },
+                    "teamName": { "type": "string" },
+                    "plannerConnections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "planId": { "type": "string" },
+                          "planTitle": { "type": "string" },
+                          "planWebUrl": { "type": "string" },
+                          "groupId": { "type": "string" },
+                          "groupName": { "type": "string" },
+                          "channelId": { "type": "string" },
+                          "channelName": { "type": "string" },
+                          "syncEnabled": { "type": "boolean" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portfolio/raidd": {
+      "get": {
+        "operationId": "GetPortfolioRaidd",
+        "summary": "Get portfolio RAIDD across all projects",
+        "description": "Aggregates RAIDD entries across all projects in the user's tenant. Supports filtering by type, status, and priority. Requires Portfolio Manager, Admin, or Executive role.",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by RAIDD type (e.g. Risk, Action, Issue, Dependency, Decision)."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by status (e.g. Open, Closed, Mitigated)."
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by priority (e.g. Critical, High, Medium, Low)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated RAIDD entries with project context",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portfolio/timeline": {
+      "get": {
+        "operationId": "GetPortfolioTimeline",
+        "summary": "Get portfolio timeline",
+        "description": "Returns a timeline view of all projects in the user's tenant with start/end dates and status. Supports client and date filtering. Requires Portfolio Manager, Admin, or Executive role.",
+        "parameters": [
+          {
+            "name": "clientId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by client ID."
+          },
+          {
+            "name": "endingBefore",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Only show projects ending before this date (ISO format YYYY-MM-DD)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Portfolio timeline",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": { "type": "string" },
+                      "projectName": { "type": "string" },
+                      "projectCode": { "type": "string" },
+                      "clientName": { "type": "string" },
+                      "clientId": { "type": "string" },
+                      "startDate": { "type": "string" },
+                      "endDate": { "type": "string" },
+                      "status": { "type": "string" },
+                      "commercialScheme": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/financial/invoices": {
+      "get": {
+        "operationId": "GetInvoices",
+        "summary": "Get invoices",
+        "description": "Returns invoice batches for the user's tenant. Supports date range and client filtering. Requires Billing Admin, Admin, or Executive role.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Start date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "End date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "clientId",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by client ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of invoice batches",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/financial/invoices/aggregate": {
+      "get": {
+        "operationId": "GetInvoiceAggregate",
+        "summary": "Get invoice aggregate analytics",
+        "description": "Aggregates invoice data by Month, Quarter, Client, or Project. Returns total amounts and counts. Requires Billing Admin, Admin, or Executive role.",
+        "parameters": [
+          {
+            "name": "groupBy",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Group results by dimension. Defaults to Month.",
+            "enum": ["Month", "Quarter", "Client", "Project"]
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Start date filter (ISO format YYYY-MM-DD)."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "End date filter (ISO format YYYY-MM-DD)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated invoice analytics",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": { "type": "string" },
+                      "totalAmount": { "type": "number" },
+                      "invoiceCount": { "type": "integer" },
+                      "lineCount": { "type": "integer" }
+                    }
+                  }
+                },
+                "groupBy": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/crm/deals": {
+      "get": {
+        "operationId": "GetCrmDeals",
+        "summary": "Get CRM deals from HubSpot",
+        "description": "Returns HubSpot deals for the user's tenant. Supports search and stage filtering. Requires PM, Admin, or Executive role. Returns empty if HubSpot is not connected.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Search by deal name or description."
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "type": "string",
+            "required": false,
+            "description": "Filter by deal stage."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of CRM deals",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/crm/deals/{dealId}/linked-projects": {
+      "get": {
+        "operationId": "GetCrmDealLinkedProjects",
+        "summary": "Get projects linked to a CRM deal",
+        "description": "Returns Constellation projects linked to a specific HubSpot deal. Requires PM, Admin, or Executive role.",
+        "parameters": [
+          {
+            "name": "dealId",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "The HubSpot deal ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of linked projects",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "securityDefinitions": {
+    "oauth2": {
+      "type": "oauth2",
+      "flow": "accessCode",
+      "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      "scopes": {
+        "api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user": "Access Constellation MCP as signed-in user"
+      }
+    }
+  },
+  "security": [
+    {
+      "oauth2": ["api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user"]
+    }
+  ]
+}
