@@ -46,13 +46,16 @@ Before configuring permissions on the connector app, you must expose a custom sc
 
 ### 1.3 Configure API permissions on the connector app
 
+> **Skip this step if reusing the Constellation app registration (step 1.6 path).** An app is implicitly authorized for its own exposed scopes — no self-permission needed.
+
 Now go back to the **connector app** you created in step 1.1:
 
 1. Go to **API permissions → Add a permission**
-2. Select the **My APIs** tab — you should now see the Constellation app registration listed
-3. Select it, then check the **access_as_user** delegated permission
-4. Click **Add permissions**
-5. Click **Grant admin consent for [your organization]**
+2. Select the **APIs my organization uses** tab (not "My APIs" — multi-tenant registrations often don't appear under "My APIs")
+3. Search for the Constellation app by its display name (e.g. `SCDP-Content`) or paste the Client ID `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`
+4. Select it → choose **Delegated permissions** → check **access_as_user**
+5. Click **Add permissions**
+6. Click **Grant admin consent for [your organization]**
 
 ### 1.4 Create a client secret
 
