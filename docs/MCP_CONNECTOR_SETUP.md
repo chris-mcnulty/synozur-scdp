@@ -247,9 +247,10 @@ GUIDELINES:
 
 ### 3.4 Configure authentication
 
-1. In agent settings → **Authentication**
+1. In agent settings → **Security** → **Authentication**
 2. Select **Authenticate with Microsoft**
-3. This ensures the user's identity flows through to the connector
+3. Enable **Multi-tenant** — this is required because Constellation's Entra authority is set to `common`, allowing users from any organizational directory to authenticate
+4. This ensures the user's identity flows through to the connector with the correct tenant context
 
 ### 3.5 Test the agent
 
