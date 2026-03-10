@@ -17,15 +17,44 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
-### Version 1.2026.03.10 (March 10, 2026)
+### Version 1.7 (March 10, 2026)
 
 **Release Date:** March 10, 2026  
 **Status:** Production Release  
-**Codename:** SharePoint Embedded Storage
+**Codename:** Copilot Agent & AI Report Persistence
 
-This release completes the SharePoint Embedded (SPE) document storage integration, providing enterprise-grade file management with tenant-isolated containers, intelligent file type inference, and seamless receipt and invoice handling through Microsoft Graph API.
+This release introduces the Constellation Copilot Agent for Microsoft 365, enabling conversational access to project data through Microsoft Teams and Copilot Studio. It also adds persistent status report storage, so AI-generated text and PPTX reports are saved to the database with full lifecycle management, and expands the MCP server to ~24 endpoints. AI model support is upgraded to GPT-5.4 via Azure AI Foundry, and SharePoint Embedded document storage is now fully integrated.
 
 #### ✨ New Features
+
+**Constellation Copilot Agent**
+- New **Copilot Studio agent** for querying Constellation data conversationally through Microsoft Teams and Microsoft 365 Copilot
+- Power Platform Custom Connector backed by the Constellation MCP server (~24 read-only endpoints)
+- OAuth 2.0 bearer token authentication with JWT validation via JWKS against Entra ID app registration
+- Multi-tenant support — users from any Entra directory can authenticate
+- Natural language queries for assignments, time entries, expenses, projects, RAIDD, deliverables, estimates, invoices, CRM deals, and status reports
+- Role-based access control enforced server-side — the agent only surfaces data the user is authorized to see
+- Teams channel deployment for chat and channel-based interactions
+- Connector setup guide at `docs/MCP_CONNECTOR_SETUP.md`
+
+**Persistent Status Reports**
+- AI-generated status reports (text and PPTX) are now automatically saved to the `status_reports` database table
+- New **Status Reports** tab on the project detail page listing all saved reports
+- Each report tracks type (text/pptx), style (executive brief, detailed update, client-facing), period, content, status (draft/final), and who generated it
+- View report content in a dialog, mark reports as final, or delete them
+- Full CRUD API at `/api/projects/:projectId/status-reports` with project ownership and tenant isolation enforcement
+- MCP endpoints at `/mcp/projects/:projectId/status-reports` for Copilot Agent access to saved reports
+
+**MCP Server Expansion**
+- MCP server expanded to ~24 read-only endpoints (up from 16)
+- Added endpoints: individual expenses, estimate detail with line items, reimbursement batches and detail, project status report data aggregation, saved status reports list and detail
+- Bearer token authentication via `server/auth/mcp-bearer-auth.ts` supporting both v1 and v2 Entra token issuers
+- OpenAPI spec updated at `docs/constellation-mcp-openapi.json`
+
+**AI Model Upgrade**
+- Azure AI Foundry integration with GPT-5.4 support
+- Multi-provider AI architecture (Replit AI + Azure AI Foundry) with configurable model selection
+- Usage logging and cost tracking per tenant with token budget alerts
 
 **SharePoint Embedded Document Storage**
 - Full **SharePoint Embedded (SPE)** integration as the primary document storage tier for tenants
@@ -53,6 +82,13 @@ This release completes the SharePoint Embedded (SPE) document storage integratio
 - Fixed file stats counts that showed `[object Object]` instead of numbers (byDocumentType object vs number mismatch)
 - Fixed nested file paths (`/receipts/receipts/`) — files now stored in correct top-level folders after reorganization
 - Fixed SPE upload `driveId` field set to `receipt-storage` for proper download routing
+- Fixed IDOR vulnerability in status report API routes — all endpoints now enforce project ownership and tenant isolation
+
+#### 📚 Documentation
+- New `docs/MCP_CONNECTOR_SETUP.md` — step-by-step guide for Power Platform Custom Connector and Copilot Studio agent setup
+- New `docs/MCP_README.md` — MCP endpoint reference with RBAC matrix
+- Updated OpenAPI spec with all ~24 MCP endpoints
+- Updated user guide, roadmap, backlog, and changelog for v1.7
 
 ---
 

@@ -262,6 +262,14 @@ The following major features have been delivered and are live in production. See
 **Export & Sharing**
 - Copy-to-clipboard for easy pasting into emails
 - Download generated report as formatted text
+- PowerPoint (PPTX) export with branded slide deck
+
+**Persistent Report Storage ✅ Complete (v1.7)**
+- All generated reports (text and PPTX) automatically saved to `status_reports` database table
+- Status Reports tab on project detail page listing all saved reports
+- View, finalize, and delete reports from the UI
+- Full CRUD API with tenant isolation and project ownership enforcement
+- MCP endpoints for Copilot Agent access to saved reports
 
 #### Phase 2: Automated Scheduling (Future Enhancement)
 
@@ -855,6 +863,12 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-*Last Updated: March 8, 2026*  
+**March 10, 2026**
+- Marked MCP Server & Copilot Agent as ✅ Complete (24 endpoints, Power Platform Custom Connector, Copilot Studio agent, Teams channel deployment)
+- Added MCP Server & Constellation Copilot Agent to Recently Completed section
+- Updated Enhanced Status Reporting with Persistent Report Storage (v1.7)
+- Updated version references to 1.7
+
+*Last Updated: March 10, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
