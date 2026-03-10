@@ -126,7 +126,7 @@ Select **OAuth 2.0** as the authentication type, then fill in:
 | Client ID | The **Connector app's** Client ID (from step 1.2 — NOT the Constellation app's ID) |
 | Secret options | **Use client secret** |
 | Client secret | The **Connector app's** client secret (from step 1.4) |
-| Authorization URL | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` |
+| Authorization URL | `https://login.microsoftonline.com` (just the base URL — Power Platform appends `/{Tenant ID}/oauth2/authorize` automatically. Do NOT include the full path or it will be duplicated) |
 | Tenant ID | `common` (multi-tenant — matches Constellation's authority so users from any Entra directory can authenticate) |
 | Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (the **Constellation app's** Application ID URI — tells Azure which API the token is for) |
 | Enable on-behalf-of login | `false` |

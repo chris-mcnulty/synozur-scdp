@@ -663,7 +663,7 @@
     "oauth2": {
       "type": "oauth2",
       "flow": "accessCode",
-      "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      "authorizationUrl": "https://login.microsoftonline.com",
       "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
       "scopes": {
         "api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user": "Access Constellation MCP as signed-in user"
