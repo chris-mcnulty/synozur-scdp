@@ -56,6 +56,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Contractor Expense Invoices**: Contractors can generate invoices from expense reports.
 - **Project Rate Overrides**: Project-level billing and cost rate overrides.
 - **Deliverable Tracking**: Management of project deliverables with status workflows, AI narrative extraction, and integration into reports.
+- **MCP Server (v0 — Read-Only)**: Read-only API surface under `/mcp` for Microsoft 365 Copilot / Copilot Studio integration. 16 GET endpoints covering user profile, assignments, time entries, expenses, projects, deliverables, RAIDD, portfolio views, financials, and CRM deals. Reuses existing auth (Entra SSO), tenant isolation, and RBAC. Implemented in `server/routes/mcp.ts`. Documentation at `docs/MCP_README.md`.
 
 ### Multi-Tenancy
 - **Architecture**: UUID-based tenant IDs, data isolation, service plans, and subdomain routing.
