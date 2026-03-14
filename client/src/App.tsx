@@ -52,6 +52,9 @@ import PortfolioRaidd from "@/pages/portfolio-raidd";
 import MyRaidd from "@/pages/my-raidd";
 import CrmDeals from "@/pages/crm-deals";
 import AiSettings from "@/pages/ai-settings";
+import EmbedProject from "@/pages/embed-project";
+import EmbedConfigure from "@/pages/embed-configure";
+import EmbedDashboard from "@/pages/embed-dashboard";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -131,7 +134,7 @@ function Router() {
   useEffect(() => {
     if (error && !user && !isLoading && !processingSession && !isRecovering) {
       const currentPath = window.location.pathname;
-      if (currentPath !== '/login' && currentPath !== '/signup') {
+      if (currentPath !== '/login' && currentPath !== '/signup' && !currentPath.startsWith('/embed/')) {
         const lastRedirect = sessionStorage.getItem('redirectAfterLogin');
         const redirectCount = parseInt(sessionStorage.getItem('redirectLoopCount') || '0', 10);
         if (lastRedirect === currentPath && redirectCount >= 2) {
@@ -148,8 +151,9 @@ function Router() {
     }
   }, [error, user, isLoading, processingSession, isRecovering, setLocation]);
 
-  // Show a better loading state
-  if (processingSession || isLoading || isRecovering) {
+  const isEmbedRoute = window.location.pathname.startsWith('/embed/');
+
+  if ((processingSession || isLoading || isRecovering) && !isEmbedRoute) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -164,6 +168,9 @@ function Router() {
 
   return (
     <Switch>
+      <Route path="/embed/configure" component={EmbedConfigure} />
+      <Route path="/embed/dashboard" component={EmbedDashboard} />
+      <Route path="/embed/projects/:id" component={EmbedProject} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/">

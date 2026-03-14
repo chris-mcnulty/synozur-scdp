@@ -429,6 +429,135 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
+  // Teams Custom Tab SSO endpoint
+  // Accepts a client-side token from Teams SDK authentication.getAuthToken()
+  // and exchanges it for a Constellation session
+  app.post("/api/auth/teams-sso", async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) {
+        return res.status(400).json({ message: "Token is required" });
+      }
+
+      const jwtLib = await import("jsonwebtoken");
+      const jwksRsa = await import("jwks-rsa");
+
+      const expectedClientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+      const baseUrl = process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'constellation.synozur.com'}`;
+
+      const jwksClient = jwksRsa.default({
+        jwksUri: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+        cache: true,
+        cacheMaxAge: 86400000,
+        rateLimit: true,
+        jwksRequestsPerMinute: 10,
+      });
+
+      const preDecoded = jwtLib.default.decode(token, { complete: true });
+      if (!preDecoded || !preDecoded.header) {
+        return res.status(401).json({ message: "Invalid token format" });
+      }
+
+      const signingKey = await new Promise<string>((resolve, reject) => {
+        jwksClient.getSigningKey(preDecoded.header.kid, (err: any, key: any) => {
+          if (err) return reject(err);
+          const pubKey = key?.getPublicKey();
+          if (!pubKey) return reject(new Error("No signing key found"));
+          resolve(pubKey);
+        });
+      });
+
+      const decoded = await new Promise<any>((resolve, reject) => {
+        jwtLib.default.verify(
+          token,
+          signingKey,
+          {
+            audience: [
+              expectedClientId,
+              `api://${expectedClientId}`,
+              `api://constellation.synozur.com/${expectedClientId}`,
+              `api://${process.env.REPLIT_DEV_DOMAIN || 'constellation.synozur.com'}/${expectedClientId}`,
+            ],
+            algorithms: ["RS256"],
+          },
+          (err: any, payload: any) => {
+            if (err) return reject(err);
+            const iss = payload?.iss || "";
+            const validIssuer =
+              /^https:\/\/sts\.windows\.net\/[a-f0-9-]+\/$/.test(iss) ||
+              /^https:\/\/login\.microsoftonline\.com\/[a-f0-9-]+\/v2\.0$/.test(iss);
+            if (!validIssuer) {
+              return reject(new Error(`Invalid token issuer: ${iss}`));
+            }
+            resolve(payload);
+          }
+        );
+      });
+
+      const email = decoded.preferred_username || decoded.upn || decoded.email;
+      if (!email) {
+        console.error("[TEAMS-SSO] No email claim found in token:", Object.keys(decoded));
+        return res.status(401).json({ message: "Token does not contain an email claim" });
+      }
+
+      console.log("[TEAMS-SSO] Token cryptographically verified for user:", email);
+
+      // Look up user in database
+      const [dbUser] = await db.select()
+        .from(users)
+        .where(sql`LOWER(${users.email}) = LOWER(${email})`);
+
+      if (!dbUser) {
+        console.error("[TEAMS-SSO] User not found:", email);
+        return res.status(403).json({ message: "User not found. Please ensure your account exists in Constellation." });
+      }
+
+      if (!dbUser.canLogin) {
+        return res.status(403).json({ message: "Your account is not enabled for login." });
+      }
+
+      // Resolve tenant
+      const { autoAssignTenantToUser } = await import("./tenant-context.js");
+      const tenantContext = await autoAssignTenantToUser(dbUser.id, dbUser.email || '');
+
+      if (!tenantContext) {
+        return res.status(403).json({ message: "Unable to determine your organization." });
+      }
+
+      // Create session
+      const crypto = await import("crypto");
+      const sessionId = crypto.randomUUID();
+
+      await createSession(sessionId, {
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        platformRole: dbUser.platformRole || null,
+        tenantId: tenantContext.tenantId,
+      }, {
+        provider: "teams-sso",
+        accessToken: token,
+        refreshToken: null,
+        tokenExpiry: decoded.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 3600 * 1000),
+      });
+
+      console.log("[TEAMS-SSO] Session created for:", dbUser.email);
+
+      res.json({
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        tenantId: tenantContext.tenantId,
+        sessionId,
+      });
+    } catch (error) {
+      console.error("[TEAMS-SSO] Error:", error);
+      res.status(500).json({ message: "Teams SSO authentication failed" });
+    }
+  });
+
   // Note: SSO status endpoint is handled in routes.ts to access isEntraConfigured
 
   console.log("✅ Authentication routes registered successfully!");

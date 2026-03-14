@@ -23,8 +23,19 @@ app.use(compression({
   }
 }));
 
-app.use(express.json({ limit: '50mb' })); // Increased limit for large JSON payloads (e.g., repair from JSON)
+app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/embed/') || req.path.startsWith('/embed')) {
+    res.setHeader(
+      'Content-Security-Policy',
+      "frame-ancestors https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft https://*.office.com https://*.microsoft365.com https://*.sharepoint.com 'self'"
+    );
+    res.removeHeader('X-Frame-Options');
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
