@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { useEmbed } from "@/hooks/use-embed";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatBusinessDate } from "@/lib/date-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -144,6 +145,7 @@ type RaiddFormData = z.infer<typeof raiddFormSchema>;
 
 export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabProps) {
   const { toast } = useToast();
+  const { isReadonly: embedReadonly } = useEmbed();
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -566,6 +568,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
               {summaryCounts.Dep > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">Dep:{summaryCounts.Dep}</Badge>}
             </div>
           </div>
+          {!embedReadonly && (
           <div className="flex gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -606,6 +609,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
               <Plus className="h-4 w-4 mr-1" /> New Entry
             </Button>
           </div>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 mt-3">
           <div className="flex gap-1 flex-wrap">
@@ -717,6 +721,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
                         <TableCell className="text-sm text-gray-600 dark:text-gray-400">{entry.ownerName || "-"}</TableCell>
                         <TableCell className="text-sm text-gray-600 dark:text-gray-400">{entry.dueDate ? formatBusinessDate(entry.dueDate, "MMM d") : "-"}</TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
+                          {!embedReadonly && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -778,6 +783,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          )}
                         </TableCell>
                       </TableRow>
                       {isExpanded && (

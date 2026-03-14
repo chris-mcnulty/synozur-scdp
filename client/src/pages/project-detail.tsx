@@ -378,16 +378,16 @@ export default function ProjectDetail() {
 
   // Auto-open edit dialog when ?edit=true is in the URL
   useEffect(() => {
-    if (shouldOpenEditDialog && analytics?.project && !isLoading) {
+    if (shouldOpenEditDialog && analytics?.project && !isLoading && !embedReadonly) {
       setProjectToEdit(analytics.project);
       setEditDialogOpen(true);
-      // Clear the edit param from URL
       const params = new URLSearchParams(searchString);
       params.delete('edit');
       const queryString = params.toString();
-      navigate(`/projects/${id}${queryString ? `?${queryString}` : ''}`, { replace: true });
+      const basePath = isEmbed ? `/embed/projects/${id}` : `/projects/${id}`;
+      navigate(`${basePath}${queryString ? `?${queryString}` : ''}`, { replace: true });
     }
-  }, [shouldOpenEditDialog, analytics?.project, isLoading, id, navigate, searchString]);
+  }, [shouldOpenEditDialog, analytics?.project, isLoading, id, navigate, searchString, embedReadonly, isEmbed]);
 
   // Check if user can manage time entries for this project (after analytics is loaded)
   const canManageProjectTimeEntries = user ? (
@@ -2542,6 +2542,7 @@ export default function ProjectDetail() {
                       Organize your project with epics, stages, workstreams, and milestones
                     </CardDescription>
                   </div>
+                  {!embedReadonly && (
                   <div className="flex gap-2">
                     <Button
                       onClick={() => handleOpenEpicDialog()}
@@ -2567,6 +2568,7 @@ export default function ProjectDetail() {
                       Add Workstream
                     </Button>
                   </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -2597,6 +2599,7 @@ export default function ProjectDetail() {
                                     <p className="text-sm text-muted-foreground mt-1">{epic.description}</p>
                                   )}
                                 </div>
+                                {!embedReadonly && (
                                 <div className="flex items-center gap-2">
                                   <Button
                                     size="sm"
@@ -2615,6 +2618,7 @@ export default function ProjectDetail() {
                                     <Trash2 className="w-3 h-3" />
                                   </Button>
                                 </div>
+                                )}
                               </div>
                               
                               {/* Stages for this Epic */}
@@ -2656,6 +2660,7 @@ export default function ProjectDetail() {
                                         <Badge variant={milestone.status === "completed" ? "default" : "secondary"}>
                                           {milestone.status}
                                         </Badge>
+                                        {!embedReadonly && (
                                         <Button
                                           size="sm"
                                           variant="ghost"
@@ -2664,6 +2669,7 @@ export default function ProjectDetail() {
                                         >
                                           <Edit className="w-3 h-3" />
                                         </Button>
+                                        )}
                                       </div>
                                     </div>
                                   ))}
@@ -2699,6 +2705,7 @@ export default function ProjectDetail() {
                                     <p className="text-xs text-muted-foreground mt-1">{workstream.description}</p>
                                   )}
                                 </div>
+                                {!embedReadonly && (
                                 <div className="flex items-center gap-2">
                                   <Button
                                     size="sm"
@@ -2717,6 +2724,7 @@ export default function ProjectDetail() {
                                     <Trash2 className="w-3 h-3" />
                                   </Button>
                                 </div>
+                                )}
                               </div>
                               
                               <div className="grid grid-cols-3 gap-2 text-xs">
@@ -2778,6 +2786,8 @@ export default function ProjectDetail() {
                                   <Badge variant={milestone.status === "completed" ? "default" : "secondary"}>
                                     {milestone.status}
                                   </Badge>
+                                  {!embedReadonly && (
+                                  <>
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -2794,6 +2804,8 @@ export default function ProjectDetail() {
                                   >
                                     <Trash2 className="w-3 h-3" />
                                   </Button>
+                                  </>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -2823,6 +2835,7 @@ export default function ProjectDetail() {
                   <CardTitle>Team Assignments</CardTitle>
                   <CardDescription>Resource allocations and task assignments for this project</CardDescription>
                 </div>
+                {!embedReadonly && (
                 <div className="flex gap-2">
                   <Button 
                     onClick={() => setShowImportDialog(true)}
@@ -2875,6 +2888,7 @@ export default function ProjectDetail() {
                     Export to CSV
                   </Button>
                 </div>
+                )}
               </CardHeader>
               <CardContent>
                 {/* Filters */}
@@ -3075,7 +3089,9 @@ export default function ProjectDetail() {
                           <TableCell>
                             <Select
                               value={allocation.status || 'open'}
+                              disabled={embedReadonly}
                               onValueChange={(value) => {
+                                if (embedReadonly) return;
                                 const updates: any = { status: value };
                                 if (value === 'in_progress' && !allocation.startedDate) {
                                   updates.startedDate = new Date().toISOString().split('T')[0];
@@ -3114,6 +3130,7 @@ export default function ProjectDetail() {
                               </SelectContent>
                             </Select>
                           </TableCell>
+                          {!embedReadonly && (
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Button
@@ -3137,6 +3154,7 @@ export default function ProjectDetail() {
                               </Button>
                             </div>
                           </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -3159,6 +3177,7 @@ export default function ProjectDetail() {
                       Mark members as "complete" when they've finished their involvement to stop time reminders.
                     </CardDescription>
                   </div>
+                  {!embedReadonly && (
                   <Button
                     size="sm"
                     onClick={() => setShowAddMemberDialog(true)}
@@ -3167,6 +3186,7 @@ export default function ProjectDetail() {
                     <UserPlus className="w-4 h-4 mr-1" />
                     Add Member
                   </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -3219,6 +3239,7 @@ export default function ProjectDetail() {
                           <TableCell>
                             {engagement.completedAt ? format(new Date(engagement.completedAt), "MMM d, yyyy") : '—'}
                           </TableCell>
+                          {!embedReadonly && (
                           <TableCell>
                             <div className="flex items-center gap-2">
                               {engagement.status === 'active' ? (
@@ -3260,6 +3281,7 @@ export default function ProjectDetail() {
                               </Button>
                             </div>
                           </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -3293,10 +3315,12 @@ export default function ProjectDetail() {
                     <CardTitle>Statements of Work</CardTitle>
                     <CardDescription>Manage project SOWs and change orders</CardDescription>
                   </div>
+                  {!embedReadonly && (
                   <Button onClick={() => handleOpenSowDialog()} data-testid="button-add-sow">
                     <Plus className="w-4 h-4 mr-2" />
                     Add SOW
                   </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -3448,6 +3472,7 @@ export default function ProjectDetail() {
                                     <Download className="w-3 h-3 mr-1" />
                                     {sow.documentName || "Download"}
                                   </Button>
+                                  {!embedReadonly && (
                                   <label htmlFor={`sow-upload-${sow.id}`}>
                                     <Button
                                       size="sm"
@@ -3472,8 +3497,10 @@ export default function ProjectDetail() {
                                       }}
                                     />
                                   </label>
+                                  )}
                                 </>
                               ) : (
+                                !embedReadonly && (
                                 <label htmlFor={`sow-upload-${sow.id}`}>
                                   <Button
                                     size="sm"
@@ -3498,9 +3525,11 @@ export default function ProjectDetail() {
                                     }}
                                   />
                                 </label>
+                                )
                               )}
                             </div>
                           </TableCell>
+                          {!embedReadonly && (
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
                               {sow.status === "draft" && (
@@ -3531,6 +3560,7 @@ export default function ProjectDetail() {
                               </Button>
                             </div>
                           </TableCell>
+                          )}
                         </TableRow>
                       ))
                     )}
@@ -3642,6 +3672,7 @@ export default function ProjectDetail() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Project Milestones</CardTitle>
+                  {!embedReadonly && (
                   <Button
                     onClick={() => handleOpenMilestoneDialog()}
                     data-testid="button-add-milestone"
@@ -3649,6 +3680,7 @@ export default function ProjectDetail() {
                     <Plus className="w-4 h-4 mr-2" />
                     Add Milestone
                   </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -3689,6 +3721,7 @@ export default function ProjectDetail() {
                           <TableCell>{milestone.endDate ? format(new Date(milestone.endDate), "MMM d, yyyy") : '-'}</TableCell>
                           <TableCell>{milestone.budgetHours || '-'}</TableCell>
                           <TableCell>{milestone.actualHours || '0'}</TableCell>
+                          {!embedReadonly && (
                           <TableCell>
                             <div className="flex items-center justify-end gap-2">
                               <Button
@@ -3711,6 +3744,7 @@ export default function ProjectDetail() {
                               </Button>
                             </div>
                           </TableCell>
+                          )}
                         </TableRow>
                       ))
                     )}
@@ -3726,6 +3760,7 @@ export default function ProjectDetail() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Project Workstreams</CardTitle>
+                  {!embedReadonly && (
                   <Button
                     onClick={() => handleOpenWorkstreamDialog()}
                     data-testid="button-add-workstream"
@@ -3733,6 +3768,7 @@ export default function ProjectDetail() {
                     <Plus className="w-4 h-4 mr-2" />
                     Add Workstream
                   </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -3770,6 +3806,7 @@ export default function ProjectDetail() {
                                 </span>
                               ) : '-'}
                             </TableCell>
+                            {!embedReadonly && (
                             <TableCell>
                               <div className="flex items-center justify-end gap-2">
                                 <Button
@@ -3792,6 +3829,7 @@ export default function ProjectDetail() {
                                 </Button>
                               </div>
                             </TableCell>
+                            )}
                           </TableRow>
                         );
                       })
@@ -3812,7 +3850,7 @@ export default function ProjectDetail() {
                       Financial schedule and invoicing milestones for this project
                     </CardDescription>
                   </div>
-                  {['admin', 'billing-admin', 'pm'].includes(user?.role || '') && (
+                  {!embedReadonly && ['admin', 'billing-admin', 'pm'].includes(user?.role || '') && (
                     <Button
                       onClick={() => {
                         setEditingPaymentMilestone(null);
@@ -3885,7 +3923,7 @@ export default function ProjectDetail() {
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-2">
-                                    {['admin', 'billing-admin', 'pm'].includes(user?.role || '') && (
+                                    {!embedReadonly && ['admin', 'billing-admin', 'pm'].includes(user?.role || '') && (
                                       <>
                                         <Button
                                           size="sm"
@@ -3927,7 +3965,7 @@ export default function ProjectDetail() {
                                         </Button>
                                       </>
                                     )}
-                                    {pm.invoiceStatus === 'planned' && ['admin', 'billing-admin'].includes(user?.role || '') && (
+                                    {!embedReadonly && pm.invoiceStatus === 'planned' && ['admin', 'billing-admin'].includes(user?.role || '') && (
                                       <Button
                                         size="sm"
                                         onClick={() => {
@@ -3962,14 +4000,14 @@ export default function ProjectDetail() {
               <TabsContent value="rate-overrides" className="space-y-6">
                 <ProjectRateOverridesSection
                   projectId={id || ''}
-                  isEditable={['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
+                  isEditable={!embedReadonly && ['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
                 />
               </TabsContent>
 
               <TabsContent value="retainer" className="space-y-6">
                 <ProjectRetainerManagement
                   projectId={id || ''}
-                  isEditable={['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
+                  isEditable={!embedReadonly && ['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
                   commercialScheme={project?.commercialScheme}
                 />
               </TabsContent>
@@ -3980,7 +4018,7 @@ export default function ProjectDetail() {
           {/* Invoices Tab */}
           <TabsContent value="invoices" className="space-y-6">
             {/* Quick Milestone Invoice Card */}
-            {paymentMilestones.filter((pm: any) => pm.invoiceStatus === 'planned').length > 0 && 
+            {!embedReadonly && paymentMilestones.filter((pm: any) => pm.invoiceStatus === 'planned').length > 0 && 
               ['admin', 'billing-admin'].includes(user?.role || '') && (
               <Card className="border-blue-200 bg-blue-50/30">
                 <CardHeader>

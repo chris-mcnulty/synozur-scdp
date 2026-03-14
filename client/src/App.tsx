@@ -55,6 +55,7 @@ import AiSettings from "@/pages/ai-settings";
 import EmbedProject from "@/pages/embed-project";
 import EmbedConfigure from "@/pages/embed-configure";
 import EmbedDashboard from "@/pages/embed-dashboard";
+import EmbedAuthPopup from "@/pages/embed-auth-popup";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -168,6 +169,7 @@ function Router() {
 
   return (
     <Switch>
+      <Route path="/embed/auth-popup" component={EmbedAuthPopup} />
       <Route path="/embed/configure" component={EmbedConfigure} />
       <Route path="/embed/dashboard" component={EmbedDashboard} />
       <Route path="/embed/projects/:id" component={EmbedProject} />

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useEmbed } from "@/hooks/use-embed";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ function StatusIcon({ status }: { status: string }) {
 
 export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesTabProps) {
   const { toast } = useToast();
+  const { isReadonly: embedReadonly } = useEmbed();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showExtractDialog, setShowExtractDialog] = useState(false);
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
@@ -236,6 +238,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
               <CardTitle className="text-lg font-semibold">Project Deliverables</CardTitle>
               <CardDescription>Track tangible outputs, documents, and work products</CardDescription>
             </div>
+            {!embedReadonly && (
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => { setCandidates([]); setSelectedCandidates(new Set()); setCandidateOwners({}); setShowExtractDialog(true); }}>
                 <Sparkles className="h-4 w-4 mr-1" /> Extract from Narrative
@@ -244,6 +247,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                 <Plus className="h-4 w-4 mr-1" /> Add Deliverable
               </Button>
             </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -309,6 +313,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                         <TableCell className="text-sm">
                           {d.deliveredDate ? new Date(d.deliveredDate + 'T00:00:00').toLocaleDateString() : "—"}
                         </TableCell>
+                        {!embedReadonly && (
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -331,6 +336,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}

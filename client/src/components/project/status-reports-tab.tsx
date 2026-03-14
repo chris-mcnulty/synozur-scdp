@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useEmbed } from "@/hooks/use-embed";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ const TYPE_ICONS: Record<string, typeof FileText> = {
 
 export function StatusReportsTab({ projectId }: StatusReportsTabProps) {
   const { toast } = useToast();
+  const { isReadonly: embedReadonly } = useEmbed();
   const [viewingReport, setViewingReport] = useState<(StatusReport & { generatorName?: string }) | null>(null);
 
   const { data: reports = [], isLoading } = useQuery<(StatusReport & { generatorName?: string })[]>({
@@ -170,17 +172,19 @@ export function StatusReportsTab({ projectId }: StatusReportsTabProps) {
                                   <Eye className="h-4 w-4 mr-2" /> View Report
                                 </DropdownMenuItem>
                               )}
-                              {report.status === "draft" && (
+                              {!embedReadonly && report.status === "draft" && (
                                 <DropdownMenuItem onClick={() => finalizeMutation.mutate(report.id)}>
                                   <CheckCircle2 className="h-4 w-4 mr-2" /> Mark as Final
                                 </DropdownMenuItem>
                               )}
+                              {!embedReadonly && (
                               <DropdownMenuItem
                                 className="text-red-600 dark:text-red-400"
                                 onClick={() => deleteMutation.mutate(report.id)}
                               >
                                 <Trash2 className="h-4 w-4 mr-2" /> Delete
                               </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

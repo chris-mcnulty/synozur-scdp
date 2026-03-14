@@ -40,6 +40,15 @@ export function EmbedProvider({ children, theme: themeProp, readonly: readonlyPr
   const [isAuthenticating, setIsAuthenticating] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    if (teamsTheme === "dark" || teamsTheme === "contrast") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }, [teamsTheme]);
+
   const initTeamsAuth = useCallback(async () => {
     setIsAuthenticating(true);
     setAuthError(null);
@@ -81,11 +90,12 @@ export function EmbedProvider({ children, theme: themeProp, readonly: readonlyPr
         const token = await teamsJs.authentication.getAuthToken();
         await exchangeToken(token);
         setIsAuthenticating(false);
-      } catch (silentErr: any) {
-        console.warn("[TEAMS-SSO] Silent token failed, trying interactive:", silentErr.message);
+      } catch (silentErr: unknown) {
+        const silentMsg = silentErr instanceof Error ? silentErr.message : String(silentErr);
+        console.warn("[TEAMS-SSO] Silent token failed, trying interactive:", silentMsg);
         try {
           const result = await teamsJs.authentication.authenticate({
-            url: `${window.location.origin}/api/auth/login?embed=true`,
+            url: `${window.location.origin}/embed/auth-popup`,
             width: 600,
             height: 535,
           });
@@ -93,9 +103,10 @@ export function EmbedProvider({ children, theme: themeProp, readonly: readonlyPr
             await exchangeToken(result);
           }
           setIsAuthenticating(false);
-        } catch (interactiveErr: any) {
-          console.error("[TEAMS-SSO] Interactive auth also failed:", interactiveErr);
-          setAuthError(interactiveErr.message || "Failed to authenticate with Teams");
+        } catch (interactiveErr: unknown) {
+          const interactiveMsg = interactiveErr instanceof Error ? interactiveErr.message : String(interactiveErr);
+          console.error("[TEAMS-SSO] Interactive auth also failed:", interactiveMsg);
+          setAuthError(interactiveMsg || "Failed to authenticate with Teams");
           setIsAuthenticating(false);
         }
       }
