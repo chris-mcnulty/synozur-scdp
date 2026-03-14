@@ -60,29 +60,44 @@ export function EmbedProvider({ children, theme: themeProp, readonly: readonlyPr
         setTeamsTheme(mapped);
       });
 
-      try {
-        const token = await teamsJs.authentication.getAuthToken();
+      const exchangeToken = async (token: string) => {
         const response = await fetch("/api/auth/teams-sso", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
         });
-
         if (!response.ok) {
           const data = await response.json();
           throw new Error(data.message || "SSO authentication failed");
         }
-
         const data = await response.json();
         if (data.sessionId) {
           setSessionId(data.sessionId);
           localStorage.setItem("sessionId", data.sessionId);
         }
+      };
+
+      try {
+        const token = await teamsJs.authentication.getAuthToken();
+        await exchangeToken(token);
         setIsAuthenticating(false);
-      } catch (tokenErr: any) {
-        console.error("[TEAMS-SSO] Token acquisition failed:", tokenErr);
-        setAuthError(tokenErr.message || "Failed to authenticate with Teams");
-        setIsAuthenticating(false);
+      } catch (silentErr: any) {
+        console.warn("[TEAMS-SSO] Silent token failed, trying interactive:", silentErr.message);
+        try {
+          const result = await teamsJs.authentication.authenticate({
+            url: `${window.location.origin}/api/auth/login?embed=true`,
+            width: 600,
+            height: 535,
+          });
+          if (result) {
+            await exchangeToken(result);
+          }
+          setIsAuthenticating(false);
+        } catch (interactiveErr: any) {
+          console.error("[TEAMS-SSO] Interactive auth also failed:", interactiveErr);
+          setAuthError(interactiveErr.message || "Failed to authenticate with Teams");
+          setIsAuthenticating(false);
+        }
       }
     } catch {
       setIsTeams(false);

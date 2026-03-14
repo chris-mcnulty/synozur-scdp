@@ -118,6 +118,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useEmbed } from "@/hooks/use-embed";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface ProjectAnalytics {
@@ -240,6 +241,7 @@ type AssignmentFormData = z.infer<typeof assignmentFormSchema>;
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
+  const { isEmbed, isReadonly: embedReadonly } = useEmbed();
   const [location, navigate] = useLocation();
   const searchString = useSearch();
   
@@ -271,7 +273,8 @@ export default function ProjectDetail() {
       params.set('tab', newTab);
     }
     const queryString = params.toString();
-    navigate(`/projects/${id}${queryString ? `?${queryString}` : ''}`, { replace: true });
+    const basePath = isEmbed ? `/embed/projects/${id}` : `/projects/${id}`;
+    navigate(`${basePath}${queryString ? `?${queryString}` : ''}`, { replace: true });
   };
   
   const [showSowDialog, setShowSowDialog] = useState(false);
@@ -1840,11 +1843,13 @@ export default function ProjectDetail() {
         <div className="flex items-start justify-between">
           <div className="space-y-1 flex-1">
             <div className="flex items-center gap-2">
-              <Link href="/projects">
-                <Button variant="ghost" size="sm" data-testid="button-back">
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-              </Link>
+              {!isEmbed && (
+                <Link href="/projects">
+                  <Button variant="ghost" size="sm" data-testid="button-back">
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                </Link>
+              )}
               <h2 className="text-3xl font-bold" data-testid="project-name">{project.name}</h2>
               <Badge variant={project.status === "active" ? "default" : "secondary"} data-testid="project-status">
                 {project.status}
@@ -1860,21 +1865,25 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowStatusReport(true)} data-testid="button-status-report">
-              <Sparkles className="w-4 h-4 mr-2" />
-              Status Report
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowExportDialog(true)} data-testid="button-export-report">
-              <Download className="w-4 h-4 mr-2" />
-              Export Data
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              setProjectToEdit(analytics.project);
-              setEditDialogOpen(true);
-            }} data-testid="button-edit-project">
-              <Edit className="w-4 h-4 mr-2" />
-              Edit Project
-            </Button>
+            {!embedReadonly && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setShowStatusReport(true)} data-testid="button-status-report">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Status Report
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setShowExportDialog(true)} data-testid="button-export-report">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Data
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  setProjectToEdit(analytics.project);
+                  setEditDialogOpen(true);
+                }} data-testid="button-edit-project">
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit Project
+                </Button>
+              </>
+            )}
             <Badge className={`${health.color} text-white`} data-testid="health-status">
               <health.icon className="w-3 h-3 mr-1" />
               {health.status}
@@ -2064,6 +2073,7 @@ export default function ProjectDetail() {
                 
                 <Separator />
                 
+                {!embedReadonly && (
                 <div className="space-y-2">
                   <Button 
                     variant="outline" 
@@ -2096,6 +2106,7 @@ export default function ProjectDetail() {
                     Export Data
                   </Button>
                 </div>
+                )}
               </CardContent>
             </Card>
           </div>
