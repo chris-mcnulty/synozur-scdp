@@ -50,7 +50,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import './themes/aurora.css';
+@import './themes/night-sky.css';
 
 @layer base {
   * {
