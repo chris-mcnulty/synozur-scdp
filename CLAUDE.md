@@ -62,5 +62,12 @@ A comprehensive consulting project lifecycle platform: estimation, resource allo
 - Open Exchange Rates API
 - HubSpot API
 
+## Planning & Documentation Files (READ BEFORE PLANNING WORK)
+When planning new features, enhancements, or prioritizing work, ALWAYS consult these files first:
+- **`docs/USER_GUIDE.md`** — The canonical user guide (v1.7). Describes all features, workflows, roles, and integrations from the user's perspective. Use this to understand how features should behave and to keep new work consistent with documented behavior. Also mirrored at `client/public/docs/USER_GUIDE.md` for in-app access. Detailed guides in `docs/user-guide/`.
+- **`backlog.md`** — The product backlog (v5.0). Lists completed items, in-progress work, and prioritized future items. Check this BEFORE starting any new feature to avoid duplicating work or conflicting with planned items. Update it when completing backlog items.
+- **`docs/ROADMAP.md`** — The strategic product roadmap. Covers vision, quarterly priorities (Q1/Q2 2026), medium-term goals (H2 2026), and long-term vision (2027+). Use this to understand strategic direction and ensure new work aligns with product priorities.
+- **`docs/CHANGELOG.md`** — Release history. Reference when tracking what shipped and when.
+
 ## Communication Style
 Simple, everyday language.
