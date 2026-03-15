@@ -1,3 +1,5 @@
+@import './themes/night-sky.css';
+
 @font-face {
   font-family: 'Avenir Next LT Pro';
   src: url('/fonts/AvenirNextLTPro-Light.ttf') format('truetype');
@@ -49,8 +51,6 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import './themes/night-sky.css';
 
 @layer base {
   * {
