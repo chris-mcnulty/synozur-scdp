@@ -493,7 +493,6 @@ export function registerAuthRoutes(app: Express): void {
           }
         );
       });
-
       const email = decoded.preferred_username || decoded.upn || decoded.email;
       if (!email) {
         console.error("[TEAMS-SSO] No email claim found in token:", Object.keys(decoded));
