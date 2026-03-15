@@ -44,7 +44,17 @@ import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
-const MOBILE_STORAGE_KEY = "constellation-mobile-nav-sections";
+const MOBILE_STORAGE_KEY = "constellation-mobile-nav-sections-v2";
+
+function MobileSubGroupLabel({ label }: { label: string }) {
+  return (
+    <div className="px-4 pt-3 pb-1 first:pt-1">
+      <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+        {label}
+      </span>
+    </div>
+  );
+}
 
 interface MobileNavItemProps {
   href: string;
@@ -121,10 +131,10 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
-  { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports", "/crm/deals"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-raidd"] },
+  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/reports", "/projects", "/clients", "/resource-management", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
-  { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
+  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
 
@@ -229,13 +239,17 @@ export function MobileNav() {
                 isOpen={!!openSections["my-workspace"]}
                 onToggle={handleToggle}
               >
-                <MobileNavItem href="/my-dashboard" icon={<Home />} label="Dashboard" onClick={handleNavClick} />
+                <MobileSubGroupLabel label="Daily Work" />
+                <MobileNavItem href="/my-dashboard" icon={<Home />} label="My Dashboard" onClick={handleNavClick} />
                 <MobileNavItem href="/my-assignments" icon={<Briefcase />} label="Assignments" onClick={handleNavClick} />
-                <MobileNavItem href="/time" icon={<Clock />} label="Time" onClick={handleNavClick} />
+                <MobileNavItem href="/my-projects" icon={<FolderOpen />} label="My Projects" onClick={handleNavClick} />
+                <MobileSubGroupLabel label="Time & Expenses" />
+                <MobileNavItem href="/time" icon={<Clock />} label="Timesheets" onClick={handleNavClick} />
                 <MobileNavItem href="/expenses" icon={<Receipt />} label="Expenses" onClick={handleNavClick} />
                 <MobileNavItem href="/expense-reports" icon={<FileText />} label="Expense Reports" onClick={handleNavClick} />
-                <MobileNavItem href="/my-reimbursements" icon={<Banknote />} label="Reimbursements" onClick={handleNavClick} />
-                <MobileNavItem href="/my-projects" icon={<FolderOpen />} label="Projects" onClick={handleNavClick} />
+                <MobileSubGroupLabel label="Tracking" />
+                <MobileNavItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" onClick={handleNavClick} />
+                <MobileNavItem href="/my-raidd" icon={<Shield />} label="My RAIDD" onClick={handleNavClick} />
               </MobileCollapsibleSection>
               
               {isManager && (
@@ -247,16 +261,19 @@ export function MobileNav() {
                     isOpen={!!openSections["portfolio"]}
                     onToggle={handleToggle}
                   >
-                    <MobileNavItem href="/" icon={<ChartLine />} label="Dashboard" onClick={handleNavClick} />
-                    <MobileNavItem href="/portfolio/timeline" icon={<GanttChart />} label="Timeline" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Overview" />
+                    <MobileNavItem href="/" icon={<ChartLine />} label="Portfolio Dashboard" onClick={handleNavClick} />
+                    <MobileNavItem href="/portfolio/timeline" icon={<GanttChart />} label="Portfolio Timeline" onClick={handleNavClick} />
                     {hasAnyRole(["admin", "pm", "portfolio-manager", "executive"]) && (
-                      <MobileNavItem href="/portfolio/raidd" icon={<ShieldAlert />} label="RAIDD" onClick={handleNavClick} />
+                      <MobileNavItem href="/portfolio/raidd" icon={<ShieldAlert />} label="Portfolio RAIDD" onClick={handleNavClick} />
                     )}
+                    <MobileNavItem href="/reports" icon={<BarChart3 />} label="Reports" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Management" />
                     <MobileNavItem href="/projects" icon={<FolderOpen />} label="All Projects" onClick={handleNavClick} />
                     <MobileNavItem href="/clients" icon={<Building2 />} label="Clients" onClick={handleNavClick} />
-                    <MobileNavItem href="/estimates" icon={<FileText />} label="Estimates" onClick={handleNavClick} />
                     <MobileNavItem href="/resource-management" icon={<Users />} label="Resources" onClick={handleNavClick} />
-                    <MobileNavItem href="/reports" icon={<BarChart3 />} label="Reports" onClick={handleNavClick} />
+                    <MobileNavItem href="/estimates" icon={<FileText />} label="Estimates" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Pipeline" />
                     <MobileNavItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm", "portfolio-manager"]} onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
@@ -271,12 +288,15 @@ export function MobileNav() {
                     isOpen={!!openSections["financial"]}
                     onToggle={handleToggle}
                   >
+                    <MobileSubGroupLabel label="Billing" />
                     <MobileNavItem href="/billing" icon={<DollarSign />} label="Billing & Invoicing" onClick={handleNavClick} />
                     <MobileNavItem href="/invoice-report" icon={<FileText />} label="Invoice Report" onClick={handleNavClick} />
                     <MobileNavItem href="/client-revenue-report" icon={<Building2 />} label="Client Revenue" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Expenses" />
                     <MobileNavItem href="/expense-management" icon={<CreditCard />} label="Expense Management" onClick={handleNavClick} />
                     <MobileNavItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" onClick={handleNavClick} />
-                    <MobileNavItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursements" onClick={handleNavClick} />
+                    <MobileNavItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursement Batches" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Rates" />
                     <MobileNavItem href="/rates" icon={<Calculator />} label="Rate Management" onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
@@ -291,16 +311,22 @@ export function MobileNav() {
                     isOpen={!!openSections["administration"]}
                     onToggle={handleToggle}
                   >
+                    <MobileSubGroupLabel label="Users & Organization" />
                     <MobileNavItem href="/users" icon={<Users />} label="User Management" onClick={handleNavClick} />
                     <MobileNavItem href="/organization-settings" icon={<Building2 />} label="Organization Settings" onClick={handleNavClick} />
                     {isPlatformAdmin && (
                       <MobileNavItem href="/system-settings" icon={<Settings />} label="System Settings" onClick={handleNavClick} />
                     )}
+                    <MobileSubGroupLabel label="System Tools" />
                     <MobileNavItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" onClick={handleNavClick} />
-                    <MobileNavItem href="/vocabulary" icon={<Languages />} label="Vocabulary" onClick={handleNavClick} />
                     <MobileNavItem href="/file-repository" icon={<Database />} label="File Repository" onClick={handleNavClick} />
                     <MobileNavItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" onClick={handleNavClick} />
+                    {isPlatformAdmin && (
+                      <MobileNavItem href="/vocabulary" icon={<Languages />} label="Vocabulary Catalog" onClick={handleNavClick} />
+                    )}
+                    <MobileSubGroupLabel label="AI Configuration" />
                     <MobileNavItem href="/ai-grounding" icon={<Brain />} label="AI Grounding" onClick={handleNavClick} />
+                    <MobileNavItem href="/ai-settings" icon={<Brain />} label="AI Settings" requiredRoles={["admin"]} onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
               )}
@@ -314,12 +340,14 @@ export function MobileNav() {
                     isOpen={!!openSections["platform"]}
                     onToggle={handleToggle}
                   >
+                    <MobileSubGroupLabel label="Tenant Management" />
                     <MobileNavItem href="/platform/tenants" icon={<Crown />} label="Tenants" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/service-plans" icon={<Package />} label="Service Plans" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/users" icon={<Shield />} label="Platform Users" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Reference Data" />
                     <MobileNavItem href="/platform/airports" icon={<Plane />} label="Airport Codes" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/oconus" icon={<Globe />} label="OCONUS Rates" onClick={handleNavClick} />
-                    <MobileNavItem href="/platform/grounding-docs" icon={<Brain />} label="AI Grounding" onClick={handleNavClick} />
+                    <MobileNavItem href="/platform/grounding-docs" icon={<Brain />} label="Platform AI Grounding" onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
               )}
