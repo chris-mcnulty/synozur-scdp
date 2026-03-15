@@ -41,7 +41,17 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-const STORAGE_KEY = "constellation-sidebar-sections";
+const STORAGE_KEY = "constellation-sidebar-sections-v2";
+
+function SubGroupLabel({ label }: { label: string }) {
+  return (
+    <div className="px-3 pt-3 pb-1 first:pt-1">
+      <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+        {label}
+      </span>
+    </div>
+  );
+}
 
 interface SidebarItemProps {
   href: string;
@@ -116,10 +126,10 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects", "/my-raidd"] },
-  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports", "/crm/deals"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-raidd"] },
+  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/reports", "/projects", "/clients", "/resource-management", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
-  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding", "/ai-settings"] },
+  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
 
@@ -196,14 +206,17 @@ export function Sidebar() {
               isOpen={!!openSections["my-workspace"]}
               onToggle={handleToggle}
             >
-              <SidebarItem href="/my-dashboard" icon={<Home />} label="Dashboard" />
+              <SubGroupLabel label="Daily Work" />
+              <SidebarItem href="/my-dashboard" icon={<Home />} label="My Dashboard" />
               <SidebarItem href="/my-assignments" icon={<Briefcase />} label="Assignments" />
-              <SidebarItem href="/time" icon={<Clock />} label="Time" />
+              <SidebarItem href="/my-projects" icon={<FolderOpen />} label="My Projects" />
+              <SubGroupLabel label="Time & Expenses" />
+              <SidebarItem href="/time" icon={<Clock />} label="Timesheets" />
               <SidebarItem href="/expenses" icon={<Receipt />} label="Expenses" />
               <SidebarItem href="/expense-reports" icon={<FileText />} label="Expense Reports" />
-              <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="Reimbursements" />
-              <SidebarItem href="/my-projects" icon={<FolderOpen />} label="Projects" />
-              <SidebarItem href="/my-raidd" icon={<Shield />} label="RAIDD" />
+              <SubGroupLabel label="Tracking" />
+              <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" />
+              <SidebarItem href="/my-raidd" icon={<Shield />} label="My RAIDD" />
             </CollapsibleSection>
             
             {isManager && (
@@ -213,16 +226,19 @@ export function Sidebar() {
                 isOpen={!!openSections["portfolio"]}
                 onToggle={handleToggle}
               >
-                <SidebarItem href="/" icon={<ChartLine />} label="Dashboard" />
-                <SidebarItem href="/portfolio/timeline" icon={<GanttChart />} label="Timeline" />
+                <SubGroupLabel label="Overview" />
+                <SidebarItem href="/" icon={<ChartLine />} label="Portfolio Dashboard" />
+                <SidebarItem href="/portfolio/timeline" icon={<GanttChart />} label="Portfolio Timeline" />
                 {hasAnyRole(["admin", "pm", "portfolio-manager", "executive"]) && (
-                  <SidebarItem href="/portfolio/raidd" icon={<ShieldAlert />} label="RAIDD" />
+                  <SidebarItem href="/portfolio/raidd" icon={<ShieldAlert />} label="Portfolio RAIDD" />
                 )}
+                <SidebarItem href="/reports" icon={<BarChart3 />} label="Reports" />
+                <SubGroupLabel label="Management" />
                 <SidebarItem href="/projects" icon={<FolderOpen />} label="All Projects" />
                 <SidebarItem href="/clients" icon={<Building2 />} label="Clients" />
-                <SidebarItem href="/estimates" icon={<FileText />} label="Estimates" />
                 <SidebarItem href="/resource-management" icon={<Users />} label="Resources" />
-                <SidebarItem href="/reports" icon={<BarChart3 />} label="Reports" />
+                <SidebarItem href="/estimates" icon={<FileText />} label="Estimates" />
+                <SubGroupLabel label="Pipeline" />
                 <SidebarItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm", "portfolio-manager"]} />
               </CollapsibleSection>
             )}
@@ -234,12 +250,15 @@ export function Sidebar() {
                 isOpen={!!openSections["financial"]}
                 onToggle={handleToggle}
               >
+                <SubGroupLabel label="Billing" />
                 <SidebarItem href="/billing" icon={<DollarSign />} label="Billing & Invoicing" />
                 <SidebarItem href="/invoice-report" icon={<FileText />} label="Invoice Report" />
                 <SidebarItem href="/client-revenue-report" icon={<Building2 />} label="Client Revenue" />
+                <SubGroupLabel label="Expenses" />
                 <SidebarItem href="/expense-management" icon={<CreditCard />} label="Expense Management" />
                 <SidebarItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" />
-                <SidebarItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursements" />
+                <SidebarItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursement Batches" />
+                <SubGroupLabel label="Rates" />
                 <SidebarItem href="/rates" icon={<Calculator />} label="Rate Management" />
               </CollapsibleSection>
             )}
@@ -251,17 +270,20 @@ export function Sidebar() {
                 isOpen={!!openSections["administration"]}
                 onToggle={handleToggle}
               >
+                <SubGroupLabel label="Users & Organization" />
                 <SidebarItem href="/users" icon={<Users />} label="User Management" />
                 <SidebarItem href="/organization-settings" icon={<Building2 />} label="Organization Settings" />
                 {isPlatformAdmin && (
                   <SidebarItem href="/system-settings" icon={<Settings />} label="System Settings" />
                 )}
+                <SubGroupLabel label="System Tools" />
                 <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
+                <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
+                <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />
                 {isPlatformAdmin && (
                   <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary Catalog" />
                 )}
-                <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
-                <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />
+                <SubGroupLabel label="AI Configuration" />
                 <SidebarItem href="/ai-grounding" icon={<Brain />} label="AI Grounding" />
                 <SidebarItem href="/ai-settings" icon={<Brain />} label="AI Settings" requiredRoles={["admin"]} />
               </CollapsibleSection>
@@ -274,12 +296,14 @@ export function Sidebar() {
                 isOpen={!!openSections["platform"]}
                 onToggle={handleToggle}
               >
+                <SubGroupLabel label="Tenant Management" />
                 <SidebarItem href="/platform/tenants" icon={<Crown />} label="Tenants" />
                 <SidebarItem href="/platform/service-plans" icon={<Package />} label="Service Plans" />
                 <SidebarItem href="/platform/users" icon={<Shield />} label="Platform Users" />
+                <SubGroupLabel label="Reference Data" />
                 <SidebarItem href="/platform/airports" icon={<Plane />} label="Airport Codes" />
                 <SidebarItem href="/platform/oconus" icon={<Globe />} label="OCONUS Rates" />
-                <SidebarItem href="/platform/grounding-docs" icon={<Brain />} label="AI Grounding" />
+                <SidebarItem href="/platform/grounding-docs" icon={<Brain />} label="Platform AI Grounding" />
               </CollapsibleSection>
             )}
           </nav>
