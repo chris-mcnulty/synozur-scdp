@@ -195,6 +195,34 @@ The following major features have been delivered and are live in production. See
 - Persistent status report storage — AI-generated text and PPTX reports saved to database with Status Reports tab in project UI
 - GPT-5.4 support via Azure AI Foundry with multi-provider AI architecture
 
+### ✅ Teams Custom Tab Integration
+**Completed:** March 2026
+- Constellation projects embed directly as Microsoft Teams tabs for in-context project access
+- Chromeless layout (no sidebar/header) when running inside Teams
+- Tab deep-linking via `?tab=` parameter for all project tabs
+- Read-only enforcement — all mutating actions hidden in embed mode
+- Teams SSO authentication flow with popup sign-in
+- Configurable tab setup page and embed dashboard
+- Three-app Entra ID architecture (SCDP-Content, MCP Connector, Copilot Agent)
+- Teams app manifest at `teams/manifest.json`
+
+### ✅ Navigation Reorganization
+**Completed:** March 2026
+- Sidebar navigation reorganized with sub-group labels for improved information architecture
+- My Workspace: Daily Work, Time & Expenses, Tracking sub-groups
+- Financial: Expenses, Rates sub-groups
+- Administration: Users & Organization, System Tools, AI Configuration sub-groups
+- Platform: Tenant Management, Reference Data sub-groups
+- Disambiguated menu labels (Dashboard → My Dashboard, Time → Timesheets, etc.)
+- Mobile navigation updated to match
+
+### ✅ Theme System
+**Completed:** March 2026
+- Modular CSS variable-based theme architecture
+- Three production themes: Aurora, Night Sky, Navigator's Chart
+- Theme files at `client/src/themes/`
+- Integration guide at `docs/SYNOZUR_THEME_GUIDE.md`
+
 ---
 
 ## Current Focus (Q1 2026)
@@ -396,11 +424,19 @@ The following major features have been delivered and are live in production. See
 
 ### 🤝 Priority: Microsoft 365 Teams Integration
 
-**Status:** 📋 Planned  
+**Status:** 🔶 Partially Complete  
 **Target Completion:** Q2 2026  
 **Value Proposition:** Seamless Microsoft 365 integration enhances team collaboration and centralizes project communications.
 
-#### Deliverables
+#### Delivered (v1.8)
+
+**Teams Custom Tab ✅ Complete**
+- Constellation projects embed as Microsoft Teams tabs with chromeless layout
+- Tab deep-linking, read-only enforcement, SSO authentication
+- Configurable tab setup and embed dashboard
+- Teams app manifest with three-app Entra architecture
+
+#### Remaining Deliverables
 
 **Microsoft Teams Automation**
 - Automatic Team creation for new clients (first project)

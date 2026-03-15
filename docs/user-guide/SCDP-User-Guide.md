@@ -1,8 +1,8 @@
 # SCDP User Guide
 ## Synozur Consulting Delivery Platform
 
-**Version:** 1.1  
-**Last Updated:** January 31, 2026  
+**Version:** 1.8  
+**Last Updated:** March 15, 2026  
 **Document Type:** Employee User Guide
 
 ---
@@ -92,39 +92,82 @@ After logging in, you'll see your personalized dashboard with:
 
 The navigation menu adapts based on your role and permissions:
 
-#### For All Users:
-- **Dashboard** - Your personalized home screen
-- **Time Tracking** - Log and manage your hours
-- **My Assignments** - View your project allocations
-- **Expenses** - Submit and track expense reports
+The sidebar is organized into collapsible sections with sub-group labels for easier navigation:
 
-#### For Project Managers:
+#### My Workspace (All Users):
+
+**Daily Work**
+- **My Dashboard** - Your personalized home screen
+- **Assignments** - View your project allocations
+- **My Projects** - Projects you are assigned to
+
+**Time & Expenses**
+- **Timesheets** - Log and manage your hours
+- **Expenses** - Submit and track expense reports
+- **Expense Reports** - View and manage expense report submissions
+
+**Tracking**
+- **My Reimbursements** - Track your reimbursement status
+- **My RAIDD** - View risks, issues, and action items assigned to you
+
+#### Portfolio (Project Managers, Portfolio Managers, Executives, Admins):
+- **Dashboard** - Portfolio-level overview
+- **Timeline** - Cross-project Gantt-style timeline
+- **RAIDD** - Cross-project risk and issue dashboard
+- **Reports** - Analytics and financial reporting
 - **Projects** - View and manage all projects
 - **Clients** - Client database and contacts
-- **Estimates** - Create and manage project estimates
 - **Resource Management** - Allocate team members to projects
+- **Estimates** - Create and manage project estimates
+- **Deals** - HubSpot CRM deal pipeline
 
-#### For Billing Administrators:
+#### Financial (Billing Admins, Admins):
 - **Billing** - Create invoices and manage payments
-- **Expense Approval** - Review submitted expenses
+- **Invoice Report** - Financial reporting and YoY comparison
+- **Client Revenue** - Revenue breakdown by client
+
+**Expenses**
+- **Expense Management** - Review and manage expenses
+- **Expense Approval** - Approve submitted expenses
 - **Reimbursement Batches** - Process employee reimbursements
 
-#### For Administrators:
-- **Users** - Manage user accounts and permissions
-- **Rates** - Configure billing rates and overrides
-- **System Settings** - Configure vocabulary and defaults
-- **SharePoint** - Configure document storage
+**Rates**
+- **Rate Management** - Configure billing and cost rates
 
-#### For Executives:
-- **Reports** - Access analytics and dashboards
-- **Expense Approval** - Review team expenses
-- **Cross-Project Resource** - Organization-wide resource view
+#### Administration (Admins):
+
+**Users & Organization**
+- **User Management** - Manage user accounts and permissions
+- **Organization Settings** - Configure company info and branding
+- **System Settings** - Platform-wide configuration
+
+**System Tools**
+- **Scheduled Jobs** - Monitor automated background tasks
+- **File Repository** - Manage document storage
+- **SharePoint Diagnostics** - SharePoint integration tools
+- **Vocabulary Catalog** - Customize platform terminology
+
+**AI Configuration**
+- **AI Grounding** - Configure AI knowledge base
+- **AI Settings** - AI model and feature settings
+
+#### Platform (Platform Admins only):
+
+**Tenant Management**
+- **Tenants** - Manage tenant organizations
+- **Service Plans** - Configure subscription plans
+- **Platform Users** - Cross-tenant user management
+
+**Reference Data**
+- **Airport Codes** - IATA airport code database
+- **OCONUS Rates** - International per diem rates
+- **Platform AI Grounding** - Platform-level AI configuration
 
 ---
 
 ## 2. User Roles & Permissions
 
-SCDP uses a five-tier role hierarchy. Each role inherits capabilities and adds new permissions.
+SCDP uses a six-tier role hierarchy. Each role inherits capabilities and adds new permissions.
 
 ### 2.1 Employee (Basic User)
 
@@ -3571,12 +3614,12 @@ pandoc SCDP-User-Guide.md -o SCDP-User-Guide.docx \
 ## Document Information
 
 **Document Title:** SCDP User Guide  
-**Version:** 1.0  
-**Date:** October 31, 2025  
+**Version:** 1.8  
+**Date:** March 15, 2026  
 **Author:** Synozur Consulting  
 **Platform:** Synozur Consulting Delivery Platform (SCDP)  
 **Audience:** All SCDP users (Employees, Project Managers, Billing Admins, Executives, Administrators)
 
 ---
 
-**© 2025 Synozur Consulting. All rights reserved.**
+**© 2026 Synozur Consulting. All rights reserved.**

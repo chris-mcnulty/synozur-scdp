@@ -42,7 +42,7 @@ interface TenantsResponse {
 export default function About() {
   // Fetch system settings for version information
   const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
-    queryKey: ["/api/system-settings"]
+    queryKey: ["/api/settings"]
   });
 
   // Fetch environment information from backend

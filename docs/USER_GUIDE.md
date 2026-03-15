@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.7 | Last Updated: March 10, 2026
+Version 1.8 | Last Updated: March 15, 2026
 
 ---
 
@@ -18,13 +18,15 @@ Version 1.7 | Last Updated: March 10, 2026
 8. [Portfolio Management](#portfolio-management)
 9. [User Roles](#user-roles)
 10. [Constellation Copilot Agent](#constellation-copilot-agent)
-11. [Common Workflows](#common-workflows)
-12. [Microsoft 365 Integration](#microsoft-365-integration)
-13. [HubSpot CRM Integration](#hubspot-crm-integration)
-14. [Settings & Preferences](#settings--preferences)
-15. [Tips & Best Practices](#tips--best-practices)
-16. [Troubleshooting](#troubleshooting)
-17. [Detailed Documentation](#detailed-documentation)
+11. [Microsoft Teams Custom Tab](#microsoft-teams-custom-tab)
+12. [Navigation](#navigation)
+13. [Common Workflows](#common-workflows)
+14. [Microsoft 365 Integration](#microsoft-365-integration)
+15. [HubSpot CRM Integration](#hubspot-crm-integration)
+16. [Settings & Preferences](#settings--preferences)
+17. [Tips & Best Practices](#tips--best-practices)
+18. [Troubleshooting](#troubleshooting)
+19. [Detailed Documentation](#detailed-documentation)
 
 ---
 
@@ -574,6 +576,63 @@ The agent uses a Power Platform Custom Connector to call Constellation's MCP ser
 - "Give me a status report summary for project X"
 
 **Note:** The Copilot Agent provides read-only access. To create, edit, or approve records, use the Constellation web application.
+
+---
+
+## Microsoft Teams Custom Tab
+
+Starting in version 1.8, Constellation projects can be embedded directly as **Microsoft Teams tabs**, providing in-context project access without leaving Teams.
+
+### Adding a Constellation Tab
+
+1. In your Teams channel, click the **+** button to add a tab
+2. Search for **Constellation** in the app catalog
+3. Select the project you want to display
+4. The project detail page appears as a tab in your channel
+
+### Teams Tab Experience
+
+When viewing Constellation inside Teams:
+- The interface is **chromeless** — no sidebar or top navigation, just the project content
+- All project tabs are available: Overview, Contracts, Delivery, Time, Invoices, RAIDD, Deliverables, Status Reports, and Analytics
+- The view is **read-only** — you can browse all project data but mutating actions (uploading SOWs, editing milestones, changing assignments, etc.) are hidden
+- To make changes, click the link to open the full Constellation web app
+
+### Authentication
+
+The Teams tab uses your Microsoft identity for single sign-on. The first time you access the tab, you may see a sign-in prompt — click the sign-in button and authenticate with your Microsoft 365 credentials. After that, your session persists.
+
+---
+
+## Navigation
+
+### Sidebar Organization
+
+The sidebar navigation is organized into collapsible sections with sub-group labels for easier browsing:
+
+**My Workspace** — your personal work area:
+- *Daily Work*: My Dashboard, Assignments, My Projects
+- *Time & Expenses*: Timesheets, Expenses, Expense Reports
+- *Tracking*: My Reimbursements, My RAIDD
+
+**Portfolio** — cross-project views (PMs, Portfolio Managers, Admins):
+- Dashboard, Timeline, RAIDD, Reports, Projects, Clients, Resource Management, Estimates, Deals
+
+**Financial** — billing and expense management:
+- Billing, Invoice Report, Client Revenue
+- *Expenses*: Expense Management, Expense Approval, Reimbursement Batches
+- *Rates*: Rate Management
+
+**Administration** — system configuration (Admins):
+- *Users & Organization*: User Management, Organization Settings, System Settings
+- *System Tools*: Scheduled Jobs, File Repository, SharePoint Diagnostics, Vocabulary Catalog
+- *AI Configuration*: AI Grounding, AI Settings
+
+**Platform** — multi-tenant management (Platform Admins):
+- *Tenant Management*: Tenants, Service Plans, Platform Users
+- *Reference Data*: Airport Codes, OCONUS Rates, Platform AI Grounding
+
+Each section shows or hides based on your role — you'll only see menu items you have access to.
 
 ---
 
@@ -1257,7 +1316,7 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: March 10, 2026*  
-*Version: 1.7*  
+*Last Updated: March 15, 2026*  
+*Version: 1.8*  
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

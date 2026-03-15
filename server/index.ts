@@ -407,6 +407,14 @@ async function updateVersionReleaseDate() {
       DO UPDATE SET 
         setting_value = EXCLUDED.setting_value
     `);
+
+    await db.execute(sql`
+      INSERT INTO system_settings (setting_key, setting_value, description, setting_type) 
+      VALUES ('VERSION_MAJOR', '1', 'Major version number for display purposes', 'string')
+      ON CONFLICT (setting_key) 
+      DO UPDATE SET 
+        setting_value = EXCLUDED.setting_value
+    `);
     
     log(`📅 Version release date updated to: ${currentDate}`);
   } catch (error: any) {

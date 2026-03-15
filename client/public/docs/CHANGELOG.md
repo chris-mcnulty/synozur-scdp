@@ -17,6 +17,57 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.8 (March 15, 2026)
+
+**Release Date:** March 15, 2026  
+**Status:** Production Release  
+**Codename:** Teams Integration & Navigation Refresh
+
+This release adds Microsoft Teams Custom Tab integration for embedded project access, a reorganized sidebar navigation with sub-group labels, a modular theme system with three visual themes, and comprehensive delivery tracking improvements.
+
+#### New Features
+
+**Microsoft Teams Custom Tab Integration**
+- Constellation projects now embed directly as **Microsoft Teams tabs** for seamless in-context access
+- Chromeless layout automatically applied when running inside Teams — no sidebar, header, or navigation chrome
+- Tab deep-linking via `?tab=` parameter supports all project tabs: overview, contracts, delivery, time, invoices, raidd, deliverables, status-reports, and analytics
+- **Read-only enforcement** in embed mode — all mutating actions (SOW upload/approve/edit/delete, epic/milestone/workstream buttons, team membership, assignment status, payment milestones, rate overrides, retainer management, Quick Milestone Invoice) are hidden
+- Teams SSO authentication flow with popup sign-in and token exchange
+- Configurable tab setup page for selecting which project to display
+- Embed dashboard route for static tab landing page
+- Teams app manifest with complete tab configuration at `teams/manifest.json`
+- Three-app Entra ID architecture: SCDP-Content (Teams SSO), MCP Connector, Copilot Studio Agent
+
+**Sidebar Navigation Reorganization**
+- Navigation menu reorganized with **sub-group labels** for improved information architecture
+- My Workspace section now grouped into: **Daily Work** (My Dashboard, Assignments, My Projects), **Time & Expenses** (Timesheets, Expenses, Expense Reports), and **Tracking** (My Reimbursements, My RAIDD)
+- Financial section grouped into billing items, **Expenses** sub-group, and **Rates** sub-group
+- Administration section grouped into **Users & Organization**, **System Tools**, and **AI Configuration**
+- Platform section grouped into **Tenant Management** and **Reference Data**
+- Disambiguated menu labels: "Dashboard" → "My Dashboard", "Time" → "Timesheets", "Projects" → "My Projects", "RAIDD" → "My RAIDD", "Reimbursements" → "My Reimbursements" / "Reimbursement Batches", "AI Grounding" → "Platform AI Grounding"
+- Mobile navigation updated to match desktop reorganization
+
+**Theme System**
+- Modular theme architecture with CSS variable-based theming
+- Three production themes available: **Aurora** (warm earth tones with lighthouse motif), **Night Sky** (deep navy with star navigation), **Navigator's Chart** (clean professional teal)
+- Theme CSS files at `client/src/themes/` with documented variable mapping
+- Theme integration guide at `docs/SYNOZUR_THEME_GUIDE.md`
+- Foundation for planned tenant-level theme selection (Task #18)
+
+#### Bug Fixes
+- Fixed CSS import order — theme `@import` must precede `@tailwind` directives in index.css
+- Fixed font application — Avenir Next LT Pro now consistently applied across all themes
+- Restored schema definitions lost during Task #17 merge (M365 columns on tenants, sharepointSiteUrl on clients, clientTeams/projectChannels/teamsFolderTemplates tables)
+- Fixed post-merge setup script to use `--force` flag preventing interactive prompts
+
+#### Documentation
+- Updated user guide, admin guide, changelog, and roadmap for v1.8
+- Added Teams Custom Tab setup documentation
+- Added theme system integration guide
+- Updated navigation documentation to reflect sub-group labels and renamed items
+
+---
+
 ### Version 1.7 (March 10, 2026)
 
 **Release Date:** March 10, 2026  

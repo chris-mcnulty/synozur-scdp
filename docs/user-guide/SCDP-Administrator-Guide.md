@@ -1,8 +1,8 @@
 # SCDP Administrator Guide
 ## Synozur Consulting Delivery Platform
 
-**Version:** 1.1  
-**Last Updated:** January 31, 2026  
+**Version:** 1.8  
+**Last Updated:** March 15, 2026  
 **Document Type:** System Administrator Reference  
 **Audience:** SCDP System Administrators
 

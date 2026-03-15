@@ -1,11 +1,37 @@
 # Constellation Product Backlog
 
-**Last Updated**: March 10, 2026
-**Version**: 5.0 — Added Copilot Agent, Persistent Status Reports, MCP Server v1.7 items.
+**Last Updated**: March 15, 2026
+**Version**: 6.0 — Added Teams Custom Tab, Navigation Reorganization, Theme System (v1.8).
 
 ---
 
-## ✅ Recently Completed (March 10, 2026)
+## ✅ Recently Completed (March 15, 2026)
+
+### Teams Custom Tab Integration ✅ COMPLETE
+- [x] Embed routes (`/embed/*`) with chromeless layout
+- [x] Tab deep-linking via `?tab=` for all project tabs
+- [x] Read-only enforcement — all mutating actions hidden in embed mode
+- [x] Teams SSO authentication with popup sign-in flow
+- [x] Configurable tab setup page and embed dashboard
+- [x] Teams app manifest (`teams/manifest.json`)
+- [x] Three-app Entra architecture (SCDP-Content, MCP Connector, Copilot Agent)
+
+### Navigation Reorganization ✅ COMPLETE
+- [x] Sub-group labels in sidebar (Daily Work, Time & Expenses, Tracking, etc.)
+- [x] Disambiguated menu labels (Dashboard → My Dashboard, Time → Timesheets, etc.)
+- [x] Mobile navigation updated to match desktop
+- [x] Reordered items for better workflow grouping
+
+### Theme System ✅ COMPLETE
+- [x] Modular CSS variable-based theme architecture
+- [x] Aurora theme (warm earth tones)
+- [x] Night Sky theme (deep navy with star navigation)
+- [x] Navigator's Chart theme (clean professional teal)
+- [x] Theme integration guide at `docs/SYNOZUR_THEME_GUIDE.md`
+
+---
+
+## ✅ Previously Completed (March 10, 2026)
 
 ### MCP Server & Constellation Copilot Agent ✅ COMPLETE
 - [x] MCP server with ~24 read-only GET endpoints under `/mcp`
