@@ -168,6 +168,10 @@ export const tenants = pgTable("tenants", {
   speMigrationStatus: text("spe_migration_status"),
   speMigrationStartedAt: timestamp("spe_migration_started_at"),
 
+  // M365 Teams Integration Settings
+  m365AutoProvisionTeams: boolean("m365_auto_provision_teams").default(false),
+  m365DefaultTeamTemplate: text("m365_default_team_template").default("standard"),
+
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
@@ -315,6 +319,7 @@ export const clients = pgTable("clients", {
   // Microsoft Teams integration
   microsoftTeamId: text("microsoft_team_id"), // Azure Group/Team ID for this client
   microsoftTeamName: text("microsoft_team_name"), // Display name of the Team
+  sharepointSiteUrl: text("sharepoint_site_url"), // Team's SharePoint site URL for status report publishing
   // Payment terms override (e.g., "Net 30", "Net 45", "Due Upon Receipt")
   paymentTerms: text("payment_terms"), // Overrides tenant default when set
   // Payment method for invoices (e.g., "ACH Transfer", "Check", "Wire Transfer")
@@ -420,6 +425,90 @@ export const organizationVocabulary = pgTable("organization_vocabulary", {
   tenantIdx: index("idx_organization_vocabulary_tenant").on(table.tenantId),
   uniqueTenant: uniqueIndex("unique_organization_vocabulary_tenant").on(table.tenantId), // Enforce one record per tenant
 }));
+
+// Client-to-Team mapping
+export const clientTeams = pgTable("client_teams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  teamId: varchar("team_id", { length: 255 }).notNull(),
+  teamName: text("team_name"),
+  teamWebUrl: text("team_web_url"),
+  sharepointSiteId: varchar("sharepoint_site_id", { length: 255 }),
+  sharepointSiteUrl: text("sharepoint_site_url"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  clientIdx: index("idx_client_teams_client").on(table.clientId),
+  tenantIdx: index("idx_client_teams_tenant").on(table.tenantId),
+  uniqueClient: unique("uq_client_teams_client").on(table.clientId),
+}));
+
+export const insertClientTeamSchema = createInsertSchema(clientTeams).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertClientTeam = z.infer<typeof insertClientTeamSchema>;
+export type ClientTeam = typeof clientTeams.$inferSelect;
+
+// Project-to-Channel mapping
+export const projectChannels = pgTable("project_channels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  channelId: varchar("channel_id", { length: 255 }).notNull(),
+  channelName: text("channel_name"),
+  channelWebUrl: text("channel_web_url"),
+  plannerPlanId: varchar("planner_plan_id", { length: 255 }),
+  plannerPlanWebUrl: text("planner_plan_web_url"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  projectIdx: index("idx_project_channels_project").on(table.projectId),
+  tenantIdx: index("idx_project_channels_tenant").on(table.tenantId),
+  uniqueProject: unique("uq_project_channels_project").on(table.projectId),
+}));
+
+export const insertProjectChannelSchema = createInsertSchema(projectChannels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProjectChannel = z.infer<typeof insertProjectChannelSchema>;
+export type ProjectChannel = typeof projectChannels.$inferSelect;
+
+// Teams folder templates - configurable folder structure for new channels
+export const teamsFolderTemplates = pgTable("teams_folder_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  folderName: text("folder_name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  scope: text("scope").notNull().default("system"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantScopeIdx: index("idx_folder_templates_tenant_scope").on(table.tenantId, table.scope),
+}));
+
+export const insertTeamsFolderTemplateSchema = createInsertSchema(teamsFolderTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertTeamsFolderTemplate = z.infer<typeof insertTeamsFolderTemplateSchema>;
+export type TeamsFolderTemplate = typeof teamsFolderTemplates.$inferSelect;
+
+export const DEFAULT_FOLDER_TEMPLATES = [
+  "Deliverables",
+  "SOW & Contracts",
+  "Meeting Notes",
+  "Status Reports",
+  "Working Documents",
+];
 
 // Projects
 export const projects = pgTable("projects", {
