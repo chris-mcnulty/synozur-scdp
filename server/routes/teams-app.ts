@@ -58,9 +58,6 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
 
     if (overrides.domain) {
       const domain = overrides.domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
-      template.developer.websiteUrl = `https://${domain}`;
-      template.developer.privacyUrl = `https://${domain}/about`;
-      template.developer.termsOfUseUrl = `https://${domain}/about`;
       template.configurableTabs[0].configurationUrl = `https://${domain}/embed/configure`;
       template.staticTabs[0].contentUrl = `https://${domain}/embed/dashboard`;
       template.validDomains = [domain];
