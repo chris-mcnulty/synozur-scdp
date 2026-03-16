@@ -5880,6 +5880,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
+      if (req.user?.tenantId && project.tenantId && project.tenantId !== req.user.tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const baseline = await storage.createProjectBaseline({
         projectId,
