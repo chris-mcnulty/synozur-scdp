@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function ConfigureContent() {
-  const { isAuthenticating, authError } = useEmbed();
+  const { isAuthenticating, authError, retryAuth } = useEmbed();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -57,6 +57,27 @@ function ConfigureContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <Card>
+          <CardHeader>
+            <CardTitle>Sign In Required</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Unable to authenticate with Teams SSO. Please ensure your Constellation account is linked to your Microsoft account, then try again.
+            </p>
+            <p className="text-xs text-muted-foreground">{authError}</p>
+            <Button onClick={retryAuth} variant="outline" size="sm" className="mt-4">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
