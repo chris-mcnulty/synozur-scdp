@@ -50,6 +50,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, and expense receipt inclusion.
 - **Expense Approval Workflow**: Comprehensive system with finite state machine and role-based access.
 - **Resource Management**: Dual List/Timeline views, capacity planning, and conflict detection.
+- **Assignment Baselines**: Snapshot current assignments as frozen baselines for future slip/impact analysis. Baselines are excluded from all normal views, status reports, dashboards, and Planner sync. Created automatically during "Remove and Replace" imports (opt-in) or manually via "Save Baseline" button. Multiple baselines can accumulate per project. Schema: `project_baselines` table + `isBaseline`/`baselineId` fields on `project_allocations`. API: `GET/POST /api/projects/:projectId/baselines`, `GET /api/projects/:projectId/baselines/:baselineId/allocations`.
 - **Microsoft Planner Integration**: Bidirectional sync of project assignments with Microsoft Planner tasks.
 - **Scheduled Jobs**: Background system for reminders and Planner sync.
 - **Financial Reporting**: Comprehensive reports on revenue, cost, profit, and margins.

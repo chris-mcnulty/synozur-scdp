@@ -2,7 +2,7 @@ import {
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateShares, clientRateOverrides, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
-  projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectEngagements,
+  projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectBaselines, projectEngagements,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes, oconusPerDiemRates,
   vocabularyCatalog, organizationVocabulary, tenants, tenantUsers,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
@@ -30,6 +30,7 @@ import {
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectAllocation, type InsertProjectAllocation,
+  type ProjectBaseline, type InsertProjectBaseline,
   type ProjectEngagement, type InsertProjectEngagement,
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
@@ -277,6 +278,12 @@ export interface IStorage {
   deleteProjectAllocation(id: string): Promise<void>;
   bulkDeleteProjectAllocations(ids: string[]): Promise<void>;
   bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]>;
+  
+  // Project Baselines
+  createProjectBaseline(baseline: InsertProjectBaseline): Promise<ProjectBaseline>;
+  getProjectBaselines(projectId: string): Promise<ProjectBaseline[]>;
+  getBaselineAllocations(baselineId: string): Promise<any[]>;
+  baselineProjectAllocations(projectId: string, baselineId: string): Promise<number>;
   
   // Project Engagements
   getProjectEngagements(projectId: string): Promise<ProjectEngagement[]>;
@@ -5817,7 +5824,7 @@ export class DatabaseStorage implements IStorage {
         stage: projectStages,
       })
       .from(projectAllocations)
-      .where(eq(projectAllocations.projectId, projectId))
+      .where(and(eq(projectAllocations.projectId, projectId), eq(projectAllocations.isBaseline, false)))
       .leftJoin(users, eq(projectAllocations.personId, users.id))
       .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
       .leftJoin(projectActivities, eq(projectAllocations.projectActivityId, projectActivities.id))
@@ -5850,7 +5857,7 @@ export class DatabaseStorage implements IStorage {
         workstream: projectWorkstreams,
       })
       .from(projectAllocations)
-      .where(eq(projectAllocations.personId, userId))
+      .where(and(eq(projectAllocations.personId, userId), eq(projectAllocations.isBaseline, false)))
       .leftJoin(projects, eq(projectAllocations.projectId, projects.id))
       .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
       .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
@@ -5917,6 +5924,70 @@ export class DatabaseStorage implements IStorage {
       }
       return results;
     });
+  }
+
+  // Project Baselines
+  async createProjectBaseline(baseline: InsertProjectBaseline): Promise<ProjectBaseline> {
+    const [created] = await db.insert(projectBaselines).values(baseline).returning();
+    return created;
+  }
+
+  async getProjectBaselines(projectId: string): Promise<ProjectBaseline[]> {
+    return await db
+      .select()
+      .from(projectBaselines)
+      .where(eq(projectBaselines.projectId, projectId))
+      .orderBy(desc(projectBaselines.createdAt));
+  }
+
+  async getBaselineAllocations(baselineId: string): Promise<any[]> {
+    const allocations = await db
+      .select({
+        allocation: projectAllocations,
+        person: users,
+        role: roles,
+        workstream: projectWorkstreams,
+        epic: projectEpics,
+        stage: projectStages,
+      })
+      .from(projectAllocations)
+      .where(and(eq(projectAllocations.baselineId, baselineId), eq(projectAllocations.isBaseline, true)))
+      .leftJoin(users, eq(projectAllocations.personId, users.id))
+      .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+      .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+      .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
+      .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
+      .orderBy(projectAllocations.plannedStartDate);
+
+    return allocations.map(row => ({
+      ...row.allocation,
+      person: row.person,
+      role: row.role,
+      workstream: row.workstream,
+      epic: row.epic,
+      stage: row.stage,
+    }));
+  }
+
+  async baselineProjectAllocations(projectId: string, baselineId: string): Promise<number> {
+    const liveAllocations = await db
+      .select()
+      .from(projectAllocations)
+      .where(and(eq(projectAllocations.projectId, projectId), eq(projectAllocations.isBaseline, false)));
+
+    if (liveAllocations.length === 0) return 0;
+
+    let count = 0;
+    for (const alloc of liveAllocations) {
+      const { id, createdAt, ...rest } = alloc;
+      await db.insert(projectAllocations).values({
+        ...rest,
+        isBaseline: true,
+        baselineId: baselineId,
+      });
+      count++;
+    }
+    return count;
   }
 
   // Project Engagements

@@ -97,6 +97,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -106,7 +107,7 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles
+  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
@@ -302,7 +303,10 @@ export default function ProjectDetail() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
+  const [importSaveBaseline, setImportSaveBaseline] = useState(true);
   const [importError, setImportError] = useState<string | null>(null);
+  const [showBaselineDialog, setShowBaselineDialog] = useState(false);
+  const [baselineName, setBaselineName] = useState("");
   const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   
@@ -1190,7 +1194,7 @@ export default function ProjectDetail() {
   });
 
   const importAssignmentsMutation = useMutation({
-    mutationFn: async (data: { file: string; removeExisting: boolean }) => {
+    mutationFn: async (data: { file: string; removeExisting: boolean; saveBaseline?: boolean }) => {
       return apiRequest(`/api/projects/${id}/allocations/import`, {
         method: "POST",
         body: JSON.stringify(data)
@@ -1201,17 +1205,20 @@ export default function ProjectDetail() {
       setShowImportDialog(false);
       setImportFile(null);
       setImportError(null);
+      setImportSaveBaseline(true);
+      
+      const baselineMsg = result.baselineSaved ? ` Baseline saved (${result.baselineCount} assignments).` : '';
       
       if (result.errors && result.errors.length > 0) {
         toast({
           title: "Import Completed with Errors",
-          description: `Created ${result.itemsCreated} assignments. ${result.errors.length} errors occurred.`,
+          description: `Created ${result.itemsCreated} assignments. ${result.errors.length} errors occurred.${baselineMsg}`,
           variant: "destructive"
         });
       } else {
         toast({
           title: "Success",
-          description: `Successfully imported ${result.itemsCreated} assignments`
+          description: `Successfully imported ${result.itemsCreated} assignments.${baselineMsg}`
         });
       }
     },
@@ -1220,6 +1227,30 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to import assignments",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const createBaselineMutation = useMutation({
+    mutationFn: async (data: { name: string }) => {
+      return apiRequest(`/api/projects/${id}/baselines`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: (result: any) => {
+      setShowBaselineDialog(false);
+      setBaselineName("");
+      toast({
+        title: "Baseline Saved",
+        description: `Baseline "${result.name}" created with ${result.allocationCount} assignments`
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create baseline",
         variant: "destructive"
       });
     }
@@ -1458,7 +1489,8 @@ export default function ProjectDetail() {
 
       importAssignmentsMutation.mutate({
         file: base64,
-        removeExisting: importMode === "replace"
+        removeExisting: importMode === "replace",
+        saveBaseline: importMode === "replace" && importSaveBaseline
       });
     };
     reader.readAsDataURL(importFile);
@@ -2844,6 +2876,17 @@ export default function ProjectDetail() {
                   >
                     <Upload className="h-4 w-4 mr-2" />
                     Import
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      setBaselineName(`Baseline ${new Date().toISOString().split('T')[0]}`);
+                      setShowBaselineDialog(true);
+                    }}
+                    variant="outline"
+                    data-testid="button-save-baseline"
+                  >
+                    <Bookmark className="h-4 w-4 mr-2" />
+                    Save Baseline
                   </Button>
                   <Button 
                     onClick={() => setShowAssignmentDialog(true)}
@@ -5765,6 +5808,19 @@ export default function ProjectDetail() {
                 </Select>
               </div>
 
+              {importMode === "replace" && (
+                <div className="flex items-center space-x-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <Checkbox
+                    id="saveBaseline"
+                    checked={importSaveBaseline}
+                    onCheckedChange={(checked) => setImportSaveBaseline(checked === true)}
+                  />
+                  <label htmlFor="saveBaseline" className="text-sm cursor-pointer">
+                    Save current assignments as a baseline before replacing
+                  </label>
+                </div>
+              )}
+
               {importError && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
@@ -5799,6 +5855,39 @@ export default function ProjectDetail() {
                 data-testid="button-confirm-import"
               >
                 {importAssignmentsMutation.isPending ? "Importing..." : "Import Assignments"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showBaselineDialog} onOpenChange={setShowBaselineDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Save Baseline</DialogTitle>
+              <DialogDescription>
+                Create a snapshot of the current assignments as a baseline for future comparison and slip analysis.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="baselineName">Baseline Name</Label>
+                <Input
+                  id="baselineName"
+                  value={baselineName}
+                  onChange={(e) => setBaselineName(e.target.value)}
+                  placeholder="e.g., Sprint 1 Plan"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowBaselineDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createBaselineMutation.mutate({ name: baselineName })}
+                disabled={!baselineName.trim() || createBaselineMutation.isPending}
+              >
+                {createBaselineMutation.isPending ? "Saving..." : "Save Baseline"}
               </Button>
             </DialogFooter>
           </DialogContent>

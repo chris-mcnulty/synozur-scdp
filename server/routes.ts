@@ -4,7 +4,7 @@ import * as osNode from "os";
 import { execSync } from "child_process";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels, projectBaselines } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull, desc, or } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -2751,7 +2751,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
         .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id));
 
-      const conditions: any[] = [];
+      const conditions: any[] = [eq(projectAllocations.isBaseline, false)];
 
       // TENANT SCOPING - filter projects to current tenant
       if (tenantId) {
@@ -5550,6 +5550,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       // Parse base64 file data
       const fileData = req.body.file;
       const removeExisting = req.body.removeExisting === true;
+      const saveBaseline = req.body.saveBaseline === true;
       const buffer = Buffer.from(fileData, "base64");
       
       const workbook = xlsx.read(buffer, { type: "buffer" });
@@ -5585,8 +5586,21 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const epicNameToId = new Map(epics.map((e: any) => [e.name.toLowerCase(), e.id]));
       const stageNameToId = new Map(stages.map((s: any) => [s.name.toLowerCase(), s.id]));
       
-      // If removeExisting is true, delete existing allocations in bulk
+      let baselineSaved = false;
+      let baselineCount = 0;
+      
       if (removeExisting) {
+        if (saveBaseline) {
+          const baseline = await storage.createProjectBaseline({
+            projectId,
+            tenantId: req.user?.tenantId || null,
+            name: `Pre-import baseline ${new Date().toISOString().split('T')[0]}`,
+            createdBy: req.user?.id || null,
+          });
+          baselineCount = await storage.baselineProjectAllocations(projectId, baseline.id);
+          baselineSaved = true;
+        }
+        
         const existingAllocations = await storage.getProjectAllocations(projectId);
         const allocationIds = existingAllocations.map((a: any) => a.id);
         await storage.bulkDeleteProjectAllocations(allocationIds);
@@ -5828,12 +5842,61 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         itemsCreated: createdAllocations.length,
         membershipsCreated: engagementsCreated.size,
         mode: removeExisting ? "replaced" : "appended",
+        baselineSaved,
+        baselineCount,
         errors: errors.length > 0 ? errors : undefined
       });
       
     } catch (error: any) {
       console.error("[ERROR] Import allocations error:", error);
       res.status(500).json({ message: "Failed to import allocations file" });
+    }
+  });
+
+  // Project Baselines
+  app.get("/api/projects/:projectId/baselines", requireAuth, async (req, res) => {
+    try {
+      const baselines = await storage.getProjectBaselines(req.params.projectId);
+      res.json(baselines);
+    } catch (error: any) {
+      console.error("[ERROR] Get baselines:", error);
+      res.status(500).json({ message: "Failed to get baselines" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/baselines", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const { name } = req.body;
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const baseline = await storage.createProjectBaseline({
+        projectId,
+        tenantId: req.user?.tenantId || null,
+        name: name || `Baseline ${new Date().toISOString().split('T')[0]}`,
+        createdBy: req.user?.id || null,
+      });
+
+      const count = await storage.baselineProjectAllocations(projectId, baseline.id);
+
+      res.json({ ...baseline, allocationCount: count });
+    } catch (error: any) {
+      console.error("[ERROR] Create baseline:", error);
+      res.status(500).json({ message: "Failed to create baseline" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/baselines/:baselineId/allocations", requireAuth, async (req, res) => {
+    try {
+      const allocations = await storage.getBaselineAllocations(req.params.baselineId);
+      res.json(allocations);
+    } catch (error: any) {
+      console.error("[ERROR] Get baseline allocations:", error);
+      res.status(500).json({ message: "Failed to get baseline allocations" });
     }
   });
 
@@ -5880,10 +5943,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
         .orderBy(desc(projectAllocations.plannedStartDate));
       
-      // Apply tenant filter if user has a tenant
       const allocations = tenantId 
-        ? await query.where(eq(projects.tenantId, tenantId))
-        : await query;
+        ? await query.where(and(eq(projects.tenantId, tenantId), eq(projectAllocations.isBaseline, false)))
+        : await query.where(eq(projectAllocations.isBaseline, false));
       
       console.log(`[API] /api/assignments - Found ${allocations.length} allocations`);
       
@@ -5984,8 +6046,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id));
 
-      // Build filter conditions
-      const conditions: any[] = [eq(projectAllocations.personId, userId)];
+      const conditions: any[] = [eq(projectAllocations.personId, userId), eq(projectAllocations.isBaseline, false)];
 
       // Date range filter
       if (startDate && endDate) {
@@ -6275,7 +6336,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
         .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id));
       
-      const conditions: any[] = [];
+      const conditions: any[] = [eq(projectAllocations.isBaseline, false)];
       
       // Add tenant filter
       if (tenantId) {

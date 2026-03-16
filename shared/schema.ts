@@ -853,10 +853,21 @@ export const projectAllocations = pgTable("project_allocations", {
   status: text("status").notNull().default('open'), // open, in_progress, completed, cancelled
   startedDate: date("started_date"), // Automatically set when status → in_progress
   completedDate: date("completed_date"), // Automatically set when status → completed
+  isBaseline: boolean("is_baseline").notNull().default(false),
+  baselineId: varchar("baseline_id"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_project_allocations_tenant").on(table.tenantId),
 }));
+
+export const projectBaselines = pgTable("project_baselines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdBy: varchar("created_by").references(() => users.id),
+});
 
 // Project Engagements - tracks a user's overall engagement status on a project
 // Separate from individual allocations - tracks whether user is actively working on project
@@ -1813,6 +1824,11 @@ export const insertProjectAllocationSchema = createInsertSchema(projectAllocatio
   rackRate: z.union([z.string(), z.number()]).transform(val => String(val)),
 });
 
+export const insertProjectBaselineSchema = createInsertSchema(projectBaselines).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertProjectEngagementSchema = createInsertSchema(projectEngagements).omit({
   id: true,
   createdAt: true,
@@ -2097,6 +2113,8 @@ export type ProjectMilestone = typeof projectMilestones.$inferSelect;
 export type InsertProjectMilestone = z.infer<typeof insertProjectMilestoneSchema>;
 export type ProjectAllocation = typeof projectAllocations.$inferSelect;
 export type InsertProjectAllocation = z.infer<typeof insertProjectAllocationSchema>;
+export type ProjectBaseline = typeof projectBaselines.$inferSelect;
+export type InsertProjectBaseline = z.infer<typeof insertProjectBaselineSchema>;
 export type ProjectEngagement = typeof projectEngagements.$inferSelect;
 export type InsertProjectEngagement = z.infer<typeof insertProjectEngagementSchema>;
 export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;
