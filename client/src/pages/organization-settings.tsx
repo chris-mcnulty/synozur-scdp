@@ -640,15 +640,28 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
       }
     } catch (error: any) {
       let message = error.message;
+      let isPermissionError = false;
       try {
         const parsed = JSON.parse(error.message);
         message = parsed.hint || parsed.message || message;
+        if (parsed.message?.includes("Insufficient permissions") || parsed.hint?.includes("AppCatalog")) {
+          isPermissionError = true;
+        }
       } catch {}
-      toast({
-        title: "Publish failed",
-        description: message || "Could not publish to Teams catalog. Try downloading and uploading manually.",
-        variant: "destructive",
-      });
+
+      if (isPermissionError || message?.includes("Insufficient permissions") || message?.includes("403") || message?.includes("401")) {
+        toast({
+          title: "Publish failed",
+          description: "The Entra app registration needs the AppCatalog.ReadWrite.All permission with admin consent. Use the Download button instead and upload the ZIP to Teams Admin Center manually.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Publish failed",
+          description: message || "Could not publish to Teams catalog. Use the Download button instead.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsPublishing(false);
     }
