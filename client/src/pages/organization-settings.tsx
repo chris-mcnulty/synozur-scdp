@@ -649,10 +649,21 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
         }
       } catch {}
 
+      let detail = "";
+      try {
+        const parsed = JSON.parse(error.message);
+        if (parsed.detail) detail = parsed.detail;
+        if (parsed.message?.includes("Insufficient permissions") || parsed.hint?.includes("AppCatalog")) {
+          isPermissionError = true;
+        }
+      } catch {}
+
       if (isPermissionError || message?.includes("Insufficient permissions") || message?.includes("403") || message?.includes("401")) {
         toast({
           title: "Publish failed",
-          description: "The Entra app registration needs the AppCatalog.ReadWrite.All permission with admin consent. Use the Download button instead and upload the ZIP to Teams Admin Center manually.",
+          description: detail
+            ? `${detail}. Ensure AppCatalog.ReadWrite.All is granted with admin consent. You can also use the Download button and upload the ZIP manually.`
+            : "The Entra app registration needs the AppCatalog.ReadWrite.All permission with admin consent. Use the Download button instead and upload the ZIP to Teams Admin Center manually.",
           variant: "destructive",
         });
       } else {

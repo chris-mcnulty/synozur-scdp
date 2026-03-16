@@ -203,7 +203,7 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
 
       const token = await graphClient.authenticate();
 
-      const publishResponse = await fetch(
+      let publishResponse = await fetch(
         "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?requiresReview=false",
         {
           method: "POST",
@@ -214,6 +214,23 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
           body: zipBuffer,
         }
       );
+
+      if (publishResponse.status === 403) {
+        const errorBody = await publishResponse.text();
+        console.log("[TEAMS-APP] Direct publish (requiresReview=false) returned 403, retrying with requiresReview=true:", errorBody);
+
+        publishResponse = await fetch(
+          "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/zip",
+            },
+            body: zipBuffer,
+          }
+        );
+      }
 
       if (publishResponse.status === 409) {
         const updateAppId = manifest.id || (manifest as any).webApplicationInfo?.id;
@@ -268,18 +285,26 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
       if (!publishResponse.ok) {
         const errorText = await publishResponse.text();
         const statusCode = publishResponse.status;
+        console.error("[TEAMS-APP] Publish failed:", statusCode, errorText);
+
+        let graphError = "";
+        try {
+          const parsed = JSON.parse(errorText);
+          graphError = parsed?.error?.message || parsed?.message || "";
+        } catch {}
 
         if (statusCode === 401 || statusCode === 403) {
           return res.status(statusCode).json({
             success: false,
             message: "Insufficient permissions to publish to the Teams app catalog.",
-            hint: "The Entra app registration needs the AppCatalog.ReadWrite.All application permission with admin consent. You can download the package instead and upload it manually.",
+            detail: graphError || errorText,
+            hint: "Ensure the Entra app registration has AppCatalog.ReadWrite.All (application permission) with admin consent granted. If you just added it, wait a few minutes for propagation. You can also download the package and upload it manually via Teams Admin Center.",
           });
         }
 
         return res.status(statusCode).json({
           success: false,
-          message: `Failed to publish: ${errorText}`,
+          message: `Failed to publish: ${graphError || errorText}`,
         });
       }
 
