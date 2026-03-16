@@ -5807,7 +5807,7 @@ export class DatabaseStorage implements IStorage {
     const [allocation] = await db
       .select()
       .from(projectAllocations)
-      .where(eq(projectAllocations.id, id));
+      .where(and(eq(projectAllocations.id, id), eq(projectAllocations.isBaseline, false)));
     return allocation;
   }
 
