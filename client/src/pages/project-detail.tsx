@@ -5846,6 +5846,7 @@ export default function ProjectDetail() {
                 setShowImportDialog(false);
                 setImportFile(null);
                 setImportError(null);
+                setImportSaveBaseline(true);
               }}>
                 Cancel
               </Button>
