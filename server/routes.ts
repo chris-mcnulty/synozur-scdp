@@ -23,6 +23,7 @@ import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
 import { registerTenantStorageRoutes } from "./routes/tenant-storage.js";
 import { registerMcpRoutes } from "./routes/mcp.js";
+import { registerTeamsAppRoutes } from "./routes/teams-app.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
 import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
 import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO, insertAiConfigurationSchema } from "@shared/schema";
@@ -292,6 +293,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   registerMcpRoutes(app, {
+    requireAuth,
+    requireRole,
+  });
+
+  registerTeamsAppRoutes(app, {
     requireAuth,
     requireRole,
   });

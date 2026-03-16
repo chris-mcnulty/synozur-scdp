@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout/layout";
@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen } from "lucide-react";
-import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
+import { MicrosoftPlannerIcon, MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
 interface TenantInfo {
@@ -553,6 +553,206 @@ function HubSpotIntegrationCard() {
               </Button>
             </div>
           </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSettings | null }) {
+  const { toast } = useToast();
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [customAppName, setCustomAppName] = useState("");
+  const [customDomain, setCustomDomain] = useState("");
+  const [customEntraAppId, setCustomEntraAppId] = useState("");
+
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      const params = new URLSearchParams();
+      if (customAppName.trim()) params.set("appName", customAppName.trim());
+      if (customDomain.trim()) params.set("domain", customDomain.trim());
+      if (customEntraAppId.trim()) params.set("entraAppId", customEntraAppId.trim());
+
+      const url = `/api/teams/app-package${params.toString() ? `?${params.toString()}` : ""}`;
+      const headers: Record<string, string> = {};
+      const sid = getSessionId();
+      if (sid) headers["x-session-id"] = sid;
+      const response = await fetch(url, { credentials: "include", headers });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to download");
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      const disposition = response.headers.get("Content-Disposition");
+      const filenameMatch = disposition?.match(/filename="(.+)"/);
+      a.download = filenameMatch?.[1] || "constellation-teams-app.zip";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+
+      toast({ title: "Download started", description: "Teams app package downloaded. Upload it to your Teams Admin Center to install." });
+    } catch (error: any) {
+      toast({ title: "Download failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    setIsPublishing(true);
+    try {
+      const body: Record<string, string> = {};
+      if (customAppName.trim()) body.appName = customAppName.trim();
+      if (customDomain.trim()) body.domain = customDomain.trim();
+      if (customEntraAppId.trim()) body.entraAppId = customEntraAppId.trim();
+
+      const result = await apiRequest("/api/teams/publish", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      if (result.success) {
+        toast({
+          title: result.action === "updated" ? "App updated" : "App published",
+          description: result.message,
+        });
+      } else {
+        toast({
+          title: "Publish failed",
+          description: result.hint || result.message,
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      let message = error.message;
+      try {
+        const parsed = JSON.parse(error.message);
+        message = parsed.hint || parsed.message || message;
+      } catch {}
+      toast({
+        title: "Publish failed",
+        description: message || "Could not publish to Teams catalog. Try downloading and uploading manually.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  return (
+    <Card className="border-2">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MicrosoftTeamsIcon className="h-5 w-5" />
+            Microsoft Teams — App Package
+          </CardTitle>
+          <Badge variant="outline" className="text-green-600 border-green-600">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Available
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Install the Constellation app in your Microsoft Teams environment. This enables project dashboard tabs in Teams channels and a personal "My Projects" tab for every user.
+        </p>
+
+        <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+          <div className="flex items-start gap-2">
+            <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+            <div className="text-sm text-blue-800 dark:text-blue-300 space-y-2">
+              <p><strong>How it works:</strong></p>
+              <ol className="list-decimal list-inside space-y-1 ml-1">
+                <li>Download the app package or publish it directly to your Teams catalog</li>
+                <li>If downloading: upload the ZIP to your <strong>Teams Admin Center → Manage apps → Upload new app</strong></li>
+                <li>Once installed, users can add Constellation tabs to any Teams channel</li>
+                <li>Future channel auto-provisioning will add tabs automatically when projects are created</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            {showAdvanced ? "Hide" : "Show"} advanced options
+          </button>
+
+          {showAdvanced && (
+            <div className="space-y-3 rounded-lg border p-4 bg-muted/30">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">App Display Name</label>
+                <Input
+                  placeholder="Constellation"
+                  value={customAppName}
+                  onChange={(e) => setCustomAppName(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Override the app name shown in Teams. Leave blank for "Constellation".
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Platform Domain</label>
+                <Input
+                  placeholder="constellation.synozur.com"
+                  value={customDomain}
+                  onChange={(e) => setCustomDomain(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The domain where Constellation is hosted. Leave blank for the default.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Entra App ID (Client ID)</label>
+                <Input
+                  placeholder="198aa0a6-d2ed-4f35-b41b-b6f6778a30d6"
+                  value={customEntraAppId}
+                  onChange={(e) => setCustomEntraAppId(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The SCDP-Content Entra application registration ID for Teams SSO. Leave blank for the default.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button onClick={handleDownload} disabled={isDownloading} size="sm">
+            {isDownloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
+            Download App Package
+          </Button>
+          {tenantSettings?.adminConsentGranted && (
+            <Button onClick={handlePublish} disabled={isPublishing} variant="outline" size="sm">
+              {isPublishing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+              Publish to Teams Catalog
+            </Button>
+          )}
+        </div>
+
+        {!tenantSettings?.adminConsentGranted && (
+          <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                <strong>Direct publish unavailable:</strong> Admin consent has not been granted for this organization's Entra integration. You can still download the package and upload it manually to the Teams Admin Center.
+              </p>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -2454,6 +2654,8 @@ export default function OrganizationSettings() {
                   </Card>
 
                   <HubSpotIntegrationCard />
+
+                  <TeamsAppPackageCard tenantSettings={tenantSettings} />
 
                   <Card className="border border-dashed">
                     <CardHeader className="pb-3">
