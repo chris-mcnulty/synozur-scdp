@@ -640,30 +640,25 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
       }
     } catch (error: any) {
       let message = error.message;
+      let hint = "";
+      let detail = "";
       let isPermissionError = false;
       try {
         const parsed = JSON.parse(error.message);
-        message = parsed.hint || parsed.message || message;
-        if (parsed.message?.includes("Insufficient permissions") || parsed.hint?.includes("AppCatalog")) {
-          isPermissionError = true;
-        }
-      } catch {}
-
-      let detail = "";
-      try {
-        const parsed = JSON.parse(error.message);
-        if (parsed.detail) detail = parsed.detail;
-        if (parsed.message?.includes("Insufficient permissions") || parsed.hint?.includes("AppCatalog")) {
+        message = parsed.message || message;
+        hint = parsed.hint || "";
+        detail = parsed.detail || "";
+        if (message?.includes("Insufficient permissions") || hint?.includes("AppCatalog") || hint?.includes("Teams Administrator")) {
           isPermissionError = true;
         }
       } catch {}
 
       if (isPermissionError || message?.includes("Insufficient permissions") || message?.includes("403") || message?.includes("401")) {
         toast({
-          title: "Publish failed",
-          description: detail
-            ? `${detail}. Ensure AppCatalog.ReadWrite.All is granted with admin consent. You can also use the Download button and upload the ZIP manually.`
-            : "The Entra app registration needs the AppCatalog.ReadWrite.All permission with admin consent. Use the Download button instead and upload the ZIP to Teams Admin Center manually.",
+          title: "Publish failed — permissions issue",
+          description: hint
+            ? hint
+            : "Add AppCatalog.ReadWrite.All as a Delegated permission (with admin consent) in Entra ID, then log out and back in via SSO. Or download the ZIP and upload manually.",
           variant: "destructive",
         });
       } else {

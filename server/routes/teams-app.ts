@@ -201,7 +201,41 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
         archive.finalize();
       });
 
-      const token = await graphClient.authenticate();
+      const user = req.user as any;
+      const userRefreshToken = user?.ssoRefreshToken;
+
+      let token: string;
+      let tokenSource: string;
+
+      if (userRefreshToken) {
+        try {
+          const { msalInstance: delegatedMsal } = await import("../auth/entra-config.js");
+          if (delegatedMsal) {
+            const result = await delegatedMsal.acquireTokenByRefreshToken({
+              refreshToken: userRefreshToken,
+              scopes: ["AppCatalog.ReadWrite.All"],
+              forceRefresh: true,
+            });
+            if (result?.accessToken) {
+              token = result.accessToken;
+              tokenSource = "delegated (OBO with AppCatalog scope)";
+              console.log(`[TEAMS-APP] Acquired delegated token with AppCatalog scope`);
+            } else {
+              throw new Error("No access token returned");
+            }
+          } else {
+            throw new Error("MSAL not configured");
+          }
+        } catch (oboErr: any) {
+          console.log(`[TEAMS-APP] Delegated token acquisition failed: ${oboErr?.message || oboErr}, falling back to app-only token`);
+          token = await graphClient.authenticate();
+          tokenSource = "application (service principal)";
+        }
+      } else {
+        token = await graphClient.authenticate();
+        tokenSource = "application (service principal)";
+      }
+      console.log(`[TEAMS-APP] Publishing with ${tokenSource} token`);
 
       let publishResponse = await fetch(
         "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?requiresReview=false",
@@ -217,7 +251,7 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
 
       if (publishResponse.status === 403) {
         const errorBody = await publishResponse.text();
-        console.log("[TEAMS-APP] Direct publish (requiresReview=false) returned 403, retrying with requiresReview=true:", errorBody);
+        console.log(`[TEAMS-APP] Publish (requiresReview=false) returned 403 with ${tokenSource}:`, errorBody);
 
         publishResponse = await fetch(
           "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps",
@@ -225,6 +259,25 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
+              "Content-Type": "application/zip",
+            },
+            body: zipBuffer,
+          }
+        );
+      }
+
+      if (publishResponse.status === 403 && tokenSource.includes("delegated")) {
+        const errorBody2 = await publishResponse.text();
+        console.log("[TEAMS-APP] Delegated token failed, falling back to app-only token:", errorBody2);
+        const appToken = await graphClient.authenticate();
+        tokenSource = "application (fallback)";
+
+        publishResponse = await fetch(
+          "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${appToken}`,
               "Content-Type": "application/zip",
             },
             body: zipBuffer,
@@ -298,7 +351,7 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
             success: false,
             message: "Insufficient permissions to publish to the Teams app catalog.",
             detail: graphError || errorText,
-            hint: "Ensure the Entra app registration has AppCatalog.ReadWrite.All (application permission) with admin consent granted. If you just added it, wait a few minutes for propagation. You can also download the package and upload it manually via Teams Admin Center.",
+            hint: "To fix: In Entra ID, add AppCatalog.ReadWrite.All as a DELEGATED permission (in addition to Application), grant admin consent, then log out and log back in via SSO. Alternatively, assign the 'Teams Administrator' Azure AD role to the app's service principal under Enterprise Applications. You can also download the package and upload it manually via Teams Admin Center.",
           });
         }
 
