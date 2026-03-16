@@ -570,7 +570,6 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
 
   const { data: catalogStatus } = useQuery<{ published: boolean; teamsAppId: string | null; displayName: string | null }>({
     queryKey: ["/api/teams/catalog-status"],
-    enabled: !!tenantSettings?.adminConsentGranted,
   });
 
   const handleDownload = async () => {
@@ -785,24 +784,11 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
             {isDownloading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
             Download App Package
           </Button>
-          {tenantSettings?.adminConsentGranted && (
-            <Button onClick={handlePublish} disabled={isPublishing} variant="outline" size="sm">
-              {isPublishing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
-              Publish to Teams Catalog
-            </Button>
-          )}
+          <Button onClick={handlePublish} disabled={isPublishing} variant="outline" size="sm">
+            {isPublishing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+            Publish to Teams Catalog
+          </Button>
         </div>
-
-        {!tenantSettings?.adminConsentGranted && (
-          <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                <strong>Direct publish unavailable:</strong> Admin consent has not been granted for this organization's Entra integration. You can still download the package and upload it manually to the Teams Admin Center.
-              </p>
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
