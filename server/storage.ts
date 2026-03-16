@@ -5887,18 +5887,19 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(projectAllocations)
       .set(updates)
-      .where(eq(projectAllocations.id, id))
+      .where(and(eq(projectAllocations.id, id), eq(projectAllocations.isBaseline, false)))
       .returning();
+    if (!updated) throw new Error("Allocation not found or is a baseline record");
     return updated;
   }
   
   async deleteProjectAllocation(id: string): Promise<void> {
-    await db.delete(projectAllocations).where(eq(projectAllocations.id, id));
+    await db.delete(projectAllocations).where(and(eq(projectAllocations.id, id), eq(projectAllocations.isBaseline, false)));
   }
 
   async bulkDeleteProjectAllocations(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
-    await db.delete(projectAllocations).where(inArray(projectAllocations.id, ids));
+    await db.delete(projectAllocations).where(and(inArray(projectAllocations.id, ids), eq(projectAllocations.isBaseline, false)));
   }
   
   async bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]> {
@@ -5906,13 +5907,12 @@ export class DatabaseStorage implements IStorage {
       const results = [];
       for (const update of updates) {
         if (update.id) {
-          // Update existing allocation
           const [updated] = await tx
             .update(projectAllocations)
             .set(update)
-            .where(eq(projectAllocations.id, update.id))
+            .where(and(eq(projectAllocations.id, update.id), eq(projectAllocations.isBaseline, false)))
             .returning();
-          results.push(updated);
+          if (updated) results.push(updated);
         } else {
           // Create new allocation
           const [created] = await tx
@@ -6111,6 +6111,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(projectAllocations.projectId, projectId),
         eq(projectAllocations.personId, userId),
+        eq(projectAllocations.isBaseline, false),
         inArray(projectAllocations.status, ['open', 'in_progress'])
       ))
       .limit(1);

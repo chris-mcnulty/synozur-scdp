@@ -5892,6 +5892,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
   app.get("/api/projects/:projectId/baselines/:baselineId/allocations", requireAuth, async (req, res) => {
     try {
+      const baselines = await storage.getProjectBaselines(req.params.projectId);
+      const baseline = baselines.find(b => b.id === req.params.baselineId);
+      if (!baseline) {
+        return res.status(404).json({ message: "Baseline not found for this project" });
+      }
+      if (req.user?.tenantId && baseline.tenantId && baseline.tenantId !== req.user.tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const allocations = await storage.getBaselineAllocations(req.params.baselineId);
       res.json(allocations);
     } catch (error: any) {
