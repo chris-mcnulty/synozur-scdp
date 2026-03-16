@@ -188,7 +188,7 @@ export function PlannerConnectionDialog({
     mutationFn: async ({ teamId, displayName, description }: { teamId: string; displayName: string; description?: string }) => {
       return await apiRequest(`/api/planner/teams/${teamId}/channels`, {
         method: "POST",
-        body: JSON.stringify({ displayName, description, membershipType: 'standard' })
+        body: JSON.stringify({ displayName, description, membershipType: 'standard', projectId, projectName })
       });
     },
     onSuccess: (channel) => {

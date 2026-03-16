@@ -4,7 +4,7 @@ import * as osNode from "os";
 import { execSync } from "child_process";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull, desc, or } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -3765,7 +3765,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/planner/teams/:teamId/channels", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
-      const { displayName, description, membershipType } = req.body;
+      const { displayName, description, membershipType, projectId, projectName, autoAddConstellationTab } = req.body;
       
       if (!displayName) {
         return res.status(400).json({ message: "Channel name is required" });
@@ -3776,11 +3776,114 @@ export async function registerRoutes(app: Express): Promise<void> {
         description,
         membershipType
       });
+
+      let constellationTab = null;
+      if (projectId && autoAddConstellationTab !== false) {
+        try {
+          constellationTab = await plannerService.createConstellationTab(
+            req.params.teamId,
+            channel.id,
+            {
+              projectId,
+              projectName: projectName || displayName,
+            }
+          );
+        } catch (tabError: any) {
+          console.warn("[PLANNER] Constellation tab auto-add failed (non-blocking):", tabError.message);
+        }
+      }
+
+      if (projectId) {
+        try {
+          const user = req.user as any;
+          const tenantId = user?.activeTenantId;
+
+          if (tenantId) {
+            const [project] = await db.select({ id: projects.id })
+              .from(projects)
+              .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+              .limit(1);
+
+            if (!project) {
+              console.warn(`[PLANNER] Project ${projectId} not found in tenant ${tenantId}, skipping channel link`);
+            } else {
+              await db.insert(projectChannels).values({
+                projectId,
+                tenantId,
+                channelId: channel.id,
+                channelName: channel.displayName,
+                channelWebUrl: channel.webUrl || null,
+                createdBy: user?.id || null,
+              }).onConflictDoUpdate({
+                target: projectChannels.projectId,
+                set: {
+                  channelId: channel.id,
+                  channelName: channel.displayName,
+                  channelWebUrl: channel.webUrl || null,
+                  updatedAt: sql`now()`,
+                },
+              });
+              console.log(`[PLANNER] Linked channel ${channel.id} to project ${projectId}`);
+            }
+          }
+        } catch (linkError: any) {
+          console.warn("[PLANNER] Failed to persist project-channel link (non-blocking):", linkError.message);
+        }
+      }
       
-      res.json(channel);
+      res.json({
+        ...channel,
+        constellationTabAdded: !!constellationTab,
+        constellationTabId: constellationTab?.id || null,
+      });
     } catch (error: any) {
       console.error("[PLANNER] Failed to create channel:", error);
       res.status(500).json({ message: "Failed to create channel: " + error.message });
+    }
+  });
+
+  // Add a Constellation project tab to an existing channel
+  app.post("/api/planner/teams/:teamId/channels/:channelId/constellation-tab", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { projectId, projectName } = req.body;
+
+      if (!projectId || !projectName) {
+        return res.status(400).json({ message: "projectId and projectName are required" });
+      }
+
+      const tab = await plannerService.createConstellationTab(
+        req.params.teamId,
+        req.params.channelId,
+        { projectId, projectName }
+      );
+
+      if (!tab) {
+        return res.status(422).json({
+          message: "Could not add Constellation tab. The app may not be published to your Teams catalog yet. Go to Organization Settings > Integrations to publish it first.",
+        });
+      }
+
+      res.json({ success: true, tabId: tab.id, message: "Constellation project tab added to channel" });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to add Constellation tab:", error);
+      res.status(500).json({ message: "Failed to add Constellation tab: " + error.message });
+    }
+  });
+
+  // Check if Constellation app is available in the tenant's Teams catalog
+  app.get("/api/teams/catalog-status", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const app = await plannerService.findConstellationAppInCatalog();
+      res.json({
+        published: !!app,
+        teamsAppId: app?.teamsAppId || null,
+        displayName: app?.displayName || null,
+      });
+    } catch (error: any) {
+      console.error("[TEAMS] Failed to check catalog status:", error);
+      res.status(500).json({ message: "Failed to check catalog status" });
     }
   });
 

@@ -568,6 +568,11 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
   const [customDomain, setCustomDomain] = useState("");
   const [customEntraAppId, setCustomEntraAppId] = useState("");
 
+  const { data: catalogStatus } = useQuery<{ published: boolean; teamsAppId: string | null; displayName: string | null }>({
+    queryKey: ["/api/teams/catalog-status"],
+    enabled: !!tenantSettings?.adminConsentGranted,
+  });
+
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
@@ -621,6 +626,7 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
       });
 
       if (result.success) {
+        queryClient.invalidateQueries({ queryKey: ["/api/teams/catalog-status"] });
         toast({
           title: result.action === "updated" ? "App updated" : "App published",
           description: result.message,
@@ -681,6 +687,30 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
             </div>
           </div>
         </div>
+
+        {catalogStatus && (
+          <div className={`rounded-lg border p-3 ${catalogStatus.published
+            ? "bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800"
+            : "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"}`}>
+            <div className="flex items-start gap-2">
+              {catalogStatus.published ? (
+                <>
+                  <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                  <p className="text-sm text-green-800 dark:text-green-300">
+                    <strong>Published to Teams catalog</strong> — Constellation tabs will be automatically added when project channels are created. App name: {catalogStatus.displayName || "Constellation"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-sm text-amber-800 dark:text-amber-300">
+                    <strong>Not yet published</strong> — Publish the app to your tenant's catalog to enable automatic project tab creation in Teams channels.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3">
           <button

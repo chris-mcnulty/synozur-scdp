@@ -337,6 +337,80 @@ class PlannerService {
     }
   }
 
+  // ============ CONSTELLATION TAB OPERATIONS ============
+
+  async findConstellationAppInCatalog(entraAppId?: string): Promise<{ teamsAppId: string; displayName: string } | null> {
+    try {
+      const client = await this.getClient();
+      const appId = entraAppId || process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+
+      const response = await client.api('/appCatalogs/teamsApps')
+        .filter(`externalId eq '${appId}'`)
+        .select('id,displayName,externalId,distributionMethod')
+        .get();
+
+      const apps = response.value || [];
+      if (apps.length > 0) {
+        console.log('[TEAMS-TAB] Found Constellation app in catalog:', apps[0].id, apps[0].displayName);
+        return { teamsAppId: apps[0].id, displayName: apps[0].displayName };
+      }
+
+      console.log('[TEAMS-TAB] Constellation app not found in tenant catalog for externalId:', appId);
+      return null;
+    } catch (error: any) {
+      console.error('[TEAMS-TAB] Error searching app catalog:', error.message);
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+        console.warn('[TEAMS-TAB] AppCatalog.Read.All permission not granted');
+      }
+      return null;
+    }
+  }
+
+  async createConstellationTab(teamId: string, channelId: string, options: {
+    projectId: string;
+    projectName: string;
+    baseDomain?: string;
+    tab?: string;
+  }): Promise<TeamsTab | null> {
+    try {
+      console.log('[TEAMS-TAB] Adding Constellation tab for project:', options.projectId, 'in channel:', channelId);
+
+      const catalogApp = await this.findConstellationAppInCatalog();
+      if (!catalogApp) {
+        console.warn('[TEAMS-TAB] Cannot add tab: Constellation app not published to tenant catalog. Admin should publish via Organization Settings > Integrations first.');
+        return null;
+      }
+
+      const client = await this.getClient();
+      const domain = options.baseDomain || process.env.BASE_URL?.replace(/^https?:\/\//, '') || 'constellation.synozur.com';
+      const baseUrl = `https://${domain}`;
+
+      const contentUrl = `${baseUrl}/embed/projects/${options.projectId}${options.tab ? `?tab=${options.tab}` : ''}`;
+      const websiteUrl = `${baseUrl}/projects/${options.projectId}`;
+      const configurationUrl = `${baseUrl}/embed/configure`;
+
+      const tab = await client.api(`/teams/${teamId}/channels/${channelId}/tabs`).post({
+        displayName: options.projectName,
+        'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${catalogApp.teamsAppId}`,
+        configuration: {
+          entityId: `constellation-project-${options.projectId}`,
+          contentUrl: contentUrl,
+          websiteUrl: websiteUrl,
+          removeUrl: configurationUrl,
+        }
+      });
+
+      console.log('[TEAMS-TAB] Constellation tab created successfully:', tab.id);
+      return tab;
+    } catch (error: any) {
+      console.error('[TEAMS-TAB] Error creating Constellation tab:', error.message);
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+        console.warn('[TEAMS-TAB] TeamsTab.Create permission not granted, skipping tab creation');
+      }
+      return null;
+    }
+  }
+
   // ============ TEAM CREATION OPERATIONS ============
 
   async listTeamTemplates(): Promise<TeamTemplate[]> {
