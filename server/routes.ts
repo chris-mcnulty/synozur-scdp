@@ -10530,12 +10530,29 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const crypto = await import('crypto');
       const sessionId = crypto.randomUUID();
       
-      // Store SSO tokens with the session
-      // Check if MSAL returned a refresh token (available in confidential client flow with offline_access scope)
+      let extractedRefreshToken: string | null = null;
+      try {
+        const cacheContents = msalInstance.getTokenCache().serialize();
+        const cacheJson = JSON.parse(cacheContents);
+        const refreshTokens = cacheJson.RefreshToken || {};
+        const rtKeys = Object.keys(refreshTokens);
+        if (rtKeys.length > 0) {
+          const homeAccountId = tokenResponse.account?.homeAccountId;
+          const matchingKey = homeAccountId
+            ? rtKeys.find(k => refreshTokens[k].home_account_id === homeAccountId)
+            : rtKeys[rtKeys.length - 1];
+          const rtEntry = refreshTokens[matchingKey || rtKeys[rtKeys.length - 1]];
+          extractedRefreshToken = rtEntry?.secret || null;
+          console.log("[SSO-CALLBACK] Refresh token extracted from MSAL cache:", !!extractedRefreshToken);
+        }
+      } catch (cacheErr: any) {
+        console.log("[SSO-CALLBACK] Could not extract refresh token from MSAL cache:", cacheErr?.message);
+      }
+
       const ssoData = {
         provider: 'azure-ad',
         accessToken: tokenResponse.accessToken,
-        refreshToken: (tokenResponse as any).refreshToken || null, // Check for refresh token
+        refreshToken: extractedRefreshToken,
         tokenExpiry: tokenResponse.expiresOn || new Date(Date.now() + 3600 * 1000)
       };
       
