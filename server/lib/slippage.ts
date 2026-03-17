@@ -654,21 +654,27 @@ export async function getUserSlippageAlerts(
 
   // Check velocity per project — fetch max(date) for all projects in one query
   const projectIdArray = [...tenantProjectIds];
-  const velocityRows = await db
-    .select({
-      projectId: timeEntries.projectId,
-      maxDate: sql<string>`max(${timeEntries.date})`,
-    })
-    .from(timeEntries)
-    .where(
-      and(
-        inArray(timeEntries.projectId, projectIdArray),
-        eq(timeEntries.personId, userId)
-      )
-    )
-    .groupBy(timeEntries.projectId);
+  const lastActivityByProject = new Map<number, string>();
 
-  const lastActivityByProject = new Map(velocityRows.map((r) => [r.projectId, r.maxDate]));
+  if (projectIdArray.length > 0) {
+    const velocityRows = await db
+      .select({
+        projectId: timeEntries.projectId,
+        maxDate: sql<string>`max(${timeEntries.date})`,
+      })
+      .from(timeEntries)
+      .where(
+        and(
+          inArray(timeEntries.projectId, projectIdArray),
+          eq(timeEntries.personId, userId)
+        )
+      )
+      .groupBy(timeEntries.projectId);
+
+    for (const row of velocityRows) {
+      lastActivityByProject.set(row.projectId, row.maxDate);
+    }
+  }
 
   for (const projectId of tenantProjectIds) {
     const maxDate = lastActivityByProject.get(projectId);
