@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Eye, Edit, Briefcase, Cog, TrendingUp } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import type { ProjectWithClient } from "@/lib/types";
+import { SlippageBadge } from "@/components/dashboard/slippage-badge";
+import type { ProjectWithClient, ProjectSlippageMetrics } from "@/lib/types";
 
 interface ProjectCardProps {
   project: ProjectWithClient & {
@@ -14,6 +15,7 @@ interface ProjectCardProps {
     burnPercentage: number;
     dueDate: string;
   };
+  slippage?: Pick<ProjectSlippageMetrics, "slippageLevel" | "slippageScore">;
   onView: (projectId: string) => void;
   onEdit: (projectId: string) => void;
 }
@@ -44,7 +46,7 @@ function getStatusBadgeVariant(status: string) {
   }
 }
 
-export function ProjectCard({ project, onView, onEdit }: ProjectCardProps) {
+export function ProjectCard({ project, slippage, onView, onEdit }: ProjectCardProps) {
   const { canViewPricing } = useAuth();
   
   return (
@@ -85,12 +87,19 @@ export function ProjectCard({ project, onView, onEdit }: ProjectCardProps) {
         </div>
       </td>
       <td className="px-6 py-4">
-        <Badge 
+        <Badge
           className={getStatusBadgeVariant(project.status)}
           data-testid={`project-status-${project.id}`}
         >
           {project.status}
         </Badge>
+      </td>
+      <td className="px-6 py-4">
+        {slippage ? (
+          <SlippageBadge level={slippage.slippageLevel} score={slippage.slippageScore} showScore />
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
       </td>
       <td className="px-6 py-4 text-sm" data-testid={`project-due-date-${project.id}`}>
         {project.dueDate}

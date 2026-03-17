@@ -5,21 +5,25 @@ import { Layout } from "@/components/layout/layout";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { ProjectCard } from "@/components/project/project-card";
+import { SlippageBadge } from "@/components/dashboard/slippage-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Plus, 
-  Download, 
-  Filter, 
-  ArrowUpDown, 
-  FolderOpen, 
-  PieChart, 
-  DollarSign, 
+import {
+  Plus,
+  Download,
+  Filter,
+  ArrowUpDown,
+  FolderOpen,
+  PieChart,
+  DollarSign,
   Clock,
   FileText,
-  Building2
+  Building2,
+  AlertTriangle,
+  TrendingDown,
 } from "lucide-react";
-import type { DashboardMetrics, ProjectWithClient } from "@/lib/types";
+import type { DashboardMetrics, ProjectWithClient, PortfolioSlippageSummary } from "@/lib/types";
+import { useAuth } from "@/hooks/use-auth";
 
 
 interface TenantInfo {
@@ -35,6 +39,8 @@ interface TenantsResponse {
 
 export default function Dashboard() {
   const [, navigate] = useLocation();
+  const { hasAnyRole } = useAuth();
+  const canViewSlippage = hasAnyRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
@@ -43,6 +49,17 @@ export default function Dashboard() {
   const { data: projects, isLoading: projectsLoading } = useQuery<ProjectWithClient[]>({
     queryKey: ["/api/projects"],
   });
+
+  const { data: slippageData } = useQuery<PortfolioSlippageSummary>({
+    queryKey: ["/api/portfolio/slippage"],
+    staleTime: 5 * 60 * 1000,
+    enabled: canViewSlippage,
+  });
+
+  // Build a quick lookup: projectId -> slippageLevel
+  const slippageMap = new Map(
+    (slippageData?.projects ?? []).map((p) => [p.projectId, p])
+  );
 
   const { data: tenantsData } = useQuery<TenantsResponse>({
     queryKey: ["/api/auth/tenants"],
@@ -120,6 +137,36 @@ export default function Dashboard() {
             change="Requires attention"
           />
         </div>
+
+        {/* Schedule Health KPIs */}
+        {slippageData && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              className="text-left"
+              onClick={() => navigate("/portfolio/schedule-health")}
+            >
+              <KPICard
+                title="Projects at Risk"
+                value={(slippageData.summary.atRisk ?? 0) + (slippageData.summary.critical ?? 0)}
+                icon={<AlertTriangle />}
+                iconColor="bg-orange-100 text-orange-600"
+                subtitle={`${slippageData.summary.critical ?? 0} critical · ${slippageData.summary.atRisk ?? 0} at risk`}
+              />
+            </button>
+            <button
+              className="text-left"
+              onClick={() => navigate("/portfolio/schedule-health")}
+            >
+              <KPICard
+                title="Schedule Watch List"
+                value={slippageData.summary.watch ?? 0}
+                icon={<TrendingDown />}
+                iconColor="bg-amber-100 text-amber-600"
+                subtitle="Projects with emerging schedule pressure"
+              />
+            </button>
+          </div>
+        )}
         
         {/* Active Projects Table */}
         <Card data-testid="active-projects-table">
@@ -163,6 +210,9 @@ export default function Dashboard() {
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Schedule
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Due Date
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -173,7 +223,7 @@ export default function Dashboard() {
                 <tbody className="divide-y divide-border">
                   {projectsLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-4 text-center text-muted-foreground">
+                      <td colSpan={9} className="px-6 py-4 text-center text-muted-foreground">
                         Loading projects...
                       </td>
                     </tr>
@@ -197,13 +247,14 @@ export default function Dashboard() {
                             burnPercentage: project.utilizationRate || 0,
                             dueDate: project.endDate ? new Date(project.endDate).toLocaleDateString() : 'Not set'
                           }}
+                          slippage={slippageMap.get(project.id)}
                           onView={handleViewProject}
                           onEdit={handleEditProject}
                         />
                       ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="px-6 py-4 text-center text-muted-foreground">
+                      <td colSpan={9} className="px-6 py-4 text-center text-muted-foreground">
                         No active projects found
                       </td>
                     </tr>
