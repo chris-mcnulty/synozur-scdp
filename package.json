@@ -96,6 +96,7 @@
     "node-cron": "^4.2.1",
     "nodemon": "^3.1.10",
     "openai": "^6.10.0",
+    "p-limit": "^7.3.0",
     "passport": "^0.7.0",
     "passport-azure-ad": "^4.3.5",
     "passport-local": "^1.0.0",
