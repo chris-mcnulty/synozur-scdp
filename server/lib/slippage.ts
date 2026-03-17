@@ -629,20 +629,32 @@ export async function getUserSlippageAlerts(
     }
   }
 
-  // Check velocity per project
+  // Check velocity per project — fetch all time entries in one query, then group by project
+  const tenantProjectIdList = [...tenantProjectIds];
+  const allTimeEntries = tenantProjectIdList.length > 0
+    ? await db
+        .select({ projectId: timeEntries.projectId, date: timeEntries.date })
+        .from(timeEntries)
+        .where(
+          and(
+            inArray(timeEntries.projectId, tenantProjectIdList),
+            eq(timeEntries.personId, userId)
+          )
+        )
+    : [];
+
+  const entriesByProject = new Map<string, Date[]>();
+  for (const entry of allTimeEntries) {
+    const dates = entriesByProject.get(entry.projectId) ?? [];
+    dates.push(new Date(entry.date));
+    entriesByProject.set(entry.projectId, dates);
+  }
+
   for (const projectId of tenantProjectIds) {
-    const recentEntries = await db
-      .select({ date: timeEntries.date })
-      .from(timeEntries)
-      .where(
-        and(eq(timeEntries.projectId, projectId), eq(timeEntries.personId, userId))
-      );
+    const dates = entriesByProject.get(projectId);
+    if (!dates || dates.length === 0) continue;
 
-    if (recentEntries.length === 0) continue;
-
-    const lastDate = recentEntries
-      .map((r) => new Date(r.date))
-      .sort((a, b) => b.getTime() - a.getTime())[0];
+    const lastDate = [...dates].sort((a, b) => b.getTime() - a.getTime())[0];
     const daysSince = daysBetween(lastDate, today);
 
     if (daysSince >= VELOCITY_IDLE_WARNING_DAYS) {
