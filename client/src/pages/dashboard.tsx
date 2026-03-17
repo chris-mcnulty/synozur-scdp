@@ -25,6 +25,7 @@ import {
 import type { DashboardMetrics, ProjectWithClient, PortfolioSlippageSummary } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth";
 
+const SLIPPAGE_ROLES = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"];
 
 interface TenantInfo {
   id: string;
@@ -40,7 +41,7 @@ interface TenantsResponse {
 export default function Dashboard() {
   const [, navigate] = useLocation();
   const { hasAnyRole } = useAuth();
-  const canViewSlippage = hasAnyRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]);
+  const canViewSlippage = hasAnyRole(SLIPPAGE_ROLES);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
