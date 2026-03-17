@@ -24,8 +24,8 @@ import {
 } from "lucide-react";
 import type { DashboardMetrics, ProjectWithClient, PortfolioSlippageSummary } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth";
-import { SLIPPAGE_ROLE_LIST } from "@/lib/auth";
 
+const SLIPPAGE_ROLES = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"];
 
 interface TenantInfo {
   id: string;
@@ -41,7 +41,7 @@ interface TenantsResponse {
 export default function Dashboard() {
   const [, navigate] = useLocation();
   const { hasAnyRole } = useAuth();
-  const canViewSlippage = hasAnyRole(SLIPPAGE_ROLE_LIST);
+  const canViewSlippage = hasAnyRole(SLIPPAGE_ROLES);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
