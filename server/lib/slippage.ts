@@ -26,6 +26,7 @@ import {
   users,
 } from "@shared/schema";
 import { eq, and, lt, gte, lte, inArray, sql, ne } from "drizzle-orm";
+import pLimit from "p-limit";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -222,12 +223,12 @@ export async function calculateProjectSlippage(
       );
     }
 
-    // Actual hours from time entries
-    const teRows = await db
-      .select({ hours: timeEntries.hours })
+    // Actual hours from time entries (aggregate in DB to avoid full table scan)
+    const [teSum] = await db
+      .select({ total: sql<string>`COALESCE(SUM(${timeEntries.hours}), '0')` })
       .from(timeEntries)
       .where(eq(timeEntries.projectId, projectId));
-    actualHours = teRows.reduce((sum, r) => sum + parseFloat(r.hours || "0"), 0);
+    actualHours = parseFloat(teSum?.total ?? "0");
 
     if (estimatedHours > 0) {
       actualProgressPct = (actualHours / estimatedHours) * 100;
@@ -244,8 +245,8 @@ export async function calculateProjectSlippage(
   const trailingStart = new Date(today);
   trailingStart.setDate(today.getDate() - TRAILING_WEEKS_FOR_BURN_RATE * 7);
 
-  const recentTeRows = await db
-    .select({ hours: timeEntries.hours })
+  const [recentTeSum] = await db
+    .select({ total: sql<string>`COALESCE(SUM(${timeEntries.hours}), '0')` })
     .from(timeEntries)
     .where(
       and(
@@ -253,10 +254,7 @@ export async function calculateProjectSlippage(
         gte(timeEntries.date, trailingStart.toISOString().split("T")[0])
       )
     );
-  const recentHours = recentTeRows.reduce(
-    (sum, r) => sum + parseFloat(r.hours || "0"),
-    0
-  );
+  const recentHours = parseFloat(recentTeSum?.total ?? "0");
   const weeklyBurnRate = recentHours / TRAILING_WEEKS_FOR_BURN_RATE;
 
   let projectedSlipDays = 0;
@@ -430,18 +428,16 @@ export async function calculateProjectSlippage(
   );
 
   // --- Velocity signal ---
-  const allTeRows = await db
-    .select({ date: timeEntries.date })
+  const [lastTeRow] = await db
+    .select({ maxDate: sql<string | null>`max(${timeEntries.date})` })
     .from(timeEntries)
     .where(eq(timeEntries.projectId, projectId));
 
   let lastActivityDate: string | null = null;
   let daysSinceLastActivity = 999;
 
-  if (allTeRows.length > 0) {
-    const lastDate = allTeRows
-      .map((r) => new Date(r.date))
-      .sort((a, b) => b.getTime() - a.getTime())[0];
+  if (lastTeRow?.maxDate) {
+    const lastDate = new Date(lastTeRow.maxDate);
     lastActivityDate = lastDate.toISOString().split("T")[0];
     daysSinceLastActivity = daysBetween(lastDate, today);
   }
@@ -532,20 +528,32 @@ export async function calculateProjectSlippage(
 // Portfolio-level summary
 // ---------------------------------------------------------------------------
 
+// In-memory TTL cache: avoids recomputing for every dashboard load within the window.
+// Keyed by tenantId. TTL matches the client-side staleTime (5 min) minus a small buffer.
+const portfolioCache = new Map<
+  string,
+  { data: PortfolioSlippageSummary; expiresAt: number }
+>();
+const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
 export async function calculatePortfolioSlippage(
   tenantId: string
 ): Promise<PortfolioSlippageSummary> {
+  const cached = portfolioCache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
   const activeProjects = await db
     .select({ id: projects.id })
     .from(projects)
     .where(and(eq(projects.tenantId, tenantId), eq(projects.status, "active")));
 
-  const results: ProjectSlippageMetrics[] = [];
-
-  for (const proj of activeProjects) {
-    const metrics = await calculateProjectSlippage(proj.id, tenantId);
-    if (metrics) results.push(metrics);
-  }
+  // Compute all projects in parallel rather than sequentially
+  const settled = await Promise.all(
+    activeProjects.map((proj) => calculateProjectSlippage(proj.id, tenantId))
+  );
+  const results: ProjectSlippageMetrics[] = settled.filter(
+    (m): m is ProjectSlippageMetrics => m !== null
+  );
 
   // Sort by slippageScore descending
   results.sort((a, b) => b.slippageScore - a.slippageScore);
@@ -557,11 +565,15 @@ export async function calculatePortfolioSlippage(
     critical: results.filter((r) => r.slippageLevel === "critical").length,
   };
 
-  return {
+  const result: PortfolioSlippageSummary = {
     asOf: new Date().toISOString(),
     summary,
     projects: results,
   };
+
+  portfolioCache.set(tenantId, { data: result, expiresAt: Date.now() + PORTFOLIO_CACHE_TTL_MS });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -629,21 +641,28 @@ export async function getUserSlippageAlerts(
     }
   }
 
-  // Check velocity per project
+  // Check velocity per project — single batched query instead of N per-project queries
+  const velocityRows = await db
+    .select({
+      projectId: timeEntries.projectId,
+      lastDate: sql<string>`MAX(${timeEntries.date})`,
+    })
+    .from(timeEntries)
+    .where(
+      and(
+        inArray(timeEntries.projectId, [...tenantProjectIds]),
+        eq(timeEntries.personId, userId)
+      )
+    )
+    .groupBy(timeEntries.projectId);
+
+  const lastEntryByProject = new Map(velocityRows.map((r) => [r.projectId, r.lastDate]));
+
   for (const projectId of tenantProjectIds) {
-    const recentEntries = await db
-      .select({ date: timeEntries.date })
-      .from(timeEntries)
-      .where(
-        and(eq(timeEntries.projectId, projectId), eq(timeEntries.personId, userId))
-      );
+    const lastDateStr = lastEntryByProject.get(projectId);
+    if (!lastDateStr) continue;
 
-    if (recentEntries.length === 0) continue;
-
-    const lastDate = recentEntries
-      .map((r) => new Date(r.date))
-      .sort((a, b) => b.getTime() - a.getTime())[0];
-    const daysSince = daysBetween(lastDate, today);
+    const daysSince = daysBetween(new Date(lastDateStr), today);
 
     if (daysSince >= VELOCITY_IDLE_WARNING_DAYS) {
       const projectName = projectNameMap.get(projectId) || "Unknown Project";
