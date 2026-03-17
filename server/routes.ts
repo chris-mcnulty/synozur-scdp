@@ -1059,10 +1059,89 @@ export async function registerRoutes(app: Express): Promise<void> {
         adminConsentGranted: tenant.adminConsentGranted ?? false,
         azureTenantId: tenant.azureTenantId || null,
         serverEnvironment: (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production') ? 'production' : 'development',
+        m365DefaultChannelFolders: (tenant as any).m365DefaultChannelFolders || null,
+        m365SharePointConfig: (tenant as any).m365SharePointConfig || null,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
       res.status(500).json({ message: "Failed to fetch tenant settings" });
+    }
+  });
+
+  // M365 Channel & SharePoint Configuration
+  const m365ConfigUpdateSchema = z.object({
+    m365DefaultChannelFolders: z.array(
+      z.string().min(1).max(100).regex(/^[^\\/:*?"<>|]+$/, "Folder name contains invalid characters")
+    ).max(20).optional().nullable(),
+    m365SharePointConfig: z.object({
+      autoCreateProjectSubfolder: z.boolean().optional(),
+      docLibraryNaming: z.enum(['channel_name', 'project_code', 'custom']).optional(),
+      docLibraryCustomPattern: z.string().max(200).optional(),
+      metadataColumns: z.array(z.string().min(1).max(100)).max(10).optional(),
+    }).optional().nullable(),
+  });
+
+  app.get("/api/tenant/m365-config", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(404).json({ message: "No tenant associated with user" });
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+
+      res.json({
+        m365DefaultChannelFolders: (tenant as any).m365DefaultChannelFolders || [],
+        m365SharePointConfig: (tenant as any).m365SharePointConfig || {
+          autoCreateProjectSubfolder: false,
+          docLibraryNaming: 'channel_name',
+          docLibraryCustomPattern: '',
+          metadataColumns: [],
+        },
+      });
+    } catch (error: any) {
+      console.error("[M365_CONFIG] Failed to fetch M365 config:", error);
+      res.status(500).json({ message: "Failed to fetch M365 configuration" });
+    }
+  });
+
+  app.patch("/api/tenant/m365-config", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(404).json({ message: "No tenant associated with user" });
+
+      const validationResult = m365ConfigUpdateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ message: "Invalid M365 configuration data", errors: validationResult.error.errors });
+      }
+
+      const updateData: any = {};
+      if (validationResult.data.m365DefaultChannelFolders !== undefined) {
+        const folders = validationResult.data.m365DefaultChannelFolders;
+        if (folders) {
+          const unique = [...new Set(folders)];
+          if (unique.length !== folders.length) {
+            return res.status(400).json({ message: "Duplicate folder names are not allowed" });
+          }
+          updateData.m365DefaultChannelFolders = unique;
+        } else {
+          updateData.m365DefaultChannelFolders = null;
+        }
+      }
+      if (validationResult.data.m365SharePointConfig !== undefined) {
+        updateData.m365SharePointConfig = validationResult.data.m365SharePointConfig;
+      }
+
+      const updatedTenant = await storage.updateTenant(tenantId, updateData);
+
+      res.json({
+        m365DefaultChannelFolders: (updatedTenant as any).m365DefaultChannelFolders || [],
+        m365SharePointConfig: (updatedTenant as any).m365SharePointConfig || {},
+      });
+    } catch (error: any) {
+      console.error("[M365_CONFIG] Failed to update M365 config:", error);
+      res.status(500).json({ message: "Failed to update M365 configuration" });
     }
   });
 
@@ -3831,14 +3910,56 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
       
+      let folderResults = null;
+      try {
+        const user = req.user as any;
+        const tenantId = user?.primaryTenantId || user?.activeTenantId;
+        if (tenantId) {
+          const tenant = await storage.getTenant(tenantId);
+          const defaultFolders = (tenant as any)?.m365DefaultChannelFolders as string[] | null;
+          if (defaultFolders && defaultFolders.length > 0) {
+            folderResults = await plannerService.provisionChannelFolders(req.params.teamId, channel.id, defaultFolders);
+          }
+        }
+      } catch (folderError: any) {
+        console.warn("[PLANNER] Channel folder provisioning failed (non-blocking):", folderError.message);
+      }
+
       res.json({
         ...channel,
         constellationTabAdded: !!constellationTab,
         constellationTabId: constellationTab?.id || null,
+        foldersProvisioned: folderResults,
       });
     } catch (error: any) {
       console.error("[PLANNER] Failed to create channel:", error);
       res.status(500).json({ message: "Failed to create channel: " + error.message });
+    }
+  });
+
+  // Provision default folders on an existing channel (retroactive)
+  app.post("/api/planner/teams/:teamId/channels/:channelId/provision-folders", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId || user?.activeTenantId;
+
+      if (!tenantId) {
+        return res.status(400).json({ message: "No tenant context" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      const defaultFolders = (tenant as any)?.m365DefaultChannelFolders as string[] | null;
+
+      if (!defaultFolders || defaultFolders.length === 0) {
+        return res.status(400).json({ message: "No default channel folders configured. Set them in Organization Settings → Integrations." });
+      }
+
+      const results = await plannerService.provisionChannelFolders(req.params.teamId, req.params.channelId, defaultFolders);
+      res.json(results);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to provision folders:", error);
+      res.status(500).json({ message: "Failed to provision folders: " + error.message });
     }
   });
 

@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog } from "lucide-react";
 import { MicrosoftPlannerIcon, MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
@@ -789,6 +789,374 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
             Publish to Teams Catalog
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const DEFAULT_CHANNEL_FOLDERS = [
+  "Deliverables",
+  "Meeting Notes",
+  "SOW & Contracts",
+  "Status Reports",
+  "Working Documents",
+];
+
+function ChannelProvisioningCard() {
+  const { toast } = useToast();
+  const [newFolder, setNewFolder] = useState("");
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+
+  const { data: m365Config, isLoading } = useQuery<{
+    m365DefaultChannelFolders: string[];
+    m365SharePointConfig: {
+      autoCreateProjectSubfolder?: boolean;
+      docLibraryNaming?: string;
+      docLibraryCustomPattern?: string;
+      metadataColumns?: string[];
+    };
+  }>({
+    queryKey: ["/api/tenant", "m365-config"],
+  });
+
+  const [folders, setFolders] = useState<string[]>([]);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => {
+    if (m365Config?.m365DefaultChannelFolders) {
+      setFolders(m365Config.m365DefaultChannelFolders);
+    }
+  }, [m365Config]);
+
+  const saveMutation = useMutation({
+    mutationFn: (data: { m365DefaultChannelFolders: string[] }) =>
+      apiRequest("/api/tenant/m365-config", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant", "m365-config"] });
+      toast({ title: "Channel folder defaults saved" });
+      setHasChanges(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addFolder = () => {
+    const trimmed = newFolder.trim();
+    if (!trimmed) return;
+    if (folders.includes(trimmed)) {
+      toast({ title: "Duplicate folder name", variant: "destructive" });
+      return;
+    }
+    if (/[\\/:*?"<>|]/.test(trimmed)) {
+      toast({ title: "Folder name contains invalid characters", variant: "destructive" });
+      return;
+    }
+    setFolders([...folders, trimmed]);
+    setNewFolder("");
+    setHasChanges(true);
+  };
+
+  const removeFolder = (idx: number) => {
+    setFolders(folders.filter((_, i) => i !== idx));
+    setHasChanges(true);
+  };
+
+  const moveFolder = (from: number, to: number) => {
+    if (to < 0 || to >= folders.length) return;
+    const updated = [...folders];
+    const [item] = updated.splice(from, 1);
+    updated.splice(to, 0, item);
+    setFolders(updated);
+    setHasChanges(true);
+  };
+
+  const resetToDefaults = () => {
+    setFolders([...DEFAULT_CHANNEL_FOLDERS]);
+    setHasChanges(true);
+  };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 flex justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FolderOpen className="h-5 w-5" />
+            Channel Provisioning Defaults
+          </CardTitle>
+          {folders.length > 0 && (
+            <Badge variant="outline">{folders.length} folder{folders.length !== 1 ? "s" : ""}</Badge>
+          )}
+        </div>
+        <CardDescription>
+          These folders are automatically created in the SharePoint document library when a new Teams channel is provisioned for a project.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          {folders.map((folder, idx) => (
+            <div
+              key={`${folder}-${idx}`}
+              draggable
+              onDragStart={() => setDragIdx(idx)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => {
+                if (dragIdx !== null && dragIdx !== idx) {
+                  moveFolder(dragIdx, idx);
+                }
+                setDragIdx(null);
+              }}
+              className="flex items-center gap-2 p-2 rounded-md border bg-muted/30 group"
+            >
+              <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab shrink-0" />
+              <FolderOpen className="h-4 w-4 text-blue-500 shrink-0" />
+              <span className="flex-1 text-sm">{folder}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => removeFolder(idx)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+          {folders.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No default folders configured. New channels will be created without any predefined folder structure.
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <Input
+            placeholder="New folder name..."
+            value={newFolder}
+            onChange={(e) => setNewFolder(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addFolder(); } }}
+            className="flex-1"
+          />
+          <Button variant="outline" size="sm" onClick={addFolder} disabled={!newFolder.trim()}>
+            <Plus className="h-4 w-4 mr-1" /> Add
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between pt-2">
+          <Button variant="ghost" size="sm" onClick={resetToDefaults}>
+            <RotateCcw className="h-3 w-3 mr-1" /> Reset to Defaults
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate({ m365DefaultChannelFolders: folders })}
+            disabled={!hasChanges || saveMutation.isPending}
+          >
+            {saveMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+            Save Folders
+          </Button>
+        </div>
+
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-xs">
+            Folders are created in the channel's SharePoint document library via Microsoft Graph. Changes apply to newly created channels only. Use the "Provision Folders" action on existing channels to apply retroactively.
+          </AlertDescription>
+        </Alert>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SharePointSiteConfigCard() {
+  const { toast } = useToast();
+  const [newColumn, setNewColumn] = useState("");
+
+  const { data: m365Config, isLoading } = useQuery<{
+    m365DefaultChannelFolders: string[];
+    m365SharePointConfig: {
+      autoCreateProjectSubfolder?: boolean;
+      docLibraryNaming?: string;
+      docLibraryCustomPattern?: string;
+      metadataColumns?: string[];
+    };
+  }>({
+    queryKey: ["/api/tenant", "m365-config"],
+  });
+
+  const [config, setConfig] = useState({
+    autoCreateProjectSubfolder: false,
+    docLibraryNaming: 'channel_name' as string,
+    docLibraryCustomPattern: '',
+    metadataColumns: [] as string[],
+  });
+  const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => {
+    if (m365Config?.m365SharePointConfig) {
+      setConfig({
+        autoCreateProjectSubfolder: m365Config.m365SharePointConfig.autoCreateProjectSubfolder ?? false,
+        docLibraryNaming: m365Config.m365SharePointConfig.docLibraryNaming || 'channel_name',
+        docLibraryCustomPattern: m365Config.m365SharePointConfig.docLibraryCustomPattern || '',
+        metadataColumns: m365Config.m365SharePointConfig.metadataColumns || [],
+      });
+    }
+  }, [m365Config]);
+
+  const saveMutation = useMutation({
+    mutationFn: (data: { m365SharePointConfig: typeof config }) =>
+      apiRequest("/api/tenant/m365-config", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant", "m365-config"] });
+      toast({ title: "SharePoint site settings saved" });
+      setHasChanges(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateField = (field: string, value: any) => {
+    setConfig(prev => ({ ...prev, [field]: value }));
+    setHasChanges(true);
+  };
+
+  const addColumn = () => {
+    const trimmed = newColumn.trim();
+    if (!trimmed || config.metadataColumns.includes(trimmed)) return;
+    updateField('metadataColumns', [...config.metadataColumns, trimmed]);
+    setNewColumn("");
+  };
+
+  const removeColumn = (col: string) => {
+    updateField('metadataColumns', config.metadataColumns.filter(c => c !== col));
+  };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 flex justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FolderCog className="h-5 w-5" />
+            SharePoint Site Settings
+          </CardTitle>
+        </div>
+        <CardDescription>
+          Configure how the SharePoint site is structured when channels and projects are provisioned.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <label className="text-sm font-medium">Auto-create project subfolder</label>
+            <p className="text-xs text-muted-foreground">
+              Creates a top-level folder named after the project in the Team's document library.
+            </p>
+          </div>
+          <Switch
+            checked={config.autoCreateProjectSubfolder}
+            onCheckedChange={(checked) => updateField('autoCreateProjectSubfolder', checked)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Document library naming</label>
+          <p className="text-xs text-muted-foreground">
+            How document library folders are named when created for a project channel.
+          </p>
+          <Select
+            value={config.docLibraryNaming}
+            onValueChange={(val) => updateField('docLibraryNaming', val)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="channel_name">Use channel name</SelectItem>
+              <SelectItem value="project_code">Use project code</SelectItem>
+              <SelectItem value="custom">Custom pattern</SelectItem>
+            </SelectContent>
+          </Select>
+          {config.docLibraryNaming === 'custom' && (
+            <Input
+              placeholder="e.g., {project_code} - {project_name}"
+              value={config.docLibraryCustomPattern}
+              onChange={(e) => updateField('docLibraryCustomPattern', e.target.value)}
+              className="mt-2"
+            />
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Metadata columns</label>
+          <p className="text-xs text-muted-foreground">
+            Optional SharePoint metadata columns to auto-add to the document library.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {config.metadataColumns.map((col) => (
+              <Badge key={col} variant="secondary" className="gap-1 pr-1">
+                {col}
+                <button onClick={() => removeColumn(col)} className="ml-1 hover:text-destructive">
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Column name..."
+              value={newColumn}
+              onChange={(e) => setNewColumn(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addColumn(); } }}
+              className="flex-1"
+            />
+            <Button variant="outline" size="sm" onClick={addColumn} disabled={!newColumn.trim()}>
+              <Plus className="h-4 w-4 mr-1" /> Add
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate({ m365SharePointConfig: config })}
+            disabled={!hasChanges || saveMutation.isPending}
+          >
+            {saveMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+            Save Settings
+          </Button>
+        </div>
+
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-xs">
+            These settings are saved for use in future provisioning enhancements. Channel folder defaults above are applied immediately when new channels are created.
+          </AlertDescription>
+        </Alert>
       </CardContent>
     </Card>
   );
@@ -2691,6 +3059,10 @@ export default function OrganizationSettings() {
                   <HubSpotIntegrationCard />
 
                   <TeamsAppPackageCard tenantSettings={tenantSettings} />
+
+                  <ChannelProvisioningCard />
+
+                  <SharePointSiteConfigCard />
 
                   <Card className="border border-dashed">
                     <CardHeader className="pb-3">

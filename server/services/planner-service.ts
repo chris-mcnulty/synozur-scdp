@@ -591,6 +591,59 @@ class PlannerService {
     }
   }
 
+  async provisionChannelFolders(teamId: string, channelId: string, folderNames: string[]): Promise<{ created: string[]; failed: { name: string; error: string }[] }> {
+    const created: string[] = [];
+    const failed: { name: string; error: string }[] = [];
+
+    if (!folderNames.length) return { created, failed };
+
+    try {
+      console.log('[PLANNER] Provisioning', folderNames.length, 'folders for channel:', channelId);
+      const client = await this.getClient();
+
+      const filesFolder = await client.api(`/teams/${teamId}/channels/${channelId}/filesFolder`).get();
+      const driveId = filesFolder?.parentReference?.driveId;
+      const folderPath = filesFolder?.name || '';
+
+      if (!driveId) {
+        throw new Error('Could not resolve SharePoint drive for channel');
+      }
+
+      for (const name of folderNames) {
+        try {
+          await client.api(`/drives/${driveId}/root:/${folderPath}/${name}:/`).get();
+          created.push(name);
+          console.log(`[PLANNER] Folder already exists: ${name}`);
+        } catch {
+          try {
+            const parentPath = folderPath ? `root:/${folderPath}:` : 'root';
+            await client.api(`/drives/${driveId}/${parentPath}/children`).post({
+              name,
+              folder: {},
+              '@microsoft.graph.conflictBehavior': 'rename',
+            });
+            created.push(name);
+            console.log(`[PLANNER] Created folder: ${name}`);
+          } catch (err: any) {
+            console.error(`[PLANNER] Failed to create folder ${name}:`, err.message);
+            failed.push({ name, error: err.message });
+          }
+        }
+      }
+
+      console.log(`[PLANNER] Folder provisioning complete: ${created.length} created, ${failed.length} failed`);
+    } catch (error: any) {
+      console.error('[PLANNER] Error provisioning channel folders:', error.message);
+      for (const name of folderNames) {
+        if (!created.includes(name) && !failed.find(f => f.name === name)) {
+          failed.push({ name, error: error.message });
+        }
+      }
+    }
+
+    return { created, failed };
+  }
+
   async isUserTeamMember(teamId: string, azureUserId: string): Promise<boolean> {
     try {
       const client = await this.getClient();

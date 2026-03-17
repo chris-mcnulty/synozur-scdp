@@ -27,6 +27,13 @@ export type TenantBranding = {
   reportFooterText?: string;
 };
 
+export type M365SharePointConfig = {
+  autoCreateProjectSubfolder?: boolean;
+  docLibraryNaming?: 'channel_name' | 'project_code' | 'custom';
+  docLibraryCustomPattern?: string;
+  metadataColumns?: string[];
+};
+
 // ============================================================================
 // MULTI-TENANCY TABLES (Phase 1 - Matches Vega Architecture)
 // ============================================================================
@@ -171,6 +178,8 @@ export const tenants = pgTable("tenants", {
   // M365 Teams Integration Settings
   m365AutoProvisionTeams: boolean("m365_auto_provision_teams").default(false),
   m365DefaultTeamTemplate: text("m365_default_team_template").default("standard"),
+  m365DefaultChannelFolders: jsonb("m365_default_channel_folders").$type<string[]>(),
+  m365SharePointConfig: jsonb("m365_sharepoint_config").$type<M365SharePointConfig>(),
 
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
