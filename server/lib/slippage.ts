@@ -430,18 +430,16 @@ export async function calculateProjectSlippage(
   );
 
   // --- Velocity signal ---
-  const allTeRows = await db
-    .select({ date: timeEntries.date })
+  const [lastTeRow] = await db
+    .select({ maxDate: sql<string | null>`max(${timeEntries.date})` })
     .from(timeEntries)
     .where(eq(timeEntries.projectId, projectId));
 
   let lastActivityDate: string | null = null;
   let daysSinceLastActivity = 999;
 
-  if (allTeRows.length > 0) {
-    const lastDate = allTeRows
-      .map((r) => new Date(r.date))
-      .sort((a, b) => b.getTime() - a.getTime())[0];
+  if (lastTeRow?.maxDate) {
+    const lastDate = new Date(lastTeRow.maxDate);
     lastActivityDate = lastDate.toISOString().split("T")[0];
     daysSinceLastActivity = daysBetween(lastDate, today);
   }
