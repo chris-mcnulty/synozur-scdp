@@ -25,7 +25,7 @@ import {
   clients,
   users,
 } from "@shared/schema";
-import { eq, and, lt, gte, lte, inArray, sql, ne } from "drizzle-orm";
+import { eq, and, inArray, sql, ne, not } from "drizzle-orm";
 import pLimit from "p-limit";
 
 // ---------------------------------------------------------------------------
@@ -50,38 +50,31 @@ export interface ProjectSlippageMetrics {
   projectStatus: string;
   startDate: string | null;
   endDate: string | null;
-  // Schedule
   plannedProgressPct: number;
   actualProgressPct: number;
   spi: number;
   projectedSlipDays: number;
   projectedCompletionDate: string | null;
-  // Assignments
   overdueAssignments: number;
   totalOpenAssignments: number;
   overdueAssignmentNames: string[];
-  // Deliverables / Milestones
   overdueDeliverables: number;
   atRiskDeliverables: number;
   overdueMilestones: number;
   atRiskMilestones: number;
   overdueDeliverableNames: string[];
   overdueMilestoneNames: string[];
-  // RAIDD
   openCriticalRisks: number;
   openHighRisks: number;
   openCriticalIssues: number;
   openHighIssues: number;
-  // Velocity
   lastActivityDate: string | null;
   daysSinceLastActivity: number;
   weeklyBurnRate: number;
   plannedWeeklyBurnRate: number;
-  // Composite
   slippageScore: number;
   slippageLevel: "on-track" | "watch" | "at-risk" | "critical";
   recommendations: SlippageRecommendation[];
-  // Signal breakdown (for tooltip/detail)
   signals: {
     scheduleSignal: number;
     assignmentSignal: number;
@@ -117,21 +110,21 @@ export interface UserSlippageAlert {
 // Constants
 // ---------------------------------------------------------------------------
 
-const AT_RISK_DAYS_AHEAD = 14; // deliverable/milestone due within this many days
-const VELOCITY_IDLE_WARNING_DAYS = 7; // warn if no time logged for this many days
+const AT_RISK_DAYS_AHEAD = 14;
+const VELOCITY_IDLE_WARNING_DAYS = 7;
 const VELOCITY_IDLE_CRITICAL_DAYS = 14;
 const TRAILING_WEEKS_FOR_BURN_RATE = 4;
-const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2-minute server-side cache
+const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000;
+const PORTFOLIO_CONCURRENCY = 5;
 
 // ---------------------------------------------------------------------------
-// In-memory cache for portfolio slippage (avoids repeated heavy queries)
+// In-memory cache for portfolio slippage
 // ---------------------------------------------------------------------------
 
-interface CacheEntry {
-  data: PortfolioSlippageSummary;
-  expiry: number;
-}
-const portfolioCache = new Map<string, CacheEntry>();
+const portfolioCache = new Map<
+  string,
+  { data: PortfolioSlippageSummary; expiresAt: number }
+>();
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -162,8 +155,6 @@ export async function calculateProjectSlippage(
 ): Promise<ProjectSlippageMetrics | null> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
-  // --- Load project ---
   const [project] = await db
     .select({
       id: projects.id,
@@ -173,48 +164,59 @@ export async function calculateProjectSlippage(
       endDate: projects.endDate,
       clientId: projects.clientId,
       pm: projects.pm,
+      clientName: clients.name,
+      pmName: users.name,
     })
     .from(projects)
+    .leftJoin(clients, eq(projects.clientId, clients.id))
+    .leftJoin(users, eq(projects.pm, users.id))
     .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)));
 
   if (!project) return null;
 
-  // --- Load client name ---
-  let clientName = "Unknown";
-  if (project.clientId) {
-    const [client] = await db
-      .select({ name: clients.name })
-      .from(clients)
-      .where(eq(clients.id, project.clientId));
-    if (client) clientName = client.name;
-  }
+  const clientName = project.clientName || "Unknown";
+  const pmName = project.pmName || null;
 
-  // --- Load PM name ---
-  let pmName: string | null = null;
-  if (project.pm) {
-    const [pm] = await db
-      .select({ name: users.name })
-      .from(users)
-      .where(eq(users.id, project.pm));
-    if (pm) pmName = pm.name;
-  }
+  const start = project.startDate ? new Date(project.startDate) : null;
+  const end = project.endDate ? new Date(project.endDate) : null;
 
-  // --- Schedule signal ---
   let plannedProgressPct = 0;
   let actualProgressPct = 0;
   let spi = 1;
   let estimatedHours = 0;
   let actualHours = 0;
 
-  const start = project.startDate ? new Date(project.startDate) : null;
-  const end = project.endDate ? new Date(project.endDate) : null;
+  const trailingStart = new Date(today);
+  trailingStart.setDate(today.getDate() - TRAILING_WEEKS_FOR_BURN_RATE * 7);
+  const trailingStartStr = trailingStart.toISOString().split("T")[0];
+
+  const [teSums] = await db
+    .select({
+      totalHours: sql<string>`COALESCE(SUM(${timeEntries.hours}), '0')`,
+      trailingHours: sql<string>`COALESCE(SUM(CASE WHEN ${timeEntries.date} >= ${trailingStartStr} THEN ${timeEntries.hours} ELSE 0 END), '0')`,
+      lastDate: sql<string | null>`MAX(${timeEntries.date})`,
+    })
+    .from(timeEntries)
+    .where(eq(timeEntries.projectId, projectId));
+
+  actualHours = parseFloat(teSums?.totalHours ?? "0");
+  const recentHours = parseFloat(teSums?.trailingHours ?? "0");
+  const weeklyBurnRate = recentHours / TRAILING_WEEKS_FOR_BURN_RATE;
+
+  let lastActivityDate: string | null = null;
+  let daysSinceLastActivity = 999;
+
+  if (teSums?.lastDate) {
+    const lastDate = new Date(teSums.lastDate);
+    lastActivityDate = lastDate.toISOString().split("T")[0];
+    daysSinceLastActivity = daysBetween(lastDate, today);
+  }
 
   if (start && end && end > start) {
     const totalDays = daysBetween(start, end);
     const elapsedDays = clamp(daysBetween(start, today), 0, totalDays);
     plannedProgressPct = totalDays > 0 ? (elapsedDays / totalDays) * 100 : 0;
 
-    // Get estimated hours from latest approved (or most recent) estimate
     const projectEstimates = await db
       .select({ id: estimates.id, status: estimates.status })
       .from(estimates)
@@ -224,22 +226,14 @@ export async function calculateProjectSlippage(
     const targetEst = approvedEst || projectEstimates[0];
 
     if (targetEst) {
-      const lineItems = await db
-        .select({ adjustedHours: estimateLineItems.adjustedHours })
+      const [lineItemSum] = await db
+        .select({
+          total: sql<string>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS DECIMAL)), 0)`,
+        })
         .from(estimateLineItems)
         .where(eq(estimateLineItems.estimateId, targetEst.id));
-      estimatedHours = lineItems.reduce(
-        (sum, li) => sum + parseFloat(li.adjustedHours || "0"),
-        0
-      );
+      estimatedHours = parseFloat(lineItemSum?.total ?? "0");
     }
-
-    // Actual hours from time entries (aggregate in DB to avoid full table scan)
-    const [teSum] = await db
-      .select({ total: sql<string>`COALESCE(SUM(${timeEntries.hours}), '0')` })
-      .from(timeEntries)
-      .where(eq(timeEntries.projectId, projectId));
-    actualHours = parseFloat(teSum?.total ?? "0");
 
     if (estimatedHours > 0) {
       actualProgressPct = (actualHours / estimatedHours) * 100;
@@ -248,25 +242,7 @@ export async function calculateProjectSlippage(
     spi = plannedProgressPct > 0 ? actualProgressPct / plannedProgressPct : 1;
   }
 
-  // Schedule signal: 0 when SPI ≥ 1, reaches 100 when SPI ≤ 0.5
   const scheduleSignal = clamp((1 - spi) * 200, 0, 100);
-
-  // --- Projected slip days ---
-  // Calculate trailing burn rate (hours/week over last N weeks)
-  const trailingStart = new Date(today);
-  trailingStart.setDate(today.getDate() - TRAILING_WEEKS_FOR_BURN_RATE * 7);
-
-  const [recentTeSum] = await db
-    .select({ total: sql<string>`COALESCE(SUM(${timeEntries.hours}), '0')` })
-    .from(timeEntries)
-    .where(
-      and(
-        eq(timeEntries.projectId, projectId),
-        gte(timeEntries.date, trailingStart.toISOString().split("T")[0])
-      )
-    );
-  const recentHours = parseFloat(recentTeSum?.total ?? "0");
-  const weeklyBurnRate = recentHours / TRAILING_WEEKS_FOR_BURN_RATE;
 
   let projectedSlipDays = 0;
   let projectedCompletionDate: string | null = null;
@@ -280,22 +256,24 @@ export async function calculateProjectSlippage(
     projectedCompletionDate = projectedEnd.toISOString().split("T")[0];
   }
 
-  // Planned weekly burn rate from allocations
-  const allAllocRows = await db
+  const allocRows = await db
     .select({
+      id: projectAllocations.id,
+      status: projectAllocations.status,
       hours: projectAllocations.hours,
-      plannedStartDate: projectAllocations.plannedStartDate,
       plannedEndDate: projectAllocations.plannedEndDate,
+      taskDescription: projectAllocations.taskDescription,
     })
     .from(projectAllocations)
     .where(
       and(
         eq(projectAllocations.projectId, projectId),
+        eq(projectAllocations.isBaseline, false),
         ne(projectAllocations.status, "cancelled")
       )
     );
 
-  let totalAllocHours = allAllocRows.reduce(
+  const totalAllocHours = allocRows.reduce(
     (sum, r) => sum + parseFloat(r.hours || "0"),
     0
   );
@@ -306,23 +284,8 @@ export async function calculateProjectSlippage(
     plannedWeeklyBurnRate = totalAllocHours / totalWeeks;
   }
 
-  // --- Assignment signal ---
   const openStatuses = ["open", "in_progress"];
-  const openAllocRows = await db
-    .select({
-      id: projectAllocations.id,
-      status: projectAllocations.status,
-      plannedEndDate: projectAllocations.plannedEndDate,
-      taskDescription: projectAllocations.taskDescription,
-    })
-    .from(projectAllocations)
-    .where(
-      and(
-        eq(projectAllocations.projectId, projectId),
-        inArray(projectAllocations.status, openStatuses)
-      )
-    );
-
+  const openAllocRows = allocRows.filter((r) => openStatuses.includes(r.status));
   const totalOpenAssignments = openAllocRows.length;
   const overdueAllocRows = openAllocRows.filter(
     (r) => r.plannedEndDate && new Date(r.plannedEndDate) < today
@@ -338,10 +301,10 @@ export async function calculateProjectSlippage(
     100
   );
 
-  // --- Milestone / Deliverable signal ---
   const atRiskCutoff = new Date(today);
   atRiskCutoff.setDate(today.getDate() + AT_RISK_DAYS_AHEAD);
 
+  const terminalDeliverableStatuses = ["accepted", "rejected"];
   const deliverableRows = await db
     .select({
       id: projectDeliverables.id,
@@ -350,16 +313,17 @@ export async function calculateProjectSlippage(
       status: projectDeliverables.status,
     })
     .from(projectDeliverables)
-    .where(eq(projectDeliverables.projectId, projectId));
+    .where(
+      and(
+        eq(projectDeliverables.projectId, projectId),
+        not(inArray(projectDeliverables.status, terminalDeliverableStatuses))
+      )
+    );
 
-  const terminalDeliverableStatuses = ["accepted", "rejected"];
-  const activeDeliverables = deliverableRows.filter(
-    (d) => !terminalDeliverableStatuses.includes(d.status)
-  );
-  const overdueDeliverableRows = activeDeliverables.filter(
+  const overdueDeliverableRows = deliverableRows.filter(
     (d) => d.targetDate && new Date(d.targetDate) < today
   );
-  const atRiskDeliverableRows = activeDeliverables.filter(
+  const atRiskDeliverableRows = deliverableRows.filter(
     (d) =>
       d.targetDate &&
       new Date(d.targetDate) >= today &&
@@ -369,6 +333,7 @@ export async function calculateProjectSlippage(
   const atRiskDeliverables = atRiskDeliverableRows.length;
   const overdueDeliverableNames = overdueDeliverableRows.map((d) => d.name).slice(0, 5);
 
+  const terminalMilestoneStatuses = ["completed", "cancelled"];
   const milestoneRows = await db
     .select({
       id: projectMilestones.id,
@@ -377,16 +342,17 @@ export async function calculateProjectSlippage(
       status: projectMilestones.status,
     })
     .from(projectMilestones)
-    .where(eq(projectMilestones.projectId, projectId));
+    .where(
+      and(
+        eq(projectMilestones.projectId, projectId),
+        not(inArray(projectMilestones.status, terminalMilestoneStatuses))
+      )
+    );
 
-  const terminalMilestoneStatuses = ["completed", "cancelled"];
-  const activeMilestones = milestoneRows.filter(
-    (m) => !terminalMilestoneStatuses.includes(m.status)
-  );
-  const overdueMilestoneRows = activeMilestones.filter(
+  const overdueMilestoneRows = milestoneRows.filter(
     (m) => m.targetDate && new Date(m.targetDate) < today
   );
-  const atRiskMilestoneRows = activeMilestones.filter(
+  const atRiskMilestoneRows = milestoneRows.filter(
     (m) =>
       m.targetDate &&
       new Date(m.targetDate) >= today &&
@@ -405,7 +371,6 @@ export async function calculateProjectSlippage(
     100
   );
 
-  // --- RAIDD signal ---
   const openRaiddRows = await db
     .select({
       type: raiddEntries.type,
@@ -438,29 +403,12 @@ export async function calculateProjectSlippage(
     100
   );
 
-  // --- Velocity signal ---
-  const [lastTeRow] = await db
-    .select({ maxDate: sql<string | null>`max(${timeEntries.date})` })
-    .from(timeEntries)
-    .where(eq(timeEntries.projectId, projectId));
-
-  let lastActivityDate: string | null = null;
-  let daysSinceLastActivity = 999;
-
-  if (lastTeRow?.maxDate) {
-    const lastDate = new Date(lastTeRow.maxDate);
-    lastActivityDate = lastDate.toISOString().split("T")[0];
-    daysSinceLastActivity = daysBetween(lastDate, today);
-  }
-
-  // Only apply velocity signal if project is active and has been running for > 1 week
   const projectAge = start ? daysBetween(start, today) : 0;
   const velocitySignal =
     projectAge > 7
       ? clamp(daysSinceLastActivity * 5, 0, 100)
       : 0;
 
-  // --- Composite score ---
   const slippageScore = Math.round(
     scheduleSignal * 0.30 +
       assignmentSignal * 0.25 +
@@ -471,7 +419,6 @@ export async function calculateProjectSlippage(
 
   const slippageLevel = slippageLevelFromScore(slippageScore);
 
-  // --- Recommendations ---
   const recommendations = generateRecommendations({
     spi,
     projectedSlipDays,
@@ -539,14 +486,6 @@ export async function calculateProjectSlippage(
 // Portfolio-level summary
 // ---------------------------------------------------------------------------
 
-// In-memory TTL cache: avoids recomputing for every dashboard load within the window.
-// Keyed by tenantId. TTL matches the client-side staleTime (5 min) minus a small buffer.
-const portfolioCache = new Map<
-  string,
-  { data: PortfolioSlippageSummary; expiresAt: number }
->();
-const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
-
 export async function calculatePortfolioSlippage(
   tenantId: string
 ): Promise<PortfolioSlippageSummary> {
@@ -558,15 +497,16 @@ export async function calculatePortfolioSlippage(
     .from(projects)
     .where(and(eq(projects.tenantId, tenantId), eq(projects.status, "active")));
 
-  // Compute all projects in parallel rather than sequentially
+  const limit = pLimit(PORTFOLIO_CONCURRENCY);
   const settled = await Promise.all(
-    activeProjects.map((proj) => calculateProjectSlippage(proj.id, tenantId))
+    activeProjects.map((proj) =>
+      limit(() => calculateProjectSlippage(proj.id, tenantId))
+    )
   );
   const results: ProjectSlippageMetrics[] = settled.filter(
     (m): m is ProjectSlippageMetrics => m !== null
   );
 
-  // Sort by slippageScore descending
   results.sort((a, b) => b.slippageScore - a.slippageScore);
 
   const summary = {
@@ -600,7 +540,6 @@ export async function getUserSlippageAlerts(
 
   const alerts: UserSlippageAlert[] = [];
 
-  // Get this user's open allocations
   const userAllocs = await db
     .select({
       id: projectAllocations.id,
@@ -613,6 +552,7 @@ export async function getUserSlippageAlerts(
     .where(
       and(
         eq(projectAllocations.personId, userId),
+        eq(projectAllocations.isBaseline, false),
         inArray(projectAllocations.status, ["open", "in_progress"])
       )
     );
@@ -621,16 +561,16 @@ export async function getUserSlippageAlerts(
 
   const projectIds = [...new Set(userAllocs.map((a) => a.projectId))];
 
-  // Load project names
   const projectRows = await db
     .select({ id: projects.id, name: projects.name, tenantId: projects.tenantId })
     .from(projects)
     .where(inArray(projects.id, projectIds));
 
-  // Filter to same tenant
   const tenantProjectIds = new Set(
     projectRows.filter((p) => p.tenantId === tenantId).map((p) => p.id)
   );
+  if (tenantProjectIds.size === 0) return alerts;
+
   const projectNameMap = new Map(projectRows.map((p) => [p.id, p.name]));
 
   for (const alloc of userAllocs) {
@@ -652,7 +592,6 @@ export async function getUserSlippageAlerts(
     }
   }
 
-  // Check velocity per project — single batched query instead of N per-project queries
   const velocityRows = await db
     .select({
       projectId: timeEntries.projectId,
@@ -689,7 +628,6 @@ export async function getUserSlippageAlerts(
     }
   }
 
-  // Sort: critical first, then by daysSince desc
   alerts.sort((a, b) => {
     if (a.severity === "critical" && b.severity !== "critical") return -1;
     if (b.severity === "critical" && a.severity !== "critical") return 1;
@@ -723,7 +661,6 @@ function generateRecommendations(params: {
 }): SlippageRecommendation[] {
   const recs: SlippageRecommendation[] = [];
 
-  // Schedule
   if (params.spi < 0.7 && params.projectedSlipDays > 0) {
     recs.push({
       type: "schedule",
@@ -740,7 +677,6 @@ function generateRecommendations(params: {
     });
   }
 
-  // Assignments
   if (params.overdueAssignments > 0) {
     const names = params.overdueAssignmentNames.join(", ");
     recs.push({
@@ -751,7 +687,6 @@ function generateRecommendations(params: {
     });
   }
 
-  // Deliverables
   if (params.overdueDeliverables > 0) {
     recs.push({
       type: "milestone",
@@ -768,7 +703,6 @@ function generateRecommendations(params: {
     });
   }
 
-  // Milestones
   if (params.overdueMilestones > 0) {
     recs.push({
       type: "milestone",
@@ -785,7 +719,6 @@ function generateRecommendations(params: {
     });
   }
 
-  // RAIDD
   if (params.openCriticalRisks > 0 || params.openCriticalIssues > 0) {
     recs.push({
       type: "raidd",
@@ -802,7 +735,6 @@ function generateRecommendations(params: {
     });
   }
 
-  // Velocity
   if (params.projectAge > 7 && params.daysSinceLastActivity >= VELOCITY_IDLE_CRITICAL_DAYS) {
     recs.push({
       type: "velocity",
