@@ -26,6 +26,7 @@ import {
   users,
 } from "@shared/schema";
 import { eq, and, lt, gte, lte, inArray, sql, ne } from "drizzle-orm";
+import pLimit from "p-limit";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -120,6 +121,17 @@ const AT_RISK_DAYS_AHEAD = 14; // deliverable/milestone due within this many day
 const VELOCITY_IDLE_WARNING_DAYS = 7; // warn if no time logged for this many days
 const VELOCITY_IDLE_CRITICAL_DAYS = 14;
 const TRAILING_WEEKS_FOR_BURN_RATE = 4;
+const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2-minute server-side cache
+
+// ---------------------------------------------------------------------------
+// In-memory cache for portfolio slippage (avoids repeated heavy queries)
+// ---------------------------------------------------------------------------
+
+interface CacheEntry {
+  data: PortfolioSlippageSummary;
+  expiry: number;
+}
+const portfolioCache = new Map<string, CacheEntry>();
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -427,18 +439,16 @@ export async function calculateProjectSlippage(
   );
 
   // --- Velocity signal ---
-  const allTeRows = await db
-    .select({ date: timeEntries.date })
+  const [lastTeRow] = await db
+    .select({ maxDate: sql<string | null>`max(${timeEntries.date})` })
     .from(timeEntries)
     .where(eq(timeEntries.projectId, projectId));
 
   let lastActivityDate: string | null = null;
   let daysSinceLastActivity = 999;
 
-  if (allTeRows.length > 0) {
-    const lastDate = allTeRows
-      .map((r) => new Date(r.date))
-      .sort((a, b) => b.getTime() - a.getTime())[0];
+  if (lastTeRow?.maxDate) {
+    const lastDate = new Date(lastTeRow.maxDate);
     lastActivityDate = lastDate.toISOString().split("T")[0];
     daysSinceLastActivity = daysBetween(lastDate, today);
   }
