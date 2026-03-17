@@ -24,6 +24,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { SlippageBadge } from "@/components/dashboard/slippage-badge";
+import { useAuth } from "@/hooks/use-auth";
 import type { PortfolioSlippageSummary } from "@/lib/types";
 import {
   addMonths,
@@ -83,6 +84,8 @@ interface TimelineData {
 
 export function PortfolioTimeline() {
   const [, navigate] = useLocation();
+  const { hasAnyRole } = useAuth();
+  const canViewSlippage = hasAnyRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]);
   const [filter, setFilter] = useState<TimelineFilter>("active");
   const [scale, setScale] = useState<TimelineScale>("2q");
   const [viewStart, setViewStart] = useState(() => startOfQuarter(new Date()));
@@ -98,7 +101,7 @@ export function PortfolioTimeline() {
   const { data: slippageData } = useQuery<PortfolioSlippageSummary>({
     queryKey: ["/api/portfolio/slippage"],
     staleTime: 5 * 60 * 1000,
-    enabled: filter === "active" || filter === "both",
+    enabled: canViewSlippage && (filter === "active" || filter === "both"),
   });
 
   const slippageMap = useMemo(() => {
