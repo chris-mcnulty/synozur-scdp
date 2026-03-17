@@ -1868,6 +1868,54 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // =========================================================================
+  // Slippage Analytics Endpoints
+  // =========================================================================
+
+  // Portfolio-level slippage summary
+  app.get("/api/portfolio/slippage", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const { calculatePortfolioSlippage } = await import("./lib/slippage.js");
+      const tenantId = req.user!.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const summary = await calculatePortfolioSlippage(tenantId);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error calculating portfolio slippage:", error);
+      res.status(500).json({ message: "Failed to calculate portfolio slippage" });
+    }
+  });
+
+  // Single-project slippage metrics
+  app.get("/api/projects/:id/slippage", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const { calculateProjectSlippage } = await import("./lib/slippage.js");
+      const tenantId = req.user!.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const metrics = await calculateProjectSlippage(req.params.id, tenantId);
+      if (!metrics) return res.status(404).json({ message: "Project not found" });
+      res.json(metrics);
+    } catch (error) {
+      console.error("Error calculating project slippage:", error);
+      res.status(500).json({ message: "Failed to calculate project slippage" });
+    }
+  });
+
+  // User-scoped slippage alerts (role-aware: team members see own alerts; PMs/portfolio see more)
+  app.get("/api/dashboard/slippage-alerts", requireAuth, async (req, res) => {
+    try {
+      const { getUserSlippageAlerts } = await import("./lib/slippage.js");
+      const tenantId = req.user!.tenantId;
+      const userId = req.user!.id;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const alerts = await getUserSlippageAlerts(userId, tenantId);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Error calculating slippage alerts:", error);
+      res.status(500).json({ message: "Failed to calculate slippage alerts" });
+    }
+  });
+
   // Portfolio Reporting Endpoints
   app.get("/api/reports/portfolio", requireAuth, async (req, res) => {
     try {

@@ -31,6 +31,80 @@ export interface ProjectWithClient {
   };
 }
 
+export interface SlippageRecommendation {
+  type: "schedule" | "assignment" | "milestone" | "velocity" | "raidd";
+  severity: "info" | "warning" | "critical";
+  message: string;
+  action: string;
+  targetId?: string;
+  targetName?: string;
+}
+
+export interface ProjectSlippageMetrics {
+  projectId: string;
+  projectName: string;
+  clientName: string;
+  pmId: string | null;
+  pmName: string | null;
+  projectStatus: string;
+  startDate: string | null;
+  endDate: string | null;
+  plannedProgressPct: number;
+  actualProgressPct: number;
+  spi: number;
+  projectedSlipDays: number;
+  projectedCompletionDate: string | null;
+  overdueAssignments: number;
+  totalOpenAssignments: number;
+  overdueAssignmentNames: string[];
+  overdueDeliverables: number;
+  atRiskDeliverables: number;
+  overdueMilestones: number;
+  atRiskMilestones: number;
+  overdueDeliverableNames: string[];
+  overdueMilestoneNames: string[];
+  openCriticalRisks: number;
+  openHighRisks: number;
+  openCriticalIssues: number;
+  openHighIssues: number;
+  lastActivityDate: string | null;
+  daysSinceLastActivity: number;
+  weeklyBurnRate: number;
+  plannedWeeklyBurnRate: number;
+  slippageScore: number;
+  slippageLevel: "on-track" | "watch" | "at-risk" | "critical";
+  recommendations: SlippageRecommendation[];
+  signals: {
+    scheduleSignal: number;
+    assignmentSignal: number;
+    milestoneSignal: number;
+    raiddSignal: number;
+    velocitySignal: number;
+  };
+}
+
+export interface PortfolioSlippageSummary {
+  asOf: string;
+  summary: {
+    onTrack: number;
+    watch: number;
+    atRisk: number;
+    critical: number;
+  };
+  projects: ProjectSlippageMetrics[];
+}
+
+export interface UserSlippageAlert {
+  type: "overdue_assignment" | "velocity_lag";
+  severity: "warning" | "critical";
+  message: string;
+  action: string;
+  projectId: string;
+  projectName: string;
+  assignmentId?: string;
+  daysSince?: number;
+}
+
 export interface EstimateAllocationData {
   id: string;
   weekStartDate: string;

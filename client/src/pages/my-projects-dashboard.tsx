@@ -6,21 +6,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
-import { 
-  Clock, 
-  Receipt, 
-  CheckCircle, 
-  AlertCircle, 
+import {
+  Clock,
+  Receipt,
+  CheckCircle,
+  AlertCircle,
   Calendar,
   TrendingUp,
   Briefcase,
   DollarSign,
   FileText,
-  ChevronRight
+  ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import { formatProjectLabel } from "@/lib/project-utils";
+import type { UserSlippageAlert } from "@/lib/types";
 
 interface Assignment {
   id: string;
@@ -51,9 +53,16 @@ interface ExpenseSummary {
 
 export default function MyProjectsDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
+  const [, navigate] = useLocation();
 
   const { data: currentUser } = useQuery<any>({
     queryKey: ['/api/users/me'],
+  });
+
+  const { data: slippageAlerts = [] } = useQuery<UserSlippageAlert[]>({
+    queryKey: ['/api/dashboard/slippage-alerts'],
+    staleTime: 5 * 60 * 1000,
+    enabled: !!currentUser,
   });
 
   const { data: assignmentsData, isLoading: assignmentsLoading } = useQuery<any>({
@@ -210,6 +219,27 @@ export default function MyProjectsDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
+                  {/* Slippage Alerts */}
+                  {slippageAlerts.slice(0, 5).map((alert, i) => (
+                    <div
+                      key={`${alert.type}-${i}`}
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted cursor-pointer"
+                      onClick={() => navigate(`/projects/${alert.projectId}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle
+                          className={`h-5 w-5 flex-shrink-0 ${
+                            alert.severity === "critical" ? "text-red-500" : "text-orange-500"
+                          }`}
+                        />
+                        <div>
+                          <p className="text-sm">{alert.message}</p>
+                          <p className="text-xs text-muted-foreground">{alert.action}</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 flex-shrink-0" />
+                    </div>
+                  ))}
                   {expenseSummary.draft > 0 && (
                     <Link href="/expenses">
                       <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted cursor-pointer">
@@ -232,7 +262,7 @@ export default function MyProjectsDashboard() {
                       </div>
                     </Link>
                   )}
-                  {activeAssignments.length === 0 && expenseSummary.draft === 0 && thisWeekHours >= 40 && (
+                  {slippageAlerts.length === 0 && activeAssignments.length === 0 && expenseSummary.draft === 0 && thisWeekHours >= 40 && (
                     <p className="text-muted-foreground text-center py-4">
                       All caught up! No pending items.
                     </p>

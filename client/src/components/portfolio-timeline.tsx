@@ -23,6 +23,8 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react";
+import { SlippageBadge } from "@/components/dashboard/slippage-badge";
+import type { PortfolioSlippageSummary } from "@/lib/types";
 import {
   addMonths,
   startOfQuarter,
@@ -92,6 +94,20 @@ export function PortfolioTimeline() {
   const { data, isLoading } = useQuery<TimelineData>({
     queryKey: [`/api/portfolio/timeline?filter=${filter}`],
   });
+
+  const { data: slippageData } = useQuery<PortfolioSlippageSummary>({
+    queryKey: ["/api/portfolio/slippage"],
+    staleTime: 5 * 60 * 1000,
+    enabled: filter === "active" || filter === "both",
+  });
+
+  const slippageMap = useMemo(() => {
+    const m = new Map<string, { level: PortfolioSlippageSummary["projects"][0]["slippageLevel"]; score: number; projectedSlipDays: number }>();
+    slippageData?.projects.forEach((p) => {
+      m.set(p.projectId, { level: p.slippageLevel, score: p.slippageScore, projectedSlipDays: p.projectedSlipDays });
+    });
+    return m;
+  }, [slippageData]);
 
   const months = useMemo(() => {
     const result = [];
@@ -180,6 +196,21 @@ export function PortfolioTimeline() {
     }
     if (item.status === "on-hold") {
       return "bg-gray-400/80 dark:bg-gray-500/80 border-gray-500 dark:border-gray-400";
+    }
+    // Apply slippage-aware border for active projects
+    if (item.type === "project") {
+      const slip = slippageMap.get(item.id);
+      if (slip) {
+        if (slip.level === "critical") {
+          return "bg-blue-500/80 dark:bg-blue-600/80 border-red-500 border-2";
+        }
+        if (slip.level === "at-risk") {
+          return "bg-blue-500/80 dark:bg-blue-600/80 border-orange-400 border-2";
+        }
+        if (slip.level === "watch") {
+          return "bg-blue-500/80 dark:bg-blue-600/80 border-amber-400 border-2";
+        }
+      }
     }
     if (item.projectedEndDate) {
       return "bg-blue-500/80 dark:bg-blue-600/80 border-blue-600 dark:border-blue-500 border-dashed";
@@ -546,6 +577,21 @@ export function PortfolioTimeline() {
 
                                       <div className="text-muted-foreground">Status</div>
                                       <div className="capitalize">{item.status}</div>
+
+                                      {item.type === "project" && slippageMap.has(item.id) && (() => {
+                                        const slip = slippageMap.get(item.id)!;
+                                        return (
+                                          <>
+                                            <div className="text-muted-foreground">Schedule</div>
+                                            <div>
+                                              <SlippageBadge level={slip.level} score={slip.score} showScore />
+                                              {slip.projectedSlipDays > 0 && (
+                                                <span className="ml-1 text-red-600 text-xs">+{slip.projectedSlipDays}d slip</span>
+                                              )}
+                                            </div>
+                                          </>
+                                        );
+                                      })()}
 
                                       {item.code && (
                                         <>

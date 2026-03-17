@@ -49,6 +49,7 @@ import Signup from "@/pages/signup";
 import FileRepository from "@/pages/file-repository";
 import PortfolioTimelinePage from "@/pages/portfolio-timeline-page";
 import PortfolioRaidd from "@/pages/portfolio-raidd";
+import PortfolioSlippage from "@/pages/portfolio-slippage";
 import MyRaidd from "@/pages/my-raidd";
 import CrmDeals from "@/pages/crm-deals";
 import AiSettings from "@/pages/ai-settings";
@@ -198,6 +199,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={["admin", "pm", "executive"]}>
             <PortfolioRaidd />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/portfolio/schedule-health">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "billing-admin", "pm", "portfolio-manager", "executive"]}>
+            <PortfolioSlippage />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
