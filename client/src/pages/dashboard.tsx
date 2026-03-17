@@ -23,6 +23,8 @@ import {
   TrendingDown,
 } from "lucide-react";
 import type { DashboardMetrics, ProjectWithClient, PortfolioSlippageSummary } from "@/lib/types";
+import { useAuth } from "@/hooks/use-auth";
+import { SLIPPAGE_ROLE_LIST } from "@/lib/auth";
 
 
 interface TenantInfo {
@@ -38,6 +40,8 @@ interface TenantsResponse {
 
 export default function Dashboard() {
   const [, navigate] = useLocation();
+  const { hasAnyRole } = useAuth();
+  const canViewSlippage = hasAnyRole(SLIPPAGE_ROLE_LIST);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
@@ -50,6 +54,7 @@ export default function Dashboard() {
   const { data: slippageData } = useQuery<PortfolioSlippageSummary>({
     queryKey: ["/api/portfolio/slippage"],
     staleTime: 5 * 60 * 1000,
+    enabled: canViewSlippage,
   });
 
   // Build a quick lookup: projectId -> slippageLevel
