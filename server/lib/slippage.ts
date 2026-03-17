@@ -26,6 +26,7 @@ import {
   users,
 } from "@shared/schema";
 import { eq, and, lt, gte, lte, inArray, sql, ne } from "drizzle-orm";
+import pLimit from "p-limit";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -532,20 +533,34 @@ export async function calculateProjectSlippage(
 // Portfolio-level summary
 // ---------------------------------------------------------------------------
 
+// Simple in-memory cache with 2-minute TTL per tenant
+const portfolioCache = new Map<string, { data: PortfolioSlippageSummary; expiresAt: number }>();
+const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
 export async function calculatePortfolioSlippage(
   tenantId: string
 ): Promise<PortfolioSlippageSummary> {
+  // Return cached result if still valid
+  const cached = portfolioCache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
   const activeProjects = await db
     .select({ id: projects.id })
     .from(projects)
     .where(and(eq(projects.tenantId, tenantId), eq(projects.status, "active")));
 
-  const results: ProjectSlippageMetrics[] = [];
-
-  for (const proj of activeProjects) {
-    const metrics = await calculateProjectSlippage(proj.id, tenantId);
-    if (metrics) results.push(metrics);
-  }
+  // Run project calculations in parallel with a concurrency limit of 5
+  const limit = pLimit(5);
+  const settled = await Promise.all(
+    activeProjects.map((proj) =>
+      limit(() => calculateProjectSlippage(proj.id, tenantId))
+    )
+  );
+  const results: ProjectSlippageMetrics[] = settled.filter(
+    (m): m is ProjectSlippageMetrics => m !== null
+  );
 
   // Sort by slippageScore descending
   results.sort((a, b) => b.slippageScore - a.slippageScore);
@@ -557,11 +572,20 @@ export async function calculatePortfolioSlippage(
     critical: results.filter((r) => r.slippageLevel === "critical").length,
   };
 
-  return {
+  const portfolioData: PortfolioSlippageSummary = {
     asOf: new Date().toISOString(),
     summary,
     projects: results,
   };
+
+  // Store in cache and evict any stale entries
+  const now = Date.now();
+  for (const [key, entry] of portfolioCache) {
+    if (entry.expiresAt <= now) portfolioCache.delete(key);
+  }
+  portfolioCache.set(tenantId, { data: portfolioData, expiresAt: now + PORTFOLIO_CACHE_TTL_MS });
+
+  return portfolioData;
 }
 
 // ---------------------------------------------------------------------------
