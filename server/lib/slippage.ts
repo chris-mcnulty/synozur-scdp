@@ -121,6 +121,17 @@ const AT_RISK_DAYS_AHEAD = 14; // deliverable/milestone due within this many day
 const VELOCITY_IDLE_WARNING_DAYS = 7; // warn if no time logged for this many days
 const VELOCITY_IDLE_CRITICAL_DAYS = 14;
 const TRAILING_WEEKS_FOR_BURN_RATE = 4;
+const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2-minute server-side cache
+
+// ---------------------------------------------------------------------------
+// In-memory cache for portfolio slippage (avoids repeated heavy queries)
+// ---------------------------------------------------------------------------
+
+interface CacheEntry {
+  data: PortfolioSlippageSummary;
+  expiry: number;
+}
+const portfolioCache = new Map<string, CacheEntry>();
 
 // ---------------------------------------------------------------------------
 // Internal helpers

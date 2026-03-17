@@ -76,3 +76,18 @@ export function canCreateInvoices(role: UserRole): boolean {
 export function canViewReports(role: UserRole): boolean {
   return role !== ROLES.EMPLOYEE;
 }
+
+// Roles allowed to view portfolio-level slippage / schedule health data
+const SLIPPAGE_VIEW_ROLES: ReadonlySet<UserRole> = new Set([
+  ROLES.ADMIN,
+  ROLES.BILLING_ADMIN,
+  ROLES.PM,
+  ROLES.PORTFOLIO_MANAGER,
+  ROLES.EXECUTIVE,
+]);
+
+export function canViewSlippage(role: UserRole): boolean {
+  return SLIPPAGE_VIEW_ROLES.has(role);
+}
+
+export const SLIPPAGE_ROLE_LIST: UserRole[] = [...SLIPPAGE_VIEW_ROLES];
