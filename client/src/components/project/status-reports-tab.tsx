@@ -34,17 +34,12 @@ export function StatusReportsTab({ projectId }: StatusReportsTabProps) {
 
   const { data: reports = [], isLoading } = useQuery<(StatusReport & { generatorName?: string })[]>({
     queryKey: ["/api/projects", projectId, "status-reports"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/status-reports`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch status reports");
-      return res.json();
-    },
     enabled: !!projectId,
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (reportId: string) => {
-      await apiRequest("DELETE", `/api/projects/${projectId}/status-reports/${reportId}`);
+      await apiRequest(`/api/projects/${projectId}/status-reports/${reportId}`, { method: "DELETE" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "status-reports"] });
@@ -57,7 +52,10 @@ export function StatusReportsTab({ projectId }: StatusReportsTabProps) {
 
   const finalizeMutation = useMutation({
     mutationFn: async (reportId: string) => {
-      await apiRequest("PATCH", `/api/projects/${projectId}/status-reports/${reportId}`, { status: "final" });
+      await apiRequest(`/api/projects/${projectId}/status-reports/${reportId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "final" }),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "status-reports"] });

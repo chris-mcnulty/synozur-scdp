@@ -81,7 +81,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Database Hosting**: Neon Database (PostgreSQL).
 - **Frontend Build**: Vite.
 - **UI Libraries**: Radix UI, Lucide React, Tailwind CSS.
-- **Data Management**: TanStack Query, React Hook Form.
+- **Data Management**: TanStack Query, React Hook Form. **`apiRequest` pattern**: `apiRequest(url, options?)` — NOT the 3-arg form `apiRequest(method, url, body)`. Queries should use the default `queryFn` (configured in `queryClient.ts`) which auto-injects the `x-session-id` header — never use raw `fetch()` in custom `queryFn` for authenticated endpoints (causes 401 → session recovery → reload loop).
 - **PDF Generation**: Puppeteer.
 - **Document Storage**: Replit Object Storage, Microsoft SharePoint Online, Microsoft SharePoint Embedded.
 - **Email Notifications**: Outlook/Microsoft 365 via Microsoft Graph Client.
