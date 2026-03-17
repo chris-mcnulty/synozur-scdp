@@ -58,9 +58,9 @@ export default function Dashboard() {
   });
 
   // Build a quick lookup: projectId -> slippageLevel
-  const slippageMap = new Map(
-    (slippageData?.projects ?? []).map((p) => [p.projectId, p])
-  );
+  const slippageMap = canViewSlippage
+    ? new Map((slippageData?.projects ?? []).map((p) => [p.projectId, p]))
+    : new Map();
 
   const { data: tenantsData } = useQuery<TenantsResponse>({
     queryKey: ["/api/auth/tenants"],
