@@ -3436,6 +3436,46 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/projects/:projectId/allocations/reassign-role", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { roleId, personId, roleInstanceLabel } = req.body;
+
+      if (!roleId || !personId) {
+        return res.status(400).json({ message: "roleId and personId are required" });
+      }
+
+      const allAllocations = await storage.getProjectAllocations(projectId);
+      const matchingAllocations = allAllocations.filter((a: any) => {
+        if (a.roleId !== roleId) return false;
+        if (a.isBaseline) return false;
+        if (roleInstanceLabel !== undefined && roleInstanceLabel !== null) {
+          return (a.roleInstanceLabel || null) === (roleInstanceLabel || null);
+        }
+        return true;
+      });
+
+      if (matchingAllocations.length === 0) {
+        return res.json({ updatedCount: 0, message: "No matching allocations found" });
+      }
+
+      const updatePromises = matchingAllocations.map((alloc: any) =>
+        storage.updateProjectAllocation(alloc.id, {
+          personId,
+          pricingMode: "person",
+        })
+      );
+      await Promise.all(updatePromises);
+
+      await storage.ensureProjectEngagement(projectId, personId);
+
+      res.json({ updatedCount: matchingAllocations.length });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to reassign role:", error);
+      res.status(500).json({ message: "Failed to reassign role allocations" });
+    }
+  });
+
   // Project Engagements - track user's overall engagement status on a project
   app.get("/api/projects/:projectId/engagements", requireAuth, async (req, res) => {
     try {

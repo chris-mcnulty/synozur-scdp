@@ -225,11 +225,12 @@ type EpicFormData = z.infer<typeof epicFormSchema>;
 const assignmentFormSchema = z.object({
   personId: z.string().min(1, "Person is required"),
   roleId: z.string().optional(),
+  roleInstanceLabel: z.string().optional(),
   projectWorkstreamId: z.string().optional(),
   projectEpicId: z.string().optional(),
   projectStageId: z.string().optional(),
   hours: z.string().min(1, "Hours is required"),
-  pricingMode: z.enum(["role", "person", "resource_name"]).default("person"), // Auto-determined based on assignment
+  pricingMode: z.enum(["role", "person", "resource_name"]).default("person"),
   rackRate: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -300,6 +301,17 @@ export default function ProjectDetail() {
   // Assignment state
   const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
+  const [showBulkReassignDialog, setShowBulkReassignDialog] = useState(false);
+  const [pendingReassign, setPendingReassign] = useState<{
+    allocationId: string;
+    formData: AssignmentFormData;
+    roleId: string;
+    roleName: string;
+    personId: string;
+    personName: string;
+    roleInstanceLabel?: string;
+    matchingCount: number;
+  } | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
@@ -1295,6 +1307,9 @@ export default function ProjectDetail() {
       if (data.taskDescription !== undefined) {
         processedData.taskDescription = data.taskDescription || null;
       }
+      if ('roleInstanceLabel' in data) {
+        processedData.roleInstanceLabel = data.roleInstanceLabel || null;
+      }
       
       return apiRequest(`/api/projects/${id}/allocations/${allocationId}`, {
         method: "PUT",
@@ -1336,6 +1351,31 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete assignment",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const bulkReassignRoleMutation = useMutation({
+    mutationFn: async (data: { roleId: string; personId: string; roleInstanceLabel?: string }) => {
+      return apiRequest(`/api/projects/${id}/allocations/reassign-role`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: async (response: any) => {
+      const result = typeof response === 'object' ? response : await response.json?.() || {};
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
+      toast({
+        title: "Bulk reassignment complete",
+        description: `${result.updatedCount || 'All matching'} task(s) updated`
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reassign role",
         variant: "destructive"
       });
     }
@@ -3099,7 +3139,12 @@ export default function ProjectDetail() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>{allocation.role?.name || '—'}</TableCell>
+                          <TableCell>
+                            {allocation.role?.name || '—'}
+                            {allocation.roleInstanceLabel && (
+                              <Badge variant="outline" className="ml-1 text-xs">{allocation.roleInstanceLabel}</Badge>
+                            )}
+                          </TableCell>
                           <TableCell>{allocation.workstream?.name || '—'}</TableCell>
                           <TableCell>
                             {allocation.epic || allocation.stage ? (
@@ -5575,11 +5620,12 @@ export default function ProjectDetail() {
               const workstreamIdValue = formData.get('workstreamId') as string;
               const epicIdValue = formData.get('epicId') as string;
               const stageIdValue = formData.get('stageId') as string;
+              const roleInstanceLabelRaw = (formData.get('roleInstanceLabel') as string)?.trim();
+              const roleInstanceLabelValue = roleInstanceLabelRaw || undefined;
               
               const personIdValue = formData.get('personId') as string;
               const roleIdFinal = roleIdValue === 'none' ? undefined : roleIdValue || undefined;
               
-              // Auto-determine pricing mode based on what's assigned
               let pricingMode: "role" | "person" | "resource_name" = "resource_name";
               if (personIdValue) {
                 pricingMode = "person";
@@ -5590,6 +5636,7 @@ export default function ProjectDetail() {
               const data: AssignmentFormData = {
                 personId: personIdValue,
                 roleId: roleIdFinal,
+                roleInstanceLabel: roleInstanceLabelValue,
                 projectWorkstreamId: workstreamIdValue === 'none' ? undefined : workstreamIdValue || undefined,
                 projectEpicId: epicIdValue === 'none' ? undefined : epicIdValue || undefined,
                 projectStageId: stageIdValue === 'none' ? undefined : stageIdValue || undefined,
@@ -5602,6 +5649,36 @@ export default function ProjectDetail() {
               };
               
               if (editingAssignment) {
+                const isNewPersonAssignment = personIdValue && roleIdFinal && 
+                  editingAssignment.personId !== personIdValue;
+                
+                if (isNewPersonAssignment) {
+                  const instanceLabel = roleInstanceLabelValue !== undefined ? roleInstanceLabelValue : (editingAssignment.roleInstanceLabel || undefined);
+                  const otherMatching = allocations.filter((a: any) => 
+                    a.id !== editingAssignment.id &&
+                    a.roleId === roleIdFinal &&
+                    !a.isBaseline &&
+                    (instanceLabel ? (a.roleInstanceLabel || undefined) === instanceLabel : true)
+                  );
+                  
+                  if (otherMatching.length > 0) {
+                    const roleName = roles.find((r: any) => r.id === roleIdFinal)?.name || 'this role';
+                    const personName = users.find((u: any) => u.id === personIdValue)?.name || 'this person';
+                    setPendingReassign({
+                      allocationId: editingAssignment.id,
+                      formData: data,
+                      roleId: roleIdFinal,
+                      roleName,
+                      personId: personIdValue,
+                      personName,
+                      roleInstanceLabel: instanceLabel,
+                      matchingCount: otherMatching.length
+                    });
+                    setShowBulkReassignDialog(true);
+                    return;
+                  }
+                }
+                
                 updateAssignmentMutation.mutate({ allocationId: editingAssignment.id, data });
               } else {
                 createAssignmentMutation.mutate(data);
@@ -5639,6 +5716,19 @@ export default function ProjectDetail() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="roleInstanceLabel">Role Instance</Label>
+                  <Input
+                    name="roleInstanceLabel"
+                    placeholder="e.g., UX Design 1, PM Lead"
+                    defaultValue={editingAssignment?.roleInstanceLabel || ''}
+                    data-testid="input-role-instance-label"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optional label to distinguish multiple people in the same role
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -5762,6 +5852,53 @@ export default function ProjectDetail() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Bulk Role Reassignment Confirmation */}
+        <AlertDialog open={showBulkReassignDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowBulkReassignDialog(false);
+            setPendingReassign(null);
+          }
+        }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Update all {pendingReassign?.roleName} tasks?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingReassign?.matchingCount} other task{pendingReassign?.matchingCount !== 1 ? 's are' : ' is'} assigned to <strong>{pendingReassign?.roleName}</strong>
+                {pendingReassign?.roleInstanceLabel && <> ({pendingReassign.roleInstanceLabel})</>}.
+                Would you like to assign <strong>{pendingReassign?.personName}</strong> to all of them?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                if (pendingReassign) {
+                  updateAssignmentMutation.mutate({ allocationId: pendingReassign.allocationId, data: pendingReassign.formData });
+                }
+                setShowBulkReassignDialog(false);
+                setPendingReassign(null);
+              }}>
+                No, just this task
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (pendingReassign) {
+                    updateAssignmentMutation.mutate({ allocationId: pendingReassign.allocationId, data: pendingReassign.formData });
+                    bulkReassignRoleMutation.mutate({
+                      roleId: pendingReassign.roleId,
+                      personId: pendingReassign.personId,
+                      roleInstanceLabel: pendingReassign.roleInstanceLabel
+                    });
+                  }
+                  setShowBulkReassignDialog(false);
+                  setPendingReassign(null);
+                }}
+                disabled={bulkReassignRoleMutation.isPending}
+              >
+                {bulkReassignRoleMutation.isPending ? "Updating..." : `Yes, update all ${(pendingReassign?.matchingCount || 0) + 1} tasks`}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Import Assignments Dialog */}
         <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>

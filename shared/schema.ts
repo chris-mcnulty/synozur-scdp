@@ -862,6 +862,7 @@ export const projectAllocations = pgTable("project_allocations", {
   status: text("status").notNull().default('open'), // open, in_progress, completed, cancelled
   startedDate: date("started_date"), // Automatically set when status → in_progress
   completedDate: date("completed_date"), // Automatically set when status → completed
+  roleInstanceLabel: text("role_instance_label"),
   isBaseline: boolean("is_baseline").notNull().default(false),
   baselineId: varchar("baseline_id"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
