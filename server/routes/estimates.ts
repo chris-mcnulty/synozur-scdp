@@ -4075,10 +4075,13 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const stages = await storage.getEstimateStages(req.params.id);
       const users = await storage.getUsers(req.user?.tenantId);
 
+      const tenantRoles = await storage.getRoles(req.user?.tenantId);
+
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
       // Stage lookup uses composite key: epicId:stageName to handle same-named stages in different epics
       const stageKeyToId = new Map(stages.map(s => [`${s.epicId}:${s.name.toLowerCase()}`, s.id]));
       const userNameToId = new Map(users.map(u => [u.name.toLowerCase(), u.id]));
+      const roleNameMap = new Map(tenantRoles.map(r => [r.name.toLowerCase().trim(), r]));
 
       const newEpics: string[] = [];
       const newStages: string[] = [];
@@ -4150,9 +4153,23 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           unmatchedStages.add(stageName);
         }
 
-        // Lookup user
+        // Lookup user first, then fall back to role matching
         const resourceName = row[colIndex.resource]?.trim();
         const assignedUserId = resourceName ? (userNameToId.get(resourceName.toLowerCase()) || null) : null;
+        let matchedRoleId: string | null = null;
+        let matchedCostRate: string | null = null;
+        if (assignedUserId) {
+          const matchedUser = users.find(u => u.id === assignedUserId);
+          if (matchedUser?.defaultCostRate) {
+            matchedCostRate = matchedUser.defaultCostRate;
+          }
+        } else if (resourceName) {
+          const matchedRole = roleNameMap.get(resourceName.toLowerCase().trim());
+          if (matchedRole) {
+            matchedRoleId = matchedRole.id;
+            matchedCostRate = matchedRole.defaultCostRate || null;
+          }
+        }
 
         // Get values and calculate
         const size = row[colIndex.size] || "small";
@@ -4207,6 +4224,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           }
         }
 
+        const costRateNum = matchedCostRate ? Number(matchedCostRate) : null;
+        const totalCost = costRateNum !== null ? adjustedHours * costRateNum : null;
+        const margin = totalCost !== null ? totalAmount - totalCost : null;
+        const marginPercent = margin !== null && totalAmount > 0 ? (margin / totalAmount) * 100 : null;
+
         lineItems.push({
           estimateId: req.params.id,
           epicId,
@@ -4216,17 +4238,21 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           description,
           category: row[colIndex.category] || null,
           assignedUserId,
+          roleId: matchedRoleId,
           resourceName: resourceName || null,
           baseHours: baseHoursNum.toString(),
           factor: factor.toString(),
           rate: rateNum.toString(),
-          costRate: null, // Cost rate not supported in CSV import
+          costRate: matchedCostRate,
           size,
           complexity,
           confidence,
           comments: row[colIndex.comments] || null,
           adjustedHours: adjustedHours.toFixed(2),
           totalAmount: totalAmount.toFixed(2),
+          totalCost: totalCost !== null ? totalCost.toFixed(2) : null,
+          margin: margin !== null ? margin.toFixed(2) : null,
+          marginPercent: marginPercent !== null ? marginPercent.toFixed(2) : null,
           durationWeeks,
           utilizationPercent,
           sortOrder: i
