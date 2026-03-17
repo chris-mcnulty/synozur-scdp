@@ -536,6 +536,10 @@ export async function calculateProjectSlippage(
 // Simple in-memory cache with 2-minute TTL per tenant
 const portfolioCache = new Map<string, { data: PortfolioSlippageSummary; expiresAt: number }>();
 const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+// Maximum number of cached tenants before a sweep for stale entries is triggered
+const PORTFOLIO_CACHE_EVICTION_THRESHOLD = 50;
+// Maximum concurrent per-project DB calculations during portfolio computation
+const PORTFOLIO_CONCURRENCY_LIMIT = 5;
 
 export async function calculatePortfolioSlippage(
   tenantId: string
@@ -551,14 +555,14 @@ export async function calculatePortfolioSlippage(
     .from(projects)
     .where(and(eq(projects.tenantId, tenantId), eq(projects.status, "active")));
 
-  // Run project calculations in parallel with a concurrency limit of 5
-  const limit = pLimit(5);
-  const settled = await Promise.all(
+  // Run project calculations in parallel with a named concurrency limit
+  const limit = pLimit(PORTFOLIO_CONCURRENCY_LIMIT);
+  const projectMetrics = await Promise.all(
     activeProjects.map((proj) =>
       limit(() => calculateProjectSlippage(proj.id, tenantId))
     )
   );
-  const results: ProjectSlippageMetrics[] = settled.filter(
+  const results: ProjectSlippageMetrics[] = projectMetrics.filter(
     (m): m is ProjectSlippageMetrics => m !== null
   );
 
@@ -578,10 +582,13 @@ export async function calculatePortfolioSlippage(
     projects: results,
   };
 
-  // Store in cache and evict any stale entries
+  // Only sweep for stale entries when the cache has grown large enough to
+  // warrant the cost; avoids O(n) iteration on every write.
   const now = Date.now();
-  for (const [key, entry] of portfolioCache) {
-    if (entry.expiresAt <= now) portfolioCache.delete(key);
+  if (portfolioCache.size >= PORTFOLIO_CACHE_EVICTION_THRESHOLD) {
+    for (const [key, entry] of portfolioCache) {
+      if (entry.expiresAt <= now) portfolioCache.delete(key);
+    }
   }
   portfolioCache.set(tenantId, { data: portfolioData, expiresAt: now + PORTFOLIO_CACHE_TTL_MS });
 
