@@ -533,7 +533,11 @@ export async function calculateProjectSlippage(
 // Portfolio-level summary
 // ---------------------------------------------------------------------------
 
-// Simple in-memory cache with 2-minute TTL per tenant
+// Simple in-memory cache with 2-minute TTL per tenant.
+// NOTE: This cache is intentionally process-local / per-instance (e.g. each Cloud Run
+// container or Node.js process maintains its own cache). It is a best-effort
+// performance optimization only and does not guarantee consistent cache hits
+// across instances; in the worst case, a cold instance recomputes from the DB.
 const portfolioCache = new Map<string, { data: PortfolioSlippageSummary; expiresAt: number }>();
 const PORTFOLIO_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 // Maximum number of cached tenants before a sweep for stale entries is triggered
