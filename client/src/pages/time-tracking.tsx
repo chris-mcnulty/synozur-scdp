@@ -224,7 +224,8 @@ export default function TimeTracking() {
     }
   });
 
-  // Fetch allocations for the selected project filtered by current user
+  // Fetch allocations for the selected project filtered to current user's assignments
+  // Includes: directly assigned (personId match) AND role-based assignments matching user's role
   const { data: allocations } = useQuery({
     queryKey: ["/api/projects", selectedProjectId, "allocations"],
     enabled: !!selectedProjectId && !!currentUser,
@@ -236,8 +237,10 @@ export default function TimeTracking() {
       });
       if (!response.ok) throw new Error('Failed to fetch allocations');
       const data = await response.json();
-      // Filter allocations for current user
-      return data.filter((a: any) => a.personId === currentUser?.id);
+      return data.filter((a: any) =>
+        a.personId === currentUser?.id ||
+        (!a.personId && a.roleId && a.roleId === (currentUser as any)?.roleId)
+      );
     }
   });
 
@@ -334,8 +337,10 @@ export default function TimeTracking() {
       });
       if (!response.ok) throw new Error('Failed to fetch allocations');
       const data = await response.json();
-      // Filter allocations for current user
-      return data.filter((a: any) => a.personId === currentUser?.id);
+      return data.filter((a: any) =>
+        a.personId === currentUser?.id ||
+        (!a.personId && a.roleId && a.roleId === (currentUser as any)?.roleId)
+      );
     }
   });
 
@@ -1064,7 +1069,7 @@ export default function TimeTracking() {
                       <FormItem>
                         <FormLabel>Milestone (Optional)</FormLabel>
                         <Select 
-                          onValueChange={field.onChange} 
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                           value={field.value || undefined}
                           disabled={!selectedProjectId || milestonesLoading}
                         >
@@ -1074,6 +1079,7 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                             {sortedMilestones?.map((milestone: any) => (
                               <SelectItem key={milestone.id} value={milestone.id}>
                                 {milestone.name}
@@ -1093,7 +1099,7 @@ export default function TimeTracking() {
                       <FormItem>
                         <FormLabel>{vocabularyContext?.workstream || 'Workstream'} (Optional)</FormLabel>
                         <Select 
-                          onValueChange={field.onChange} 
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                           value={field.value || undefined}
                           disabled={!selectedProjectId || workstreamsLoading}
                         >
@@ -1103,6 +1109,7 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                             {sortedWorkstreams?.map((workstream: any) => (
                               <SelectItem key={workstream.id} value={workstream.id}>
                                 {workstream.name}
@@ -1122,7 +1129,7 @@ export default function TimeTracking() {
                       <FormItem>
                         <FormLabel>{vocabularyContext?.stage || 'Stage'} (Optional)</FormLabel>
                         <Select 
-                          onValueChange={field.onChange} 
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                           value={field.value || undefined}
                           disabled={!selectedProjectId || projectStagesLoading}
                         >
@@ -1132,6 +1139,7 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                             {sortedProjectStages?.map((stage: any) => (
                               <SelectItem key={stage.id} value={stage.id}>
                                 {stage.name}
@@ -1151,7 +1159,7 @@ export default function TimeTracking() {
                       <FormItem>
                         <FormLabel>Assignment (Optional)</FormLabel>
                         <Select 
-                          onValueChange={field.onChange} 
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                           value={field.value || undefined}
                           disabled={!selectedProjectId}
                         >
@@ -1161,9 +1169,13 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                             {sortedAllocations?.map((allocation: any) => (
                               <SelectItem key={allocation.id} value={allocation.id}>
                                 {allocation.taskDescription || `${allocation.hours}h allocation`}
+                                {!allocation.personId && allocation.role?.name && (
+                                  <span className="text-muted-foreground ml-1">({allocation.role.name})</span>
+                                )}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1476,7 +1488,7 @@ export default function TimeTracking() {
                     <FormItem>
                       <FormLabel>Milestone (Optional)</FormLabel>
                       <Select 
-                        onValueChange={field.onChange} 
+                        onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                         value={field.value || undefined}
                         disabled={!editProjectId}
                       >
@@ -1486,6 +1498,7 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                           {sortedEditMilestones?.map((milestone: any) => (
                             <SelectItem key={milestone.id} value={milestone.id}>
                               {milestone.name}
@@ -1505,7 +1518,7 @@ export default function TimeTracking() {
                     <FormItem>
                       <FormLabel>{editVocabularyContext?.workstream || 'Workstream'} (Optional)</FormLabel>
                       <Select 
-                        onValueChange={field.onChange} 
+                        onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                         value={field.value || undefined}
                         disabled={!editProjectId}
                       >
@@ -1515,6 +1528,7 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                           {sortedEditWorkstreams?.map((workstream: any) => (
                             <SelectItem key={workstream.id} value={workstream.id}>
                               {workstream.name}
@@ -1534,7 +1548,7 @@ export default function TimeTracking() {
                     <FormItem>
                       <FormLabel>{editVocabularyContext?.stage || 'Stage'} (Optional)</FormLabel>
                       <Select 
-                        onValueChange={field.onChange} 
+                        onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                         value={field.value || undefined}
                         disabled={!editProjectId}
                       >
@@ -1544,6 +1558,7 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                           {sortedEditProjectStages?.map((stage: any) => (
                             <SelectItem key={stage.id} value={stage.id}>
                               {stage.name}
@@ -1563,7 +1578,7 @@ export default function TimeTracking() {
                     <FormItem>
                       <FormLabel>Assignment (Optional)</FormLabel>
                       <Select 
-                        onValueChange={field.onChange} 
+                        onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} 
                         value={field.value || undefined}
                         disabled={!editProjectId}
                       >
@@ -1573,9 +1588,13 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
                           {sortedEditAllocations?.map((allocation: any) => (
                             <SelectItem key={allocation.id} value={allocation.id}>
                               {allocation.taskDescription || `${allocation.hours}h allocation`}
+                              {!allocation.personId && allocation.role?.name && (
+                                <span className="text-muted-foreground ml-1">({allocation.role.name})</span>
+                              )}
                             </SelectItem>
                           ))}
                         </SelectContent>
