@@ -554,13 +554,21 @@ export async function calculatePortfolioSlippage(
     .from(projects)
     .where(and(eq(projects.tenantId, tenantId), eq(projects.status, "active")));
 
-  // Run all per-project calculations in parallel instead of sequentially
-  const settled = await Promise.all(
-    activeProjects.map((proj) => calculateProjectSlippage(proj.id, tenantId))
-  );
-  const results: ProjectSlippageMetrics[] = settled.filter(
-    (m): m is ProjectSlippageMetrics => m !== null
-  );
+  // Limit concurrent per-project calculations to avoid saturating the DB pool
+  const CONCURRENCY_LIMIT = 10;
+  const results: ProjectSlippageMetrics[] = [];
+
+  for (let i = 0; i < activeProjects.length; i += CONCURRENCY_LIMIT) {
+    const batch = activeProjects.slice(i, i + CONCURRENCY_LIMIT);
+    const settled = await Promise.all(
+      batch.map((proj) => calculateProjectSlippage(proj.id, tenantId))
+    );
+    results.push(
+      ...settled.filter(
+        (m): m is ProjectSlippageMetrics => m !== null
+      )
+    );
+  }
 
   // Sort by slippageScore descending
   results.sort((a, b) => b.slippageScore - a.slippageScore);
