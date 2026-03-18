@@ -41,11 +41,19 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
     return null;
   }
 
+  function bumpVersion(version: string): string {
+    const parts = (version || "1.0.0").split(".").map(Number);
+    while (parts.length < 3) parts.push(0);
+    parts[2] = (parts[2] || 0) + 1;
+    return parts.join(".");
+  }
+
   function buildManifest(overrides: {
     appName?: string;
     domain?: string;
     entraAppId?: string;
     accentColor?: string;
+    version?: string;
   }): object {
     const teamsDir = resolveTeamsDir();
     const templatePath = path.join(teamsDir, "manifest.json");
@@ -75,7 +83,27 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
       template.accentColor = overrides.accentColor;
     }
 
+    if (overrides.version) {
+      template.version = overrides.version;
+    }
+
     return template;
+  }
+
+  async function buildZipBuffer(manifest: object, teamsDir: string): Promise<Buffer> {
+    const colorIconPath = path.join(teamsDir, "color.png");
+    const outlineIconPath = path.join(teamsDir, "outline.png");
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const archive = archiver("zip", { zlib: { level: 9 } });
+      archive.on("data", (chunk) => chunks.push(chunk));
+      archive.on("end", () => resolve(Buffer.concat(chunks)));
+      archive.on("error", reject);
+      archive.append(JSON.stringify(manifest, null, 2), { name: "manifest.json" });
+      archive.file(colorIconPath, { name: "color.png" });
+      archive.file(outlineIconPath, { name: "outline.png" });
+      archive.finalize();
+    });
   }
 
   app.get("/api/teams/app-package", requireAuth, requireRole(["admin"]), async (req: Request, res: Response) => {
@@ -186,17 +214,7 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
 
       const { graphClient } = await import("../services/graph-client.js");
 
-      const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        const archive = archiver("zip", { zlib: { level: 9 } });
-        archive.on("data", (chunk) => chunks.push(chunk));
-        archive.on("end", () => resolve(Buffer.concat(chunks)));
-        archive.on("error", reject);
-        archive.append(JSON.stringify(manifest, null, 2), { name: "manifest.json" });
-        archive.file(colorIconPath, { name: "color.png" });
-        archive.file(outlineIconPath, { name: "outline.png" });
-        archive.finalize();
-      });
+      const zipBuffer = await buildZipBuffer(manifest, teamsDir);
 
       let token: string;
       let tokenSource: string;
@@ -288,9 +306,9 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
       }
 
       if (publishResponse.status === 409) {
-        const updateAppId = manifest.id || (manifest as any).webApplicationInfo?.id;
+        const updateAppId = (manifest as any).id || (manifest as any).webApplicationInfo?.id;
         const listResponse = await fetch(
-          `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?$filter=externalId eq '${updateAppId}'`,
+          `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?$filter=externalId eq '${updateAppId}'&$expand=appDefinitions`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }
@@ -300,6 +318,19 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
           const listData = await listResponse.json();
           const existingApp = listData?.value?.[0];
           if (existingApp) {
+            // Determine the current published version and bump it so Graph doesn't reject with VersionAlreadyExists
+            const existingVersion: string =
+              existingApp.appDefinitions?.[0]?.teamsAppDefinition?.version ||
+              existingApp.appDefinitions?.[0]?.version ||
+              (manifest as any).version ||
+              "1.0.0";
+            const newVersion = bumpVersion(existingVersion);
+            console.log(`[TEAMS-APP] Bumping version for update: ${existingVersion} → ${newVersion}`);
+
+            // Rebuild manifest and zip with the bumped version
+            const updatedManifest = buildManifest({ appName, domain, entraAppId, accentColor, version: newVersion });
+            const updatedZipBuffer = await buildZipBuffer(updatedManifest, teamsDir);
+
             const updateResponse = await fetch(
               `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${existingApp.id}/appDefinitions`,
               {
@@ -308,7 +339,7 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
                   Authorization: `Bearer ${token}`,
                   "Content-Type": "application/zip",
                 },
-                body: zipBuffer,
+                body: updatedZipBuffer,
               }
             );
 
@@ -318,6 +349,7 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
                 action: "updated",
                 message: "Teams app updated in your organization's app catalog",
                 teamsAppId: existingApp.id,
+                version: newVersion,
               });
             }
 
