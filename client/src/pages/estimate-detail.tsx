@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users, BarChart3, List } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -25,6 +25,134 @@ import { VocabularyProvider, useVocabulary } from "@/lib/vocabulary-context";
 import { useEffectiveRates } from "@/hooks/useEffectiveRates";
 import { useGenerateEstimateNarrative, useAIStatus } from "@/lib/ai";
 import { ProgramEstimateView } from "@/components/ProgramEstimateView";
+
+const EPIC_COLORS = [
+  "bg-violet-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500",
+  "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-teal-500",
+  "bg-orange-500", "bg-pink-500",
+];
+
+function GanttView({
+  filteredItems,
+  epics,
+  epicColorMap,
+  ganttWeeks,
+  ganttMinWeek,
+}: {
+  filteredItems: import("@shared/schema").EstimateLineItem[];
+  epics: import("@shared/schema").EstimateEpic[];
+  epicColorMap: Map<string, string>;
+  ganttWeeks: number[];
+  ganttMinWeek: number;
+}) {
+  const scheduledItems = filteredItems.filter(item => item.week !== null && item.week !== undefined);
+  const unscheduledItems = filteredItems.filter(item => item.week === null || item.week === undefined);
+
+  return (
+    <div className="rounded-md border overflow-x-auto">
+      <div style={{ minWidth: 160 + ganttWeeks.length * 32 }}>
+        {/* Header row */}
+        <div className="flex border-b bg-background">
+          <div className="w-40 shrink-0 p-2 text-xs font-medium text-muted-foreground border-r">Description</div>
+          <div className="flex">
+            {ganttWeeks.map((wk) => (
+              <div
+                key={wk}
+                className="text-center text-xs text-muted-foreground border-r last:border-r-0 py-2 font-medium"
+                style={{ minWidth: 32, width: 32 }}
+              >
+                {wk}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {filteredItems.length === 0 ? (
+          <div className="text-center text-muted-foreground text-sm py-8">No line items to display.</div>
+        ) : (
+          <>
+            {scheduledItems.map((item) => {
+              const epic = epics.find((e) => e.id === item.epicId);
+              const epicColor = epic ? epicColorMap.get(epic.id) : undefined;
+              const startWk = item.week as number;
+              return (
+                <div key={item.id} className="flex border-b last:border-b-0 hover:bg-muted/30">
+                  <div className="w-40 shrink-0 p-2 border-r">
+                    <p className="text-xs font-medium truncate" title={item.description ?? ""}>{item.description}</p>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{item.resourceName || "Unassigned"}</p>
+                    {epic && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${epicColor}`} />
+                        <span className="text-xs text-muted-foreground truncate">{epic.name}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 relative" style={{ minHeight: 48 }}>
+                    <div className="flex h-full">
+                      {ganttWeeks.map((wk) => (
+                        <div key={wk} className="border-r last:border-r-0 h-full" style={{ minWidth: 32, width: 32 }} />
+                      ))}
+                    </div>
+                    <div
+                      className={`absolute top-1.5 bottom-1.5 rounded ${epicColor || "bg-blue-500"} opacity-80 flex items-center justify-center px-1`}
+                      style={{
+                        left: `${(startWk - ganttMinWeek) * 32 + 2}px`,
+                        width: `${32 - 4}px`,
+                      }}
+                      title={`${item.description} — Wk ${startWk} — ${Number(item.adjustedHours || 0).toFixed(1)} hrs`}
+                    >
+                      <span className="text-white text-xs truncate leading-none">
+                        {Number(item.adjustedHours || 0).toFixed(0)}h
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {unscheduledItems.length > 0 && (
+              <>
+                <div className="flex border-b bg-muted/30">
+                  <div className="w-40 shrink-0 px-2 py-1 border-r">
+                    <span className="text-xs text-muted-foreground italic">Unscheduled</span>
+                  </div>
+                  <div className="flex-1 px-2 py-1">
+                    <span className="text-xs text-muted-foreground">
+                      {unscheduledItems.length} item{unscheduledItems.length !== 1 ? "s" : ""} with no week assigned
+                    </span>
+                  </div>
+                </div>
+                {unscheduledItems.map((item) => {
+                  const epic = epics.find((e) => e.id === item.epicId);
+                  const epicColor = epic ? epicColorMap.get(epic.id) : undefined;
+                  return (
+                    <div key={item.id} className="flex border-b last:border-b-0 hover:bg-muted/30 opacity-60">
+                      <div className="w-40 shrink-0 p-2 border-r">
+                        <p className="text-xs font-medium truncate" title={item.description ?? ""}>{item.description}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{item.resourceName || "Unassigned"}</p>
+                        {epic && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className={`inline-block w-1.5 h-1.5 rounded-full ${epicColor}`} />
+                            <span className="text-xs text-muted-foreground truncate">{epic.name}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 flex items-center px-3">
+                        <span className="text-xs text-muted-foreground italic">
+                          No week — {Number(item.adjustedHours || 0).toFixed(1)} hrs
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function EstimateDetailContent() {
   const { id } = useParams();
@@ -69,6 +197,7 @@ function EstimateDetailContent() {
   });
   const [applyUserRatesDialog, setApplyUserRatesDialog] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [lineItemView, setLineItemView] = useState<"table" | "gantt">("table");
   const [filterText, setFilterText] = useState("");
   const [filterEpic, setFilterEpic] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
@@ -270,6 +399,29 @@ function EstimateDetailContent() {
   const effectiveRateById = useMemo(
     () => new Map(effectiveRates.map(rate => [rate.lineItemId, rate])),
     [effectiveRates]
+  );
+
+  const epicColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    epics.forEach((epic, i) => {
+      map.set(epic.id, EPIC_COLORS[i % EPIC_COLORS.length]);
+    });
+    return map;
+  }, [epics]);
+
+  const ganttMinWeek = useMemo(() => {
+    const weeks = lineItems.map(item => item.week).filter(w => w !== null && w !== undefined) as number[];
+    return weeks.length ? Math.min(...weeks, 0) : 0;
+  }, [lineItems]);
+
+  const ganttMaxWeek = useMemo(() => {
+    const weeks = lineItems.map(item => item.week).filter(w => w !== null && w !== undefined) as number[];
+    return weeks.length ? Math.max(...weeks, ganttMinWeek + 11) : ganttMinWeek + 11;
+  }, [lineItems, ganttMinWeek]);
+
+  const ganttWeeks = useMemo(
+    () => Array.from({ length: ganttMaxWeek - ganttMinWeek + 1 }, (_, i) => i + ganttMinWeek),
+    [ganttMinWeek, ganttMaxWeek]
   );
 
   const { data: aiStatus } = useAIStatus();
@@ -3240,6 +3392,26 @@ function EstimateDetailContent() {
                     <span className="ml-1 hidden sm:inline">Clear</span>
                   </Button>
                 )}
+
+                {/* View toggle — Table vs Timeline */}
+                <div className="ml-auto flex gap-1 border rounded-md p-0.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant={lineItemView === "table" ? "default" : "ghost"}
+                    className="h-7 px-2"
+                    onClick={() => setLineItemView("table")}
+                  >
+                    <List className="h-3.5 w-3.5 mr-1" /> Table
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={lineItemView === "gantt" ? "default" : "ghost"}
+                    className="h-7 px-2"
+                    onClick={() => setLineItemView("gantt")}
+                  >
+                    <BarChart3 className="h-3.5 w-3.5 mr-1" /> Timeline
+                  </Button>
+                </div>
               </div>
 
               {/* Active filter count indicator */}
@@ -3327,7 +3499,7 @@ function EstimateDetailContent() {
               </Card>
             )}
 
-            {selectedItems.size > 0 && (
+            {selectedItems.size > 0 && lineItemView === "table" && (
               <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{selectedItems.size} items selected</span>
@@ -3350,6 +3522,7 @@ function EstimateDetailContent() {
               </div>
             )}
 
+            {lineItemView === "table" && (
             <div className="rounded-md border relative">
               <div className="overflow-auto max-h-[calc(100vh-400px)] relative">
                 <table className="w-full caption-bottom text-sm min-w-[1200px]">
@@ -3935,6 +4108,18 @@ function EstimateDetailContent() {
                 </table>
               </div>
             </div>
+            )}
+
+            {/* Timeline (Gantt) View */}
+            {lineItemView === "gantt" && (
+              <GanttView
+                filteredItems={getFilteredLineItems()}
+                epics={epics}
+                epicColorMap={epicColorMap}
+                ganttWeeks={ganttWeeks}
+                ganttMinWeek={ganttMinWeek}
+              />
+            )}
 
             {/* Week Subtotals */}
             {(() => {
