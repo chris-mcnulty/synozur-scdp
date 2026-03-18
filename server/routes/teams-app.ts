@@ -331,33 +331,58 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
             const updatedManifest = buildManifest({ appName, domain, entraAppId, accentColor, version: newVersion });
             const updatedZipBuffer = await buildZipBuffer(updatedManifest, teamsDir);
 
-            const updateResponse = await fetch(
-              `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${existingApp.id}/appDefinitions`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/zip",
-                },
-                body: updatedZipBuffer,
+            const tryUpdateWithToken = async (updateToken: string) => {
+              let r = await fetch(
+                `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${existingApp.id}/appDefinitions?requiresReview=false`,
+                {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${updateToken}`, "Content-Type": "application/zip" },
+                  body: updatedZipBuffer,
+                }
+              );
+              // If requiresReview=false fails, retry without it (some tenants don't allow skipping review)
+              if (r.status === 403 || r.status === 400) {
+                r = await fetch(
+                  `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${existingApp.id}/appDefinitions`,
+                  {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${updateToken}`, "Content-Type": "application/zip" },
+                    body: updatedZipBuffer,
+                  }
+                );
               }
-            );
+              return r;
+            };
 
-            if (updateResponse.ok || updateResponse.status === 201) {
+            let updateResponse = await tryUpdateWithToken(token);
+
+            // If the delegated token failed, try with app-only token as fallback
+            if ((updateResponse.status === 401 || updateResponse.status === 403) && !tokenSource.includes("application")) {
+              console.log(`[TEAMS-APP] Delegated update failed (${updateResponse.status}), retrying with app-only token`);
+              const appOnlyToken = await graphClient.authenticate();
+              updateResponse = await tryUpdateWithToken(appOnlyToken);
+            }
+
+            // 200, 201, 202 (pending review) are all acceptable success codes
+            if (updateResponse.ok || updateResponse.status === 201 || updateResponse.status === 202) {
+              const pendingReview = updateResponse.status === 202;
               return res.json({
                 success: true,
                 action: "updated",
-                message: "Teams app updated in your organization's app catalog",
+                message: pendingReview
+                  ? "Teams app update submitted for review in your organization's app catalog"
+                  : "Teams app updated in your organization's app catalog",
                 teamsAppId: existingApp.id,
                 version: newVersion,
+                pendingReview,
               });
             }
 
             const updateError = await updateResponse.text();
+            console.error(`[TEAMS-APP] Update failed (${updateResponse.status}):`, updateError);
             return res.status(updateResponse.status).json({
               success: false,
-              message: `Failed to update existing Teams app: ${updateError}`,
-              hint: "You may need AppCatalog.ReadWrite.All permission on the Entra app registration.",
+              message: `Teams app update failed (${updateResponse.status}): ${updateError}`,
             });
           }
         }

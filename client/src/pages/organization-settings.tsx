@@ -640,24 +640,21 @@ function TeamsAppPackageCard({ tenantSettings }: { tenantSettings: TenantSetting
     } catch (error: any) {
       let message = error.message;
       let hint = "";
-      let detail = "";
       let isPermissionError = false;
       try {
         const parsed = JSON.parse(error.message);
         message = parsed.message || message;
         hint = parsed.hint || "";
-        detail = parsed.detail || "";
-        if (message?.includes("Insufficient permissions") || hint?.includes("AppCatalog") || hint?.includes("Teams Administrator")) {
+        // Only flag as permission error if the backend explicitly says so
+        if (message?.includes("Insufficient permissions")) {
           isPermissionError = true;
         }
       } catch {}
 
-      if (isPermissionError || message?.includes("Insufficient permissions") || message?.includes("403") || message?.includes("401")) {
+      if (isPermissionError) {
         toast({
           title: "Publish failed — permissions issue",
-          description: hint
-            ? hint
-            : "Add AppCatalog.ReadWrite.All as a Delegated permission (with admin consent) in Entra ID, then log out and back in via SSO. Or download the ZIP and upload manually.",
+          description: hint || "Add AppCatalog.ReadWrite.All as a Delegated permission (with admin consent) in Entra ID, then log out and back in via SSO. Or download the ZIP and upload manually.",
           variant: "destructive",
         });
       } else {
