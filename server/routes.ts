@@ -11235,44 +11235,46 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       } as any);
 
       for (const epicData of validated.epics) {
-        const epic = await storage.createEstimateEpic({
-          estimateId: estimate.id,
+        const epic = await storage.createEstimateEpic(estimate.id, {
           name: epicData.name,
-          order: epicData.order,
-        } as any);
+        });
 
         for (const stageData of epicData.stages) {
-          const stage = await storage.createEstimateStage({
+          const stage = await storage.createEstimateStage(estimate.id, {
             epicId: epic.id,
             name: stageData.name,
-            order: stageData.order,
-          } as any);
-
-          const activity = await storage.createEstimateActivity({
-            stageId: stage.id,
-            name: stageData.name,
-            order: 1,
-          } as any);
+          });
 
           for (const liData of stageData.lineItems) {
-            const matchedRole = liData.roleId ? tenantRoles.find((r: any) => r.id === liData.roleId) : roleMap.get(liData.role);
+            const matchedRole = liData.roleId
+              ? tenantRoles.find((r: any) => r.id === liData.roleId)
+              : roleMap.get(liData.role);
+
+            const hours = Number(liData.hours) || 0;
+            const rate = Number(liData.rate) || 0;
+            const costRate = Number(liData.costRate) || 0;
+            const totalAmount = hours * rate;
+            const totalCost = liData.isSalaried ? 0 : hours * costRate;
+            const margin = totalAmount - totalCost;
+            const marginPercent = rate > 0 ? ((rate - (liData.isSalaried ? 0 : costRate)) / rate) * 100 : 0;
 
             await storage.createEstimateLineItem({
-              activityId: activity.id,
+              estimateId: estimate.id,
+              epicId: epic.id,
+              stageId: stage.id,
               description: liData.description,
               roleId: matchedRole?.id || null,
-              baseHours: String(liData.hours),
+              baseHours: String(hours),
               factor: '1',
-              rate: String(liData.rate),
-              costRate: String(liData.costRate),
-              adjustedHours: String(liData.hours),
-              totalAmount: String(liData.hours * liData.rate),
-              totalCost: String(liData.isSalaried ? 0 : liData.hours * liData.costRate),
-              margin: String((liData.hours * liData.rate) - (liData.isSalaried ? 0 : liData.hours * liData.costRate)),
-              marginPercent: String(liData.rate > 0 ? (((liData.rate - (liData.isSalaried ? 0 : liData.costRate)) / liData.rate) * 100) : 0),
+              rate: String(rate),
+              costRate: String(costRate),
+              adjustedHours: String(hours),
+              totalAmount: String(totalAmount),
+              totalCost: String(totalCost),
+              margin: String(margin),
+              marginPercent: String(marginPercent),
               comments: liData.notes || null,
-              weekStart: liData.weekStart != null ? liData.weekStart : null,
-              durationWeeks: liData.durationWeeks != null ? liData.durationWeeks : null,
+              sortOrder: 0,
             } as any);
           }
         }
