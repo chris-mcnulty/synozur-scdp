@@ -240,6 +240,18 @@ const assignmentFormSchema = z.object({
 
 type AssignmentFormData = z.infer<typeof assignmentFormSchema>;
 
+// Quick log time schema
+const quickLogTimeSchema = z.object({
+  date: z.string().min(1, "Date is required"),
+  hours: z.string()
+    .min(1, "Hours is required")
+    .refine((v) => !isNaN(parseFloat(v)), "Must be a number")
+    .refine((v) => parseFloat(v) > 0 && parseFloat(v) <= 24, "Must be between 0.01 and 24"),
+  description: z.string().optional(),
+  billable: z.boolean().default(true),
+});
+type QuickLogTimeData = z.infer<typeof quickLogTimeSchema>;
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
@@ -360,8 +372,18 @@ export default function ProjectDetail() {
   
   // Status report dialog state
   const [showStatusReport, setShowStatusReport] = useState(false);
-
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showLogTimeDialog, setShowLogTimeDialog] = useState(false);
+
+  const logTimeForm = useForm<QuickLogTimeData>({
+    resolver: zodResolver(quickLogTimeSchema),
+    defaultValues: {
+      date: new Date().toISOString().split("T")[0],
+      hours: "",
+      description: "",
+      billable: true,
+    },
+  });
   const [exportDateRange, setExportDateRange] = useState<'all' | 'month' | 'custom'>('all');
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
@@ -763,6 +785,38 @@ export default function ProjectDetail() {
         description: error.message || "Failed to update project. Please check your permissions and try again.",
         variant: "destructive",
       });
+    },
+  });
+
+  const quickLogTimeMutation = useMutation({
+    mutationFn: async (data: QuickLogTimeData) => {
+      return apiRequest("/api/time-entries", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: id,
+          personId: user?.id,
+          date: data.date,
+          hours: data.hours,
+          description: data.description || null,
+          billable: data.billable,
+        }),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Time logged", description: "Your time entry has been saved." });
+      setShowLogTimeDialog(false);
+      logTimeForm.reset({
+        date: new Date().toISOString().split("T")[0],
+        hours: "",
+        description: "",
+        billable: true,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/time-entries`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/analytics`] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to log time.", variant: "destructive" });
     },
   });
 
@@ -1939,6 +1993,20 @@ export default function ProjectDetail() {
           <div className="flex items-center gap-2">
             {!embedReadonly && (
               <>
+                {user && (
+                  <Button size="sm" onClick={() => {
+                    logTimeForm.reset({
+                      date: new Date().toISOString().split("T")[0],
+                      hours: "",
+                      description: "",
+                      billable: true,
+                    });
+                    setShowLogTimeDialog(true);
+                  }} data-testid="button-log-time">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Log Time
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setShowStatusReport(true)} data-testid="button-status-report">
                   <Sparkles className="w-4 h-4 mr-2" />
                   Status Report
@@ -4243,6 +4311,28 @@ export default function ProjectDetail() {
           {/* Time Tab */}
           {canViewTime && (
             <TabsContent value="time" className="space-y-6">
+              {/* Time tab header with Log Time action */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Time</h3>
+                  <p className="text-sm text-muted-foreground">{analytics?.project?.client?.name || project?.client?.name} · {project?.name}</p>
+                </div>
+                {user && !embedReadonly && (
+                  <Button size="sm" onClick={() => {
+                    logTimeForm.reset({
+                      date: new Date().toISOString().split("T")[0],
+                      hours: "",
+                      description: "",
+                      billable: true,
+                    });
+                    setShowLogTimeDialog(true);
+                  }} data-testid="button-log-time-tab">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Log Time
+                  </Button>
+                )}
+              </div>
+
               {/* Overall Summary Card */}
               <Card>
                 <CardHeader>
@@ -6453,6 +6543,95 @@ export default function ProjectDetail() {
           projectId={id || ""}
           projectName={analytics?.project?.name || ""}
         />
+
+        {/* Quick Log Time Dialog */}
+        <Dialog open={showLogTimeDialog} onOpenChange={setShowLogTimeDialog}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                Log Time
+              </DialogTitle>
+              <DialogDescription>
+                {project?.client?.name || analytics?.project?.client?.name} · {project?.name || analytics?.project?.name}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...logTimeForm}>
+              <form
+                onSubmit={logTimeForm.handleSubmit((data) => quickLogTimeMutation.mutate(data))}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={logTimeForm.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={logTimeForm.control}
+                    name="hours"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Hours</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.25" min="0.25" max="24" placeholder="e.g. 2.5" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={logTimeForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="What did you work on?" rows={3} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={logTimeForm.control}
+                  name="billable"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center gap-2 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="font-normal cursor-pointer">Billable</FormLabel>
+                    </FormItem>
+                  )}
+                />
+                <div className="pt-1 text-xs text-muted-foreground">
+                  Logging as <span className="font-medium">{user?.name || user?.email}</span>
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setShowLogTimeDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={quickLogTimeMutation.isPending}>
+                    {quickLogTimeMutation.isPending ? "Saving…" : "Log Time"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
 
         {/* Export Data Dialog */}
         <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
