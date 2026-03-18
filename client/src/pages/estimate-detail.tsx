@@ -3443,14 +3443,45 @@ function EstimateDetailContent() {
                               autoFocus
                             />
                           ) : (
-                            <div 
-                              onClick={() => startFieldEditing(item, "description")} 
-                              className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 p-1 rounded border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
-                              title="Click to edit description"
-                            >
-                              <div className="font-medium">{item.description}</div>
-                              {item.week !== null && item.week !== undefined && (
-                                <div className="text-xs text-muted-foreground mt-1">Week {item.week}</div>
+                            <div className="space-y-1">
+                              <div 
+                                onClick={() => startFieldEditing(item, "description")} 
+                                className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 p-1 rounded border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+                                title="Click to edit description"
+                              >
+                                <div className="font-medium">{item.description}</div>
+                              </div>
+                              {editingField === `${item.id}-week` ? (
+                                <div className="flex items-center gap-1 pl-1">
+                                  <span className="text-xs text-muted-foreground">Wk</span>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={editingDraft[`${item.id}-week`] ?? ""}
+                                    onChange={(e) => updateFieldDraft(item.id, "week", e.target.value)}
+                                    onBlur={() => saveFieldDraft(item, "week")}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") saveFieldDraft(item, "week");
+                                      if (e.key === "Escape") { setEditingField(null); setEditingDraft({}); }
+                                    }}
+                                    className="h-5 w-16 text-xs px-1"
+                                    autoFocus
+                                    disabled={!isEditable}
+                                  />
+                                </div>
+                              ) : (
+                                <div
+                                  onClick={() => isEditable && startFieldEditing(item, "week")}
+                                  className={`pl-1 text-xs text-muted-foreground ${isEditable ? "cursor-pointer hover:text-foreground" : ""}`}
+                                  title={isEditable ? "Click to edit week" : ""}
+                                >
+                                  {item.week !== null && item.week !== undefined
+                                    ? `Week ${item.week}`
+                                    : isEditable
+                                      ? <span className="italic opacity-50">+ add week</span>
+                                      : null
+                                  }
+                                </div>
                               )}
                             </div>
                           )}
