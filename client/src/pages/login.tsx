@@ -30,6 +30,7 @@ import { SynozurLogo } from "@/components/icons/synozur-logo";
 import { SynozurAppSwitcher } from "@/components/synozur-app-switcher";
 import heroImage from "@assets/AdobeStock_244105520_1771187192557.jpeg";
 import secondaryImage from "@assets/AdobeStock_189127184_1771187213585.jpeg";
+import constellationLogoWhite from "@assets/Constellation_Logo_-_White_1773876279047.png";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -200,6 +201,11 @@ export default function Login() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             {/* Left: Hero Content */}
             <div>
+              <img
+                src={constellationLogoWhite}
+                alt="Constellation"
+                className="hidden lg:block h-14 w-auto mb-6"
+              />
               <div className="flex items-center gap-2 mb-5">
                 <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
                 <span className="text-amber-300/90 text-xs font-semibold tracking-widest uppercase">
