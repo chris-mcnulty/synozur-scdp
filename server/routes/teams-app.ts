@@ -219,42 +219,74 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
       let token: string;
       let tokenSource: string;
 
-      // Strategy: Use MSAL cached account to get a delegated token with AppCatalog.ReadWrite.All
-      // The SSO login stores tokens (including refresh token) in MSAL's in-memory cache
-      try {
-        const { msalInstance: delegatedMsal } = await import("../auth/entra-config.js");
-        if (!delegatedMsal) throw new Error("MSAL not configured");
+      // Strategy 1: Use the session's SSO refresh token to get a delegated AppCatalog token.
+      // This works even after a server restart (no in-memory MSAL cache needed) because
+      // the refresh token is persisted in the DB session.
+      const sessionUser = req.user as any;
+      const ssoRefreshToken = sessionUser?.ssoRefreshToken;
 
-        const tokenCache = delegatedMsal.getTokenCache();
-        const accounts = await tokenCache.getAllAccounts();
-        const user = req.user as any;
-        const userEmail = user?.email?.toLowerCase();
-        
-        console.log(`[TEAMS-APP] MSAL cache has ${accounts.length} account(s), looking for ${userEmail}`);
-        
-        const account = userEmail 
-          ? accounts.find((a: any) => a.username?.toLowerCase() === userEmail) || accounts[0]
-          : accounts[0];
+      if (ssoRefreshToken) {
+        try {
+          const { msalInstance: delegatedMsal } = await import("../auth/entra-config.js");
+          if (!delegatedMsal) throw new Error("MSAL not configured");
 
-        if (!account) throw new Error("No cached MSAL account found");
+          console.log(`[TEAMS-APP] Attempting delegated token via session refresh token for ${sessionUser?.email}`);
+          const refreshResult = await delegatedMsal.acquireTokenByRefreshToken({
+            refreshToken: ssoRefreshToken,
+            scopes: ["AppCatalog.ReadWrite.All"],
+            forceRefresh: true,
+          });
 
-        console.log(`[TEAMS-APP] Using MSAL cached account: ${account.username}`);
-        const silentResult = await delegatedMsal.acquireTokenSilent({
-          account,
-          scopes: ["AppCatalog.ReadWrite.All"],
-          forceRefresh: true,
-        });
-        
-        if (!silentResult?.accessToken) throw new Error("acquireTokenSilent returned no token");
-        
-        token = silentResult.accessToken;
-        tokenSource = "delegated (MSAL silent with AppCatalog scope)";
-        console.log("[TEAMS-APP] Acquired delegated token via MSAL acquireTokenSilent");
-      } catch (silentErr: any) {
-        console.log(`[TEAMS-APP] Delegated token acquisition failed: ${silentErr?.message}, falling back to app-only token`);
-        token = await graphClient.authenticate();
-        tokenSource = "application (service principal)";
+          if (!refreshResult?.accessToken) throw new Error("acquireTokenByRefreshToken returned no token");
+
+          token = refreshResult.accessToken;
+          tokenSource = "delegated (session refresh token → AppCatalog scope)";
+          console.log("[TEAMS-APP] Acquired delegated token via session refresh token");
+        } catch (refreshErr: any) {
+          console.log(`[TEAMS-APP] Session refresh token failed: ${refreshErr?.message}, falling back to MSAL cache`);
+          // Fall through to Strategy 2
+          token = "";
+          tokenSource = "";
+        }
+      } else {
+        console.log("[TEAMS-APP] No SSO refresh token in session, trying MSAL cache");
+        token = "";
+        tokenSource = "";
       }
+
+      // Strategy 2: Try MSAL in-memory cache (works when the server hasn't restarted)
+      if (!token) {
+        try {
+          const { msalInstance: delegatedMsal } = await import("../auth/entra-config.js");
+          if (!delegatedMsal) throw new Error("MSAL not configured");
+
+          const tokenCache = delegatedMsal.getTokenCache();
+          const accounts = await tokenCache.getAllAccounts();
+          const userEmail = sessionUser?.email?.toLowerCase();
+          console.log(`[TEAMS-APP] MSAL cache has ${accounts.length} account(s), looking for ${userEmail}`);
+          const account = userEmail
+            ? accounts.find((a: any) => a.username?.toLowerCase() === userEmail) || accounts[0]
+            : accounts[0];
+
+          if (!account) throw new Error("No cached MSAL account found");
+
+          const silentResult = await delegatedMsal.acquireTokenSilent({
+            account,
+            scopes: ["AppCatalog.ReadWrite.All"],
+            forceRefresh: true,
+          });
+          if (!silentResult?.accessToken) throw new Error("acquireTokenSilent returned no token");
+
+          token = silentResult.accessToken;
+          tokenSource = "delegated (MSAL in-memory cache)";
+          console.log("[TEAMS-APP] Acquired delegated token via MSAL in-memory cache");
+        } catch (silentErr: any) {
+          console.log(`[TEAMS-APP] MSAL cache failed: ${silentErr?.message}, falling back to app-only token`);
+          token = await graphClient.authenticate();
+          tokenSource = "application (service principal)";
+        }
+      }
+
       console.log(`[TEAMS-APP] Publishing with ${tokenSource} token`);
 
       let publishResponse = await fetch(
