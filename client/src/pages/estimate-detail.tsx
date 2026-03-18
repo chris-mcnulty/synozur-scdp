@@ -3328,7 +3328,7 @@ function EstimateDetailContent() {
             )}
 
             {selectedItems.size > 0 && (
-              <div className="mb-4 p-4 bg-blue-50 rounded-lg border">
+              <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{selectedItems.size} items selected</span>
                   <div className="flex gap-2">
@@ -3353,10 +3353,10 @@ function EstimateDetailContent() {
             <div className="rounded-md border relative">
               <div className="overflow-auto max-h-[calc(100vh-400px)] relative">
                 <table className="w-full caption-bottom text-sm min-w-[1200px]">
-                  <thead className="sticky top-0 bg-white dark:bg-slate-950 z-20 border-b shadow-sm">
+                  <thead className="sticky top-0 bg-background z-20 border-b shadow-sm">
                     <tr className="border-b hover:bg-transparent">
-                      <TableHead className="w-8 px-2 py-2 text-xs bg-white dark:bg-slate-950"></TableHead>
-                      <TableHead className="w-10 px-2 py-2 text-xs bg-white dark:bg-slate-950">
+                      <TableHead className="w-8 px-2 py-2 text-xs bg-background"></TableHead>
+                      <TableHead className="w-10 px-2 py-2 text-xs bg-background">
                         <input
                           type="checkbox"
                         checked={(() => {
@@ -3379,12 +3379,12 @@ function EstimateDetailContent() {
                         }}
                       />
                       </TableHead>
-                      <TableHead className="min-w-[250px] px-2 py-2 text-xs bg-white dark:bg-slate-950">Description</TableHead>
-                      <TableHead className="w-32 px-2 py-2 text-xs bg-white dark:bg-slate-950">Epic / Stage</TableHead>
-                      <TableHead className="w-28 px-2 py-2 text-xs bg-white dark:bg-slate-950">Resource</TableHead>
-                      <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950 text-right">Hours</TableHead>
-                      <TableHead className="w-24 px-2 py-2 text-xs bg-white dark:bg-slate-950 text-right">Total</TableHead>
-                      <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Actions</TableHead>
+                      <TableHead className="min-w-[250px] px-2 py-2 text-xs bg-background">Description</TableHead>
+                      <TableHead className="w-32 px-2 py-2 text-xs bg-background">Epic / Stage</TableHead>
+                      <TableHead className="w-28 px-2 py-2 text-xs bg-background">Resource</TableHead>
+                      <TableHead className="w-20 px-2 py-2 text-xs bg-background text-right">Hours</TableHead>
+                      <TableHead className="w-24 px-2 py-2 text-xs bg-background text-right">Total</TableHead>
+                      <TableHead className="w-16 px-2 py-2 text-xs bg-background">Actions</TableHead>
                   </tr>
                 </thead>
                 <tbody className="[&_tr:last-child]:border-0">
@@ -3408,7 +3408,7 @@ function EstimateDetailContent() {
                       const isExpanded = expandedRows.has(item.id);
                       return (
                       <>
-                      <TableRow key={item.id} className={`${selectedItems.has(item.id) ? "bg-blue-50" : ""} border-b`}>
+                      <TableRow key={item.id} className={`${selectedItems.has(item.id) ? "bg-blue-50 dark:bg-blue-950/30" : ""} border-b`}>
                         <TableCell className="py-2">
                           <Button
                             variant="ghost"
@@ -3445,7 +3445,7 @@ function EstimateDetailContent() {
                           ) : (
                             <div 
                               onClick={() => startFieldEditing(item, "description")} 
-                              className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200"
+                              className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 p-1 rounded border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
                               title="Click to edit description"
                             >
                               <div className="font-medium">{item.description}</div>
@@ -3473,7 +3473,7 @@ function EstimateDetailContent() {
                               ${Number(item.totalAmount || 0).toFixed(0)}
                             </div>
                             {ratesLoading ? (
-                              <div className="h-5 w-16 bg-gray-200 animate-pulse rounded" data-testid="skeleton-rate-badge" />
+                              <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 animate-pulse rounded" data-testid="skeleton-rate-badge" />
                             ) : (
                               <RatePrecedenceBadge compact effectiveRate={effectiveRateById.get(item.id)} />
                             )}
