@@ -1145,6 +1145,68 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Teams Tab Templates routes
+  app.get("/api/tenant/teams-tab-templates", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(404).json({ message: "No tenant associated with user" });
+
+      const { teamsTabTemplates: tabTemplatesTable } = await import("@shared/schema");
+      const templates = await db.select()
+        .from(tabTemplatesTable)
+        .where(eq(tabTemplatesTable.tenantId, tenantId))
+        .orderBy(tabTemplatesTable.sortOrder);
+
+      if (templates.length === 0) {
+        const { DEFAULT_TAB_TEMPLATES } = await import("@shared/schema");
+        return res.json(DEFAULT_TAB_TEMPLATES.map((t, i) => ({ ...t, id: null, tenantId, sortOrder: i, isActive: true })));
+      }
+
+      res.json(templates);
+    } catch (error: any) {
+      console.error("[TAB_TEMPLATES] Failed to fetch tab templates:", error);
+      res.status(500).json({ message: "Failed to fetch tab templates" });
+    }
+  });
+
+  app.put("/api/tenant/teams-tab-templates", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(404).json({ message: "No tenant associated with user" });
+
+      const { tabs } = req.body;
+      if (!Array.isArray(tabs)) return res.status(400).json({ message: "tabs must be an array" });
+
+      const { teamsTabTemplates: tabTemplatesTable } = await import("@shared/schema");
+
+      await db.delete(tabTemplatesTable).where(eq(tabTemplatesTable.tenantId, tenantId));
+
+      if (tabs.length > 0) {
+        await db.insert(tabTemplatesTable).values(
+          tabs.map((t: any, i: number) => ({
+            tenantId,
+            tabType: t.tabType,
+            tabName: t.tabName,
+            sortOrder: i,
+            isActive: t.isActive !== false,
+          }))
+        );
+      }
+
+      const updated = await db.select()
+        .from(tabTemplatesTable)
+        .where(eq(tabTemplatesTable.tenantId, tenantId))
+        .orderBy(tabTemplatesTable.sortOrder);
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[TAB_TEMPLATES] Failed to update tab templates:", error);
+      res.status(500).json({ message: "Failed to update tab templates" });
+    }
+  });
+
   // Validation schema for tenant settings update
   const tenantSettingsUpdateSchema = z.object({
     name: z.string().min(1, "Company name is required").max(255),
@@ -3171,6 +3233,24 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Get Teams channel linked to a project
+  app.get("/api/projects/:id/channel", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId || user?.activeTenantId;
+      const { id } = req.params;
+      const [channel] = await db
+        .select()
+        .from(projectChannels)
+        .where(and(eq(projectChannels.projectId, id), eq(projectChannels.tenantId, tenantId)))
+        .limit(1);
+      if (!channel) return res.json(null);
+      res.json(channel);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to get project channel: " + error.message });
+    }
+  });
+
   // Project Milestones endpoints (Delivery Tracking)
   app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
     try {
@@ -3817,6 +3897,62 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error: any) {
       console.error("[PLANNER] Failed to create plan:", error);
       res.status(500).json({ message: "Failed to create plan: " + error.message });
+    }
+  });
+
+  // Link an existing Microsoft Team to a client
+  app.post("/api/clients/:clientId/microsoft-team", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { teamId, teamName } = req.body;
+      if (!teamId) return res.status(400).json({ message: "teamId is required" });
+
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+
+      await storage.updateClient(clientId, {
+        microsoftTeamId: teamId,
+        microsoftTeamName: teamName || null,
+      });
+
+      const updated = await storage.getClient(clientId);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to link team to client:", error);
+      res.status(500).json({ message: "Failed to link team: " + error.message });
+    }
+  });
+
+  // Unlink Microsoft Team from a client
+  app.delete("/api/clients/:clientId/microsoft-team", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+
+      await storage.updateClient(clientId, {
+        microsoftTeamId: null,
+        microsoftTeamName: null,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to unlink team from client:", error);
+      res.status(500).json({ message: "Failed to unlink team: " + error.message });
+    }
+  });
+
+  // List all Microsoft Teams (groups) - used for client team linking and channel provisioning
+  app.get("/api/planner/teams", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const skipToken = req.query.skipToken as string | undefined;
+      const pageSize = Math.min(parseInt(req.query.pageSize as string) || 50, 100);
+      const result = await plannerService.listMyGroups(pageSize, skipToken ? decodeURIComponent(skipToken) : undefined);
+      res.json({ teams: result.groups, nextLink: result.nextLink });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to list teams:", error);
+      res.status(500).json({ message: "Failed to list teams: " + error.message });
     }
   });
 

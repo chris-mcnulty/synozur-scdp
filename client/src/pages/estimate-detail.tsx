@@ -14,7 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users, BarChart3, List } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users, BarChart3, List, ExternalLink, Search } from "lucide-react";
+import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -154,6 +155,222 @@ function GanttView({
   );
 }
 
+function TeamsProvisioningDialog({
+  open,
+  project,
+  onComplete,
+}: {
+  open: boolean;
+  project: { id: string; name: string; clientId?: string | null };
+  onComplete: () => void;
+}) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"select-team" | "provisioning" | "done">("select-team");
+  const [teamSearch, setTeamSearch] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const [channelUrl, setChannelUrl] = useState<string | null>(null);
+  const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+
+  const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["/api/planner/status"],
+    enabled: open,
+    retry: false,
+  });
+
+  const { data: clientData } = useQuery<{ microsoftTeamId?: string; microsoftTeamName?: string; name: string }>({
+    queryKey: ["/api/clients", project.clientId],
+    enabled: open && !!project.clientId,
+    retry: false,
+  });
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[] }>({
+    queryKey: ["/api/planner/teams"],
+    enabled: open && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (teamsData?.teams) setAllTeams(teamsData.teams);
+  }, [teamsData]);
+
+  useEffect(() => {
+    if (clientData?.microsoftTeamId && allTeams.length > 0) {
+      const found = allTeams.find(t => t.id === clientData.microsoftTeamId);
+      if (found) setSelectedTeam(found);
+    }
+  }, [clientData, allTeams]);
+
+  const filteredTeams = allTeams.filter(t =>
+    !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
+  );
+
+  const provisionMutation = useMutation({
+    mutationFn: (data: { teamId: string; displayName: string; projectId: string; projectName: string }) =>
+      apiRequest(`/api/planner/teams/${data.teamId}/channels`, {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: data.displayName,
+          projectId: data.projectId,
+          projectName: data.projectName,
+          autoAddConstellationTab: true,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      setChannelUrl(data?.webUrl || data?.channel?.webUrl || null);
+      setStep("done");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to provision channel", description: error.message, variant: "destructive" });
+      setStep("select-team");
+    },
+  });
+
+  const handleProvision = () => {
+    if (!selectedTeam) return;
+    setStep("provisioning");
+    provisionMutation.mutate({
+      teamId: selectedTeam.id,
+      displayName: project.name,
+      projectId: project.id,
+      projectName: project.name,
+    });
+  };
+
+  const handleClose = () => {
+    setStep("select-team");
+    setTeamSearch("");
+    setSelectedTeam(null);
+    setChannelUrl(null);
+    onComplete();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MicrosoftTeamsIcon className="h-5 w-5" />
+            Set Up Teams Channel
+          </DialogTitle>
+          <DialogDescription>
+            {step === "select-team" && "Create a dedicated Microsoft Teams channel for this project."}
+            {step === "provisioning" && "Creating your Teams channel…"}
+            {step === "done" && "Teams channel created successfully!"}
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === "select-team" && (
+          <div className="space-y-4">
+            {plannerStatus?.connected === false ? (
+              <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  Microsoft Teams integration is not configured. You can skip this step and set up a channel later from the project settings.
+                </p>
+              </div>
+            ) : (
+              <>
+                {clientData?.microsoftTeamId && (
+                  <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                    <p className="text-xs text-blue-800 dark:text-blue-300">
+                      This client is linked to the <strong>{clientData.microsoftTeamName || clientData.microsoftTeamId}</strong> team.
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Select Team</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Filter teams..."
+                      value={teamSearch}
+                      onChange={(e) => setTeamSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                {teamsLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto border rounded-md">
+                    {filteredTeams.map((team) => (
+                      <div
+                        key={team.id}
+                        className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
+                        onClick={() => setSelectedTeam(team)}
+                      >
+                        <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
+                        <span className="text-sm font-medium">{team.displayName}</span>
+                      </div>
+                    ))}
+                    {filteredTeams.length === 0 && (
+                      <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                    )}
+                  </div>
+                )}
+                {selectedTeam && (
+                  <div className="rounded-lg border p-3 space-y-1 bg-muted/30">
+                    <p className="text-xs text-muted-foreground">Channel will be created in:</p>
+                    <p className="text-sm font-medium">{selectedTeam.displayName}</p>
+                    <p className="text-xs text-muted-foreground">Channel name: <strong>{project.name}</strong></p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {step === "provisioning" && (
+          <div className="flex flex-col items-center justify-center py-8 gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Creating channel and configuring tabs…</p>
+          </div>
+        )}
+
+        {step === "done" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border p-4 bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                <Check className="h-5 w-5" />
+                <p className="text-sm font-medium">Channel created successfully!</p>
+              </div>
+            </div>
+            {channelUrl && (
+              <a
+                href={channelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 underline"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open in Microsoft Teams
+              </a>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          {step === "select-team" && (
+            <>
+              <Button variant="outline" onClick={handleClose}>Skip for now</Button>
+              <Button
+                disabled={!selectedTeam || plannerStatus?.connected === false}
+                onClick={handleProvision}
+              >
+                Create Channel
+              </Button>
+            </>
+          )}
+          {step === "done" && (
+            <Button onClick={handleClose}>Go to Project</Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EstimateDetailContent() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
@@ -229,6 +446,8 @@ function EstimateDetailContent() {
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [shouldCopyAssignments, setShouldCopyAssignments] = useState(true);
+  const [showTeamsProvisioningDialog, setShowTeamsProvisioningDialog] = useState(false);
+  const [createdProjectForTeams, setCreatedProjectForTeams] = useState<{ id: string; name: string; clientId?: string | null } | null>(null);
   const [kickoffDate, setKickoffDate] = useState<string>("");
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
   const [showPMWizard, setShowPMWizard] = useState(false);
@@ -847,10 +1066,8 @@ function EstimateDetailContent() {
           title: estimate?.status === 'approved' ? "Project created" : "Estimate approved", 
           description: `Project "${data.project.name}" created successfully.` 
         });
-        // Navigate to the new project
-        setTimeout(() => {
-          setLocation(`/projects/${data.project.id}`);
-        }, 1500);
+        setCreatedProjectForTeams({ id: data.project.id, name: data.project.name, clientId: data.project.clientId });
+        setShowTeamsProvisioningDialog(true);
       } else {
         toast({ title: "Estimate approved successfully" });
       }
@@ -5410,6 +5627,19 @@ function EstimateDetailContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Teams Channel Provisioning Dialog */}
+      {createdProjectForTeams && (
+        <TeamsProvisioningDialog
+          open={showTeamsProvisioningDialog}
+          project={createdProjectForTeams}
+          onComplete={() => {
+            setShowTeamsProvisioningDialog(false);
+            setCreatedProjectForTeams(null);
+            setLocation(`/projects/${createdProjectForTeams.id}`);
+          }}
+        />
+      )}
 
       {/* Missing Roles Wizard Dialog */}
       <Dialog open={showMissingRolesWizard} onOpenChange={(open) => {

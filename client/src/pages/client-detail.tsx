@@ -61,12 +61,16 @@ import {
   Trash2,
   UserCircle,
   Search,
-  Pencil
+  Pencil,
+  ExternalLink,
+  Link2,
+  Loader2
 } from "lucide-react";
 import { Link } from "wouter";
 import { Client, Project, InvoiceBatch, Sow } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ClientRateOverridesSection } from "@/components/ClientRateOverridesSection";
+import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 
 type ProjectWithClient = Project & { client: Client };
 type InvoiceBatchWithDetails = InvoiceBatch & {
@@ -299,6 +303,210 @@ function ClientCrmLink({ clientId }: { clientId: string }) {
               onClick={() => linkMutation.mutate(selectedCompanyId)}
             >
               {linkMutation.isPending ? "Linking..." : "Link Company"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ClientTeamLink({ clientId, client }: { clientId: string; client: Client }) {
+  const { toast } = useToast();
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+
+  const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["/api/planner/status"],
+    enabled: showLinkDialog,
+    retry: false,
+  });
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[]; nextLink?: string }>({
+    queryKey: ["/api/planner/teams"],
+    enabled: showLinkDialog && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  const filteredTeams = allTeams.filter(t =>
+    !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
+  );
+
+  const linkTeamMutation = useMutation({
+    mutationFn: (data: { teamId: string; teamName: string }) =>
+      apiRequest(`/api/clients/${clientId}/microsoft-team`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setShowLinkDialog(false);
+      setSelectedTeam(null);
+      setTeamSearch("");
+      toast({ title: "Microsoft Team linked" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to link team", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unlinkTeamMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/clients/${clientId}/microsoft-team`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Microsoft Team unlinked" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to unlink team", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleDialogOpen = (open: boolean) => {
+    setShowLinkDialog(open);
+    if (!open) {
+      setSelectedTeam(null);
+      setTeamSearch("");
+    }
+  };
+
+  useEffect(() => {
+    if (teamsData?.teams) {
+      setAllTeams(teamsData.teams);
+    }
+  }, [teamsData]);
+
+  const isLinked = !!(client as any).microsoftTeamId;
+
+  return (
+    <>
+      <Card className="mt-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MicrosoftTeamsIcon className="h-4 w-4" />
+            Microsoft Team
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isLinked ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Linked
+                </Badge>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{(client as any).microsoftTeamName || "Microsoft Team"}</p>
+                <p className="text-xs text-muted-foreground font-mono">{(client as any).microsoftTeamId}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowLinkDialog(true)}
+                >
+                  <Link2 className="h-3 w-3 mr-1" />
+                  Change Team
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm("Unlink this Microsoft Team from this client?")) {
+                      unlinkTeamMutation.mutate();
+                    }
+                  }}
+                  disabled={unlinkTeamMutation.isPending}
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Unlink
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                No Microsoft Team linked to this client.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setShowLinkDialog(true)}>
+                <UserPlus className="h-4 w-4 mr-1" />
+                Connect to Team
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showLinkDialog} onOpenChange={handleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MicrosoftTeamsIcon className="h-5 w-5" />
+              Connect to Microsoft Team
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {plannerStatus?.connected === false && (
+              <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  Microsoft Teams integration is not configured. Please contact your administrator.
+                </p>
+              </div>
+            )}
+            {plannerStatus?.connected === true && (
+              <>
+                <div className="space-y-2">
+                  <Label>Search Teams</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Type to filter..."
+                      value={teamSearch}
+                      onChange={(e) => setTeamSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                {teamsLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="max-h-60 overflow-y-auto border rounded-md">
+                    {filteredTeams.map((team) => (
+                      <div
+                        key={team.id}
+                        className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
+                        onClick={() => setSelectedTeam(team)}
+                      >
+                        <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
+                        <p className="text-sm font-medium">{team.displayName}</p>
+                      </div>
+                    ))}
+                    {filteredTeams.length === 0 && (
+                      <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleDialogOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!selectedTeam || linkTeamMutation.isPending}
+              onClick={() => {
+                if (selectedTeam) {
+                  linkTeamMutation.mutate({ teamId: selectedTeam.id, teamName: selectedTeam.displayName });
+                }
+              }}
+            >
+              {linkTeamMutation.isPending ? "Linking..." : "Link Team"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1301,6 +1509,7 @@ export default function ClientDetail() {
                   </CardContent>
                 </Card>
                 <ClientCrmLink clientId={clientId!} />
+                <ClientTeamLink clientId={clientId!} client={client} />
               </div>
             </div>
           </TabsContent>

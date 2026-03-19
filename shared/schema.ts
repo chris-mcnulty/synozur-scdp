@@ -519,6 +519,33 @@ export const DEFAULT_FOLDER_TEMPLATES = [
   "Working Documents",
 ];
 
+// Teams tab templates - configurable tab structure for new channels
+export const teamsTabTemplates = pgTable("teams_tab_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  tabType: text("tab_type").notNull(), // e.g. "planner", "constellation", "website", "custom"
+  tabName: text("tab_name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_tab_templates_tenant").on(table.tenantId),
+}));
+
+export const insertTeamsTabTemplateSchema = createInsertSchema(teamsTabTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertTeamsTabTemplate = z.infer<typeof insertTeamsTabTemplateSchema>;
+export type TeamsTabTemplate = typeof teamsTabTemplates.$inferSelect;
+
+export const DEFAULT_TAB_TEMPLATES = [
+  { tabType: "planner", tabName: "Planner" },
+  { tabType: "constellation", tabName: "Constellation" },
+];
+
 // Projects
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

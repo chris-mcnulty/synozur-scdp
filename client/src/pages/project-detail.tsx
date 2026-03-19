@@ -107,8 +107,10 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark
+  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
+  Link2
 } from "lucide-react";
+import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
 import { SubSOWGenerator } from "@/components/sub-sow-generator";
@@ -270,6 +272,51 @@ const quickLogTimeSchema = z.object({
   billable: z.boolean().default(true),
 });
 type QuickLogTimeData = z.infer<typeof quickLogTimeSchema>;
+
+function TeamsChannelPanel({ projectId }: { projectId: string }) {
+  const { data: channel, isLoading } = useQuery<{
+    id: number;
+    channelId: string;
+    channelName: string;
+    channelWebUrl: string | null;
+  } | null>({
+    queryKey: ["/api/projects", projectId, "channel"],
+    retry: false,
+  });
+
+  if (isLoading) return null;
+  if (!channel) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <MicrosoftTeamsIcon className="h-5 w-5" />
+          Microsoft Teams Channel
+          <Badge variant="outline" className="text-green-600 border-green-600">
+            Linked
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">{channel.channelName}</p>
+            <p className="text-xs text-muted-foreground font-mono">{channel.channelId}</p>
+          </div>
+          {channel.channelWebUrl && (
+            <a href={channel.channelWebUrl} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm">
+                <ExternalLink className="h-4 w-4 mr-1" />
+                Open in Teams
+              </Button>
+            </a>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -3003,6 +3050,7 @@ export default function ProjectDetail() {
               clientTeamId={analytics?.project?.client?.microsoftTeamId}
               clientId={analytics?.project?.clientId}
             />
+            <TeamsChannelPanel projectId={id || ""} />
             
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">

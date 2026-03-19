@@ -976,6 +976,129 @@ function ChannelProvisioningCard() {
   );
 }
 
+type TabTemplate = {
+  id: string;
+  tabType: string;
+  tabName: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+function ChannelTabTemplatesCard() {
+  const { toast } = useToast();
+
+  const { data: templates, isLoading } = useQuery<TabTemplate[]>({
+    queryKey: ["/api/tenant/teams-tab-templates"],
+  });
+
+  const [localTemplates, setLocalTemplates] = useState<TabTemplate[]>([]);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => {
+    if (templates) setLocalTemplates(templates);
+  }, [templates]);
+
+  const saveMutation = useMutation({
+    mutationFn: (tabs: TabTemplate[]) =>
+      apiRequest("/api/tenant/teams-tab-templates", {
+        method: "PUT",
+        body: JSON.stringify({ templates: tabs }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/teams-tab-templates"] });
+      toast({ title: "Tab templates saved" });
+      setHasChanges(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save tab templates", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleActive = (id: string) => {
+    setLocalTemplates(prev => prev.map(t => t.id === id ? { ...t, isActive: !t.isActive } : t));
+    setHasChanges(true);
+  };
+
+  const updateName = (id: string, name: string) => {
+    setLocalTemplates(prev => prev.map(t => t.id === id ? { ...t, tabName: name } : t));
+    setHasChanges(true);
+  };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 flex justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MicrosoftTeamsIcon className="h-5 w-5" />
+            Channel Tab Defaults
+          </CardTitle>
+          <Badge variant="outline">{localTemplates.filter(t => t.isActive).length} active</Badge>
+        </div>
+        <CardDescription>
+          Configure which tabs are automatically added when a Teams channel is provisioned for a project. Tabs are added in the order shown.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          {localTemplates
+            .slice()
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((tab) => (
+              <div
+                key={tab.id}
+                className={`flex items-center gap-3 p-3 rounded-md border ${tab.isActive ? "bg-muted/30" : "bg-muted/10 opacity-60"}`}
+              >
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-mono uppercase">{tab.tabType}</span>
+                  </div>
+                  <input
+                    className="text-sm font-medium bg-transparent border-none outline-none w-full focus:ring-1 focus:ring-ring rounded px-1"
+                    value={tab.tabName}
+                    onChange={(e) => updateName(tab.id, e.target.value)}
+                    disabled={!tab.isActive}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={tab.isActive}
+                    onCheckedChange={() => toggleActive(tab.id)}
+                  />
+                </div>
+              </div>
+            ))}
+        </div>
+        <div className="flex justify-end pt-2">
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate(localTemplates)}
+            disabled={!hasChanges || saveMutation.isPending}
+          >
+            {saveMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+            Save Tab Defaults
+          </Button>
+        </div>
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-xs">
+            Tab changes apply to newly provisioned channels. Existing channels are not affected.
+          </AlertDescription>
+        </Alert>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SharePointSiteConfigCard() {
   const { toast } = useToast();
   const [newColumn, setNewColumn] = useState("");
@@ -3058,6 +3181,8 @@ export default function OrganizationSettings() {
                   <TeamsAppPackageCard tenantSettings={tenantSettings} />
 
                   <ChannelProvisioningCard />
+
+                  <ChannelTabTemplatesCard />
 
                   <SharePointSiteConfigCard />
 
