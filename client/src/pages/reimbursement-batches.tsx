@@ -86,6 +86,8 @@ interface ReimbursementBatch {
   processor?: UserType;
   expenses: Array<Expense & { person: UserType; project: Project & { client: Client } }>;
   lineItems: BatchLineItem[];
+  expenseCount?: number;
+  incurrerName?: string | null;
 }
 
 export default function ReimbursementBatches() {
@@ -438,13 +440,18 @@ export default function ReimbursementBatches() {
                   </CardTitle>
                   <CardDescription className="mt-1 flex items-center gap-1">
                     <User className="h-3 w-3" />
-                    {batch.requestedForUser?.name || 'Unknown'} 
+                    <span>
+                      {batch.requestedForUser?.name || batch.incurrerName || 'Unknown'}
+                    </span>
                     {batch.requester && batch.requestedForUserId !== batch.requestedBy && (
-                      <span className="text-xs"> (requested by {batch.requester.name})</span>
+                      <span className="text-xs text-muted-foreground"> · submitted by {batch.requester.name}</span>
                     )}
                   </CardDescription>
                   <CardDescription className="mt-0.5">
-                    {batch.lineItems?.length || batch.expenses?.length || 0} expense item{(batch.lineItems?.length || batch.expenses?.length || 0) !== 1 ? 's' : ''}
+                    {(() => {
+                      const count = batch.expenseCount ?? batch.lineItems?.length ?? batch.expenses?.length ?? 0;
+                      return `${count} expense item${count !== 1 ? 's' : ''}`;
+                    })()}
                   </CardDescription>
                 </div>
                 <div className="flex flex-col items-end gap-1">

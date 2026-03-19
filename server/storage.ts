@@ -4846,12 +4846,40 @@ export class DatabaseStorage implements IStorage {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(reimbursementBatches.createdAt));
 
+    // Fetch per-batch expense counts and the actual incurrer name from the expenses
+    // themselves (used as a fallback when requestedForUser is not set on old batches).
+    const batchIds = results.map(r => r.reimbursement_batches.id);
+    const expenseStats = batchIds.length > 0
+      ? await db
+          .select({
+            batchId: expenses.reimbursementBatchId,
+            count: sql<number>`COUNT(*)::int`,
+            incurrerName: sql<string>`(
+              SELECT name FROM users
+              WHERE id = COALESCE(
+                (SELECT project_resource_id FROM expenses e2 WHERE e2.reimbursement_batch_id = ${expenses.reimbursementBatchId} AND e2.project_resource_id IS NOT NULL LIMIT 1),
+                (SELECT person_id          FROM expenses e2 WHERE e2.reimbursement_batch_id = ${expenses.reimbursementBatchId} LIMIT 1)
+              )
+              LIMIT 1
+            )`,
+          })
+          .from(expenses)
+          .where(inArray(expenses.reimbursementBatchId, batchIds))
+          .groupBy(expenses.reimbursementBatchId)
+      : [];
+
+    const statsByBatch = Object.fromEntries(
+      expenseStats.map(s => [s.batchId, { count: s.count, incurrerName: s.incurrerName }])
+    );
+
     return results.map(row => ({
       ...row.reimbursement_batches,
       approver: row.users_approver || undefined,
       processor: row.users_processor || undefined,
       requester: row.users_requester || undefined,
       requestedForUser: row.users_requested_for || undefined,
+      expenseCount: statsByBatch[row.reimbursement_batches.id]?.count ?? 0,
+      incurrerName: statsByBatch[row.reimbursement_batches.id]?.incurrerName ?? null,
     }));
   }
 
