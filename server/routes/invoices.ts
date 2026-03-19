@@ -1098,26 +1098,41 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       const batchTenantId = (batch as any).tenantId;
 
       const lines = await storage.getInvoiceLinesForBatch(batchId);
-      const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
+      const expenseLines = lines.filter(l => l.type === 'expense');
 
-      if (projectIds.length === 0) {
-        return res.status(404).json({ message: "No projects found in this invoice batch" });
+      if (expenseLines.length === 0) {
+        return res.status(404).json({ message: "No expense lines found in this invoice batch" });
       }
 
-      const queryConditions = [
-        inArray(expenses.projectId, projectIds),
-        gte(expenses.date, batch.startDate),
-        lte(expenses.date, batch.endDate),
-        eq(expenses.billedFlag, true)
-      ];
-      
-      if (batchTenantId) {
-        queryConditions.push(eq(expenses.tenantId, batchTenantId));
-      }
+      // Use sourceExpenseId for precise matching — avoids cross-batch contamination
+      // from the old broad project+date-range+billedFlag query.
+      const sourceExpenseIds = expenseLines
+        .map(l => (l as any).sourceExpenseId)
+        .filter(Boolean) as string[];
 
-      const invoiceExpenses = await db.select()
-        .from(expenses)
-        .where(and(...queryConditions));
+      let invoiceExpenses: any[] = [];
+
+      if (sourceExpenseIds.length > 0) {
+        const conditions: any[] = [inArray(expenses.id, sourceExpenseIds)];
+        if (batchTenantId) conditions.push(eq(expenses.tenantId, batchTenantId));
+        invoiceExpenses = await db.select().from(expenses).where(and(...conditions));
+        console.log(`[RECEIPTS_BUNDLE] Precise match: ${invoiceExpenses.length} expense(s) via sourceExpenseId`);
+      } else {
+        // Legacy fallback for lines that predate sourceExpenseId
+        const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
+        if (projectIds.length === 0) {
+          return res.status(404).json({ message: "No projects found in this invoice batch" });
+        }
+        const conditions: any[] = [
+          inArray(expenses.projectId, projectIds),
+          gte(expenses.date, batch.startDate),
+          lte(expenses.date, batch.endDate),
+          eq(expenses.billedFlag, true)
+        ];
+        if (batchTenantId) conditions.push(eq(expenses.tenantId, batchTenantId));
+        invoiceExpenses = await db.select().from(expenses).where(and(...conditions));
+        console.log(`[RECEIPTS_BUNDLE] Legacy fallback: ${invoiceExpenses.length} expense(s) via date range`);
+      }
 
       if (invoiceExpenses.length === 0) {
         return res.status(404).json({ message: "No expenses found for this invoice batch" });
@@ -1259,29 +1274,36 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       const batchTenantId = (batch as any).tenantId;
 
       const lines = await storage.getInvoiceLinesForBatch(batchId);
-      const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
+      const expenseLineIds = lines
+        .filter(l => l.type === 'expense')
+        .map(l => (l as any).sourceExpenseId)
+        .filter(Boolean) as string[];
 
-      if (projectIds.length === 0) {
-        return res.json({ available: false, count: 0 });
+      let invoiceExpenses: { id: string; receiptUrl: string | null }[] = [];
+
+      if (expenseLineIds.length > 0) {
+        const conditions: any[] = [inArray(expenses.id, expenseLineIds)];
+        if (batchTenantId) conditions.push(eq(expenses.tenantId, batchTenantId));
+        invoiceExpenses = await db.select({ id: expenses.id, receiptUrl: expenses.receiptUrl })
+          .from(expenses)
+          .where(and(...conditions));
+      } else {
+        // Legacy fallback
+        const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
+        if (projectIds.length === 0) {
+          return res.json({ available: false, count: 0 });
+        }
+        const conditions: any[] = [
+          inArray(expenses.projectId, projectIds),
+          gte(expenses.date, batch.startDate),
+          lte(expenses.date, batch.endDate),
+          eq(expenses.billedFlag, true)
+        ];
+        if (batchTenantId) conditions.push(eq(expenses.tenantId, batchTenantId));
+        invoiceExpenses = await db.select({ id: expenses.id, receiptUrl: expenses.receiptUrl })
+          .from(expenses)
+          .where(and(...conditions));
       }
-
-      const queryConditions = [
-        inArray(expenses.projectId, projectIds),
-        gte(expenses.date, batch.startDate),
-        lte(expenses.date, batch.endDate),
-        eq(expenses.billedFlag, true)
-      ];
-      
-      if (batchTenantId) {
-        queryConditions.push(eq(expenses.tenantId, batchTenantId));
-      }
-
-      const invoiceExpenses = await db.select({
-        id: expenses.id,
-        receiptUrl: expenses.receiptUrl
-      })
-        .from(expenses)
-        .where(and(...queryConditions));
 
       if (invoiceExpenses.length === 0) {
         return res.json({ available: false, count: 0 });

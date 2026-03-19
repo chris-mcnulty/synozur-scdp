@@ -12586,23 +12586,36 @@ export async function generateInvoicePDF(params: {
     if (expenseLines.length > 0) {
       console.log(`[PDF] Found ${expenseLines.length} expense line(s) in invoice`);
       
-      // Get unique project IDs from the invoice
-      const projectIds = Array.from(new Set(lines.map(l => l.project.id)));
+      // Use sourceExpenseId for precise matching — prevents cross-batch contamination
+      // that occurred with the old broad project+date-range+billedFlag query, which
+      // incorrectly pulled in expenses from other previously-billed batches sharing
+      // the same project and overlapping date window.
+      const sourceExpenseIds = expenseLines
+        .map((l: any) => l.sourceExpenseId)
+        .filter(Boolean) as string[];
       
-      // Fetch only BILLED expenses for these projects within the batch date range
-      // This ensures we only include receipts for expenses actually invoiced
-      const invoiceExpenses = await db.select()
-        .from(expenses)
-        .where(
-          and(
-            inArray(expenses.projectId, projectIds),
-            gte(expenses.date, batch.startDate),
-            lte(expenses.date, batch.endDate),
-            eq(expenses.billedFlag, true) // Only include billed expenses
-          )
-        );
+      let invoiceExpenses: any[] = [];
       
-      console.log(`[PDF] Found ${invoiceExpenses.length} billed expense(s) in batch date range`);
+      if (sourceExpenseIds.length > 0) {
+        invoiceExpenses = await db.select()
+          .from(expenses)
+          .where(inArray(expenses.id, sourceExpenseIds));
+        console.log(`[PDF] Found ${invoiceExpenses.length} expense(s) via sourceExpenseId (precise match)`);
+      } else {
+        // Legacy fallback: lines predate sourceExpenseId; use project+date range
+        const projectIds = Array.from(new Set(lines.map((l: any) => l.project.id)));
+        invoiceExpenses = await db.select()
+          .from(expenses)
+          .where(
+            and(
+              inArray(expenses.projectId, projectIds),
+              gte(expenses.date, batch.startDate),
+              lte(expenses.date, batch.endDate),
+              eq(expenses.billedFlag, true)
+            )
+          );
+        console.log(`[PDF] Found ${invoiceExpenses.length} billed expense(s) via date range (legacy fallback)`);
+      }
       
       if (invoiceExpenses.length > 0) {
         // Fetch all attachments for these expenses from expenseAttachments table
