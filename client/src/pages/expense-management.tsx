@@ -33,6 +33,8 @@ import {
   FileText,
   Check,
   CheckCircle,
+  Clock,
+  AlertCircle,
   User as UserIcon,
   Building2,
   FolderOpen,
@@ -351,6 +353,11 @@ export default function ExpenseManagement() {
 
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
+  });
+
+  const { data: selectedExpenseBatch } = useQuery<any>({
+    queryKey: ['/api/reimbursement-batches', selectedExpense?.reimbursementBatchId],
+    enabled: !!(selectedExpense?.reimbursementBatchId),
   });
 
   const { data: users = [] } = useQuery<User[]>({
@@ -1859,6 +1866,92 @@ export default function ExpenseManagement() {
                       )}
                     />
                   </div>
+
+                  {/* Reimbursement Status — read-only audit panel */}
+                  {selectedExpense?.reimbursable && (
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reimbursement Status</p>
+                      {!selectedExpense.reimbursementBatchId ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <AlertCircle className="h-4 w-4 text-yellow-500 shrink-0" />
+                          Not yet submitted for reimbursement
+                        </div>
+                      ) : (
+                        <ol className="space-y-2">
+                          {/* Step 1 — Requested */}
+                          <li className="flex items-start gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                            <div>
+                              <span className="font-medium">Requested</span>
+                              {selectedExpenseBatch?.batchNumber && (
+                                <span className="ml-1 text-muted-foreground">({selectedExpenseBatch.batchNumber})</span>
+                              )}
+                              {selectedExpenseBatch?.createdAt && (
+                                <span className="ml-1 text-muted-foreground">
+                                  · {format(new Date(selectedExpenseBatch.createdAt), 'MMM d, yyyy')}
+                                </span>
+                              )}
+                              {selectedExpenseBatch?.requester?.name && selectedExpenseBatch.requester.name !== selectedExpenseBatch.requestedForUser?.name && (
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  submitted by {selectedExpenseBatch.requester.name}
+                                </span>
+                              )}
+                            </div>
+                          </li>
+
+                          {/* Step 2 — Reviewed */}
+                          {(['under_review', 'processed'] as string[]).includes(selectedExpenseBatch?.status) ? (
+                            <li className="flex items-start gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                              <div>
+                                <span className="font-medium">Reviewed & approved</span>
+                                {selectedExpenseBatch?.approvedAt && (
+                                  <span className="ml-1 text-muted-foreground">
+                                    · {format(new Date(selectedExpenseBatch.approvedAt), 'MMM d, yyyy')}
+                                  </span>
+                                )}
+                                {selectedExpenseBatch?.approver?.name && (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    by {selectedExpenseBatch.approver.name}
+                                  </span>
+                                )}
+                              </div>
+                            </li>
+                          ) : (
+                            <li className="flex items-start gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4 mt-0.5 shrink-0" />
+                              <span>Pending review</span>
+                            </li>
+                          )}
+
+                          {/* Step 3 — Paid */}
+                          {selectedExpenseBatch?.status === 'processed' ? (
+                            <li className="flex items-start gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                              <div>
+                                <span className="font-medium">Paid</span>
+                                {selectedExpenseBatch?.processedAt && (
+                                  <span className="ml-1 text-muted-foreground">
+                                    · {format(new Date(selectedExpenseBatch.processedAt), 'MMM d, yyyy')}
+                                  </span>
+                                )}
+                                {selectedExpenseBatch?.paymentReferenceNumber && (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    Ref: {selectedExpenseBatch.paymentReferenceNumber}
+                                  </span>
+                                )}
+                              </div>
+                            </li>
+                          ) : (
+                            <li className="flex items-start gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4 mt-0.5 shrink-0" />
+                              <span>Not yet paid</span>
+                            </li>
+                          )}
+                        </ol>
+                      )}
+                    </div>
+                  )}
 
                   <DialogFooter>
                     <Button
