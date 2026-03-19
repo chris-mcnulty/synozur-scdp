@@ -637,6 +637,85 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
     }
   });
 
+  // One-time admin endpoint: safely delete a contaminated draft batch.
+  // Clears billed_flag ONLY for expenses that are not already covered by another
+  // finalized invoice (cross-batch protection).  Returns a dry-run preview when
+  // ?dryRun=true is passed so the caller can confirm before committing.
+  app.post("/api/admin/fix-contaminated-batch/:batchId", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    const { batchId } = req.params;
+    const dryRun = req.query.dryRun === 'true';
+
+    try {
+      // Verify the batch exists and is a draft
+      const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+      if (!batch) return res.status(404).json({ message: `Batch ${batchId} not found` });
+      if (batch.status === 'finalized') return res.status(400).json({ message: "Cannot fix a finalized batch — only draft batches can be cleaned up" });
+
+      // Step 1: Get all source_expense_ids from this batch's lines
+      const batchLines = await db.select({
+        sourceExpenseId: invoiceLines.sourceExpenseId,
+        sourceTimeEntryId: invoiceLines.sourceTimeEntryId,
+      }).from(invoiceLines).where(eq(invoiceLines.batchId, batchId));
+
+      const candidateExpenseIds = batchLines
+        .map(l => l.sourceExpenseId)
+        .filter((id): id is string => !!id);
+
+      // Step 2: Find which of those expenses are protected by another finalized/paid batch
+      let expensesToUnbill: string[] = [];
+      let protectedCount = 0;
+
+      if (candidateExpenseIds.length > 0) {
+        const protectedRows = await db.select({ sourceExpenseId: invoiceLines.sourceExpenseId })
+          .from(invoiceLines)
+          .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+          .where(and(
+            inArray(invoiceLines.sourceExpenseId, candidateExpenseIds),
+            inArray(invoiceBatches.status, ['finalized', 'paid'])
+          ));
+
+        const protectedIds = new Set(protectedRows.map(r => r.sourceExpenseId).filter(Boolean));
+        protectedCount = protectedIds.size;
+        expensesToUnbill = candidateExpenseIds.filter(id => !protectedIds.has(id));
+      }
+
+      const preview = {
+        batchId,
+        batchStatus: batch.status,
+        totalLines: batchLines.length,
+        totalExpenseLines: candidateExpenseIds.length,
+        protectedByOtherFinalizedBatch: protectedCount,
+        willHaveBilledFlagCleared: expensesToUnbill,
+        dryRun,
+      };
+
+      if (dryRun) {
+        return res.json({ message: "Dry-run preview (no changes made)", ...preview });
+      }
+
+      // Step 3: Apply the fix
+      await db.delete(invoiceLines).where(eq(invoiceLines.batchId, batchId));
+      await db.delete(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+
+      if (expensesToUnbill.length > 0) {
+        await db.update(expenses)
+          .set({ billedFlag: false })
+          .where(inArray(expenses.id, expensesToUnbill));
+      }
+
+      console.log(`[ADMIN] fix-contaminated-batch ${batchId}: deleted batch, cleared ${expensesToUnbill.length} billed flags, protected ${protectedCount}`);
+
+      return res.json({
+        message: `Batch ${batchId} deleted. ${expensesToUnbill.length} expense(s) marked unbilled; ${protectedCount} expense(s) protected by other finalized invoices.`,
+        ...preview,
+        dryRun: false,
+      });
+    } catch (error: any) {
+      console.error(`[ADMIN] fix-contaminated-batch error:`, error);
+      res.status(500).json({ message: "Fix failed", error: error.message });
+    }
+  });
+
   app.get("/api/billing/project-summaries", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const tenantId = req.user?.tenantId;
@@ -2338,7 +2417,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         inArray(expenses.projectId, projectIds),
         gte(expenses.date, startDate),
         lte(expenses.date, endDate),
-        eq(expenses.billable, true)
+        eq(expenses.billable, true),
+        eq(expenses.billedFlag, false)
       ))
       .orderBy(expenses.date);
 

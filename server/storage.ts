@@ -8311,17 +8311,18 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // FIRST: Get projects and expense lines BEFORE deleting anything
-    // Get the projects associated with this batch to identify related expenses
-    const batchProjects = await db.select({ projectId: invoiceLines.projectId })
+    // FIRST: Capture source_expense_ids from this batch's lines BEFORE deleting anything.
+    // This is the precise list of expenses linked to this batch — used below to
+    // clear billed_flag only on the exact expenses that were in this batch, NOT on
+    // all expenses in the same project+date range (which caused cross-batch contamination).
+    const batchExpenseLines = await db.select({ sourceExpenseId: invoiceLines.sourceExpenseId })
       .from(invoiceLines)
-      .where(eq(invoiceLines.batchId, batchId))
-      .groupBy(invoiceLines.projectId);
-    
-    // Also get the date range from the batch to scope expense resets more precisely
-    const startDate = batch.startDate;
-    const endDate = batch.endDate;
-    
+      .where(and(eq(invoiceLines.batchId, batchId), isNotNull(invoiceLines.sourceExpenseId)));
+
+    const batchSourceExpenseIds = batchExpenseLines
+      .map(r => r.sourceExpenseId)
+      .filter((id): id is string => !!id);
+
     // Delete in correct order due to foreign key constraints
     // 1. Delete adjustments
     await db.delete(invoiceAdjustments)
@@ -8341,28 +8342,34 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(timeEntries.invoiceBatchId, batchId));
     
-    // 4. Clear expense billed flag for expenses in this batch
-    // Reset expenses that match the project and date range criteria
-    if (batchProjects.length > 0) {
-      // Reset billed flag for expenses in these projects within the batch date range
-      for (const { projectId } of batchProjects) {
-        const conditions = [
-          eq(expenses.projectId, projectId),
-          eq(expenses.billedFlag, true)
-        ];
-        
-        // Add date range filter if available
-        if (startDate && endDate) {
-          conditions.push(gte(expenses.date, startDate));
-          conditions.push(lte(expenses.date, endDate));
-        }
-        
+    // 4. Clear billed_flag ONLY for the specific expenses that were in this batch
+    //    (identified by source_expense_id on the invoice lines), but ONLY if those
+    //    expenses are not also referenced in another finalized/paid batch's lines.
+    //    This prevents wiping the billed flag on expenses already covered by a
+    //    separate paid invoice that happens to share the same project/date range.
+    if (batchSourceExpenseIds.length > 0) {
+      // Find which of these expenses are protected by another finalized batch
+      const protectedRows = await db.select({ sourceExpenseId: invoiceLines.sourceExpenseId })
+        .from(invoiceLines)
+        .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+        .where(and(
+          inArray(invoiceLines.sourceExpenseId, batchSourceExpenseIds),
+          inArray(invoiceBatches.status, ['finalized', 'paid'])
+        ));
+
+      const protectedIds = new Set(protectedRows.map(r => r.sourceExpenseId).filter(Boolean));
+      const expensesToUnbill = batchSourceExpenseIds.filter(id => !protectedIds.has(id));
+
+      if (expensesToUnbill.length > 0) {
         await db.update(expenses)
           .set({ billedFlag: false })
-          .where(and(...conditions));
+          .where(inArray(expenses.id, expensesToUnbill));
+        console.log(`[STORAGE] Cleared billed_flag on ${expensesToUnbill.length} expense(s) from deleted batch ${batchId} (${protectedIds.size} protected by other finalized batches)`);
+      } else {
+        console.log(`[STORAGE] All ${batchSourceExpenseIds.length} expenses in batch ${batchId} are protected by other finalized batches — no billed flags cleared`);
       }
     }
-    
+
     // 5. Delete the batch itself
     await db.delete(invoiceBatches)
       .where(eq(invoiceBatches.batchId, batchId));
