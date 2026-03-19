@@ -1,7 +1,7 @@
 # Constellation Product Backlog
 
-**Last Updated**: March 15, 2026
-**Version**: 6.0 — Added Teams Custom Tab, Navigation Reorganization, Theme System (v1.8).
+**Last Updated**: March 19, 2026
+**Version**: 6.1 — v1.8 production bug fixes (invoice deletion contamination, reimbursement data integrity, currency selector on Edit Expense).
 
 ---
 
@@ -319,6 +319,17 @@
 - [ ] Missing entry detection
 - [ ] Persist view preferences per user
 
+### Orphaned Invoice PDF File Cleanup (Task #22)
+**Status:** Planned
+**Effort:** Low (2-3 days)
+
+Invoice PDF files stored in SharePoint/object storage are never removed when a batch is deleted, and the regeneration path silently swallows delete errors — leaving orphaned and duplicate files accumulating in storage indefinitely.
+
+- [ ] Delete stored PDF automatically when a batch is deleted (hook into `deleteInvoiceBatch()`)
+- [ ] Admin endpoint `POST /api/admin/purge-orphan-invoice-pdfs` with `?dryRun=true` support — lists all stored files, cross-references against live `pdfFileId` values, deletes unmatched, returns summary
+- [ ] Harden the "delete old version before regenerate" step: replace silent catch with a logged warning (batchId + file ID) so storage failures are visible in production logs
+- [ ] Run purge against production after deploy to clear pre-existing orphans
+
 ---
 
 ## 🤖 P3 - AI & AUTOMATION
@@ -431,7 +442,7 @@
 | Priority | Items | Est. Effort |
 |----------|-------|-------------|
 | P1 - High | 4 items | 24-32 weeks |
-| P2 - Important | 9 items | 20-30 weeks |
+| P2 - Important | 10 items | 20-32 weeks |
 | P3 - AI/Automation | 2 items | 11-16 weeks |
 | P4 - Platform | 7 items | 34+ weeks |
 
