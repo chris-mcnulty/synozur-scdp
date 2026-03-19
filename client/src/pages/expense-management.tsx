@@ -105,11 +105,24 @@ const bulkEditSchema = z.object({
 type BulkEditData = z.infer<typeof bulkEditSchema>;
 
 // Individual edit schema - more fields than bulk edit
+const EXPENSE_CURRENCIES = [
+  { value: "USD", label: "USD — US Dollar" },
+  { value: "CAD", label: "CAD — Canadian Dollar" },
+  { value: "EUR", label: "EUR — Euro" },
+  { value: "GBP", label: "GBP — British Pound" },
+  { value: "AUD", label: "AUD — Australian Dollar" },
+  { value: "MXN", label: "MXN — Mexican Peso" },
+  { value: "CHF", label: "CHF — Swiss Franc" },
+  { value: "JPY", label: "JPY — Japanese Yen" },
+  { value: "INR", label: "INR — Indian Rupee" },
+];
+
 const individualEditSchema = z.object({
   description: z.string().optional(),
   vendor: z.string().optional(),
   category: z.string().optional(),
   amount: z.string().optional(), // Keep as string for decimal precision
+  currency: z.string().optional(),
   date: z.string().optional(), // Use 'date' to match backend
   billable: z.boolean().optional(),
   reimbursable: z.boolean().optional(),
@@ -602,6 +615,7 @@ export default function ExpenseManagement() {
       vendor: expense.vendor || "",
       category: expense.category || "",
       amount: expense.amount || undefined, // Already a string from backend
+      currency: (expense as any).currency || "USD",
       date: expense.date || undefined, // Use 'date' field from expense
       billable: expense.billable,
       reimbursable: expense.reimbursable,
@@ -1604,12 +1618,12 @@ export default function ExpenseManagement() {
             {selectedExpense && (
               <Form {...individualEditForm}>
                 <form name="edit-individual-expense-form" onSubmit={individualEditForm.handleSubmit(handleIndividualUpdate)} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     <FormField
                       control={individualEditForm.control}
                       name="description"
                       render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="col-span-2">
                           <FormLabel>Description</FormLabel>
                           <FormControl>
                             <Input {...field} data-testid="input-individual-description" />
@@ -1632,6 +1646,30 @@ export default function ExpenseManagement() {
                               data-testid="input-individual-amount"
                             />
                           </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={individualEditForm.control}
+                      name="currency"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Currency</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || "USD"}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-individual-currency">
+                                <SelectValue placeholder="USD" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {EXPENSE_CURRENCIES.map((c) => (
+                                <SelectItem key={c.value} value={c.value}>
+                                  {c.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
