@@ -393,7 +393,6 @@ export default function ProjectDetail() {
   const [showStatusReport, setShowStatusReport] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLogTimeDialog, setShowLogTimeDialog] = useState(false);
-  const [logTimeDatePickerOpen, setLogTimeDatePickerOpen] = useState(false);
 
   const logTimeForm = useForm<QuickLogTimeData>({
     resolver: zodResolver(quickLogTimeSchema),
@@ -6607,21 +6606,8 @@ export default function ProjectDetail() {
                   name="date"
                   render={({ field }) => (
                     <FormItem>
-                      <div className="flex items-center justify-between">
-                        <FormLabel>Date</FormLabel>
-                        {field.value !== formatLocalDate(new Date()) && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-auto py-0.5 px-2 text-xs"
-                            onClick={() => field.onChange(formatLocalDate(new Date()))}
-                          >
-                            Today
-                          </Button>
-                        )}
-                      </div>
-                      <Popover open={logTimeDatePickerOpen} onOpenChange={setLogTimeDatePickerOpen}>
+                      <FormLabel>Date</FormLabel>
+                      <Popover>
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
@@ -6630,6 +6616,7 @@ export default function ProjectDetail() {
                                 "w-full pl-3 text-left font-normal",
                                 !field.value && "text-muted-foreground"
                               )}
+                              data-testid="button-log-time-date"
                             >
                               {field.value ? (
                                 format(parseLocalDate(field.value), "PPP")
@@ -6644,10 +6631,7 @@ export default function ProjectDetail() {
                           <CalendarPicker
                             mode="single"
                             selected={field.value ? parseLocalDate(field.value) : undefined}
-                            onSelect={(date) => {
-                              field.onChange(date ? formatLocalDate(date) : '');
-                              setLogTimeDatePickerOpen(false);
-                            }}
+                            onSelect={(date) => field.onChange(date ? formatLocalDate(date) : '')}
                             disabled={(date) =>
                               date > new Date() || date < new Date("1900-01-01")
                             }
