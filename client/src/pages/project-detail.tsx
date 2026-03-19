@@ -121,6 +121,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useEmbed } from "@/hooks/use-embed";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 
 interface ProjectAnalytics {
   project: any;
@@ -240,6 +243,18 @@ const assignmentFormSchema = z.object({
 
 type AssignmentFormData = z.infer<typeof assignmentFormSchema>;
 
+// Local-timezone-safe date helpers (avoids UTC shift bug)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 // Quick log time schema
 const quickLogTimeSchema = z.object({
   date: z.string().min(1, "Date is required"),
@@ -247,6 +262,10 @@ const quickLogTimeSchema = z.object({
     .min(1, "Hours is required")
     .refine((v) => !isNaN(parseFloat(v)), "Must be a number")
     .refine((v) => parseFloat(v) > 0 && parseFloat(v) <= 24, "Must be between 0.01 and 24"),
+  milestoneId: z.string().optional(),
+  workstreamId: z.string().optional(),
+  projectStageId: z.string().optional(),
+  allocationId: z.string().optional(),
   description: z.string().optional(),
   billable: z.boolean().default(true),
 });
@@ -374,12 +393,17 @@ export default function ProjectDetail() {
   const [showStatusReport, setShowStatusReport] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLogTimeDialog, setShowLogTimeDialog] = useState(false);
+  const [logTimeDatePickerOpen, setLogTimeDatePickerOpen] = useState(false);
 
   const logTimeForm = useForm<QuickLogTimeData>({
     resolver: zodResolver(quickLogTimeSchema),
     defaultValues: {
-      date: new Date().toISOString().split("T")[0],
+      date: formatLocalDate(new Date()),
       hours: "",
+      milestoneId: "",
+      workstreamId: "",
+      projectStageId: "",
+      allocationId: "",
       description: "",
       billable: true,
     },
@@ -797,6 +821,10 @@ export default function ProjectDetail() {
           personId: user?.id,
           date: data.date,
           hours: data.hours,
+          milestoneId: data.milestoneId || null,
+          workstreamId: data.workstreamId || null,
+          projectStageId: data.projectStageId || null,
+          allocationId: data.allocationId || null,
           description: data.description || null,
           billable: data.billable,
         }),
@@ -806,8 +834,12 @@ export default function ProjectDetail() {
       toast({ title: "Time logged", description: "Your time entry has been saved." });
       setShowLogTimeDialog(false);
       logTimeForm.reset({
-        date: new Date().toISOString().split("T")[0],
+        date: formatLocalDate(new Date()),
         hours: "",
+        milestoneId: "",
+        workstreamId: "",
+        projectStageId: "",
+        allocationId: "",
         description: "",
         billable: true,
       });
@@ -1996,8 +2028,12 @@ export default function ProjectDetail() {
                 {user && (
                   <Button size="sm" onClick={() => {
                     logTimeForm.reset({
-                      date: new Date().toISOString().split("T")[0],
+                      date: formatLocalDate(new Date()),
                       hours: "",
+                      milestoneId: "",
+                      workstreamId: "",
+                      projectStageId: "",
+                      allocationId: "",
                       description: "",
                       billable: true,
                     });
@@ -4320,8 +4356,12 @@ export default function ProjectDetail() {
                 {user && !embedReadonly && (
                   <Button size="sm" onClick={() => {
                     logTimeForm.reset({
-                      date: new Date().toISOString().split("T")[0],
+                      date: formatLocalDate(new Date()),
                       hours: "",
+                      milestoneId: "",
+                      workstreamId: "",
+                      projectStageId: "",
+                      allocationId: "",
                       description: "",
                       billable: true,
                     });
@@ -6546,7 +6586,7 @@ export default function ProjectDetail() {
 
         {/* Quick Log Time Dialog */}
         <Dialog open={showLogTimeDialog} onOpenChange={setShowLogTimeDialog}>
-          <DialogContent className="sm:max-w-sm">
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
@@ -6561,34 +6601,226 @@ export default function ProjectDetail() {
                 onSubmit={logTimeForm.handleSubmit((data) => quickLogTimeMutation.mutate(data))}
                 className="space-y-4"
               >
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={logTimeForm.control}
-                    name="date"
-                    render={({ field }) => (
-                      <FormItem>
+                {/* Date — calendar popover, local timezone safe */}
+                <FormField
+                  control={logTimeForm.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
                         <FormLabel>Date</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                        {field.value !== formatLocalDate(new Date()) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto py-0.5 px-2 text-xs"
+                            onClick={() => field.onChange(formatLocalDate(new Date()))}
+                          >
+                            Today
+                          </Button>
+                        )}
+                      </div>
+                      <Popover open={logTimeDatePickerOpen} onOpenChange={setLogTimeDatePickerOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(parseLocalDate(field.value), "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <Calendar className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarPicker
+                            mode="single"
+                            selected={field.value ? parseLocalDate(field.value) : undefined}
+                            onSelect={(date) => {
+                              field.onChange(date ? formatLocalDate(date) : '');
+                              setLogTimeDatePickerOpen(false);
+                            }}
+                            disabled={(date) =>
+                              date > new Date() || date < new Date("1900-01-01")
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Hours with quick-pick buttons */}
+                <FormField
+                  control={logTimeForm.control}
+                  name="hours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Hours</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.25"
+                          min="0.25"
+                          max="24"
+                          placeholder="Enter hours (e.g., 8 or 8.5)"
+                          {...field}
+                        />
+                      </FormControl>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {[0.5, 1, 2, 4, 8].map((h) => (
+                          <Button
+                            key={h}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="px-3 py-1 text-xs"
+                            onClick={() => field.onChange(h.toString())}
+                          >
+                            {h}h
+                          </Button>
+                        ))}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Milestone */}
+                {milestones.length > 0 && (
                   <FormField
                     control={logTimeForm.control}
-                    name="hours"
+                    name="milestoneId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Hours</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.25" min="0.25" max="24" placeholder="e.g. 2.5" {...field} />
-                        </FormControl>
+                        <FormLabel>Milestone <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select milestone" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
+                            {[...milestones].sort((a: any, b: any) => a.name.localeCompare(b.name)).map((m: any) => (
+                              <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
+                )}
+
+                {/* Workstream */}
+                {workstreams.length > 0 && (
+                  <FormField
+                    control={logTimeForm.control}
+                    name="workstreamId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Workstream <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select workstream" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
+                            {[...workstreams].sort((a: any, b: any) => a.name.localeCompare(b.name)).map((w: any) => (
+                              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {/* Stage */}
+                {stages.length > 0 && (
+                  <FormField
+                    control={logTimeForm.control}
+                    name="projectStageId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Stage <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select stage" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
+                            {[...stages].sort((a: any, b: any) => a.name.localeCompare(b.name)).map((s: any) => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {/* Assignment */}
+                {allocations.length > 0 && (
+                  <FormField
+                    control={logTimeForm.control}
+                    name="allocationId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assignment <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select assignment" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-muted-foreground">None</SelectItem>
+                            {[...allocations]
+                              .sort((a: any, b: any) => (a.taskDescription || '').localeCompare(b.taskDescription || ''))
+                              .map((a: any) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  {a.taskDescription || `${a.hours}h allocation`}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {/* Description */}
                 <FormField
                   control={logTimeForm.control}
                   name="description"
@@ -6596,27 +6828,37 @@ export default function ProjectDetail() {
                     <FormItem>
                       <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
                       <FormControl>
-                        <Textarea placeholder="What did you work on?" rows={3} {...field} />
+                        <Textarea
+                          placeholder="Brief description of work performed..."
+                          rows={3}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {/* Billable */}
                 <FormField
                   control={logTimeForm.control}
                   name="billable"
                   render={({ field }) => (
-                    <FormItem className="flex items-center gap-2 space-y-0">
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                       <FormControl>
                         <Checkbox
                           checked={field.value}
                           onCheckedChange={field.onChange}
                         />
                       </FormControl>
-                      <FormLabel className="font-normal cursor-pointer">Billable</FormLabel>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="font-normal cursor-pointer">Billable to client</FormLabel>
+                      </div>
                     </FormItem>
                   )}
                 />
+
                 <div className="pt-1 text-xs text-muted-foreground">
                   Logging as <span className="font-medium">{user?.name || user?.email}</span>
                 </div>
