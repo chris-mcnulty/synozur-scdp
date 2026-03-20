@@ -6312,6 +6312,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       if (!userId) {
         return res.status(401).json({ message: "User not found" });
       }
+
+      const tenantId = req.user?.tenantId;
       
       const {
         startDate,
@@ -6361,7 +6363,11 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id));
 
-      const conditions: any[] = [eq(projectAllocations.personId, userId), eq(projectAllocations.isBaseline, false)];
+      const conditions: any[] = [
+        eq(projectAllocations.personId, userId),
+        eq(projectAllocations.isBaseline, false),
+        ...(tenantId ? [eq(projectAllocations.tenantId, tenantId)] : []),
+      ];
 
       // Date range filter
       if (startDate && endDate) {
