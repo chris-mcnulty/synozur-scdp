@@ -6,6 +6,7 @@ import { Loader2, LogIn, AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import ProjectDetail from "@/pages/project-detail";
+import { EmbedNavDrawer } from "@/components/layout/embed-nav-drawer";
 
 function EmbedAuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticating, authError, retryAuth, isTeams } = useEmbed();
@@ -91,6 +92,7 @@ export default function EmbedProject() {
 
   return (
     <EmbedProvider theme={theme} readonly={readonly}>
+      <EmbedNavDrawer />
       <EmbedAuthGate>
         <ProjectDetail />
       </EmbedAuthGate>
