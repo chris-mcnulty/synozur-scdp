@@ -321,14 +321,16 @@ export class SharePointFileStorage {
       const allItems = await this.listAllFiles(resolvedContainerId, azureTenantId);
       console.log(`[SharePointStorage] listFiles - Retrieved ${allItems.length} total items`);
 
-      // Filter based on criteria — include items even without listItem.fields
+      // Filter based on criteria
       const filteredItems = allItems.filter((item: any) => {
         const fields = item.listItem?.fields || {};
         const docType = fields.DocumentType || item._inferredDocType || 'receipt';
         
         if (filter?.documentType && docType !== filter.documentType) return false;
-        if (filter?.clientId && fields.ClientId && fields.ClientId !== filter.clientId) return false;
-        if (filter?.projectId && fields.ProjectId && fields.ProjectId !== filter.projectId) return false;
+        // When filtering by clientId, require exact match — exclude files with missing or mismatched ClientId
+        if (filter?.clientId && fields.ClientId !== filter.clientId) return false;
+        // When filtering by projectId, require exact match — exclude files with missing or mismatched ProjectId
+        if (filter?.projectId && fields.ProjectId !== filter.projectId) return false;
         
         return true;
       });
@@ -482,7 +484,9 @@ export class SharePointFileStorage {
       statementOfWork: '/statements',
       estimate: '/estimates',
       changeOrder: '/change_orders',
-      report: '/reports'
+      report: '/reports',
+      msa: '/msa',
+      nda: '/nda'
     };
     return folderMap[documentType] || '/receipts';
   }
@@ -505,7 +509,7 @@ export class SharePointFileStorage {
     console.log('[SharePointStorage] listAllFiles - Starting to list files from all folders');
     const client = this.resolveGraphClient(azureTenantId);
     const allFiles: any[] = [];
-    const folderTypes = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports'];
+    const folderTypes = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports', 'msa', 'nda'];
     
     const folderToDocType: Record<string, string> = {
       receipts: 'receipt',
@@ -515,6 +519,8 @@ export class SharePointFileStorage {
       estimates: 'estimate',
       change_orders: 'changeOrder',
       reports: 'report',
+      msa: 'msa',
+      nda: 'nda',
     };
 
     const inferTypeFromPath = (folderPath: string): string | undefined => {

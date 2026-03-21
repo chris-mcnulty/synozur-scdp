@@ -64,7 +64,10 @@ import {
   Pencil,
   ExternalLink,
   Link2,
-  Loader2
+  Loader2,
+  Upload,
+  Download,
+  FolderOpen
 } from "lucide-react";
 import { Link } from "wouter";
 import { Client, Project, InvoiceBatch, Sow } from "@shared/schema";
@@ -529,6 +532,8 @@ export default function ClientDetail() {
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [contactSearch, setContactSearch] = useState("");
   const [contactSearchDebounced, setContactSearchDebounced] = useState("");
+  const [msaUploading, setMsaUploading] = useState(false);
+  const [ndaUploading, setNdaUploading] = useState(false);
 
   const { toast } = useToast();
 
@@ -739,6 +744,119 @@ export default function ClientDetail() {
     enabled: !!clientId,
   });
   const hasCrmEnabled = crmLinkQuery.data?.crmEnabled ?? false;
+
+  // Fetch all SPE documents for this client
+  interface ClientDocument {
+    id: string;
+    fileName: string;
+    originalName: string;
+    filePath: string;
+    size: number;
+    contentType: string;
+    metadata: {
+      documentType: string;
+      clientId?: string;
+      clientName?: string;
+      projectId?: string;
+      projectCode?: string;
+      tags?: string;
+      createdByUserId?: string;
+      metadataVersion?: number;
+    };
+    uploadedAt: string;
+    uploadedBy: string;
+  }
+
+  const { data: clientDocuments = [], isLoading: documentsLoading, refetch: refetchDocuments } = useQuery<ClientDocument[]>({
+    queryKey: ["/api/clients", clientId, "documents"],
+    enabled: !!clientId,
+  });
+
+  const downloadDocumentAuthenticated = async (url: string, fallbackName: string) => {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: 'Download failed' }));
+        throw new Error(err.message || 'Download failed');
+      }
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename[^;=\n]*=["']?([^"';\n]+)["']?/i);
+      const filename = match?.[1]?.trim() || fallbackName;
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error: any) {
+      toast({ title: 'Download failed', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleMsaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !clientId) return;
+    setMsaUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(`/api/clients/${clientId}/upload-msa`, {
+        method: 'POST',
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+        credentials: 'include',
+        body: formData,
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || 'Upload failed');
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "documents"] });
+      toast({ title: "MSA uploaded", description: "MSA document has been saved successfully." });
+    } catch (error: any) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } finally {
+      setMsaUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleNdaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !clientId) return;
+    setNdaUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(`/api/clients/${clientId}/upload-nda`, {
+        method: 'POST',
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+        credentials: 'include',
+        body: formData,
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || 'Upload failed');
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "documents"] });
+      toast({ title: "NDA uploaded", description: "NDA document has been saved successfully." });
+    } catch (error: any) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } finally {
+      setNdaUploading(false);
+      e.target.value = '';
+    }
+  };
 
   const getEffectiveDate = (batch: InvoiceBatchWithDetails) => {
     return batch.asOfDate || (batch.finalizedAt ? new Date(batch.finalizedAt).toISOString().split('T')[0] : null) || new Date(batch.createdAt).toISOString().split('T')[0];
@@ -968,6 +1086,7 @@ export default function ClientDetail() {
             <TabsTrigger value="projects">Projects ({projectStats.total})</TabsTrigger>
             <TabsTrigger value="sows">SOWs & Change Orders ({clientSows.length})</TabsTrigger>
             <TabsTrigger value="invoices">Invoices</TabsTrigger>
+            <TabsTrigger value="documents">Documents</TabsTrigger>
             <TabsTrigger value="rate-overrides">Rate Overrides</TabsTrigger>
             <TabsTrigger value="stakeholders">Stakeholders ({stakeholders.length})</TabsTrigger>
           </TabsList>
@@ -1385,7 +1504,7 @@ export default function ClientDetail() {
                                 <FileText className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-sm text-muted-foreground">MSA Status</span>
                               </div>
-                              <div className="flex items-center space-x-2">
+                              <div className="flex items-center flex-wrap gap-2">
                                 <Badge variant="default" data-testid="badge-msa-status">
                                   <CheckCircle className="h-3 w-3 mr-1" />
                                   MSA Signed
@@ -1395,21 +1514,22 @@ export default function ClientDetail() {
                                     {format(new Date(client.msaDate), "MMM d, yyyy")}
                                   </span>
                                 )}
-                              </div>
-                              {client.msaDocument && (
-                                <div className="flex items-center space-x-2">
-                                  <a 
-                                    href={`/api/documents/${client.msaDocument}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center space-x-1"
+                                {client.msaDocument && (
+                                  <button
+                                    onClick={() => downloadDocumentAuthenticated(`/api/clients/${clientId}/download-msa`, `MSA_${client.name}.pdf`)}
+                                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors"
                                     data-testid="link-msa-document"
                                   >
-                                    <FileText className="h-3 w-3" />
-                                    <span>View MSA Document</span>
-                                  </a>
-                                </div>
-                              )}
+                                    <Download className="h-3 w-3" />
+                                    Download
+                                  </button>
+                                )}
+                                <label className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors cursor-pointer">
+                                  {msaUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                                  Replace
+                                  <input type="file" className="hidden" onChange={handleMsaUpload} accept=".pdf,.doc,.docx" disabled={msaUploading} />
+                                </label>
+                              </div>
                             </>
                           )}
                           
@@ -1419,10 +1539,17 @@ export default function ClientDetail() {
                                 <FileText className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-sm text-muted-foreground">MSA Status</span>
                               </div>
-                              <Badge variant="outline" data-testid="badge-no-msa">
-                                <AlertCircle className="h-3 w-3 mr-1" />
-                                No MSA
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" data-testid="badge-no-msa">
+                                  <AlertCircle className="h-3 w-3 mr-1" />
+                                  No MSA
+                                </Badge>
+                                <label className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors cursor-pointer">
+                                  {msaUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                                  Upload MSA
+                                  <input type="file" className="hidden" onChange={handleMsaUpload} accept=".pdf,.doc,.docx" disabled={msaUploading} />
+                                </label>
+                              </div>
                             </>
                           )}
                           
@@ -1432,7 +1559,7 @@ export default function ClientDetail() {
                                 <FileText className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-sm text-muted-foreground">NDA Status</span>
                               </div>
-                              <div className="flex items-center space-x-2">
+                              <div className="flex items-center flex-wrap gap-2">
                                 <Badge variant="secondary" data-testid="badge-nda-status">
                                   <CheckCircle className="h-3 w-3 mr-1" />
                                   NDA Signed
@@ -1442,21 +1569,22 @@ export default function ClientDetail() {
                                     {format(new Date(client.ndaDate), "MMM d, yyyy")}
                                   </span>
                                 )}
-                              </div>
-                              {client.ndaDocument && (
-                                <div className="flex items-center space-x-2">
-                                  <a 
-                                    href={`/api/documents/${client.ndaDocument}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center space-x-1"
+                                {client.ndaDocument && (
+                                  <button
+                                    onClick={() => downloadDocumentAuthenticated(`/api/clients/${clientId}/download-nda`, `NDA_${client.name}.pdf`)}
+                                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors"
                                     data-testid="link-nda-document"
                                   >
-                                    <FileText className="h-3 w-3" />
-                                    <span>View NDA Document</span>
-                                  </a>
-                                </div>
-                              )}
+                                    <Download className="h-3 w-3" />
+                                    Download
+                                  </button>
+                                )}
+                                <label className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors cursor-pointer">
+                                  {ndaUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                                  Replace
+                                  <input type="file" className="hidden" onChange={handleNdaUpload} accept=".pdf,.doc,.docx" disabled={ndaUploading} />
+                                </label>
+                              </div>
                             </>
                           )}
                           
@@ -1466,10 +1594,17 @@ export default function ClientDetail() {
                                 <FileText className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-sm text-muted-foreground">NDA Status</span>
                               </div>
-                              <Badge variant="outline" data-testid="badge-no-nda">
-                                <AlertCircle className="h-3 w-3 mr-1" />
-                                No NDA
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" data-testid="badge-no-nda">
+                                  <AlertCircle className="h-3 w-3 mr-1" />
+                                  No NDA
+                                </Badge>
+                                <label className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors cursor-pointer">
+                                  {ndaUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                                  Upload NDA
+                                  <input type="file" className="hidden" onChange={handleNdaUpload} accept=".pdf,.doc,.docx" disabled={ndaUploading} />
+                                </label>
+                              </div>
                             </>
                           )}
                         </div>
@@ -1828,6 +1963,126 @@ export default function ClientDetail() {
                     </Table>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Documents Tab */}
+          <TabsContent value="documents" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5" />
+                  Client Documents
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {documentsLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="h-12 bg-muted animate-pulse rounded" />
+                    ))}
+                  </div>
+                ) : clientDocuments.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FolderOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-muted-foreground font-medium">No documents found</p>
+                    <p className="text-sm text-muted-foreground mt-1">Upload an MSA or NDA from the Overview tab, or upload SOWs via the SOWs tab.</p>
+                  </div>
+                ) : (() => {
+                  const docTypeLabels: Record<string, string> = {
+                    statementOfWork: 'Statements of Work',
+                    changeOrder: 'Change Orders',
+                    msa: 'MSA',
+                    nda: 'NDA',
+                    invoice: 'Invoices',
+                    report: 'Reports',
+                    estimate: 'Estimates',
+                    receipt: 'Receipts',
+                    contract: 'Contracts',
+                  };
+
+                  const grouped = clientDocuments.reduce((acc, doc) => {
+                    const type = doc.metadata.documentType || 'other';
+                    if (!acc[type]) acc[type] = [];
+                    acc[type].push(doc);
+                    return acc;
+                  }, {} as Record<string, typeof clientDocuments>);
+
+                  const sortOrder = ['statementOfWork', 'changeOrder', 'msa', 'nda', 'invoice', 'report', 'estimate', 'receipt', 'contract'];
+                  const sortedTypes = Object.keys(grouped).sort((a, b) => {
+                    const ai = sortOrder.indexOf(a);
+                    const bi = sortOrder.indexOf(b);
+                    if (ai === -1 && bi === -1) return a.localeCompare(b);
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi;
+                  });
+
+                  const formatFileSize = (bytes: number) => {
+                    if (bytes < 1024) return `${bytes} B`;
+                    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+                    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+                  };
+
+                  return (
+                    <div className="space-y-6">
+                      {sortedTypes.map(type => (
+                        <div key={type}>
+                          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                            {docTypeLabels[type] || type} ({grouped[type].length})
+                          </h3>
+                          <div className="border rounded-md overflow-hidden">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>File Name</TableHead>
+                                  <TableHead>Size</TableHead>
+                                  <TableHead>Upload Date</TableHead>
+                                  <TableHead>Project</TableHead>
+                                  <TableHead className="text-right">Action</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {grouped[type].map(doc => (
+                                  <TableRow key={doc.id}>
+                                    <TableCell>
+                                      <div className="flex items-center gap-2">
+                                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                        <span className="text-sm font-medium truncate max-w-xs">{doc.originalName || doc.fileName}</span>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-sm text-muted-foreground">
+                                      {formatFileSize(doc.size)}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-muted-foreground">
+                                      {format(new Date(doc.uploadedAt), "MMM d, yyyy")}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-muted-foreground">
+                                      {doc.metadata.projectCode || <span className="italic">—</span>}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <button
+                                        onClick={() => downloadDocumentAuthenticated(
+                                          `/api/clients/${clientId}/documents/${doc.id}/download`,
+                                          doc.originalName || doc.fileName || `document_${doc.id}`
+                                        )}
+                                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors"
+                                      >
+                                        <Download className="h-3 w-3" />
+                                        Download
+                                      </button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           </TabsContent>

@@ -23,7 +23,9 @@ const DOCUMENT_DIRS = {
   statementOfWork: path.join(STORAGE_ROOT, 'statements'),
   estimate: path.join(STORAGE_ROOT, 'estimates'),
   changeOrder: path.join(STORAGE_ROOT, 'change_orders'),
-  report: path.join(STORAGE_ROOT, 'reports')
+  report: path.join(STORAGE_ROOT, 'reports'),
+  msa: path.join(STORAGE_ROOT, 'msa'),
+  nda: path.join(STORAGE_ROOT, 'nda')
 };
 
 // Get directory for document type with safety
@@ -35,7 +37,7 @@ function getDocumentDirectory(documentType: string): string {
 // Document metadata interface matching SharePoint design
 export interface DocumentMetadata {
   // Core document classification
-  documentType: 'receipt' | 'invoice' | 'statementOfWork' | 'contract' | 'report' | 'estimate' | 'changeOrder';
+  documentType: 'receipt' | 'invoice' | 'statementOfWork' | 'contract' | 'report' | 'estimate' | 'changeOrder' | 'msa' | 'nda';
   
   // Client and project linkage
   clientId?: string;
