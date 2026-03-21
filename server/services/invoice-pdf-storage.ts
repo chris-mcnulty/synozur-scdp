@@ -82,6 +82,19 @@ export class InvoicePDFStorage {
     }
   }
 
+  /**
+   * List all stored invoice PDF file IDs with their sizes
+   * Production: Lists from Replit Object Storage under the invoices/ prefix
+   * Development: Lists from local filesystem uploads/invoices/
+   */
+  async listInvoicePDFs(): Promise<{ fileId: string; sizeBytes: number }[]> {
+    if (this.isProduction) {
+      return await this.listFromObjectStorage();
+    } else {
+      return await this.listLocally();
+    }
+  }
+
   // === Production: Object Storage Methods ===
 
   private async storeInObjectStorage(buffer: Buffer, filename: string): Promise<string> {
@@ -160,6 +173,30 @@ export class InvoicePDFStorage {
     console.log(`[InvoicePDFStorage] Deleted from Object Storage: ${objectPath}`);
   }
 
+  private async listFromObjectStorage(): Promise<{ fileId: string; sizeBytes: number }[]> {
+    if (!this.objectStorageClient) {
+      throw new Error('Object Storage client not initialized');
+    }
+
+    const privateObjectDir = process.env.PRIVATE_OBJECT_DIR;
+    if (!privateObjectDir) {
+      throw new Error('PRIVATE_OBJECT_DIR not configured');
+    }
+
+    const pathParts = privateObjectDir.split('/').filter(p => p);
+    const bucketName = pathParts[0];
+    const bucketPath = pathParts.slice(1).join('/');
+    const prefix = `${bucketPath}/invoices/`;
+
+    const bucket = this.objectStorageClient.bucket(bucketName);
+    const [files] = await bucket.getFiles({ prefix });
+
+    return files.map(f => ({
+      fileId: f.name,
+      sizeBytes: parseInt(f.metadata?.size ?? '0', 10) || 0,
+    }));
+  }
+
   // === Development: Local Filesystem Methods ===
 
   private async storeLocally(buffer: Buffer, filename: string): Promise<string> {
@@ -184,6 +221,30 @@ export class InvoicePDFStorage {
     const filePath = path.join(process.cwd(), 'uploads', fileId);
     await fs.unlink(filePath);
     console.log(`[InvoicePDFStorage] Deleted locally: ${filePath}`);
+  }
+
+  private async listLocally(): Promise<{ fileId: string; sizeBytes: number }[]> {
+    const uploadDir = path.join(process.cwd(), 'uploads', 'invoices');
+    try {
+      const filenames = await fs.readdir(uploadDir);
+      const results = await Promise.all(
+        filenames.map(async (filename) => {
+          const fileId = path.join('invoices', filename);
+          try {
+            const stat = await fs.stat(path.join(uploadDir, filename));
+            return { fileId, sizeBytes: stat.size };
+          } catch {
+            return { fileId, sizeBytes: 0 };
+          }
+        })
+      );
+      return results;
+    } catch (err: any) {
+      if (err.code === 'ENOENT') {
+        return [];
+      }
+      throw err;
+    }
   }
 }
 

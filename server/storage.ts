@@ -8370,7 +8370,18 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    // 5. Delete the batch itself
+    // 5. Delete the stored PDF file if one exists
+    if (batch.pdfFileId) {
+      try {
+        const { invoicePDFStorage } = await import('./services/invoice-pdf-storage.js');
+        await invoicePDFStorage.deleteInvoicePDF(batch.pdfFileId);
+        console.log(`[STORAGE] Deleted PDF for batch ${batchId}: ${batch.pdfFileId}`);
+      } catch (pdfErr) {
+        console.error(`[STORAGE] Failed to delete PDF for batch ${batchId} (fileId=${batch.pdfFileId}):`, pdfErr);
+      }
+    }
+
+    // 6. Delete the batch itself
     await db.delete(invoiceBatches)
       .where(eq(invoiceBatches.batchId, batchId));
   }

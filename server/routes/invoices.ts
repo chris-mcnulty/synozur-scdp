@@ -996,13 +996,16 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         timezone: invoiceTimezone
       });
 
+      let oldPdfFileId: string | null = null;
       try {
         const existingBatch = await storage.getInvoiceBatchDetails(batchId);
         if (existingBatch && existingBatch.pdfFileId) {
+          oldPdfFileId = existingBatch.pdfFileId;
           await invoicePDFStorage.deleteInvoicePDF(existingBatch.pdfFileId);
-          console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}`);
+          console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}, fileId=${existingBatch.pdfFileId}`);
         }
       } catch (error) {
+        console.warn(`[INVOICE] Failed to delete old PDF before regeneration (batchId=${batchId}, fileId=${oldPdfFileId ?? 'unknown'}): continuing with new upload. Error:`, error);
       }
 
       const fileId = await invoicePDFStorage.storeInvoicePDF(pdfBuffer, batchId);
@@ -2434,6 +2437,67 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       res.status(error.message?.includes('not found') ? 404 : 400).json({ 
         message: error.message || "Failed to map line to milestone" 
       });
+    }
+  });
+
+  // Admin: purge orphaned invoice PDF files from storage
+  app.post("/api/admin/purge-orphan-invoice-pdfs", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    try {
+      const dryRun = req.query.dryRun === 'true';
+
+      // 1. List all files currently in storage (with sizes)
+      const storedFiles = await invoicePDFStorage.listInvoicePDFs();
+
+      // 2. Fetch all pdfFileId values from invoice_batches
+      const batchRows = await db.select({ pdfFileId: invoiceBatches.pdfFileId })
+        .from(invoiceBatches);
+      const knownFileIds = new Set(
+        batchRows.map(r => r.pdfFileId).filter((id): id is string => !!id)
+      );
+
+      // 3. Identify orphans: files in storage with no matching DB record
+      const orphans = storedFiles.filter(f => !knownFileIds.has(f.fileId));
+      const orphanBytes = orphans.reduce((sum, f) => sum + f.sizeBytes, 0);
+
+      console.log(`[ADMIN] Purge orphan PDFs: ${storedFiles.length} stored, ${knownFileIds.size} referenced in DB, ${orphans.length} orphan(s) found (${orphanBytes} bytes). dryRun=${dryRun}`);
+
+      if (dryRun) {
+        return res.json({
+          dryRun: true,
+          orphanCount: orphans.length,
+          orphanBytes,
+          deletedCount: 0,
+          deletedBytes: 0,
+          deletedFiles: orphans.map(f => ({ fileId: f.fileId, sizeBytes: f.sizeBytes, status: 'would-delete' })),
+        });
+      }
+
+      const deleteResults: { fileId: string; sizeBytes: number; status: 'deleted' | 'error'; error?: string }[] = [];
+      let deletedBytes = 0;
+      for (const orphan of orphans) {
+        try {
+          await invoicePDFStorage.deleteInvoicePDF(orphan.fileId);
+          deleteResults.push({ fileId: orphan.fileId, sizeBytes: orphan.sizeBytes, status: 'deleted' });
+          deletedBytes += orphan.sizeBytes;
+          console.log(`[ADMIN] Deleted orphan PDF: ${orphan.fileId} (${orphan.sizeBytes} bytes)`);
+        } catch (delErr: any) {
+          console.error(`[ADMIN] Failed to delete orphan PDF ${orphan.fileId}:`, delErr);
+          deleteResults.push({ fileId: orphan.fileId, sizeBytes: orphan.sizeBytes, status: 'error', error: delErr?.message });
+        }
+      }
+
+      const deletedCount = deleteResults.filter(r => r.status === 'deleted').length;
+      return res.json({
+        dryRun: false,
+        orphanCount: orphans.length,
+        orphanBytes,
+        deletedCount,
+        deletedBytes,
+        deletedFiles: deleteResults,
+      });
+    } catch (error: any) {
+      console.error("[ADMIN] Failed to purge orphan invoice PDFs:", error);
+      res.status(500).json({ message: error.message || "Failed to purge orphan invoice PDFs" });
     }
   });
 
