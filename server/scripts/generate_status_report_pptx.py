@@ -1616,115 +1616,25 @@ def _remap_rids_in_element(element, rId_map):
                 elem.set(attr_name, rId_map[attr_val])
 
 
-def _next_unique_partname(dest_pkg, stem_base, ext):
-    """Find a unique partname in dest_pkg like /ppt/theme/theme12.xml."""
-    from pptx.opc.packuri import PackURI
-    try:
-        existing_parts = {p.partname for p in dest_pkg.iter_parts()}
-    except Exception:
-        existing_parts = set()
-    idx = 1
-    while True:
-        candidate = PackURI(f"{stem_base}{idx}.{ext}")
-        if candidate not in existing_parts:
-            return candidate
-        idx += 1
-
-
-def _import_part_with_rels(src_part, dest_pkg, exclude_reltypes=None, cache=None):
-    """
-    Import a Part (XML or binary) into dest_pkg with a unique partname.
-    For XML parts, deep-copies the element and remaps rIds.
-    For images, uses ImagePart.new() for proper partname allocation.
-    For other binary parts, copies the blob with a unique partname.
-    Recursively imports internal relationship targets.
-
-    Uses cache (keyed by source partname string) to avoid re-importing the
-    same part when the same template is injected multiple times.
-
-    Returns the new Part registered in dest_pkg.
-    """
-    from pptx.opc.package import XmlPart
-    from pptx.parts.image import ImagePart
-    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
-    from pptx.opc.package import Part as OpcPart
-    import re
-
-    if cache is None:
-        cache = {}
-
-    cache_key = str(src_part.partname)
-    if cache_key in cache:
-        return cache[cache_key]
-
-    exclude_reltypes = exclude_reltypes or set()
-
-    base_name = str(src_part.partname)
-    ext_pos = base_name.rfind('.')
-    stem = base_name[:ext_pos]
-    ext = base_name[ext_pos + 1:]
-    stem_base = re.sub(r'\d+$', '', stem)
-
-    is_xml_part = hasattr(src_part, '_element') and src_part._element is not None
-
-    if isinstance(src_part, ImagePart):
-        new_part = ImagePart.new(dest_pkg, src_part.image)
-        cache[cache_key] = new_part
-        return new_part
-
-    partname = _next_unique_partname(dest_pkg, stem_base, ext)
-
-    if is_xml_part:
-        new_element = copy.deepcopy(src_part._element)
-        new_part = XmlPart(partname, src_part.content_type, dest_pkg, new_element)
-    else:
-        new_part = OpcPart(partname, src_part.content_type, dest_pkg, src_part.blob)
-
-    cache[cache_key] = new_part
-
-    rId_map = {}
-    for old_rId, src_rel in src_part.rels.items():
-        try:
-            if src_rel.reltype in exclude_reltypes:
-                continue
-            if src_rel.is_external:
-                new_rId = new_part.relate_to(src_rel.target_ref, src_rel.reltype, is_external=True)
-            else:
-                target = src_rel.target_part
-                child_exclude = set()
-                if src_rel.reltype == RT.SLIDE_MASTER:
-                    child_exclude = {RT.SLIDE_LAYOUT}
-                imported_target = _import_part_with_rels(target, dest_pkg, child_exclude, cache)
-                new_rId = new_part.relate_to(imported_target, src_rel.reltype)
-            if old_rId != new_rId:
-                rId_map[old_rId] = new_rId
-        except Exception as rel_err:
-            print(f"[PPTX_TEMPLATE] Part {src_part.partname} rel {old_rId} skipped: {rel_err}", file=sys.stderr)
-
-    if is_xml_part and rId_map:
-        _remap_rids_in_element(new_element, rId_map)
-
-    return new_part
-
-
 def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
     """
     Copy the first slide from src_pptx_path into dest_prs.
 
-    Imports the full layout/master/theme chain from the source template so that
-    branded backgrounds, theme colors, and custom layout elements are preserved.
-    Images and other embedded parts are copied with unique partnames to avoid
-    duplicate OPC entries.
+    Adds a blank slide to dest_prs, then replaces its <p:cSld> element (which
+    carries the slide background fill and all shapes) with the source slide's
+    <p:cSld>.  Embedded images are copied into the destination package via
+    ImagePart.new(), and any changed rIds are remapped in the copied XML.
 
-    _part_cache is an optional dict for caching already-imported parts across
-    multiple calls with the same template file (e.g., section headers).
+    _part_cache is an optional dict shared across multiple calls with the same
+    template file so images are not duplicated (used for section-header slides).
 
-    Only the first slide is used (multi-slide templates are out of scope).
     Returns True on success, False on failure.
     """
     try:
-        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
         from pptx.parts.image import ImagePart
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+
+        P = 'http://schemas.openxmlformats.org/presentationml/2006/main'
 
         src_prs = Presentation(src_pptx_path)
         if not src_prs.slides:
@@ -1737,37 +1647,75 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
 
         cache = _part_cache if _part_cache is not None else {}
 
-        dummy_layout = dest_prs.slide_layouts[6] if len(dest_prs.slide_layouts) > 6 else dest_prs.slide_layouts[-1]
-        new_slide = dest_prs.slides.add_slide(dummy_layout)
+        # Use the destination's blank layout — we bring the visual content via
+        # cSld, so we don't need (or want) the source layout/master chain.
+        blank_layout = (
+            dest_prs.slide_layouts[6]
+            if len(dest_prs.slide_layouts) > 6
+            else dest_prs.slide_layouts[-1]
+        )
+        new_slide = dest_prs.slides.add_slide(blank_layout)
         dest_part = new_slide.part
 
-        dest_part.rels._rels.clear()
-
+        # Copy embedded image parts from source into the destination package.
+        # Background images, inline pictures, and logo images are all ImageParts.
         rId_map = {}
-        for old_rId, src_rel in src_part.rels.items():
+        for old_rId, rel in src_part.rels.items():
             try:
-                if src_rel.is_external:
-                    new_rId = dest_part.relate_to(src_rel.target_ref, src_rel.reltype, is_external=True)
-                else:
-                    target = src_rel.target_part
-                    child_exclude = set()
-                    if src_rel.reltype == RT.SLIDE_MASTER:
-                        child_exclude = {RT.SLIDE_LAYOUT}
-                    imported = _import_part_with_rels(target, dest_pkg, child_exclude, cache)
-                    new_rId = dest_part.relate_to(imported, src_rel.reltype)
-                if old_rId != new_rId:
-                    rId_map[old_rId] = new_rId
+                if rel.is_external or rel.reltype == RT.SLIDE_LAYOUT:
+                    continue
+                if isinstance(rel.target_part, ImagePart):
+                    cache_key = str(rel.target_part.partname)
+                    if cache_key in cache:
+                        img_part = cache[cache_key]
+                    else:
+                        img_part = ImagePart.new(dest_pkg, rel.target_part.image)
+                        cache[cache_key] = img_part
+                    new_rId = dest_part.relate_to(img_part, rel.reltype)
+                    if old_rId != new_rId:
+                        rId_map[old_rId] = new_rId
+                # Non-image, non-layout rels (charts, diagrams, audio/video) are
+                # intentionally skipped — template slides should not contain them.
             except Exception as rel_err:
-                print(f"[PPTX_TEMPLATE] Slide rel {old_rId} ({src_rel.reltype}) skipped: {rel_err}", file=sys.stderr)
+                print(f"[PPTX_TEMPLATE] Rel {old_rId} skipped: {rel_err}", file=sys.stderr)
 
-        slide_xml = copy.deepcopy(src_part._element)
-        _remap_rids_in_element(slide_xml, rId_map)
-        dest_part._element = slide_xml
+        # Replace the destination slide's <p:cSld> with the source's.
+        # <p:cSld> contains both <p:bg> (background) and <p:spTree> (shapes),
+        # so this single substitution preserves fills, images, and all content.
+        src_cSld = src_slide.element.find(f'{{{P}}}cSld')
+        if src_cSld is None:
+            print(f"[PPTX_TEMPLATE] No <p:cSld> in source slide: {src_pptx_path}", file=sys.stderr)
+            return False
 
-        rel_count = len(dest_part.rels)
+        new_cSld = copy.deepcopy(src_cSld)
+        _remap_rids_in_element(new_cSld, rId_map)
+
+        dest_sld = dest_part._element
+        dst_cSld = dest_sld.find(f'{{{P}}}cSld')
+        if dst_cSld is not None:
+            dest_sld.replace(dst_cSld, new_cSld)
+        else:
+            dest_sld.insert(0, new_cSld)
+
+        # Preserve the source's colour-map override when present — it controls
+        # how theme accent colours are inherited from the slide master.
+        src_clrMapOvr = src_slide.element.find(f'{{{P}}}clrMapOvr')
+        if src_clrMapOvr is not None:
+            dst_clrMapOvr = dest_sld.find(f'{{{P}}}clrMapOvr')
+            new_clrMapOvr = copy.deepcopy(src_clrMapOvr)
+            if dst_clrMapOvr is not None:
+                dest_sld.replace(dst_clrMapOvr, new_clrMapOvr)
+            else:
+                dest_sld.append(new_clrMapOvr)
+
         remapped = len(rId_map)
-        print(f"[PPTX_TEMPLATE] Successfully copied slide from {src_pptx_path} ({rel_count} rels, {remapped} remapped)", file=sys.stderr)
+        print(
+            f"[PPTX_TEMPLATE] Copied slide from {os.path.basename(src_pptx_path)} "
+            f"({len(dest_part.rels)} rels, {remapped} rIds remapped)",
+            file=sys.stderr,
+        )
         return True
+
     except Exception as e:
         import traceback
         print(f"[PPTX_TEMPLATE] Failed to copy slide from {src_pptx_path}: {e}", file=sys.stderr)
