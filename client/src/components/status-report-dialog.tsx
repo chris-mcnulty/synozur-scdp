@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -78,6 +78,16 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [isDownloadingPptx, setIsDownloadingPptx] = useState(false);
   const [includeProjectPlan, setIncludeProjectPlan] = useState(false);
   const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
+  const [useBrandedSlides, setUseBrandedSlides] = useState(true);
+
+  const { data: tenantSettings } = useQuery<any>({
+    queryKey: ['/api/tenant/settings'],
+  });
+  const hasBrandedSlides = !!(
+    tenantSettings?.pptxTitleTemplateFileId ||
+    tenantSettings?.pptxSectionTemplateFileId ||
+    tenantSettings?.pptxClosingTemplateFileId
+  );
 
   const safeFormat = (dateStr: string, fmt: string) => {
     try {
@@ -216,6 +226,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
           style,
           includeProjectPlan,
           projectPlanFilter,
+          useBrandedSlides: hasBrandedSlides && useBrandedSlides,
         }),
         signal: pptxController.signal,
       });
@@ -236,7 +247,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     } finally {
       setIsDownloadingPptx(false);
     }
-  }, [projectId, style, includeProjectPlan, projectPlanFilter, getDateRange, toast]);
+  }, [projectId, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, hasBrandedSlides, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${safeFormat(displayStart, "MMM d")} - ${safeFormat(displayEnd, "MMM d, yyyy")}`;
@@ -313,6 +324,18 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
 
               <div className="space-y-3">
                 <Label className="text-sm font-medium">PowerPoint Options</Label>
+                {hasBrandedSlides && (
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="useBrandedSlides"
+                      checked={useBrandedSlides}
+                      onCheckedChange={(checked) => setUseBrandedSlides(checked === true)}
+                    />
+                    <label htmlFor="useBrandedSlides" className="text-sm cursor-pointer">
+                      Use branded slide templates
+                    </label>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="includeProjectPlan"

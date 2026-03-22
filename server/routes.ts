@@ -8430,7 +8430,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter } = req.body;
+      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides } = req.body;
       const reportStyle = ["executive_brief", "detailed_update", "client_facing"].includes(style) ? style : "client_facing";
 
       const effectiveStartDate = startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -9098,9 +9098,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         };
       }
 
-      // Download PPTX template files if configured, write to temp files for Python
+      // Download PPTX template files if configured and caller opted in
       const templateTempFiles: string[] = [];
-      if (tenant) {
+      if (tenant && useBrandedSlides !== false) {
         const t = tenant as any;
         const templateSlots: Array<{ fileId: string | null; key: string }> = [
           { fileId: t.pptxTitleTemplateFileId, key: 'titleTemplatePath' },
