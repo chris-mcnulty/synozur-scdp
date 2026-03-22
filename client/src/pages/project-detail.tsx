@@ -108,7 +108,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2
+  Link2, Search, Loader2
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -276,15 +276,23 @@ type QuickLogTimeData = z.infer<typeof quickLogTimeSchema>;
 function TeamsChannelPanel({
   projectId,
   clientTeamId,
+  clientId,
   projectName,
 }: {
   projectId: string;
   clientTeamId?: string | null;
+  clientId?: string | null;
   projectName?: string;
 }) {
   const { toast } = useToast();
   const [showSetup, setShowSetup] = useState(false);
-  const [channelDisplayName, setChannelDisplayName] = useState(projectName || "");
+  const [channelName, setChannelName] = useState(projectName || "");
+  const [teamPickMode, setTeamPickMode] = useState<"existing" | "create">("existing");
+  const [teamSearch, setTeamSearch] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+  const [provisioning, setProvisioning] = useState(false);
 
   const { data: channel, isLoading } = useQuery<{
     id: number;
@@ -296,26 +304,73 @@ function TeamsChannelPanel({
     retry: false,
   });
 
-  const createChannelMutation = useMutation({
-    mutationFn: () =>
-      apiRequest(`/api/planner/teams/${clientTeamId}/channels`, {
+  const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["/api/planner/status"],
+    enabled: showSetup && !clientTeamId,
+    retry: false,
+  });
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[] }>({
+    queryKey: ["/api/planner/teams"],
+    enabled: showSetup && !clientTeamId && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (teamsData?.teams) setAllTeams(teamsData.teams);
+  }, [teamsData]);
+
+  const filteredTeams = allTeams.filter(t =>
+    !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
+  );
+
+  const handleProvision = async () => {
+    setProvisioning(true);
+    try {
+      let resolvedTeamId = clientTeamId;
+
+      if (!resolvedTeamId) {
+        if (teamPickMode === "existing") {
+          if (!selectedTeam) return;
+          resolvedTeamId = selectedTeam.id;
+        } else {
+          if (!newTeamName.trim()) return;
+          const created = await apiRequest("/api/planner/teams", {
+            method: "POST",
+            body: JSON.stringify({
+              displayName: newTeamName.trim(),
+              clientId: clientId || undefined,
+            }),
+          }) as { id: string };
+          resolvedTeamId = created.id;
+        }
+      }
+
+      await apiRequest(`/api/planner/teams/${resolvedTeamId}/channels`, {
         method: "POST",
         body: JSON.stringify({
-          displayName: channelDisplayName || projectName || "Project",
+          displayName: channelName.trim() || projectName || "Project",
           projectId,
-          projectName: projectName,
-          autoAddConstellationTab: true,
+          projectName,
         }),
-      }),
-    onSuccess: () => {
+      });
+
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "channel"] });
       toast({ title: "Teams channel created and linked to this project." });
       setShowSetup(false);
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to create channel", description: err.message, variant: "destructive" });
-    },
-  });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create channel";
+      toast({ title: "Failed to set up Teams channel", description: message, variant: "destructive" });
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
+  const canProvision = provisioning === false && (
+    clientTeamId
+      ? channelName.trim().length > 0
+      : teamPickMode === "existing" ? !!selectedTeam : newTeamName.trim().length > 0
+  );
 
   if (isLoading) return null;
 
@@ -329,45 +384,111 @@ function TeamsChannelPanel({
           </CardTitle>
           <CardDescription>No Teams channel is linked to this project yet.</CardDescription>
         </CardHeader>
-        {clientTeamId && (
-          <CardContent>
-            {!showSetup ? (
-              <Button variant="outline" size="sm" onClick={() => setShowSetup(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                Set Up Teams Channel
-              </Button>
-            ) : (
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Channel name</label>
-                  <input
-                    className="w-full text-sm border rounded-md px-3 py-1.5 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={channelDisplayName}
-                    onChange={(e) => setChannelDisplayName(e.target.value)}
-                    placeholder="Project channel name"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => createChannelMutation.mutate()}
-                    disabled={!channelDisplayName.trim() || createChannelMutation.isPending}
-                  >
-                    {createChannelMutation.isPending ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                    ) : (
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                    )}
-                    Create Channel
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setShowSetup(false)}>
-                    Cancel
-                  </Button>
-                </div>
+        <CardContent>
+          {!showSetup ? (
+            <Button variant="outline" size="sm" onClick={() => setShowSetup(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Set Up Teams Channel
+            </Button>
+          ) : (
+            <div className="space-y-4">
+              {/* When client has no linked Team, show full team picker */}
+              {!clientTeamId && (
+                <>
+                  {plannerStatus?.connected === false ? (
+                    <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                      <p className="text-sm text-amber-800 dark:text-amber-300">
+                        Microsoft Teams integration is not configured. Contact your administrator.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex rounded-md border overflow-hidden text-sm">
+                        <button
+                          className={`flex-1 px-3 py-1.5 ${teamPickMode === "existing" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                          onClick={() => setTeamPickMode("existing")}
+                        >
+                          Use Existing Team
+                        </button>
+                        <button
+                          className={`flex-1 px-3 py-1.5 border-l ${teamPickMode === "create" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                          onClick={() => setTeamPickMode("create")}
+                        >
+                          Create New Team
+                        </button>
+                      </div>
+
+                      {teamPickMode === "existing" ? (
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="Filter teams..."
+                              value={teamSearch}
+                              onChange={(e) => setTeamSearch(e.target.value)}
+                              className="pl-9 h-8 text-sm"
+                            />
+                          </div>
+                          {teamsLoading ? (
+                            <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
+                          ) : (
+                            <div className="max-h-40 overflow-y-auto border rounded-md">
+                              {filteredTeams.map(team => (
+                                <div
+                                  key={team.id}
+                                  className={`flex items-center p-2.5 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
+                                  onClick={() => setSelectedTeam(team)}
+                                >
+                                  <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
+                                  <span className="text-sm">{team.displayName}</span>
+                                </div>
+                              ))}
+                              {filteredTeams.length === 0 && (
+                                <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">New Team Name <span className="text-destructive">*</span></label>
+                          <Input
+                            placeholder="e.g. Acme Corp"
+                            value={newTeamName}
+                            onChange={(e) => setNewTeamName(e.target.value)}
+                            className="h-8 text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            A new Microsoft 365 Team will be created, then this project's channel will be provisioned inside it.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Channel name (always shown) */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Channel name</label>
+                <Input
+                  value={channelName}
+                  onChange={(e) => setChannelName(e.target.value)}
+                  placeholder="Project channel name"
+                  className="h-8 text-sm"
+                />
               </div>
-            )}
-          </CardContent>
-        )}
+
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleProvision} disabled={!canProvision}>
+                  {provisioning ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+                  {!clientTeamId && teamPickMode === "create" ? "Create Team & Channel" : "Create Channel"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowSetup(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
       </Card>
     );
   }
@@ -3138,6 +3259,7 @@ export default function ProjectDetail() {
             <TeamsChannelPanel
               projectId={id || ""}
               clientTeamId={analytics?.project?.client?.microsoftTeamId}
+              clientId={analytics?.project?.clientId}
               projectName={analytics?.project?.name}
             />
             
