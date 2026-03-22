@@ -170,6 +170,8 @@ function TeamsProvisioningDialog({
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
   const [channelUrl, setChannelUrl] = useState<string | null>(null);
   const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+  const [createMode, setCreateMode] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
 
   const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
     queryKey: ["/api/planner/status"],
@@ -225,15 +227,35 @@ function TeamsProvisioningDialog({
     },
   });
 
-  const handleProvision = () => {
-    if (!selectedTeam) return;
+  const handleProvision = async () => {
     setStep("provisioning");
-    provisionMutation.mutate({
-      teamId: selectedTeam.id,
-      displayName: project.name,
-      projectId: project.id,
-      projectName: project.name,
-    });
+    try {
+      let teamId: string;
+      if (createMode) {
+        if (!newTeamName.trim()) return;
+        const created = await apiRequest("/api/planner/teams", {
+          method: "POST",
+          body: JSON.stringify({
+            displayName: newTeamName.trim(),
+            clientId: project.clientId || undefined,
+          }),
+        }) as { id: string; displayName: string };
+        teamId = created.id;
+      } else {
+        if (!selectedTeam) return;
+        teamId = selectedTeam.id;
+      }
+      provisionMutation.mutate({
+        teamId,
+        displayName: project.name,
+        projectId: project.id,
+        projectName: project.name,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      toast({ title: "Failed to create team", description: message, variant: "destructive" });
+      setStep("select-team");
+    }
   };
 
   const handleClose = () => {
@@ -241,6 +263,8 @@ function TeamsProvisioningDialog({
     setTeamSearch("");
     setSelectedTeam(null);
     setChannelUrl(null);
+    setCreateMode(false);
+    setNewTeamName("");
     onComplete();
   };
 
@@ -269,51 +293,86 @@ function TeamsProvisioningDialog({
               </div>
             ) : (
               <>
-                {clientData?.microsoftTeamId && (
-                  <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
-                    <p className="text-xs text-blue-800 dark:text-blue-300">
-                      This client is linked to the <strong>{clientData.microsoftTeamName || clientData.microsoftTeamId}</strong> team.
-                    </p>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>Select Team</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Filter teams..."
-                      value={teamSearch}
-                      onChange={(e) => setTeamSearch(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
+                {/* Mode toggle */}
+                <div className="flex rounded-md border overflow-hidden text-sm">
+                  <button
+                    className={`flex-1 px-3 py-1.5 ${!createMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => setCreateMode(false)}
+                  >
+                    Use Existing Team
+                  </button>
+                  <button
+                    className={`flex-1 px-3 py-1.5 border-l ${createMode ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => setCreateMode(true)}
+                  >
+                    Create New Team
+                  </button>
                 </div>
-                {teamsLoading ? (
-                  <div className="flex items-center justify-center py-6">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  </div>
-                ) : (
-                  <div className="max-h-52 overflow-y-auto border rounded-md">
-                    {filteredTeams.map((team) => (
-                      <div
-                        key={team.id}
-                        className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
-                        onClick={() => setSelectedTeam(team)}
-                      >
-                        <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
-                        <span className="text-sm font-medium">{team.displayName}</span>
+
+                {!createMode ? (
+                  <>
+                    {clientData?.microsoftTeamId && (
+                      <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                        <p className="text-xs text-blue-800 dark:text-blue-300">
+                          This client is linked to the <strong>{clientData.microsoftTeamName || clientData.microsoftTeamId}</strong> team.
+                        </p>
                       </div>
-                    ))}
-                    {filteredTeams.length === 0 && (
-                      <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
                     )}
-                  </div>
-                )}
-                {selectedTeam && (
-                  <div className="rounded-lg border p-3 space-y-1 bg-muted/30">
-                    <p className="text-xs text-muted-foreground">Channel will be created in:</p>
-                    <p className="text-sm font-medium">{selectedTeam.displayName}</p>
-                    <p className="text-xs text-muted-foreground">Channel name: <strong>{project.name}</strong></p>
+                    <div className="space-y-2">
+                      <Label>Select Team</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Filter teams..."
+                          value={teamSearch}
+                          onChange={(e) => setTeamSearch(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                    </div>
+                    {teamsLoading ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="max-h-52 overflow-y-auto border rounded-md">
+                        {filteredTeams.map((team) => (
+                          <div
+                            key={team.id}
+                            className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
+                            onClick={() => setSelectedTeam(team)}
+                          >
+                            <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
+                            <span className="text-sm font-medium">{team.displayName}</span>
+                          </div>
+                        ))}
+                        {filteredTeams.length === 0 && (
+                          <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                        )}
+                      </div>
+                    )}
+                    {selectedTeam && (
+                      <div className="rounded-lg border p-3 space-y-1 bg-muted/30">
+                        <p className="text-xs text-muted-foreground">Channel will be created in:</p>
+                        <p className="text-sm font-medium">{selectedTeam.displayName}</p>
+                        <p className="text-xs text-muted-foreground">Channel name: <strong>{project.name}</strong></p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label>New Team Name <span className="text-destructive">*</span></Label>
+                      <Input
+                        placeholder="e.g. Acme Corp"
+                        value={newTeamName}
+                        onChange={(e) => setNewTeamName(e.target.value)}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      A new Microsoft 365 Team will be created, then a project channel named <strong>{project.name}</strong> will be provisioned inside it.
+                      {project.clientId && " The team will also be linked to this project's client."}
+                    </p>
                   </div>
                 )}
               </>
@@ -355,10 +414,13 @@ function TeamsProvisioningDialog({
             <>
               <Button variant="outline" onClick={handleClose}>Skip for now</Button>
               <Button
-                disabled={!selectedTeam || plannerStatus?.connected === false}
+                disabled={
+                  plannerStatus?.connected === false ||
+                  (createMode ? !newTeamName.trim() : !selectedTeam)
+                }
                 onClick={handleProvision}
               >
-                Create Channel
+                {createMode ? "Create Team & Channel" : "Create Channel"}
               </Button>
             </>
           )}

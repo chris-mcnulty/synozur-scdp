@@ -4074,7 +4074,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const client = await storage.getClient(clientId);
       if (!client) return res.status(404).json({ message: "Client not found" });
-      if (tenantId && (client as any).tenantId && (client as any).tenantId !== tenantId) {
+      if (tenantId && client.tenantId && client.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -4090,7 +4090,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         microsoftTeamId: teamId,
         microsoftTeamName: teamName || null,
         microsoftTeamWebUrl: teamWebUrl,
-      } as any);
+      });
 
       const updated = await storage.getClient(clientId);
       res.json(updated);
@@ -4108,7 +4108,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { clientId } = req.params;
       const client = await storage.getClient(clientId);
       if (!client) return res.status(404).json({ message: "Client not found" });
-      if (tenantId && (client as any).tenantId && (client as any).tenantId !== tenantId) {
+      if (tenantId && client.tenantId && client.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -4116,7 +4116,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         microsoftTeamId: null,
         microsoftTeamName: null,
         microsoftTeamWebUrl: null,
-      } as any);
+      });
 
       res.json({ success: true });
     } catch (error: any) {
@@ -4369,13 +4369,21 @@ export async function registerRoutes(app: Express): Promise<void> {
         ownerIds
       });
       
-      // If a clientId was provided, persist the team ID/name/webUrl to the client record
+      // If a clientId was provided, verify ownership then persist team details to the client record
       if (clientId && team.id) {
+        const callerTenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || (req.user as any)?.tenantId;
+        const targetClient = await storage.getClient(clientId);
+        if (!targetClient) {
+          return res.status(404).json({ message: "Client not found" });
+        }
+        if (callerTenantId && targetClient.tenantId && targetClient.tenantId !== callerTenantId) {
+          return res.status(403).json({ message: "Access denied: client belongs to a different tenant" });
+        }
         await storage.updateClient(clientId, {
           microsoftTeamId: team.id,
           microsoftTeamName: team.displayName || displayName,
           microsoftTeamWebUrl: team.webUrl || null,
-        } as any);
+        });
         console.log(`[PLANNER] Associated team ${team.id} with client ${clientId}`);
       }
       
@@ -4434,17 +4442,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         } catch { /* non-blocking */ }
       }
 
-      if (activeTabTemplates.length > 0) {
-        // Tab-template driven pinning
-        for (const tmpl of activeTabTemplates) {
+      // Resolve effective tab templates: use DB templates if configured, otherwise use DEFAULT_TAB_TEMPLATES
+      const { DEFAULT_TAB_TEMPLATES: defaultTabTemplates } = await import("@shared/schema");
+      const effectiveTemplates: Array<{ tabType: string; tabName: string; sortOrder: number }> =
+        activeTabTemplates.length > 0
+          ? activeTabTemplates
+          : defaultTabTemplates.map((t, i) => ({ tabType: t.tabType, tabName: t.tabName, sortOrder: i }));
+
+      if (projectId) {
+        for (const tmpl of effectiveTemplates) {
           try {
-            if (tmpl.tabType === "constellation" && projectId) {
+            if (tmpl.tabType === "constellation") {
               constellationTab = await plannerService.createConstellationTab(
                 req.params.teamId, channel.id,
                 { projectId, projectName: tmpl.tabName || projectName || displayName }
               );
-            } else if (tmpl.tabType === "planner" && projectId) {
-              // Create a Planner plan for the project group and pin it
+            } else if (tmpl.tabType === "planner") {
               try {
                 const plan = await plannerService.createPlan(req.params.teamId, tmpl.tabName || projectName || displayName);
                 await plannerService.createPlannerTab(req.params.teamId, channel.id, plan.id, tmpl.tabName || plan.title);
@@ -4457,13 +4470,13 @@ export async function registerRoutes(app: Express): Promise<void> {
             console.warn(`[PLANNER] Tab template '${tmpl.tabType}' pin failed (non-blocking):`, tabError.message);
           }
         }
-      } else if (projectId && autoAddConstellationTab !== false) {
-        // Legacy fallback: no templates configured, use the autoAddConstellationTab flag
+      } else if (autoAddConstellationTab !== false) {
+        // No projectId — use legacy Constellation-only fallback
         try {
           constellationTab = await plannerService.createConstellationTab(
             req.params.teamId,
             channel.id,
-            { projectId, projectName: projectName || displayName }
+            { projectId: "", projectName: projectName || displayName }
           );
         } catch (tabError: any) {
           console.warn("[PLANNER] Constellation tab auto-add failed (non-blocking):", tabError.message);

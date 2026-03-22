@@ -410,7 +410,7 @@ function ClientTeamLink({ clientId, client }: { clientId: string; client: Client
     }
   }, [teamsData]);
 
-  const isLinked = !!(client as any).microsoftTeamId;
+  const isLinked = !!client.microsoftTeamId;
 
   return (
     <>
@@ -431,11 +431,11 @@ function ClientTeamLink({ clientId, client }: { clientId: string; client: Client
                 </Badge>
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-medium">{(client as any).microsoftTeamName || "Microsoft Team"}</p>
-                <p className="text-xs text-muted-foreground font-mono">{(client as any).microsoftTeamId}</p>
-                {(client as any).microsoftTeamWebUrl && (
+                <p className="text-sm font-medium">{client.microsoftTeamName || "Microsoft Team"}</p>
+                <p className="text-xs text-muted-foreground font-mono">{client.microsoftTeamId}</p>
+                {client.microsoftTeamWebUrl && (
                   <a
-                    href={(client as any).microsoftTeamWebUrl}
+                    href={client.microsoftTeamWebUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"

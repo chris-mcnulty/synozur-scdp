@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog } from "lucide-react";
 import { MicrosoftPlannerIcon, MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
@@ -1208,6 +1208,23 @@ function ChannelTabTemplatesCard() {
     setHasChanges(true);
   };
 
+  const moveTab = (id: string, direction: "up" | "down") => {
+    setLocalTemplates(prev => {
+      const sorted = [...prev].sort((a, b) => a.sortOrder - b.sortOrder);
+      const idx = sorted.findIndex(t => t.id === id);
+      if (idx < 0) return prev;
+      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= sorted.length) return prev;
+      const next = sorted.map((t, i) => {
+        if (i === idx) return { ...sorted[swapIdx], sortOrder: i };
+        if (i === swapIdx) return { ...sorted[idx], sortOrder: i };
+        return { ...t, sortOrder: i };
+      });
+      return next;
+    });
+    setHasChanges(true);
+  };
+
   const addTab = () => {
     if (!addingType) return;
     const typeInfo = AVAILABLE_TAB_TYPES.find(t => t.value === addingType);
@@ -1269,7 +1286,29 @@ function ChannelTabTemplatesCard() {
                     disabled={!tab.isActive}
                   />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <div className="flex flex-col">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-muted-foreground"
+                      onClick={() => moveTab(tab.id, "up")}
+                      disabled={tab.sortOrder === 0}
+                      title="Move up"
+                    >
+                      <ArrowUp className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-muted-foreground"
+                      onClick={() => moveTab(tab.id, "down")}
+                      disabled={tab.sortOrder === localTemplates.length - 1}
+                      title="Move down"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                  </div>
                   <Switch
                     checked={tab.isActive}
                     onCheckedChange={() => toggleActive(tab.id)}
