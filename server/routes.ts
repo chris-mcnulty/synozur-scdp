@@ -1315,15 +1315,27 @@ export async function registerRoutes(app: Express): Promise<void> {
       const tenantId = user?.tenantId || user?.primaryTenantId;
       if (!tenantId) return res.status(404).json({ message: "No tenant associated with user" });
 
-      const { teamsTabTemplates: tabTemplatesTable } = await import("@shared/schema");
-      const templates = await db.select()
+      const { teamsTabTemplates: tabTemplatesTable, DEFAULT_TAB_TEMPLATES } = await import("@shared/schema");
+      let templates = await db.select()
         .from(tabTemplatesTable)
         .where(eq(tabTemplatesTable.tenantId, tenantId))
         .orderBy(tabTemplatesTable.sortOrder);
 
+      // Seed defaults on first access so every row has a real DB id
       if (templates.length === 0) {
-        const { DEFAULT_TAB_TEMPLATES } = await import("@shared/schema");
-        return res.json(DEFAULT_TAB_TEMPLATES.map((t, i) => ({ ...t, id: null, tenantId, sortOrder: i, isActive: true })));
+        await db.insert(tabTemplatesTable).values(
+          DEFAULT_TAB_TEMPLATES.map((t, i) => ({
+            tenantId,
+            tabType: t.tabType,
+            tabName: t.tabName,
+            sortOrder: i,
+            isActive: true,
+          }))
+        );
+        templates = await db.select()
+          .from(tabTemplatesTable)
+          .where(eq(tabTemplatesTable.tenantId, tenantId))
+          .orderBy(tabTemplatesTable.sortOrder);
       }
 
       res.json(templates);
@@ -1341,6 +1353,20 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const { tabs } = req.body;
       if (!Array.isArray(tabs)) return res.status(400).json({ message: "tabs must be an array" });
+      if (tabs.length > 10) return res.status(400).json({ message: "Maximum 10 tab templates allowed" });
+
+      const ALLOWED_TAB_TYPES = ["constellation", "planner", "website", "custom"];
+      for (const t of tabs) {
+        if (!t.tabType || !ALLOWED_TAB_TYPES.includes(t.tabType)) {
+          return res.status(400).json({ message: `Invalid tabType '${t.tabType}'. Allowed: ${ALLOWED_TAB_TYPES.join(", ")}` });
+        }
+        if (!t.tabName || typeof t.tabName !== "string" || t.tabName.trim().length === 0) {
+          return res.status(400).json({ message: "Each tab must have a non-empty tabName" });
+        }
+        if (t.tabName.trim().length > 100) {
+          return res.status(400).json({ message: "Tab name must be 100 characters or fewer" });
+        }
+      }
 
       const { teamsTabTemplates: tabTemplatesTable } = await import("@shared/schema");
 
@@ -1350,8 +1376,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         await db.insert(tabTemplatesTable).values(
           tabs.map((t: any, i: number) => ({
             tenantId,
-            tabType: t.tabType,
-            tabName: t.tabName,
+            tabType: t.tabType.trim(),
+            tabName: t.tabName.trim(),
             sortOrder: i,
             isActive: t.isActive !== false,
           }))
