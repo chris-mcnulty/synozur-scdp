@@ -181,6 +181,17 @@ export const tenants = pgTable("tenants", {
   m365DefaultChannelFolders: jsonb("m365_default_channel_folders").$type<string[]>(),
   m365SharePointConfig: jsonb("m365_sharepoint_config").$type<M365SharePointConfig>(),
 
+  // PPTX Slide Template File IDs (stored in SPE under /pptx_templates)
+  pptxTitleTemplateFileId: text("pptx_title_template_file_id"),
+  pptxTitleTemplateFileName: text("pptx_title_template_file_name"),
+  pptxTitleTemplateUploadedAt: timestamp("pptx_title_template_uploaded_at"),
+  pptxSectionTemplateFileId: text("pptx_section_template_file_id"),
+  pptxSectionTemplateFileName: text("pptx_section_template_file_name"),
+  pptxSectionTemplateUploadedAt: timestamp("pptx_section_template_uploaded_at"),
+  pptxClosingTemplateFileId: text("pptx_closing_template_file_id"),
+  pptxClosingTemplateFileName: text("pptx_closing_template_file_name"),
+  pptxClosingTemplateUploadedAt: timestamp("pptx_closing_template_uploaded_at"),
+
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),

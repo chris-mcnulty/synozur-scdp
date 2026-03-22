@@ -486,7 +486,8 @@ export class SharePointFileStorage {
       changeOrder: '/change_orders',
       report: '/reports',
       msa: '/msa',
-      nda: '/nda'
+      nda: '/nda',
+      pptxTemplate: '/pptx_templates'
     };
     return folderMap[documentType] || '/receipts';
   }

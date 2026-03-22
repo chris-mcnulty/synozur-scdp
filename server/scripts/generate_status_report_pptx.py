@@ -8,6 +8,7 @@ import sys
 import json
 import os
 import re
+import copy
 from datetime import datetime, timedelta
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
@@ -1605,6 +1606,175 @@ def create_deliverables_slide(prs, data, primary_color, secondary_color):
     return slide
 
 
+def _remap_rids_in_element(element, rId_map):
+    """Walk an lxml element tree and replace rId attribute values according to rId_map."""
+    if not rId_map:
+        return
+    for elem in element.iter():
+        for attr_name, attr_val in list(elem.attrib.items()):
+            if attr_val in rId_map:
+                elem.set(attr_name, rId_map[attr_val])
+
+
+def _next_unique_partname(dest_pkg, stem_base, ext):
+    """Find a unique partname in dest_pkg like /ppt/theme/theme12.xml."""
+    from pptx.opc.packuri import PackURI
+    try:
+        existing_parts = {p.partname for p in dest_pkg.iter_parts()}
+    except Exception:
+        existing_parts = set()
+    idx = 1
+    while True:
+        candidate = PackURI(f"{stem_base}{idx}.{ext}")
+        if candidate not in existing_parts:
+            return candidate
+        idx += 1
+
+
+def _import_part_with_rels(src_part, dest_pkg, exclude_reltypes=None, cache=None):
+    """
+    Import a Part (XML or binary) into dest_pkg with a unique partname.
+    For XML parts, deep-copies the element and remaps rIds.
+    For images, uses ImagePart.new() for proper partname allocation.
+    For other binary parts, copies the blob with a unique partname.
+    Recursively imports internal relationship targets.
+
+    Uses cache (keyed by source partname string) to avoid re-importing the
+    same part when the same template is injected multiple times.
+
+    Returns the new Part registered in dest_pkg.
+    """
+    from pptx.opc.package import XmlPart
+    from pptx.parts.image import ImagePart
+    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+    from pptx.opc.package import Part as OpcPart
+    import re
+
+    if cache is None:
+        cache = {}
+
+    cache_key = str(src_part.partname)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    exclude_reltypes = exclude_reltypes or set()
+
+    base_name = str(src_part.partname)
+    ext_pos = base_name.rfind('.')
+    stem = base_name[:ext_pos]
+    ext = base_name[ext_pos + 1:]
+    stem_base = re.sub(r'\d+$', '', stem)
+
+    is_xml_part = hasattr(src_part, '_element') and src_part._element is not None
+
+    if isinstance(src_part, ImagePart):
+        new_part = ImagePart.new(dest_pkg, src_part.image)
+        cache[cache_key] = new_part
+        return new_part
+
+    partname = _next_unique_partname(dest_pkg, stem_base, ext)
+
+    if is_xml_part:
+        new_element = copy.deepcopy(src_part._element)
+        new_part = XmlPart(partname, src_part.content_type, dest_pkg, new_element)
+    else:
+        new_part = OpcPart(partname, src_part.content_type, dest_pkg, src_part.blob)
+
+    cache[cache_key] = new_part
+
+    rId_map = {}
+    for old_rId, src_rel in src_part.rels.items():
+        try:
+            if src_rel.reltype in exclude_reltypes:
+                continue
+            if src_rel.is_external:
+                new_rId = new_part.relate_to(src_rel.target_ref, src_rel.reltype, is_external=True)
+            else:
+                target = src_rel.target_part
+                child_exclude = set()
+                if src_rel.reltype == RT.SLIDE_MASTER:
+                    child_exclude = {RT.SLIDE_LAYOUT}
+                imported_target = _import_part_with_rels(target, dest_pkg, child_exclude, cache)
+                new_rId = new_part.relate_to(imported_target, src_rel.reltype)
+            if old_rId != new_rId:
+                rId_map[old_rId] = new_rId
+        except Exception as rel_err:
+            print(f"[PPTX_TEMPLATE] Part {src_part.partname} rel {old_rId} skipped: {rel_err}", file=sys.stderr)
+
+    if is_xml_part and rId_map:
+        _remap_rids_in_element(new_element, rId_map)
+
+    return new_part
+
+
+def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
+    """
+    Copy the first slide from src_pptx_path into dest_prs.
+
+    Imports the full layout/master/theme chain from the source template so that
+    branded backgrounds, theme colors, and custom layout elements are preserved.
+    Images and other embedded parts are copied with unique partnames to avoid
+    duplicate OPC entries.
+
+    _part_cache is an optional dict for caching already-imported parts across
+    multiple calls with the same template file (e.g., section headers).
+
+    Only the first slide is used (multi-slide templates are out of scope).
+    Returns True on success, False on failure.
+    """
+    try:
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        from pptx.parts.image import ImagePart
+
+        src_prs = Presentation(src_pptx_path)
+        if not src_prs.slides:
+            print(f"[PPTX_TEMPLATE] Source PPTX has no slides: {src_pptx_path}", file=sys.stderr)
+            return False
+
+        src_slide = src_prs.slides[0]
+        src_part = src_slide.part
+        dest_pkg = dest_prs.part.package
+
+        cache = _part_cache if _part_cache is not None else {}
+
+        dummy_layout = dest_prs.slide_layouts[6] if len(dest_prs.slide_layouts) > 6 else dest_prs.slide_layouts[-1]
+        new_slide = dest_prs.slides.add_slide(dummy_layout)
+        dest_part = new_slide.part
+
+        dest_part.rels._rels.clear()
+
+        rId_map = {}
+        for old_rId, src_rel in src_part.rels.items():
+            try:
+                if src_rel.is_external:
+                    new_rId = dest_part.relate_to(src_rel.target_ref, src_rel.reltype, is_external=True)
+                else:
+                    target = src_rel.target_part
+                    child_exclude = set()
+                    if src_rel.reltype == RT.SLIDE_MASTER:
+                        child_exclude = {RT.SLIDE_LAYOUT}
+                    imported = _import_part_with_rels(target, dest_pkg, child_exclude, cache)
+                    new_rId = dest_part.relate_to(imported, src_rel.reltype)
+                if old_rId != new_rId:
+                    rId_map[old_rId] = new_rId
+            except Exception as rel_err:
+                print(f"[PPTX_TEMPLATE] Slide rel {old_rId} ({src_rel.reltype}) skipped: {rel_err}", file=sys.stderr)
+
+        slide_xml = copy.deepcopy(src_part._element)
+        _remap_rids_in_element(slide_xml, rId_map)
+        dest_part._element = slide_xml
+
+        rel_count = len(dest_part.rels)
+        remapped = len(rId_map)
+        print(f"[PPTX_TEMPLATE] Successfully copied slide from {src_pptx_path} ({rel_count} rels, {remapped} remapped)", file=sys.stderr)
+        return True
+    except Exception as e:
+        import traceback
+        print(f"[PPTX_TEMPLATE] Failed to copy slide from {src_pptx_path}: {e}", file=sys.stderr)
+        print(f"[PPTX_TEMPLATE] Traceback: {traceback.format_exc()}", file=sys.stderr)
+        return False
+
+
 def generate_pptx(data, output_path):
     primary_color = data.get('primaryColor', '#810FFB')
     secondary_color = data.get('secondaryColor', '#E60CB3')
@@ -1614,18 +1784,55 @@ def generate_pptx(data, output_path):
     sections = parse_markdown_sections(ai_report) if ai_report else {}
     print(f"[PPTX] Sections found: {list(sections.keys())}, content lengths: {({k: len(v) for k, v in sections.items()})}", file=sys.stderr)
 
+    title_template_path = data.get('titleTemplatePath')
+    section_template_path = data.get('sectionTemplatePath')
+    closing_template_path = data.get('closingTemplatePath')
+
     prs = Presentation()
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
 
-    create_title_slide(prs, data, primary_color, secondary_color)
+    section_cache = {}
+
+    # Title slide: use template if provided, otherwise generate programmatically
+    if title_template_path and os.path.exists(title_template_path):
+        print(f"[PPTX_TEMPLATE] Using title template: {title_template_path}", file=sys.stderr)
+        if not copy_first_slide(title_template_path, prs):
+            create_title_slide(prs, data, primary_color, secondary_color)
+    else:
+        create_title_slide(prs, data, primary_color, secondary_color)
+
+    def insert_section_header(section_name):
+        if section_template_path and os.path.exists(section_template_path):
+            ok = copy_first_slide(section_template_path, prs, _part_cache=section_cache)
+            if not ok:
+                print(f"[PPTX_TEMPLATE] Section header insertion failed before '{section_name}' — continuing without template slide", file=sys.stderr)
+
+    # Section header before Progress Summary
+    insert_section_header('Progress Summary')
     create_progress_summary_slide(prs, data, sections, primary_color, secondary_color)
     create_accomplishments_slide(prs, data, sections, primary_color, secondary_color)
+
+    # Section header before RAIDD
+    insert_section_header('RAIDD')
     create_raidd_slides(prs, data, sections, primary_color, secondary_color)
+
+    # Section header before Upcoming
+    insert_section_header('Upcoming Activities')
     create_upcoming_slide(prs, data, sections, primary_color, secondary_color)
     create_deliverables_slide(prs, data, primary_color, secondary_color)
     create_timeline_slide(prs, data, primary_color, secondary_color)
+
+    # Section header before Project Plan
+    insert_section_header('Project Plan')
     create_project_plan_slides(prs, data, primary_color, secondary_color)
+
+    # Closing slide: append after last slide
+    if closing_template_path and os.path.exists(closing_template_path):
+        print(f"[PPTX_TEMPLATE] Using closing template: {closing_template_path}", file=sys.stderr)
+        ok = copy_first_slide(closing_template_path, prs)
+        if not ok:
+            print(f"[PPTX_TEMPLATE] Closing template insertion failed — deck will end without closing slide", file=sys.stderr)
 
     prs.save(output_path)
     return output_path

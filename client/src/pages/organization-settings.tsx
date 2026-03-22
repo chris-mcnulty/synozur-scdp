@@ -64,6 +64,15 @@ interface TenantSettings {
   adminConsentGranted: boolean;
   azureTenantId: string | null;
   serverEnvironment: 'production' | 'development';
+  pptxTitleTemplateFileId: string | null;
+  pptxTitleTemplateFileName: string | null;
+  pptxTitleTemplateUploadedAt: string | null;
+  pptxSectionTemplateFileId: string | null;
+  pptxSectionTemplateFileName: string | null;
+  pptxSectionTemplateUploadedAt: string | null;
+  pptxClosingTemplateFileId: string | null;
+  pptxClosingTemplateFileName: string | null;
+  pptxClosingTemplateUploadedAt: string | null;
 }
 
 const brandingSchema = z.object({
@@ -181,6 +190,170 @@ function EmailHeaderUpload({ onUploadSuccess }: { onUploadSuccess: (url: string)
         <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
       </label>
     </Button>
+  );
+}
+
+type PptxTemplateSlot = 'title' | 'section' | 'closing';
+
+interface PptxTemplateInfo {
+  fileId: string | null;
+  fileName: string | null;
+  uploadedAt: string | null;
+}
+
+function PresentationTemplatesCard({ settings }: { settings: TenantSettings | undefined }) {
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState<Record<PptxTemplateSlot, boolean>>({ title: false, section: false, closing: false });
+  const [removing, setRemoving] = useState<Record<PptxTemplateSlot, boolean>>({ title: false, section: false, closing: false });
+
+  const slots: Array<{ type: PptxTemplateSlot; label: string; description: string }> = [
+    { type: 'title', label: 'Title Page', description: 'Replaces the generated title slide at the start of the deck' },
+    { type: 'section', label: 'Section Header', description: 'Inserted before Progress Summary, RAIDD, Upcoming, and Project Plan sections' },
+    { type: 'closing', label: 'Closing Slide', description: 'Appended as the final slide after all content slides' },
+  ];
+
+  const getSlotInfo = (type: PptxTemplateSlot): PptxTemplateInfo => {
+    if (type === 'title') return { fileId: settings?.pptxTitleTemplateFileId ?? null, fileName: settings?.pptxTitleTemplateFileName ?? null, uploadedAt: settings?.pptxTitleTemplateUploadedAt ?? null };
+    if (type === 'section') return { fileId: settings?.pptxSectionTemplateFileId ?? null, fileName: settings?.pptxSectionTemplateFileName ?? null, uploadedAt: settings?.pptxSectionTemplateUploadedAt ?? null };
+    return { fileId: settings?.pptxClosingTemplateFileId ?? null, fileName: settings?.pptxClosingTemplateFileName ?? null, uploadedAt: settings?.pptxClosingTemplateUploadedAt ?? null };
+  };
+
+  const handleUpload = async (type: PptxTemplateSlot, file: File) => {
+    if (!file.name.toLowerCase().endsWith('.pptx')) {
+      toast({ title: "Invalid file type", description: "Only .pptx files are accepted", variant: "destructive" });
+      return;
+    }
+    setUploading(prev => ({ ...prev, [type]: true }));
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(`/api/tenant/pptx-templates/${type}`, {
+        method: 'POST',
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+        body: formData,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || 'Upload failed');
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/tenant/settings'] });
+      toast({ title: "Template uploaded", description: `${file.name} has been set as the ${type} slide template` });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message || "Could not upload template", variant: "destructive" });
+    } finally {
+      setUploading(prev => ({ ...prev, [type]: false }));
+    }
+  };
+
+  const handleDownload = async (type: PptxTemplateSlot, fileName: string) => {
+    try {
+      const response = await fetch(`/api/tenant/pptx-templates/${type}/download`, {
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Download failed", description: "Could not download template", variant: "destructive" });
+    }
+  };
+
+  const handleRemove = async (type: PptxTemplateSlot) => {
+    setRemoving(prev => ({ ...prev, [type]: true }));
+    try {
+      const response = await fetch(`/api/tenant/pptx-templates/${type}`, {
+        method: 'DELETE',
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+      });
+      if (!response.ok) throw new Error('Remove failed');
+      queryClient.invalidateQueries({ queryKey: ['/api/tenant/settings'] });
+      toast({ title: "Template removed", description: `The ${type} slide template has been removed` });
+    } catch {
+      toast({ title: "Remove failed", description: "Could not remove template", variant: "destructive" });
+    } finally {
+      setRemoving(prev => ({ ...prev, [type]: false }));
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileText className="h-5 w-5" />
+          Presentation Templates
+        </CardTitle>
+        <CardDescription>
+          Upload branded single-slide PPTX files to inject into generated status report exports. Only the first slide of each uploaded file is used.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {slots.map(({ type, label, description }) => {
+          const info = getSlotInfo(type);
+          const isUploading = uploading[type];
+          const isRemoving = removing[type];
+          const isFilled = !!info.fileId;
+          return (
+            <div key={type} className="flex items-start gap-4 p-3 rounded-lg border bg-muted/20">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                {isFilled && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <CheckCircle className="h-3 w-3 text-green-500 shrink-0" />
+                    <span className="truncate font-medium text-foreground">{info.fileName}</span>
+                    {info.uploadedAt && (
+                      <span className="shrink-0">— {new Date(info.uploadedAt).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {isFilled && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownload(type, info.fileName || `${type}-template.pptx`)}
+                    >
+                      <Upload className="h-3 w-3 mr-1 rotate-180" />
+                      Download
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={isRemoving}
+                      onClick={() => handleRemove(type)}
+                    >
+                      {isRemoving ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                    </Button>
+                  </>
+                )}
+                <Button type="button" variant="outline" size="sm" disabled={isUploading} asChild>
+                  <label className="cursor-pointer">
+                    {isUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                    {isFilled ? 'Replace' : 'Upload'}
+                    <input
+                      type="file"
+                      accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(type, f); e.target.value = ''; }}
+                    />
+                  </label>
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2821,6 +2994,8 @@ export default function OrganizationSettings() {
                   </div>
                 </form>
               </Form>
+
+              <PresentationTemplatesCard settings={tenantSettings} />
             </TabsContent>
 
             <TabsContent value="financial" className="space-y-6">
