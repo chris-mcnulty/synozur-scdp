@@ -339,6 +339,7 @@ export const clients = pgTable("clients", {
   // Microsoft Teams integration
   microsoftTeamId: text("microsoft_team_id"), // Azure Group/Team ID for this client
   microsoftTeamName: text("microsoft_team_name"), // Display name of the Team
+  microsoftTeamWebUrl: text("microsoft_team_web_url"), // Web URL to open the Team in Teams
   sharepointSiteUrl: text("sharepoint_site_url"), // Team's SharePoint site URL for status report publishing
   // Payment terms override (e.g., "Net 30", "Net 45", "Due Upon Receipt")
   paymentTerms: text("payment_terms"), // Overrides tenant default when set

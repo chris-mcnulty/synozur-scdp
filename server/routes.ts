@@ -4066,17 +4066,31 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Link an existing Microsoft Team to a client
   app.post("/api/clients/:clientId/microsoft-team", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       const { clientId } = req.params;
       const { teamId, teamName } = req.body;
       if (!teamId) return res.status(400).json({ message: "teamId is required" });
 
       const client = await storage.getClient(clientId);
       if (!client) return res.status(404).json({ message: "Client not found" });
+      if (tenantId && (client as any).tenantId && (client as any).tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Try to fetch the Teams web URL so the client card can show a direct link
+      let teamWebUrl: string | null = null;
+      try {
+        const { plannerService } = await import('./services/planner-service');
+        const teamData = await plannerService.getTeam(teamId);
+        teamWebUrl = teamData?.webUrl || null;
+      } catch { /* non-blocking */ }
 
       await storage.updateClient(clientId, {
         microsoftTeamId: teamId,
         microsoftTeamName: teamName || null,
-      });
+        microsoftTeamWebUrl: teamWebUrl,
+      } as any);
 
       const updated = await storage.getClient(clientId);
       res.json(updated);
@@ -4089,14 +4103,20 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Unlink Microsoft Team from a client
   app.delete("/api/clients/:clientId/microsoft-team", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       const { clientId } = req.params;
       const client = await storage.getClient(clientId);
       if (!client) return res.status(404).json({ message: "Client not found" });
+      if (tenantId && (client as any).tenantId && (client as any).tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       await storage.updateClient(clientId, {
         microsoftTeamId: null,
         microsoftTeamName: null,
-      });
+        microsoftTeamWebUrl: null,
+      } as any);
 
       res.json({ success: true });
     } catch (error: any) {
@@ -4349,12 +4369,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         ownerIds
       });
       
-      // If a clientId was provided, persist the team ID/name to the client record
+      // If a clientId was provided, persist the team ID/name/webUrl to the client record
       if (clientId && team.id) {
         await storage.updateClient(clientId, {
           microsoftTeamId: team.id,
-          microsoftTeamName: team.displayName || displayName
-        });
+          microsoftTeamName: team.displayName || displayName,
+          microsoftTeamWebUrl: team.webUrl || null,
+        } as any);
         console.log(`[PLANNER] Associated team ${team.id} with client ${clientId}`);
       }
       
@@ -4396,16 +4417,53 @@ export async function registerRoutes(app: Express): Promise<void> {
         membershipType
       });
 
+      // Determine which tabs to pin: prefer tenant tab templates; fall back to autoAddConstellationTab flag
       let constellationTab = null;
-      if (projectId && autoAddConstellationTab !== false) {
+      let plannerTabAdded = false;
+      const user4Tab = req.user as any;
+      const tabTenantId = user4Tab?.activeTenantId || user4Tab?.primaryTenantId || user4Tab?.tenantId;
+
+      let activeTabTemplates: Array<{ tabType: string; tabName: string; sortOrder: number }> = [];
+      if (tabTenantId) {
+        try {
+          const { teamsTabTemplates: tabTemplatesTable } = await import("@shared/schema");
+          activeTabTemplates = await db.select()
+            .from(tabTemplatesTable)
+            .where(and(eq(tabTemplatesTable.tenantId, tabTenantId), eq(tabTemplatesTable.isActive, true)))
+            .orderBy(tabTemplatesTable.sortOrder);
+        } catch { /* non-blocking */ }
+      }
+
+      if (activeTabTemplates.length > 0) {
+        // Tab-template driven pinning
+        for (const tmpl of activeTabTemplates) {
+          try {
+            if (tmpl.tabType === "constellation" && projectId) {
+              constellationTab = await plannerService.createConstellationTab(
+                req.params.teamId, channel.id,
+                { projectId, projectName: tmpl.tabName || projectName || displayName }
+              );
+            } else if (tmpl.tabType === "planner" && projectId) {
+              // Create a Planner plan for the project group and pin it
+              try {
+                const plan = await plannerService.createPlan(req.params.teamId, tmpl.tabName || projectName || displayName);
+                await plannerService.createPlannerTab(req.params.teamId, channel.id, plan.id, tmpl.tabName || plan.title);
+                plannerTabAdded = true;
+              } catch (planErr: any) {
+                console.warn("[PLANNER] Planner tab creation skipped (non-blocking):", planErr.message);
+              }
+            }
+          } catch (tabError: any) {
+            console.warn(`[PLANNER] Tab template '${tmpl.tabType}' pin failed (non-blocking):`, tabError.message);
+          }
+        }
+      } else if (projectId && autoAddConstellationTab !== false) {
+        // Legacy fallback: no templates configured, use the autoAddConstellationTab flag
         try {
           constellationTab = await plannerService.createConstellationTab(
             req.params.teamId,
             channel.id,
-            {
-              projectId,
-              projectName: projectName || displayName,
-            }
+            { projectId, projectName: projectName || displayName }
           );
         } catch (tabError: any) {
           console.warn("[PLANNER] Constellation tab auto-add failed (non-blocking):", tabError.message);

@@ -273,7 +273,19 @@ const quickLogTimeSchema = z.object({
 });
 type QuickLogTimeData = z.infer<typeof quickLogTimeSchema>;
 
-function TeamsChannelPanel({ projectId }: { projectId: string }) {
+function TeamsChannelPanel({
+  projectId,
+  clientTeamId,
+  projectName,
+}: {
+  projectId: string;
+  clientTeamId?: string | null;
+  projectName?: string;
+}) {
+  const { toast } = useToast();
+  const [showSetup, setShowSetup] = useState(false);
+  const [channelDisplayName, setChannelDisplayName] = useState(projectName || "");
+
   const { data: channel, isLoading } = useQuery<{
     id: number;
     channelId: string;
@@ -284,8 +296,81 @@ function TeamsChannelPanel({ projectId }: { projectId: string }) {
     retry: false,
   });
 
+  const createChannelMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/planner/teams/${clientTeamId}/channels`, {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: channelDisplayName || projectName || "Project",
+          projectId,
+          projectName: projectName,
+          autoAddConstellationTab: true,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "channel"] });
+      toast({ title: "Teams channel created and linked to this project." });
+      setShowSetup(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to create channel", description: err.message, variant: "destructive" });
+    },
+  });
+
   if (isLoading) return null;
-  if (!channel) return null;
+
+  if (!channel) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MicrosoftTeamsIcon className="h-5 w-5" />
+            Microsoft Teams Channel
+          </CardTitle>
+          <CardDescription>No Teams channel is linked to this project yet.</CardDescription>
+        </CardHeader>
+        {clientTeamId && (
+          <CardContent>
+            {!showSetup ? (
+              <Button variant="outline" size="sm" onClick={() => setShowSetup(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Set Up Teams Channel
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Channel name</label>
+                  <input
+                    className="w-full text-sm border rounded-md px-3 py-1.5 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                    value={channelDisplayName}
+                    onChange={(e) => setChannelDisplayName(e.target.value)}
+                    placeholder="Project channel name"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => createChannelMutation.mutate()}
+                    disabled={!channelDisplayName.trim() || createChannelMutation.isPending}
+                  >
+                    {createChannelMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Create Channel
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowSetup(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -3050,7 +3135,11 @@ export default function ProjectDetail() {
               clientTeamId={analytics?.project?.client?.microsoftTeamId}
               clientId={analytics?.project?.clientId}
             />
-            <TeamsChannelPanel projectId={id || ""} />
+            <TeamsChannelPanel
+              projectId={id || ""}
+              clientTeamId={analytics?.project?.client?.microsoftTeamId}
+              projectName={analytics?.project?.name}
+            />
             
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">

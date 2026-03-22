@@ -317,9 +317,12 @@ function ClientCrmLink({ clientId }: { clientId: string }) {
 function ClientTeamLink({ clientId, client }: { clientId: string; client: Client }) {
   const { toast } = useToast();
   const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [linkMode, setLinkMode] = useState<"link" | "create">("link");
   const [teamSearch, setTeamSearch] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
   const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newTeamDescription, setNewTeamDescription] = useState("");
 
   const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
     queryKey: ["/api/planner/status"],
@@ -369,11 +372,35 @@ function ClientTeamLink({ clientId, client }: { clientId: string; client: Client
     },
   });
 
+  const createTeamMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/planner/teams", {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: newTeamName.trim(),
+          description: newTeamDescription.trim() || undefined,
+          clientId,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Microsoft Team created and linked" });
+      setShowLinkDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create team", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleDialogOpen = (open: boolean) => {
     setShowLinkDialog(open);
     if (!open) {
       setSelectedTeam(null);
       setTeamSearch("");
+      setLinkMode("link");
+      setNewTeamName("");
+      setNewTeamDescription("");
     }
   };
 
@@ -406,6 +433,17 @@ function ClientTeamLink({ clientId, client }: { clientId: string; client: Client
               <div className="space-y-1">
                 <p className="text-sm font-medium">{(client as any).microsoftTeamName || "Microsoft Team"}</p>
                 <p className="text-xs text-muted-foreground font-mono">{(client as any).microsoftTeamId}</p>
+                {(client as any).microsoftTeamWebUrl && (
+                  <a
+                    href={(client as any).microsoftTeamWebUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Open in Teams
+                  </a>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -463,37 +501,79 @@ function ClientTeamLink({ clientId, client }: { clientId: string; client: Client
             )}
             {plannerStatus?.connected === true && (
               <>
-                <div className="space-y-2">
-                  <Label>Search Teams</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Type to filter..."
-                      value={teamSearch}
-                      onChange={(e) => setTeamSearch(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
+                {/* Mode toggle */}
+                <div className="flex rounded-md border overflow-hidden text-sm">
+                  <button
+                    className={`flex-1 px-3 py-1.5 ${linkMode === "link" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => setLinkMode("link")}
+                  >
+                    Link Existing Team
+                  </button>
+                  <button
+                    className={`flex-1 px-3 py-1.5 border-l ${linkMode === "create" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => setLinkMode("create")}
+                  >
+                    Create New Team
+                  </button>
                 </div>
-                {teamsLoading ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </div>
-                ) : (
-                  <div className="max-h-60 overflow-y-auto border rounded-md">
-                    {filteredTeams.map((team) => (
-                      <div
-                        key={team.id}
-                        className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
-                        onClick={() => setSelectedTeam(team)}
-                      >
-                        <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
-                        <p className="text-sm font-medium">{team.displayName}</p>
+
+                {linkMode === "link" ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Search Teams</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Type to filter..."
+                          value={teamSearch}
+                          onChange={(e) => setTeamSearch(e.target.value)}
+                          className="pl-9"
+                        />
                       </div>
-                    ))}
-                    {filteredTeams.length === 0 && (
-                      <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                    </div>
+                    {teamsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="max-h-60 overflow-y-auto border rounded-md">
+                        {filteredTeams.map((team) => (
+                          <div
+                            key={team.id}
+                            className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
+                            onClick={() => setSelectedTeam(team)}
+                          >
+                            <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
+                            <p className="text-sm font-medium">{team.displayName}</p>
+                          </div>
+                        ))}
+                        {filteredTeams.length === 0 && (
+                          <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                        )}
+                      </div>
                     )}
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label>Team Name <span className="text-destructive">*</span></Label>
+                      <Input
+                        placeholder="e.g. Acme Corp"
+                        value={newTeamName}
+                        onChange={(e) => setNewTeamName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Description <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                      <Input
+                        placeholder="Short description for this team"
+                        value={newTeamDescription}
+                        onChange={(e) => setNewTeamDescription(e.target.value)}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      A new Microsoft 365 group and Team will be created and automatically linked to this client.
+                    </p>
                   </div>
                 )}
               </>
@@ -501,16 +581,27 @@ function ClientTeamLink({ clientId, client }: { clientId: string; client: Client
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => handleDialogOpen(false)}>Cancel</Button>
-            <Button
-              disabled={!selectedTeam || linkTeamMutation.isPending}
-              onClick={() => {
-                if (selectedTeam) {
-                  linkTeamMutation.mutate({ teamId: selectedTeam.id, teamName: selectedTeam.displayName });
-                }
-              }}
-            >
-              {linkTeamMutation.isPending ? "Linking..." : "Link Team"}
-            </Button>
+            {linkMode === "link" ? (
+              <Button
+                disabled={!selectedTeam || linkTeamMutation.isPending}
+                onClick={() => {
+                  if (selectedTeam) {
+                    linkTeamMutation.mutate({ teamId: selectedTeam.id, teamName: selectedTeam.displayName });
+                  }
+                }}
+              >
+                {linkTeamMutation.isPending ? "Linking..." : "Link Team"}
+              </Button>
+            ) : (
+              <Button
+                disabled={!newTeamName.trim() || createTeamMutation.isPending}
+                onClick={() => createTeamMutation.mutate()}
+              >
+                {createTeamMutation.isPending ? (
+                  <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Creating…</>
+                ) : "Create Team"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

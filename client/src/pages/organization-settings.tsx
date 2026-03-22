@@ -1157,6 +1157,11 @@ type TabTemplate = {
   isActive: boolean;
 };
 
+const AVAILABLE_TAB_TYPES: { value: string; label: string; defaultName: string }[] = [
+  { value: "constellation", label: "Constellation", defaultName: "Constellation" },
+  { value: "planner", label: "Planner", defaultName: "Planner" },
+];
+
 function ChannelTabTemplatesCard() {
   const { toast } = useToast();
 
@@ -1166,6 +1171,7 @@ function ChannelTabTemplatesCard() {
 
   const [localTemplates, setLocalTemplates] = useState<TabTemplate[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+  const [addingType, setAddingType] = useState("");
 
   useEffect(() => {
     if (templates) setLocalTemplates(templates);
@@ -1175,7 +1181,7 @@ function ChannelTabTemplatesCard() {
     mutationFn: (tabs: TabTemplate[]) =>
       apiRequest("/api/tenant/teams-tab-templates", {
         method: "PUT",
-        body: JSON.stringify({ templates: tabs }),
+        body: JSON.stringify({ tabs }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenant/teams-tab-templates"] });
@@ -1196,6 +1202,29 @@ function ChannelTabTemplatesCard() {
     setLocalTemplates(prev => prev.map(t => t.id === id ? { ...t, tabName: name } : t));
     setHasChanges(true);
   };
+
+  const removeTab = (id: string) => {
+    setLocalTemplates(prev => prev.filter(t => t.id !== id).map((t, i) => ({ ...t, sortOrder: i })));
+    setHasChanges(true);
+  };
+
+  const addTab = () => {
+    if (!addingType) return;
+    const typeInfo = AVAILABLE_TAB_TYPES.find(t => t.value === addingType);
+    const newTab: TabTemplate = {
+      id: `new-${Date.now()}`,
+      tabType: addingType,
+      tabName: typeInfo?.defaultName || addingType,
+      sortOrder: localTemplates.length,
+      isActive: true,
+    };
+    setLocalTemplates(prev => [...prev, newTab]);
+    setAddingType("");
+    setHasChanges(true);
+  };
+
+  const alreadyUsedTypes = localTemplates.map(t => t.tabType);
+  const availableToAdd = AVAILABLE_TAB_TYPES.filter(t => !alreadyUsedTypes.includes(t.value));
 
   if (isLoading) {
     return (
@@ -1232,11 +1261,9 @@ function ChannelTabTemplatesCard() {
                 className={`flex items-center gap-3 p-3 rounded-md border ${tab.isActive ? "bg-muted/30" : "bg-muted/10 opacity-60"}`}
               >
                 <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-mono uppercase">{tab.tabType}</span>
-                  </div>
+                  <span className="text-xs text-muted-foreground font-mono uppercase">{tab.tabType}</span>
                   <input
-                    className="text-sm font-medium bg-transparent border-none outline-none w-full focus:ring-1 focus:ring-ring rounded px-1"
+                    className="block text-sm font-medium bg-transparent border-none outline-none w-full focus:ring-1 focus:ring-ring rounded px-1"
                     value={tab.tabName}
                     onChange={(e) => updateName(tab.id, e.target.value)}
                     disabled={!tab.isActive}
@@ -1247,10 +1274,39 @@ function ChannelTabTemplatesCard() {
                     checked={tab.isActive}
                     onCheckedChange={() => toggleActive(tab.id)}
                   />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeTab(tab.id)}
+                    title="Remove tab"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </div>
             ))}
+
+          {availableToAdd.length > 0 && (
+            <div className="flex items-center gap-2 pt-1">
+              <Select value={addingType} onValueChange={setAddingType}>
+                <SelectTrigger className="h-8 text-xs flex-1">
+                  <SelectValue placeholder="Add a tab type…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableToAdd.map(t => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" onClick={addTab} disabled={!addingType} className="h-8 text-xs">
+                <Plus className="h-3 w-3 mr-1" />
+                Add
+              </Button>
+            </div>
+          )}
         </div>
+
         <div className="flex justify-end pt-2">
           <Button
             size="sm"
