@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { Helmet } from "react-helmet-async";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -170,7 +171,66 @@ export default function Login() {
     { icon: Zap, title: "Automated Workflows", description: "Scheduled jobs and email reminders" },
   ];
 
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "Synozur",
+      url: "https://www.synozur.com",
+      description: "Synozur is the creator of Constellation, a consulting delivery platform for professional services firms.",
+      brand: {
+        "@type": "Brand",
+        name: "Constellation",
+      },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "Constellation",
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      description:
+        "Constellation by Synozur is the consulting delivery platform for professional services. Manage project estimates, expenses, invoicing, time tracking, and financial reporting in one place.",
+      url: "https://constellation.synozur.com/",
+      creator: {
+        "@type": "Organization",
+        name: "Synozur",
+        url: "https://www.synozur.com",
+      },
+    },
+  ];
+
   return (
+    <>
+      <Helmet>
+        <title>Constellation | Synozur Consulting Delivery Platform</title>
+        <meta
+          name="description"
+          content="Constellation by Synozur is the consulting delivery platform built for professional services firms. Manage project estimates, expenses, invoicing, time tracking, and financial reporting — all in one place."
+        />
+        <link rel="canonical" href="https://constellation.synozur.com/" />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://constellation.synozur.com/" />
+        <meta property="og:title" content="Constellation | Synozur Consulting Delivery Platform" />
+        <meta
+          property="og:description"
+          content="Constellation by Synozur is the consulting delivery platform built for professional services firms. Manage project estimates, expenses, invoicing, time tracking, and financial reporting — all in one place."
+        />
+        <meta property="og:image" content="https://constellation.synozur.com/og-image.jpg" />
+        <meta property="og:site_name" content="Constellation by Synozur" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Constellation | Synozur Consulting Delivery Platform" />
+        <meta
+          name="twitter:description"
+          content="Constellation by Synozur is the consulting delivery platform built for professional services firms. Manage project estimates, expenses, invoicing, time tracking, and financial reporting — all in one place."
+        />
+        <meta name="twitter:image" content="https://constellation.synozur.com/og-image.jpg" />
+        {structuredData.map((schema, i) => (
+          <script key={i} type="application/ld+json">
+            {JSON.stringify(schema)}
+          </script>
+        ))}
+      </Helmet>
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Top Navigation Bar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/80 backdrop-blur-xl border-b border-white/5">
@@ -190,7 +250,7 @@ export default function Login() {
       </nav>
 
       {/* Hero Section with Star Trails */}
-      <section className="relative pt-16 overflow-hidden">
+      <section aria-label="Hero — Sign in to Constellation" className="relative pt-16 overflow-hidden">
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: `url(${heroImage})` }}
@@ -213,10 +273,10 @@ export default function Login() {
                 </span>
               </div>
               <h1 className="text-4xl lg:text-5xl xl:text-6xl font-bold leading-tight mb-6">
-                Navigate Your Projects
+                The Consulting Delivery Platform
                 <br />
                 <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
-                  Like the Stars
+                  Built for the Stars
                 </span>
               </h1>
               <p className="text-base lg:text-lg text-gray-300 max-w-lg mb-8 leading-relaxed">
@@ -231,7 +291,7 @@ export default function Login() {
                     <div key={feature.title} className="flex items-start gap-3 p-3 rounded-lg bg-white/5 border border-white/10">
                       <Icon className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
                       <div>
-                        <h3 className="font-medium text-xs text-white">{feature.title}</h3>
+                        <p className="font-medium text-xs text-white">{feature.title}</p>
                         <p className="text-[11px] text-gray-400 leading-snug">{feature.description}</p>
                       </div>
                     </div>
@@ -373,7 +433,7 @@ export default function Login() {
       </section>
 
       {/* Feature Cards Section */}
-      <section className="relative py-20 bg-gray-950">
+      <section aria-label="Platform features" className="relative py-20 bg-gray-950">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-14">
             <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">
@@ -421,7 +481,7 @@ export default function Login() {
       </section>
 
       {/* Estimates Spotlight */}
-      <section className="relative py-20 overflow-hidden">
+      <section aria-label="Project estimates spotlight" className="relative py-20 overflow-hidden">
         <div
           className="absolute inset-0 bg-cover bg-center opacity-10"
           style={{ backgroundImage: `url(${secondaryImage})` }}
@@ -486,7 +546,7 @@ export default function Login() {
       </section>
 
       {/* Platform Capabilities */}
-      <section className="py-20 bg-gray-950/80">
+      <section aria-label="Enterprise platform capabilities" className="py-20 bg-gray-950/80">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-12">
             <h2 className="text-2xl font-bold text-white mb-3">
@@ -518,7 +578,7 @@ export default function Login() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 py-8">
+      <footer aria-label="Site footer" className="border-t border-white/5 py-8">
         <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <SynozurLogo className="h-6 w-6" />
@@ -543,5 +603,6 @@ export default function Login() {
         </div>
       </footer>
     </div>
+    </>
   );
 }
