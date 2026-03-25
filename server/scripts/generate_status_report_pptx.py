@@ -1616,6 +1616,35 @@ def _remap_rids_in_element(element, rId_map):
                 elem.set(attr_name, rId_map[attr_val])
 
 
+def _normalize_fonts_in_element(element, explicit_font=FONT_NAME):
+    """
+    Ensure all text in a copied slide element uses the project font (Avenir Next LT Pro).
+
+    Two cases are handled:
+    1. Explicit theme-font tokens (+mj-lt, +mn-lt, etc.) on <a:latin>/<a:ea>/<a:cs>
+       elements — these resolve against the destination theme (Calibri by default)
+       instead of the source theme.  The token is replaced with an explicit name.
+    2. Run-property elements (<a:rPr>, <a:defRPr>, <a:endParaRPr>) with NO <a:latin>
+       child — font is fully inherited through the theme chain, again landing on
+       Calibri.  An explicit <a:latin> element is injected to break the inheritance.
+    """
+    from lxml import etree as _etree
+    A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+    LATIN_TAG   = f'{{{A}}}latin'
+    FONT_TAGS   = {LATIN_TAG, f'{{{A}}}ea', f'{{{A}}}cs'}
+    RPR_TAGS    = {f'{{{A}}}rPr', f'{{{A}}}defRPr', f'{{{A}}}endParaRPr'}
+
+    for elem in element.iter():
+        if elem.tag in FONT_TAGS:
+            typeface = elem.get('typeface', '')
+            if typeface.startswith('+') or typeface == '':
+                elem.set('typeface', explicit_font)
+        elif elem.tag in RPR_TAGS:
+            if elem.find(LATIN_TAG) is None:
+                latin_el = _etree.SubElement(elem, LATIN_TAG)
+                latin_el.set('typeface', explicit_font)
+
+
 def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
     """
     Copy the first slide from src_pptx_path into dest_prs, fully flattening the
@@ -1717,8 +1746,12 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
         _copy_images_from(src_layout.part)
         _copy_images_from(src_master.part)
 
-        # ── Step 5: remap rIds and install the new <p:cSld> ───────────────────
+        # ── Step 5: remap rIds, fix theme fonts, then install the new <p:cSld> ──
         _remap_rids_in_element(new_cSld, rId_map)
+        # Theme-font tokens (e.g. +mj-lt, +mn-lt) resolve against the destination
+        # presentation's theme, which is the default Office theme (Calibri).  Replace
+        # them with the explicit project font so headings use Avenir Next LT Pro.
+        _normalize_fonts_in_element(new_cSld)
 
         dest_sld = dest_part._element
         dst_cSld = dest_sld.find(f'{{{P}}}cSld')
