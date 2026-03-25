@@ -78,16 +78,34 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [isDownloadingPptx, setIsDownloadingPptx] = useState(false);
   const [includeProjectPlan, setIncludeProjectPlan] = useState(false);
   const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
-  const [useBrandedSlides, setUseBrandedSlides] = useState(true);
+  const [templateSlots, setTemplateSlots] = useState({ title: true, section: true, closing: true });
 
   const { data: tenantSettings } = useQuery<any>({
     queryKey: ['/api/tenant/settings'],
   });
-  const hasBrandedSlides = !!(
-    tenantSettings?.pptxTitleTemplateFileId ||
-    tenantSettings?.pptxSectionTemplateFileId ||
-    tenantSettings?.pptxClosingTemplateFileId
-  );
+
+  const templateSlotConfig = [
+    {
+      key: "title" as const,
+      label: "Title Slide",
+      fileId: tenantSettings?.pptxTitleTemplateFileId,
+      fileName: tenantSettings?.pptxTitleTemplateFileName,
+    },
+    {
+      key: "section" as const,
+      label: "Section Headers",
+      fileId: tenantSettings?.pptxSectionTemplateFileId,
+      fileName: tenantSettings?.pptxSectionTemplateFileName,
+    },
+    {
+      key: "closing" as const,
+      label: "Closing Slide",
+      fileId: tenantSettings?.pptxClosingTemplateFileId,
+      fileName: tenantSettings?.pptxClosingTemplateFileName,
+    },
+  ] as const;
+
+  const anyTemplateConfigured = templateSlotConfig.some(s => !!s.fileId);
 
   const safeFormat = (dateStr: string, fmt: string) => {
     try {
@@ -226,7 +244,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
           style,
           includeProjectPlan,
           projectPlanFilter,
-          useBrandedSlides: hasBrandedSlides && useBrandedSlides,
+          templateSlots,
         }),
         signal: pptxController.signal,
       });
@@ -247,7 +265,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     } finally {
       setIsDownloadingPptx(false);
     }
-  }, [projectId, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, hasBrandedSlides, getDateRange, toast]);
+  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${safeFormat(displayStart, "MMM d")} - ${safeFormat(displayEnd, "MMM d, yyyy")}`;
@@ -324,18 +342,41 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
 
               <div className="space-y-3">
                 <Label className="text-sm font-medium">PowerPoint Options</Label>
-                {hasBrandedSlides && (
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="useBrandedSlides"
-                      checked={useBrandedSlides}
-                      onCheckedChange={(checked) => setUseBrandedSlides(checked === true)}
-                    />
-                    <label htmlFor="useBrandedSlides" className="text-sm cursor-pointer">
-                      Use branded slide templates
-                    </label>
+
+                {anyTemplateConfigured ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Branded slide templates</p>
+                    {templateSlotConfig.map(({ key, label, fileId, fileName }) => (
+                      <div key={key} className={`flex items-center gap-3 rounded-md border px-3 py-2 ${fileId ? "" : "opacity-50"}`}>
+                        <Checkbox
+                          id={`tpl-${key}`}
+                          checked={!!fileId && templateSlots[key]}
+                          disabled={!fileId}
+                          onCheckedChange={(checked) =>
+                            setTemplateSlots(prev => ({ ...prev, [key]: checked === true }))
+                          }
+                        />
+                        <label htmlFor={`tpl-${key}`} className={`flex-1 ${fileId ? "cursor-pointer" : "cursor-not-allowed"}`}>
+                          <span className="text-sm font-medium">{label}</span>
+                          {fileId ? (
+                            <span className="ml-2 text-xs text-green-600 dark:text-green-400 truncate">{fileName}</span>
+                          ) : (
+                            <span className="ml-2 text-xs text-muted-foreground">Not configured</span>
+                          )}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed px-3 py-2">
+                    <p className="text-xs text-muted-foreground">
+                      No branded slide templates configured. Upload title, section, and closing slide templates in{" "}
+                      <span className="font-medium text-foreground">Organization Settings → Branding</span>{" "}
+                      to inject your branded backgrounds into exports.
+                    </p>
                   </div>
                 )}
+
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="includeProjectPlan"

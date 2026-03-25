@@ -8555,7 +8555,10 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides } = req.body;
+      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots } = req.body;
+      // templateSlots: per-slot opt-in from the dialog { title?: boolean, section?: boolean, closing?: boolean }
+      // Fallback to legacy useBrandedSlides boolean for backward compatibility
+      const resolvedSlots = templateSlots ?? (useBrandedSlides === false ? { title: false, section: false, closing: false } : { title: true, section: true, closing: true });
       const reportStyle = ["executive_brief", "detailed_update", "client_facing"].includes(style) ? style : "client_facing";
 
       const effectiveStartDate = startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -9223,17 +9226,17 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         };
       }
 
-      // Download PPTX template files if configured and caller opted in
+      // Download PPTX template files based on per-slot preferences from the dialog
       const templateTempFiles: string[] = [];
-      if (tenant && useBrandedSlides !== false) {
+      if (tenant) {
         const t = tenant as any;
-        const templateSlots: Array<{ fileId: string | null; key: string }> = [
-          { fileId: t.pptxTitleTemplateFileId, key: 'titleTemplatePath' },
-          { fileId: t.pptxSectionTemplateFileId, key: 'sectionTemplatePath' },
-          { fileId: t.pptxClosingTemplateFileId, key: 'closingTemplatePath' },
+        const templateSlotDefs: Array<{ fileId: string | null; key: string; slotName: keyof typeof resolvedSlots }> = [
+          { fileId: t.pptxTitleTemplateFileId, key: 'titleTemplatePath', slotName: 'title' },
+          { fileId: t.pptxSectionTemplateFileId, key: 'sectionTemplatePath', slotName: 'section' },
+          { fileId: t.pptxClosingTemplateFileId, key: 'closingTemplatePath', slotName: 'closing' },
         ];
-        for (const slot of templateSlots) {
-          if (slot.fileId) {
+        for (const slot of templateSlotDefs) {
+          if (slot.fileId && resolvedSlots[slot.slotName] !== false) {
             try {
               const fileContent = await sharePointFileStorage.getFileContent(slot.fileId, tenantId);
               if (fileContent?.buffer) {
