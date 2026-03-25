@@ -4,7 +4,7 @@ import { db } from "../db.js";
 import {
   projects, clients, invoiceBatches, invoiceLines, raiddEntries,
   projectPlannerConnections, crmObjectMappings, users,
-  estimates, expenses, reimbursementBatches, statusReports,
+  estimates, expenses, reimbursementBatches, statusReports, projectAllocations,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray, sql, or, ilike } from "drizzle-orm";
 import {
@@ -1054,8 +1054,9 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
   });
 
   // ─── /mcp/activity-summary ───
-  // Returns a structured activity summary for a given date range:
-  // estimates generated + status reports published within the period.
+  // Returns a structured activity summary for a given date range covering four
+  // activity signals: estimates generated, status reports published, RAIDD log
+  // activity, and active/starting project assignments.
   // Copilot agents can use this to answer "What happened this week/month?"
   const ACTIVITY_ROLES = ["admin", "pm", "portfolio-manager", "executive"];
   app.get("/mcp/activity-summary", requireAuth, requireMcpTenant, requireRole(ACTIVITY_ROLES), async (req: Request, res: Response) => {
@@ -1081,86 +1082,140 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
         return res.status(400).json({ error: `'from' (${fromStr}) must not be later than 'to' (${toStr}).` });
       }
 
-      // Use timestamp boundaries so full days are included regardless of UTC offset
+      // Timestamp boundaries for timestamp columns (createdAt / updatedAt)
       const fromTs = new Date(fromStr + "T00:00:00.000Z");
       const toTs = new Date(toStr + "T23:59:59.999Z");
 
-      // ── Estimates created in period ────────────────────────────────────────
-      // Note: the estimates table has no updatedAt column; createdAt is used.
-      const estimateRows = await db
-        .select({
-          id: estimates.id,
-          name: estimates.name,
-          status: estimates.status,
-          estimateType: estimates.estimateType,
-          pricingType: estimates.pricingType,
-          version: estimates.version,
-          presentedTotal: estimates.presentedTotal,
-          totalFees: estimates.totalFees,
-          estimateDate: estimates.estimateDate,
-          createdAt: estimates.createdAt,
-          clientId: estimates.clientId,
-          clientName: clients.name,
-          projectId: estimates.projectId,
-        })
-        .from(estimates)
-        .leftJoin(clients, eq(estimates.clientId, clients.id))
-        .where(
-          and(
+      // ── Run all four queries in parallel ───────────────────────────────────
+      const [estimateRows, reportRows, raiddRows, allocationRows] = await Promise.all([
+
+        // 1. Estimates created in period (no updatedAt column on estimates table)
+        db
+          .select({
+            id: estimates.id,
+            name: estimates.name,
+            status: estimates.status,
+            estimateType: estimates.estimateType,
+            pricingType: estimates.pricingType,
+            version: estimates.version,
+            presentedTotal: estimates.presentedTotal,
+            totalFees: estimates.totalFees,
+            estimateDate: estimates.estimateDate,
+            createdAt: estimates.createdAt,
+            clientName: clients.name,
+            projectId: estimates.projectId,
+          })
+          .from(estimates)
+          .leftJoin(clients, eq(estimates.clientId, clients.id))
+          .where(and(
             eq(estimates.tenantId, tenantId),
             eq(estimates.archived, false),
             gte(estimates.createdAt, fromTs),
             lte(estimates.createdAt, toTs),
-          )
-        )
-        .orderBy(desc(estimates.createdAt));
+          ))
+          .orderBy(desc(estimates.createdAt)),
 
-      // ── Status reports published in period ────────────────────────────────
-      const reportRows = await db
-        .select({
-          id: statusReports.id,
-          title: statusReports.title,
-          reportType: statusReports.reportType,
-          reportStyle: statusReports.reportStyle,
-          periodStart: statusReports.periodStart,
-          periodEnd: statusReports.periodEnd,
-          status: statusReports.status,
-          metadata: statusReports.metadata,
-          createdAt: statusReports.createdAt,
-          projectId: statusReports.projectId,
-          projectName: projects.name,
-          clientName: clients.name,
-        })
-        .from(statusReports)
-        .leftJoin(projects, eq(statusReports.projectId, projects.id))
-        .leftJoin(clients, eq(projects.clientId, clients.id))
-        .where(
-          and(
+        // 2. Status reports whose reporting period ends within the date range
+        //    periodEnd is the canonical "report date" (when was the period being reported on)
+        db
+          .select({
+            id: statusReports.id,
+            title: statusReports.title,
+            reportType: statusReports.reportType,
+            reportStyle: statusReports.reportStyle,
+            periodStart: statusReports.periodStart,
+            periodEnd: statusReports.periodEnd,
+            status: statusReports.status,
+            metadata: statusReports.metadata,
+            createdAt: statusReports.createdAt,
+            projectId: statusReports.projectId,
+            projectName: projects.name,
+            clientName: clients.name,
+          })
+          .from(statusReports)
+          .leftJoin(projects, eq(statusReports.projectId, projects.id))
+          .leftJoin(clients, eq(projects.clientId, clients.id))
+          .where(and(
             eq(statusReports.tenantId, tenantId),
-            gte(statusReports.createdAt, fromTs),
-            lte(statusReports.createdAt, toTs),
-          )
-        )
-        .orderBy(desc(statusReports.createdAt));
+            gte(statusReports.periodEnd, fromStr),
+            lte(statusReports.periodEnd, toStr),
+          ))
+          .orderBy(desc(statusReports.periodEnd)),
 
-      // ── Summary counts ────────────────────────────────────────────────────
-      const estimatesCreated = estimateRows.length;
-      const estimatesApproved = estimateRows.filter(e => e.status === "approved").length;
-      const estimatesSent = estimateRows.filter(e => e.status === "sent").length;
-      const statusReportsPublished = reportRows.length;
-      const totalEstimateValue = estimateRows.reduce(
-        (sum, e) => sum + (e.presentedTotal ? parseFloat(e.presentedTotal.toString()) : 0),
-        0
-      );
+        // 3. RAIDD entries created OR updated in period (this table has updatedAt)
+        db
+          .select({
+            id: raiddEntries.id,
+            type: raiddEntries.type,
+            refNumber: raiddEntries.refNumber,
+            title: raiddEntries.title,
+            status: raiddEntries.status,
+            priority: raiddEntries.priority,
+            dueDate: raiddEntries.dueDate,
+            createdAt: raiddEntries.createdAt,
+            updatedAt: raiddEntries.updatedAt,
+            projectId: raiddEntries.projectId,
+            projectName: projects.name,
+            clientName: clients.name,
+          })
+          .from(raiddEntries)
+          .leftJoin(projects, eq(raiddEntries.projectId, projects.id))
+          .leftJoin(clients, eq(projects.clientId, clients.id))
+          .where(and(
+            eq(raiddEntries.tenantId, tenantId),
+            or(
+              and(gte(raiddEntries.createdAt, fromTs), lte(raiddEntries.createdAt, toTs)),
+              and(gte(raiddEntries.updatedAt, fromTs), lte(raiddEntries.updatedAt, toTs)),
+            ),
+          ))
+          .orderBy(desc(raiddEntries.updatedAt)),
+
+        // 4. Project assignments active during the period
+        //    (plannedStartDate <= toStr AND plannedEndDate >= fromStr = overlap)
+        db
+          .select({
+            id: projectAllocations.id,
+            projectId: projectAllocations.projectId,
+            projectName: projects.name,
+            clientName: clients.name,
+            personName: users.name,
+            resourceName: projectAllocations.resourceName,
+            taskDescription: projectAllocations.taskDescription,
+            hours: projectAllocations.hours,
+            status: projectAllocations.status,
+            plannedStartDate: projectAllocations.plannedStartDate,
+            plannedEndDate: projectAllocations.plannedEndDate,
+          })
+          .from(projectAllocations)
+          .leftJoin(projects, eq(projectAllocations.projectId, projects.id))
+          .leftJoin(clients, eq(projects.clientId, clients.id))
+          .leftJoin(users, eq(projectAllocations.personId, users.id))
+          .where(and(
+            eq(projectAllocations.tenantId, tenantId),
+            eq(projectAllocations.isBaseline, false),
+            lte(projectAllocations.plannedStartDate, toStr),
+            gte(projectAllocations.plannedEndDate, fromStr),
+          ))
+          .orderBy(projectAllocations.plannedStartDate),
+      ]);
+
+      // ── Summary counts ─────────────────────────────────────────────────────
+      const raiddCreated = raiddRows.filter(
+        r => new Date(r.createdAt) >= fromTs && new Date(r.createdAt) <= toTs
+      ).length;
+      const raiddUpdated = raiddRows.filter(
+        r => new Date(r.updatedAt) >= fromTs && new Date(r.updatedAt) <= toTs &&
+             !(new Date(r.createdAt) >= fromTs && new Date(r.createdAt) <= toTs)
+      ).length;
 
       res.json({
         period: { from: fromStr, to: toStr },
         summary: {
-          estimatesCreated,
-          estimatesApproved,
-          estimatesSent,
-          totalEstimateValue: Math.round(totalEstimateValue * 100) / 100,
-          statusReportsPublished,
+          estimatesCreated: estimateRows.length,
+          statusReportsPublished: reportRows.length,
+          raiddEntriesCreated: raiddCreated,
+          raiddEntriesUpdated: raiddUpdated,
+          activeAssignments: allocationRows.length,
         },
         estimates: estimateRows.map(e => ({
           id: e.id,
@@ -1188,7 +1243,36 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
           periodStart: r.periodStart,
           periodEnd: r.periodEnd,
           createdAt: r.createdAt,
+          overallHealth: (r.metadata as any)?.overallHealth || null,
+          highlights: (r.metadata as any)?.highlights || null,
           metadata: r.metadata || null,
+        })),
+        raidd: raiddRows.map(r => ({
+          id: r.id,
+          type: r.type,
+          refNumber: r.refNumber || null,
+          title: r.title,
+          status: r.status,
+          priority: r.priority,
+          dueDate: r.dueDate || null,
+          projectId: r.projectId,
+          projectName: r.projectName || null,
+          clientName: r.clientName || null,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          isNew: new Date(r.createdAt) >= fromTs && new Date(r.createdAt) <= toTs,
+        })),
+        assignments: allocationRows.map(a => ({
+          id: a.id,
+          projectId: a.projectId,
+          projectName: a.projectName || null,
+          clientName: a.clientName || null,
+          personName: a.personName || a.resourceName || null,
+          taskDescription: a.taskDescription || null,
+          hours: a.hours ? parseFloat(a.hours.toString()) : null,
+          status: a.status,
+          plannedStartDate: a.plannedStartDate,
+          plannedEndDate: a.plannedEndDate,
         })),
       });
     } catch (error: any) {
