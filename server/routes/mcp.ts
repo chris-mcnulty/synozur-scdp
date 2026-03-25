@@ -19,6 +19,25 @@ interface McpRouteDeps {
   requireRole: (roles: string[]) => any;
 }
 
+/** Typed shape of the metadata jsonb stored on a status_reports row. */
+interface StatusReportMetadata {
+  projectName?: string;
+  clientName?: string;
+  startDate?: string;
+  endDate?: string;
+  style?: string;
+  totalHours?: number;
+  totalBillableHours?: number;
+  totalExpenses?: number;
+  teamMemberCount?: number;
+  generatedAt?: string;
+  generatedBy?: string;
+  raidd?: Record<string, number>;
+  // Optional forward-compatible fields that agents may add in the future
+  overallHealth?: string;
+  highlights?: string[];
+}
+
 function getUser(req: Request): any {
   return (req as any).user;
 }
@@ -1089,7 +1108,11 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       // ── Run all four queries in parallel ───────────────────────────────────
       const [estimateRows, reportRows, raiddRows, allocationRows] = await Promise.all([
 
-        // 1. Estimates created in period (no updatedAt column on estimates table)
+        // 1. Estimates created in period.
+        //    NOTE: the estimates table has no updatedAt column (only createdAt and
+        //    estimateDate), so only newly-created estimates can be captured here.
+        //    The summary field is therefore named estimatesCreated and does not
+        //    attempt to surface updates.
         db
           .select({
             id: estimates.id,
@@ -1243,9 +1266,11 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
           periodStart: r.periodStart,
           periodEnd: r.periodEnd,
           createdAt: r.createdAt,
-          overallHealth: (r.metadata as any)?.overallHealth || null,
-          highlights: (r.metadata as any)?.highlights || null,
-          metadata: r.metadata || null,
+          overallHealth: (r.metadata as StatusReportMetadata | null)?.overallHealth ?? null,
+          highlights: (r.metadata as StatusReportMetadata | null)?.highlights ?? null,
+          totalHours: (r.metadata as StatusReportMetadata | null)?.totalHours ?? null,
+          teamMemberCount: (r.metadata as StatusReportMetadata | null)?.teamMemberCount ?? null,
+          raidd: (r.metadata as StatusReportMetadata | null)?.raidd ?? null,
         })),
         raidd: raiddRows.map(r => ({
           id: r.id,
