@@ -1618,15 +1618,19 @@ def _remap_rids_in_element(element, rId_map):
 
 def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
     """
-    Copy the first slide from src_pptx_path into dest_prs.
+    Copy the first slide from src_pptx_path into dest_prs, fully flattening the
+    source master/layout chain so the destination slide is visually complete
+    without needing the source master.
 
-    Adds a blank slide to dest_prs, then replaces its <p:cSld> element (which
-    carries the slide background fill and all shapes) with the source slide's
-    <p:cSld>.  Embedded images are copied into the destination package via
-    ImagePart.new(), and any changed rIds are remapped in the copied XML.
+    Strategy:
+    1. Deep-copy the source slide's <p:cSld> (background + shapes).
+    2. If the slide has no explicit <p:bg>, inherit one from the layout then master.
+    3. Copy image parts from slide, layout, AND master into the destination package
+       (branded templates often store background images in the layout or master).
+    4. Remap any rIds that changed, then install the new <p:cSld> on the blank slide.
 
-    _part_cache is an optional dict shared across multiple calls with the same
-    template file so images are not duplicated (used for section-header slides).
+    _part_cache: optional dict shared across calls with the same template file so
+    images are not duplicated (used for repeated section-header slides).
 
     Returns True on success, False on failure.
     """
@@ -1641,14 +1645,38 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
             print(f"[PPTX_TEMPLATE] Source PPTX has no slides: {src_pptx_path}", file=sys.stderr)
             return False
 
-        src_slide = src_prs.slides[0]
-        src_part = src_slide.part
-        dest_pkg = dest_prs.part.package
+        src_slide  = src_prs.slides[0]
+        src_layout = src_slide.slide_layout
+        src_master = src_layout.slide_master
 
+        dest_pkg = dest_prs.part.package
         cache = _part_cache if _part_cache is not None else {}
 
-        # Use the destination's blank layout — we bring the visual content via
-        # cSld, so we don't need (or want) the source layout/master chain.
+        # ── Step 1: deep-copy the source slide's <p:cSld> ─────────────────────
+        src_cSld = src_slide.element.find(f'{{{P}}}cSld')
+        if src_cSld is None:
+            print(f"[PPTX_TEMPLATE] No <p:cSld> in source slide: {src_pptx_path}", file=sys.stderr)
+            return False
+        new_cSld = copy.deepcopy(src_cSld)
+
+        # ── Step 2: if the slide has no explicit <p:bg>, inherit from layout/master
+        BG_TAG = f'{{{P}}}bg'
+        if new_cSld.find(BG_TAG) is None:
+            inherited_bg = None
+            for ancestor_el in [src_layout.element, src_master.element]:
+                ancestor_cSld = ancestor_el.find(f'{{{P}}}cSld')
+                if ancestor_cSld is not None:
+                    candidate = ancestor_cSld.find(BG_TAG)
+                    if candidate is not None:
+                        inherited_bg = copy.deepcopy(candidate)
+                        break
+            if inherited_bg is not None:
+                spTree = new_cSld.find(f'{{{P}}}spTree')
+                insert_at = list(new_cSld).index(spTree) if spTree is not None else 0
+                new_cSld.insert(insert_at, inherited_bg)
+                print(f"[PPTX_TEMPLATE] Inherited <p:bg> from layout/master into slide", file=sys.stderr)
+
+        # ── Step 3: add blank slide to destination ─────────────────────────────
         blank_layout = (
             dest_prs.slide_layouts[6]
             if len(dest_prs.slide_layouts) > 6
@@ -1657,14 +1685,18 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
         new_slide = dest_prs.slides.add_slide(blank_layout)
         dest_part = new_slide.part
 
-        # Copy embedded image parts from source into the destination package.
-        # Background images, inline pictures, and logo images are all ImageParts.
+        # ── Step 4: copy image parts from slide + layout + master ──────────────
+        # Branded templates often embed background images only in the layout or
+        # master; collecting from all three levels ensures nothing is missed.
         rId_map = {}
-        for old_rId, rel in src_part.rels.items():
-            try:
-                if rel.is_external or rel.reltype == RT.SLIDE_LAYOUT:
-                    continue
-                if isinstance(rel.target_part, ImagePart):
+
+        def _copy_images_from(part):
+            for old_rId, rel in part.rels.items():
+                try:
+                    if rel.is_external:
+                        continue
+                    if not isinstance(rel.target_part, ImagePart):
+                        continue
                     cache_key = str(rel.target_part.partname)
                     if cache_key in cache:
                         img_part = cache[cache_key]
@@ -1674,20 +1706,18 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
                     new_rId = dest_part.relate_to(img_part, rel.reltype)
                     if old_rId != new_rId:
                         rId_map[old_rId] = new_rId
-                # Non-image, non-layout rels (charts, diagrams, audio/video) are
-                # intentionally skipped — template slides should not contain them.
-            except Exception as rel_err:
-                print(f"[PPTX_TEMPLATE] Rel {old_rId} skipped: {rel_err}", file=sys.stderr)
+                except Exception as rel_err:
+                    print(f"[PPTX_TEMPLATE] Image rel {old_rId} skipped: {rel_err}", file=sys.stderr)
 
-        # Replace the destination slide's <p:cSld> with the source's.
-        # <p:cSld> contains both <p:bg> (background) and <p:spTree> (shapes),
-        # so this single substitution preserves fills, images, and all content.
-        src_cSld = src_slide.element.find(f'{{{P}}}cSld')
-        if src_cSld is None:
-            print(f"[PPTX_TEMPLATE] No <p:cSld> in source slide: {src_pptx_path}", file=sys.stderr)
-            return False
+        slide_img_count  = sum(1 for r in src_slide.part.rels.values() if not r.is_external and isinstance(r.target_part, ImagePart))
+        layout_img_count = sum(1 for r in src_layout.part.rels.values() if not r.is_external and isinstance(r.target_part, ImagePart))
+        master_img_count = sum(1 for r in src_master.part.rels.values() if not r.is_external and isinstance(r.target_part, ImagePart))
 
-        new_cSld = copy.deepcopy(src_cSld)
+        _copy_images_from(src_slide.part)
+        _copy_images_from(src_layout.part)
+        _copy_images_from(src_master.part)
+
+        # ── Step 5: remap rIds and install the new <p:cSld> ───────────────────
         _remap_rids_in_element(new_cSld, rId_map)
 
         dest_sld = dest_part._element
@@ -1708,10 +1738,10 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
             else:
                 dest_sld.append(new_clrMapOvr)
 
-        remapped = len(rId_map)
         print(
             f"[PPTX_TEMPLATE] Copied slide from {os.path.basename(src_pptx_path)} "
-            f"({len(dest_part.rels)} rels, {remapped} rIds remapped)",
+            f"(imgs: slide={slide_img_count}, layout={layout_img_count}, "
+            f"master={master_img_count}; {len(rId_map)} rIds remapped)",
             file=sys.stderr,
         )
         return True
