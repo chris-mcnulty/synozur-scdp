@@ -1091,11 +1091,17 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       const fromStr = (req.query.from as string) || defaultFrom;
       const toStr = (req.query.to as string) || defaultTo;
 
-      if (!ISO_DATE_RE.test(fromStr)) {
-        return res.status(400).json({ error: `Invalid 'from' date '${fromStr}'. Expected YYYY-MM-DD.` });
+      /** Returns true only when the string is a real calendar date (round-trip safe). */
+      const isValidCalendarDate = (s: string): boolean => {
+        const d = new Date(s + "T00:00:00Z");
+        return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+      };
+
+      if (!ISO_DATE_RE.test(fromStr) || !isValidCalendarDate(fromStr)) {
+        return res.status(400).json({ error: `Invalid 'from' date '${fromStr}'. Expected a real YYYY-MM-DD calendar date.` });
       }
-      if (!ISO_DATE_RE.test(toStr)) {
-        return res.status(400).json({ error: `Invalid 'to' date '${toStr}'. Expected YYYY-MM-DD.` });
+      if (!ISO_DATE_RE.test(toStr) || !isValidCalendarDate(toStr)) {
+        return res.status(400).json({ error: `Invalid 'to' date '${toStr}'. Expected a real YYYY-MM-DD calendar date.` });
       }
       if (fromStr > toStr) {
         return res.status(400).json({ error: `'from' (${fromStr}) must not be later than 'to' (${toStr}).` });
