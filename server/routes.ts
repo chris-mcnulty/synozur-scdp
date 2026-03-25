@@ -5414,12 +5414,40 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             // Update existing task
             const task = await plannerService.getTask(syncRecord.taskId);
             if (task) {
+              // Guard: detect if Planner has been modified remotely since last sync.
+              // If the ETag has changed and the remote percentComplete differs from what local
+              // would push, treat the remote as authoritative for status and preserve it —
+              // the inbound phase will reconcile the local record accordingly.
+              // Also preserve remote if it is simply ahead (e.g. completed in Planner) even
+              // without a tracked ETag.
+              const remotePercentComplete = task.percentComplete ?? 0;
+              const etagChanged = !!syncRecord.remoteEtag && task['@odata.etag'] !== syncRecord.remoteEtag;
+              const remoteStatusDiffers = remotePercentComplete !== percentComplete;
+              
+              let outboundPercentComplete = percentComplete;
+              if (etagChanged && remoteStatusDiffers) {
+                // ETag changed and remote status differs — remote wins, preserve it
+                console.log(
+                  `[PLANNER] Remote change detected for allocation ${allocation.id}: ` +
+                  `ETag changed, Planner has ${remotePercentComplete}% vs local ${percentComplete}%. ` +
+                  `Preserving remote status; inbound phase will reconcile local.`
+                );
+                outboundPercentComplete = remotePercentComplete;
+              } else if (!etagChanged && remotePercentComplete > percentComplete) {
+                // No ETag tracking yet but Planner is ahead — still preserve remote
+                console.log(
+                  `[PLANNER] Planner is ahead for allocation ${allocation.id}: ` +
+                  `${remotePercentComplete}% > local ${percentComplete}%. Preserving remote status.`
+                );
+                outboundPercentComplete = remotePercentComplete;
+              }
+
               await plannerService.updateTask(syncRecord.taskId, task['@odata.etag'] || '', {
                 title: taskTitle,
                 bucketId: bucket.id,
                 startDateTime: updateStartDateTime,
                 dueDateTime: updateDueDateTime,
-                percentComplete,
+                percentComplete: outboundPercentComplete,
                 assigneeIds
               });
               
