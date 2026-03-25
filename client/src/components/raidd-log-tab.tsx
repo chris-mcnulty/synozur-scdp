@@ -95,7 +95,7 @@ const priorityColors: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  open: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+  open: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
   in_progress: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
   mitigated: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
   closed: "bg-gray-100 text-gray-800 dark:bg-gray-700/30 dark:text-gray-400",
@@ -555,11 +555,11 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
   };
 
   return (
-    <Card className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+    <Card className="bg-card border-border">
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <CardTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">RAIDD Log</CardTitle>
+            <CardTitle className="text-lg font-semibold text-foreground">RAIDD Log</CardTitle>
             <div className="flex gap-1.5">
               {summaryCounts.R > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">R:{summaryCounts.R}</Badge>}
               {summaryCounts.A > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">A:{summaryCounts.A}</Badge>}
@@ -1102,9 +1102,9 @@ function DetailPanel({
       <Separator className="my-3" />
 
       {entry.convertedFrom && (
-        <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
-          <span className="text-blue-600 dark:text-blue-400 font-medium">Converted from:</span>{" "}
-          <span className="text-gray-700 dark:text-gray-300">{entry.convertedFrom.refNumber} - {entry.convertedFrom.title}</span>
+        <div className="mb-3 p-2 bg-muted rounded text-sm">
+          <span className="text-muted-foreground font-medium">Converted from:</span>{" "}
+          <span className="text-foreground">{entry.convertedFrom.refNumber} - {entry.convertedFrom.title}</span>
         </div>
       )}
 
@@ -1120,7 +1120,7 @@ function DetailPanel({
           <span className="text-gray-500 dark:text-gray-400 text-xs block mb-2">Action Items ({entry.children.length})</span>
           <div className="space-y-1">
             {entry.children.map(child => (
-              <div key={child.id} className="flex items-center gap-2 text-sm p-1.5 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
+              <div key={child.id} className="flex items-center gap-2 text-sm p-1.5 bg-muted rounded border border-border">
                 <CheckSquare className="h-3.5 w-3.5 text-gray-400" />
                 <span className="font-mono text-xs text-gray-400">{child.refNumber}</span>
                 <span className="text-gray-700 dark:text-gray-300 flex-1 truncate">{child.title}</span>
@@ -1791,7 +1791,7 @@ function AiReviewDialog({
         ) : (
           <div className="space-y-3">
             {items.map((item, idx) => (
-              <div key={item.id} className="flex items-start gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+              <div key={item.id} className="flex items-start gap-3 p-3 border border-border rounded-lg">
                 <Checkbox
                   checked={item.selected}
                   onCheckedChange={(checked) => {
@@ -1903,7 +1903,7 @@ function SuggestMitigationDialog({
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-2">Suggested Action Items</label>
               <div className="space-y-2">
                 {editedActions.map((action: any, idx: number) => (
-                  <div key={idx} className="p-2 border border-gray-200 dark:border-gray-700 rounded text-sm">
+                  <div key={idx} className="p-2 border border-border rounded text-sm">
                     <div className="font-medium">{action.title}</div>
                     {action.description && <div className="text-gray-500 dark:text-gray-400 text-xs mt-1">{action.description}</div>}
                   </div>
@@ -1973,7 +1973,7 @@ function SuggestActionsDialog({
         </DialogHeader>
         <div className="space-y-3">
           {actions.map((action, idx) => (
-            <div key={action.id} className="flex items-start gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+            <div key={action.id} className="flex items-start gap-3 p-3 border border-border rounded-lg">
               <Checkbox
                 checked={action.selected}
                 onCheckedChange={(checked) => {
