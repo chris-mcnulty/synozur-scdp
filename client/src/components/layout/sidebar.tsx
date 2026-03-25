@@ -37,6 +37,7 @@ import {
   Brain,
   LifeBuoy,
   ActivitySquare,
+  Network,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -130,7 +131,7 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-raidd"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/projects", "/clients", "/resource-management", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
-  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/vocabulary", "/ai-grounding", "/ai-settings"] },
+  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
 
@@ -284,6 +285,7 @@ export function Sidebar() {
                 <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
                 <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
                 <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />
+                <SidebarItem href="/m365-integration" icon={<Network />} label="M365 Integration Map" />
                 {isPlatformAdmin && (
                   <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary Catalog" />
                 )}

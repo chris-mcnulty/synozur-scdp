@@ -53,6 +53,7 @@ import PortfolioSlippage from "@/pages/portfolio-slippage";
 import MyRaidd from "@/pages/my-raidd";
 import CrmDeals from "@/pages/crm-deals";
 import AiSettings from "@/pages/ai-settings";
+import M365IntegrationDiagram from "@/pages/m365-integration-diagram";
 import EmbedProject from "@/pages/embed-project";
 import EmbedConfigure from "@/pages/embed-configure";
 import EmbedDashboard from "@/pages/embed-dashboard";
@@ -291,6 +292,13 @@ function Router() {
       </Route>
       <Route path="/admin/sharepoint">
         {user ? <AdminSharePoint /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/m365-integration">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin"]}>
+            <M365IntegrationDiagram />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/admin/scheduled-jobs">
         {user ? (
