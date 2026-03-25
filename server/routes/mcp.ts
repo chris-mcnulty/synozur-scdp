@@ -4,7 +4,7 @@ import { db } from "../db.js";
 import {
   projects, clients, invoiceBatches, invoiceLines, raiddEntries,
   projectPlannerConnections, crmObjectMappings, users,
-  estimates, expenses, reimbursementBatches,
+  estimates, expenses, reimbursementBatches, statusReports,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray, sql, or, ilike } from "drizzle-orm";
 import {
@@ -1050,6 +1050,150 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
     } catch (error: any) {
       console.error("[MCP] /mcp/reimbursements/:batchId error:", error);
       res.status(500).json({ error: "Failed to retrieve reimbursement batch" });
+    }
+  });
+
+  // ─── /mcp/activity-summary ───
+  // Returns a structured activity summary for a given date range:
+  // estimates generated + status reports published within the period.
+  // Copilot agents can use this to answer "What happened this week/month?"
+  const ACTIVITY_ROLES = ["admin", "pm", "portfolio-manager", "executive"];
+  app.get("/mcp/activity-summary", requireAuth, requireMcpTenant, requireRole(ACTIVITY_ROLES), async (req: Request, res: Response) => {
+    try {
+      const tenantId = requireTenantId(req);
+
+      // ── Date range resolution ──────────────────────────────────────────────
+      const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      const now = new Date();
+      const defaultTo = now.toISOString().split("T")[0];
+      const defaultFrom = new Date(now.getTime() - 30 * 86400000).toISOString().split("T")[0];
+
+      const fromStr = (req.query.from as string) || defaultFrom;
+      const toStr = (req.query.to as string) || defaultTo;
+
+      if (!ISO_DATE_RE.test(fromStr)) {
+        return res.status(400).json({ error: `Invalid 'from' date '${fromStr}'. Expected YYYY-MM-DD.` });
+      }
+      if (!ISO_DATE_RE.test(toStr)) {
+        return res.status(400).json({ error: `Invalid 'to' date '${toStr}'. Expected YYYY-MM-DD.` });
+      }
+      if (fromStr > toStr) {
+        return res.status(400).json({ error: `'from' (${fromStr}) must not be later than 'to' (${toStr}).` });
+      }
+
+      // Use timestamp boundaries so full days are included regardless of UTC offset
+      const fromTs = new Date(fromStr + "T00:00:00.000Z");
+      const toTs = new Date(toStr + "T23:59:59.999Z");
+
+      // ── Estimates created in period ────────────────────────────────────────
+      // Note: the estimates table has no updatedAt column; createdAt is used.
+      const estimateRows = await db
+        .select({
+          id: estimates.id,
+          name: estimates.name,
+          status: estimates.status,
+          estimateType: estimates.estimateType,
+          pricingType: estimates.pricingType,
+          version: estimates.version,
+          presentedTotal: estimates.presentedTotal,
+          totalFees: estimates.totalFees,
+          estimateDate: estimates.estimateDate,
+          createdAt: estimates.createdAt,
+          clientId: estimates.clientId,
+          clientName: clients.name,
+          projectId: estimates.projectId,
+        })
+        .from(estimates)
+        .leftJoin(clients, eq(estimates.clientId, clients.id))
+        .where(
+          and(
+            eq(estimates.tenantId, tenantId),
+            eq(estimates.archived, false),
+            gte(estimates.createdAt, fromTs),
+            lte(estimates.createdAt, toTs),
+          )
+        )
+        .orderBy(desc(estimates.createdAt));
+
+      // ── Status reports published in period ────────────────────────────────
+      const reportRows = await db
+        .select({
+          id: statusReports.id,
+          title: statusReports.title,
+          reportType: statusReports.reportType,
+          reportStyle: statusReports.reportStyle,
+          periodStart: statusReports.periodStart,
+          periodEnd: statusReports.periodEnd,
+          status: statusReports.status,
+          metadata: statusReports.metadata,
+          createdAt: statusReports.createdAt,
+          projectId: statusReports.projectId,
+          projectName: projects.name,
+          clientName: clients.name,
+        })
+        .from(statusReports)
+        .leftJoin(projects, eq(statusReports.projectId, projects.id))
+        .leftJoin(clients, eq(projects.clientId, clients.id))
+        .where(
+          and(
+            eq(statusReports.tenantId, tenantId),
+            gte(statusReports.createdAt, fromTs),
+            lte(statusReports.createdAt, toTs),
+          )
+        )
+        .orderBy(desc(statusReports.createdAt));
+
+      // ── Summary counts ────────────────────────────────────────────────────
+      const estimatesCreated = estimateRows.length;
+      const estimatesApproved = estimateRows.filter(e => e.status === "approved").length;
+      const estimatesSent = estimateRows.filter(e => e.status === "sent").length;
+      const statusReportsPublished = reportRows.length;
+      const totalEstimateValue = estimateRows.reduce(
+        (sum, e) => sum + (e.presentedTotal ? parseFloat(e.presentedTotal.toString()) : 0),
+        0
+      );
+
+      res.json({
+        period: { from: fromStr, to: toStr },
+        summary: {
+          estimatesCreated,
+          estimatesApproved,
+          estimatesSent,
+          totalEstimateValue: Math.round(totalEstimateValue * 100) / 100,
+          statusReportsPublished,
+        },
+        estimates: estimateRows.map(e => ({
+          id: e.id,
+          name: e.name,
+          status: e.status,
+          estimateType: e.estimateType,
+          pricingType: e.pricingType,
+          version: e.version,
+          clientName: e.clientName || null,
+          projectId: e.projectId || null,
+          presentedTotal: e.presentedTotal ? parseFloat(e.presentedTotal.toString()) : null,
+          totalFees: e.totalFees ? parseFloat(e.totalFees.toString()) : null,
+          estimateDate: e.estimateDate,
+          createdAt: e.createdAt,
+        })),
+        statusReports: reportRows.map(r => ({
+          id: r.id,
+          title: r.title,
+          reportType: r.reportType,
+          reportStyle: r.reportStyle,
+          status: r.status,
+          projectId: r.projectId,
+          projectName: r.projectName || null,
+          clientName: r.clientName || null,
+          periodStart: r.periodStart,
+          periodEnd: r.periodEnd,
+          createdAt: r.createdAt,
+          metadata: r.metadata || null,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[MCP] /mcp/activity-summary error:", error);
+      res.status(500).json({ error: "Failed to retrieve activity summary" });
     }
   });
 }
