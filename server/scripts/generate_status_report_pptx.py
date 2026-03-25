@@ -1645,18 +1645,88 @@ def _normalize_fonts_in_element(element, explicit_font=FONT_NAME):
                 latin_el.set('typeface', explicit_font)
 
 
+def _slide_is_layout_shell(slide_element, P, A):
+    """
+    Return True when the slide's <p:cSld> contains nothing but empty placeholder
+    shapes with no explicit position and no text content.
+
+    PowerPoint templates created from a custom slide layout export this way: the
+    entire visual design lives in the layout, and the slide itself is just a thin
+    shell of empty <p:ph> wrappers.
+    """
+    cSld = slide_element.find(f'{{{P}}}cSld')
+    if cSld is None:
+        return True
+    spTree = cSld.find(f'{{{P}}}spTree')
+    if spTree is None:
+        return True
+    for child in spTree:
+        local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        if local in ('nvGrpSpPr', 'grpSpPr', 'extLst'):
+            continue
+        if local != 'sp':
+            return False  # pic/graphicFrame/etc. → has real content
+        nvSpPr = child.find(f'{{{P}}}nvSpPr')
+        nvPr   = nvSpPr.find(f'{{{P}}}nvPr') if nvSpPr is not None else None
+        ph_el  = nvPr.find(f'{{{P}}}ph')     if nvPr   is not None else None
+        if ph_el is None:
+            return False  # non-placeholder shape → has real content
+        spPr = child.find(f'{{{P}}}spPr')
+        if spPr is not None and spPr.find(f'{{{A}}}xfrm') is not None:
+            return False  # placeholder with explicit position → real content
+        txBody = child.find(f'{{{P}}}txBody')
+        if txBody is not None:
+            for t_el in txBody.iter(f'{{{A}}}t'):
+                if t_el.text and t_el.text.strip():
+                    return False  # placeholder with typed text → real content
+    return True
+
+
+def _strip_placeholder_tags(cSld_el, P):
+    """
+    Remove <p:ph> from every shape in cSld_el's spTree.
+
+    When layout content is promoted into a slide, the <p:ph> elements cause
+    PowerPoint to merge the shape's styling with the *destination* layout's
+    placeholder — which is the wrong layout and provides wrong positions/colours.
+    Stripping <p:ph> makes every shape a standalone freeform with its own
+    explicit attributes and no external inheritance.
+    """
+    spTree = cSld_el.find(f'{{{P}}}spTree')
+    if spTree is None:
+        return
+    for sp in list(spTree):
+        nvSpPr = sp.find(f'{{{P}}}nvSpPr')
+        if nvSpPr is None:
+            continue
+        nvPr = nvSpPr.find(f'{{{P}}}nvPr')
+        if nvPr is None:
+            continue
+        ph_el = nvPr.find(f'{{{P}}}ph')
+        if ph_el is not None:
+            nvPr.remove(ph_el)
+
+
 def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
     """
     Copy the first slide from src_pptx_path into dest_prs, fully flattening the
     source master/layout chain so the destination slide is visually complete
     without needing the source master.
 
+    Many branded template PPTX files are created from a custom slide layout where
+    the entire visual design (background, positioned shapes, logo, text content)
+    lives in the *layout*, not the slide itself.  The slide XML is just a thin
+    shell of empty placeholder wrappers.  This function detects that pattern and
+    uses the layout's <p:cSld> as the content source instead of the empty slide.
+
     Strategy:
-    1. Deep-copy the source slide's <p:cSld> (background + shapes).
-    2. If the slide has no explicit <p:bg>, inherit one from the layout then master.
-    3. Copy image parts from slide, layout, AND master into the destination package
-       (branded templates often store background images in the layout or master).
-    4. Remap any rIds that changed, then install the new <p:cSld> on the blank slide.
+    1. Detect whether the slide is an empty layout shell.
+    2. Use the layout's <p:cSld> as content when the slide is empty; otherwise
+       use the slide's own <p:cSld> with a background fallback from layout/master.
+    3. Strip <p:ph> tags from copied shapes so the destination layout cannot
+       override the source positions or styling.
+    4. Copy image parts from slide + layout + master.
+    5. Remap rIds, normalise fonts (replace theme tokens), install on blank slide.
 
     _part_cache: optional dict shared across calls with the same template file so
     images are not duplicated (used for repeated section-header slides).
@@ -1668,6 +1738,7 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
         from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
         P = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 
         src_prs = Presentation(src_pptx_path)
         if not src_prs.slides:
@@ -1681,14 +1752,28 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
         dest_pkg = dest_prs.part.package
         cache = _part_cache if _part_cache is not None else {}
 
-        # ── Step 1: deep-copy the source slide's <p:cSld> ─────────────────────
-        src_cSld = src_slide.element.find(f'{{{P}}}cSld')
+        # ── Step 1: choose content source ─────────────────────────────────────
+        # When the slide is an empty layout shell (all placeholders, no text,
+        # no explicit positions) the real design lives in the slide layout.
+        # Use the layout's <p:cSld> in that case; otherwise use the slide's own.
+        is_shell = _slide_is_layout_shell(src_slide.element, P, A)
+        if is_shell:
+            content_el = src_layout.element
+            print(f"[PPTX_TEMPLATE] Slide is empty layout shell — using layout content", file=sys.stderr)
+        else:
+            content_el = src_slide.element
+
+        src_cSld = content_el.find(f'{{{P}}}cSld')
         if src_cSld is None:
-            print(f"[PPTX_TEMPLATE] No <p:cSld> in source slide: {src_pptx_path}", file=sys.stderr)
+            print(f"[PPTX_TEMPLATE] No <p:cSld> in content source: {src_pptx_path}", file=sys.stderr)
             return False
         new_cSld = copy.deepcopy(src_cSld)
 
-        # ── Step 2: if the slide has no explicit <p:bg>, inherit from layout/master
+        # Strip <p:ph> placeholders so destination layout cannot override positions.
+        _strip_placeholder_tags(new_cSld, P)
+
+        # ── Step 2: if there is still no <p:bg>, inherit from layout/master ───
+        # (only relevant when using slide content that lacks an explicit background)
         BG_TAG = f'{{{P}}}bg'
         if new_cSld.find(BG_TAG) is None:
             inherited_bg = None
