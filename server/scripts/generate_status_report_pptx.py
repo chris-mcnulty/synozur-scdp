@@ -1682,6 +1682,72 @@ def _slide_is_layout_shell(slide_element, P, A):
     return True
 
 
+def _inject_placeholder_text(cSld_el, inject_texts, P, A):
+    """
+    Replace text inside specific placeholder shapes with actual report content.
+
+    Must be called BEFORE _strip_placeholder_tags so <p:ph> is still present
+    and can be used to identify which shape is the title vs the subtitle.
+
+    inject_texts keys:
+        'title'    → shape with <p:ph type="title">
+        'subtitle' → shape with <p:ph idx="1"> (body / subtitle placeholder)
+    """
+    from lxml import etree as _etree
+
+    if not inject_texts:
+        return
+    spTree = cSld_el.find(f'{{{P}}}spTree')
+    if spTree is None:
+        return
+
+    for sp in spTree.findall(f'{{{P}}}sp'):
+        nvSpPr = sp.find(f'{{{P}}}nvSpPr')
+        if nvSpPr is None:
+            continue
+        nvPr = nvSpPr.find(f'{{{P}}}nvPr')
+        if nvPr is None:
+            continue
+        ph_el = nvPr.find(f'{{{P}}}ph')
+        if ph_el is None:
+            continue
+
+        ph_type = ph_el.get('type', '')
+        ph_idx  = ph_el.get('idx',  '0')
+
+        if ph_type == 'title':
+            new_text = inject_texts.get('title')
+        elif ph_idx == '1':
+            new_text = inject_texts.get('subtitle')
+        else:
+            continue
+
+        if not new_text:
+            continue
+
+        txBody = sp.find(f'{{{P}}}txBody')
+        if txBody is None:
+            continue
+
+        # Preserve the run properties from the first run (bold, colour, size)
+        first_rPr = None
+        first_para = txBody.find(f'{{{A}}}p')
+        if first_para is not None:
+            first_run = first_para.find(f'{{{A}}}r')
+            if first_run is not None:
+                first_rPr = first_run.find(f'{{{A}}}rPr')
+
+        # Remove all existing paragraphs and replace with a single clean one
+        for p_el in txBody.findall(f'{{{A}}}p'):
+            txBody.remove(p_el)
+        new_p = _etree.SubElement(txBody, f'{{{A}}}p')
+        new_r = _etree.SubElement(new_p, f'{{{A}}}r')
+        if first_rPr is not None:
+            new_r.insert(0, copy.deepcopy(first_rPr))
+        new_t = _etree.SubElement(new_r, f'{{{A}}}t')
+        new_t.text = new_text
+
+
 def _strip_placeholder_tags(cSld_el, P):
     """
     Remove <p:ph> from every shape in cSld_el's spTree.
@@ -1707,7 +1773,7 @@ def _strip_placeholder_tags(cSld_el, P):
             nvPr.remove(ph_el)
 
 
-def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
+def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None, inject_texts=None):
     """
     Copy the first slide from src_pptx_path into dest_prs, fully flattening the
     source master/layout chain so the destination slide is visually complete
@@ -1768,6 +1834,11 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None):
             print(f"[PPTX_TEMPLATE] No <p:cSld> in content source: {src_pptx_path}", file=sys.stderr)
             return False
         new_cSld = copy.deepcopy(src_cSld)
+
+        # Inject actual report content into placeholder shapes BEFORE stripping
+        # the <p:ph> tags — the ph type/idx is how we identify title vs subtitle.
+        if inject_texts:
+            _inject_placeholder_text(new_cSld, inject_texts, P, A)
 
         # Strip <p:ph> placeholders so destination layout cannot override positions.
         _strip_placeholder_tags(new_cSld, P)
@@ -1890,17 +1961,33 @@ def generate_pptx(data, output_path):
 
     section_cache = {}
 
+    # Build title slide text from report data
+    period_start = data.get('periodStart', '')
+    period_end   = data.get('periodEnd',   '')
+    report_date  = data.get('reportDate',  datetime.now().strftime('%B %d, %Y'))
+    period_label = f"{period_start} – {period_end}" if period_start and period_end else report_date
+    client_name  = data.get('clientName', '')
+    subtitle_parts = [p for p in [client_name, period_label] if p]
+    title_inject = {
+        'title':    data.get('projectName', 'Status Report'),
+        'subtitle': '  •  '.join(subtitle_parts),
+    }
+
     # Title slide: use template if provided, otherwise generate programmatically
     if title_template_path and os.path.exists(title_template_path):
         print(f"[PPTX_TEMPLATE] Using title template: {title_template_path}", file=sys.stderr)
-        if not copy_first_slide(title_template_path, prs):
+        if not copy_first_slide(title_template_path, prs, inject_texts=title_inject):
             create_title_slide(prs, data, primary_color, secondary_color)
     else:
         create_title_slide(prs, data, primary_color, secondary_color)
 
     def insert_section_header(section_name):
         if section_template_path and os.path.exists(section_template_path):
-            ok = copy_first_slide(section_template_path, prs, _part_cache=section_cache)
+            ok = copy_first_slide(
+                section_template_path, prs,
+                _part_cache=section_cache,
+                inject_texts={'title': section_name},
+            )
             if not ok:
                 print(f"[PPTX_TEMPLATE] Section header insertion failed before '{section_name}' — continuing without template slide", file=sys.stderr)
 
