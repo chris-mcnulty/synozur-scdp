@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "pcWIdv3zhLrKVtBHqjaSv"
+uri = "file://public/downloads/constellation-mcp-swagger.yaml"
+type = "unspecified"
+title = "Constellation MCP Swagger (v1.1.0 — 25 operations)"
