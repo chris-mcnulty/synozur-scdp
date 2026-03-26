@@ -6,7 +6,7 @@ import {
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes, oconusPerDiemRates,
   vocabularyCatalog, organizationVocabulary, tenants, tenantUsers,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
-  expenseReports, expenseReportItems, reimbursementBatches, reimbursementLineItems,
+  expenseReports, expenseReportItems, reimbursementBatches, reimbursementLineItems, contractorInvoices,
   projectPlannerConnections, plannerTaskSync, userAzureMappings,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
@@ -49,6 +49,7 @@ import {
   type ExpenseReportItem, type InsertExpenseReportItem,
   type ReimbursementBatch, type InsertReimbursementBatch,
   type ReimbursementLineItem, type InsertReimbursementLineItem,
+  type ContractorInvoice, type InsertContractorInvoice,
   type ProjectPlannerConnection, type InsertProjectPlannerConnection,
   type PlannerTaskSync, type InsertPlannerTaskSync,
   type UserAzureMapping, type InsertUserAzureMapping,
@@ -487,6 +488,18 @@ export interface IStorage {
   processReimbursementBatch(id: string, userId: string, paymentReferenceNumber: string): Promise<ReimbursementBatch>;
   getAvailableReimbursableExpenses(userId?: string): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
   setExpensesClientPaid(expenseIds: string[]): Promise<void>;
+
+  // Contractor Invoices
+  getContractorInvoices(filters: {
+    tenantId?: string;
+    contractorUserId?: string;
+    status?: string;
+    reportId?: string;
+  }): Promise<(ContractorInvoice & { contractor: User; report: ExpenseReport; approver?: User; paidByUser?: User })[]>;
+  getContractorInvoice(id: string): Promise<(ContractorInvoice & { contractor: User; report: ExpenseReport; approver?: User; paidByUser?: User }) | undefined>;
+  createContractorInvoice(invoice: InsertContractorInvoice): Promise<ContractorInvoice>;
+  approveContractorInvoice(id: string, userId: string): Promise<ContractorInvoice>;
+  payContractorInvoice(id: string, userId: string, paymentNote?: string): Promise<ContractorInvoice>;
   
   // Change Orders
   getChangeOrders(projectId: string): Promise<ChangeOrder[]>;
@@ -5185,6 +5198,102 @@ export class DatabaseStorage implements IStorage {
     await db.update(expenses)
       .set({ clientPaidAt: new Date() })
       .where(inArray(expenses.id, expenseIds));
+  }
+
+  // Contractor Invoices
+  async getContractorInvoices(filters: {
+    tenantId?: string;
+    contractorUserId?: string;
+    status?: string;
+    reportId?: string;
+  }): Promise<(ContractorInvoice & { contractor: User; report: ExpenseReport; approver?: User; paidByUser?: User })[]> {
+    const usersApproverCI = alias(users, 'users_approver_ci');
+    const usersPaidByCI = alias(users, 'users_paid_by_ci');
+    const conditions: any[] = [];
+    if (filters.tenantId) conditions.push(eq(contractorInvoices.tenantId, filters.tenantId));
+    if (filters.contractorUserId) conditions.push(eq(contractorInvoices.contractorUserId, filters.contractorUserId));
+    if (filters.status) conditions.push(eq(contractorInvoices.status, filters.status));
+    if (filters.reportId) conditions.push(eq(contractorInvoices.reportId, filters.reportId));
+
+    const rows = await db
+      .select({
+        invoice: contractorInvoices,
+        contractor: users,
+        report: expenseReports,
+        approver: usersApproverCI,
+        paidByUser: usersPaidByCI,
+      })
+      .from(contractorInvoices)
+      .innerJoin(users, eq(contractorInvoices.contractorUserId, users.id))
+      .innerJoin(expenseReports, eq(contractorInvoices.reportId, expenseReports.id))
+      .leftJoin(usersApproverCI, eq(contractorInvoices.approvedBy, usersApproverCI.id))
+      .leftJoin(usersPaidByCI, eq(contractorInvoices.paidBy, usersPaidByCI.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(contractorInvoices.submittedAt));
+
+    return rows.map(row => ({
+      ...row.invoice,
+      contractor: row.contractor,
+      report: row.report,
+      approver: row.approver || undefined,
+      paidByUser: row.paidByUser || undefined,
+    }));
+  }
+
+  async getContractorInvoice(id: string): Promise<(ContractorInvoice & { contractor: User; report: ExpenseReport; approver?: User; paidByUser?: User }) | undefined> {
+    const usersApproverCI = alias(users, 'users_approver_ci');
+    const usersPaidByCI = alias(users, 'users_paid_by_ci');
+    const rows = await db
+      .select({
+        invoice: contractorInvoices,
+        contractor: users,
+        report: expenseReports,
+        approver: usersApproverCI,
+        paidByUser: usersPaidByCI,
+      })
+      .from(contractorInvoices)
+      .innerJoin(users, eq(contractorInvoices.contractorUserId, users.id))
+      .innerJoin(expenseReports, eq(contractorInvoices.reportId, expenseReports.id))
+      .leftJoin(usersApproverCI, eq(contractorInvoices.approvedBy, usersApproverCI.id))
+      .leftJoin(usersPaidByCI, eq(contractorInvoices.paidBy, usersPaidByCI.id))
+      .where(eq(contractorInvoices.id, id));
+
+    if (rows.length === 0) return undefined;
+    const row = rows[0];
+    return {
+      ...row.invoice,
+      contractor: row.contractor,
+      report: row.report,
+      approver: row.approver || undefined,
+      paidByUser: row.paidByUser || undefined,
+    };
+  }
+
+  async createContractorInvoice(invoice: InsertContractorInvoice): Promise<ContractorInvoice> {
+    const [created] = await db.insert(contractorInvoices).values(invoice).returning();
+    return created;
+  }
+
+  async approveContractorInvoice(id: string, userId: string): Promise<ContractorInvoice> {
+    const [updated] = await db.update(contractorInvoices)
+      .set({ status: 'approved', approvedBy: userId, approvedAt: new Date(), updatedAt: new Date() })
+      .where(eq(contractorInvoices.id, id))
+      .returning();
+    return updated;
+  }
+
+  async payContractorInvoice(id: string, userId: string, paymentNote?: string): Promise<ContractorInvoice> {
+    const invoice = await db.select().from(contractorInvoices).where(eq(contractorInvoices.id, id)).limit(1);
+    if (invoice.length === 0) throw new Error('Contractor invoice not found');
+    const [updated] = await db.update(contractorInvoices)
+      .set({ status: 'paid', paidBy: userId, paidAt: new Date(), paymentNote: paymentNote || null, updatedAt: new Date() })
+      .where(eq(contractorInvoices.id, id))
+      .returning();
+    // Update the expense report reimbursement status to paid
+    await db.update(expenseReports)
+      .set({ reimbursementStatus: 'paid', updatedAt: new Date() })
+      .where(eq(expenseReports.id, invoice[0].reportId));
+    return updated;
   }
 
   // Change Orders
@@ -11817,9 +11926,15 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(supportTickets.createdAt));
   }
 
-  async getAllSupportTickets(filters?: { status?: string; priority?: string; category?: string; tenantId?: string }): Promise<SupportTicket[]> {
+  async getAllSupportTickets(filters?: { status?: string | string[]; priority?: string; category?: string; tenantId?: string }): Promise<SupportTicket[]> {
     const conditions: SQL[] = [];
-    if (filters?.status) conditions.push(eq(supportTickets.status, filters.status));
+    if (filters?.status) {
+      if (Array.isArray(filters.status)) {
+        conditions.push(inArray(supportTickets.status, filters.status));
+      } else {
+        conditions.push(eq(supportTickets.status, filters.status));
+      }
+    }
     if (filters?.priority) conditions.push(eq(supportTickets.priority, filters.priority));
     if (filters?.category) conditions.push(eq(supportTickets.category, filters.category));
     if (filters?.tenantId) conditions.push(eq(supportTickets.tenantId, filters.tenantId));

@@ -1132,6 +1132,9 @@ export const expenseReports = pgTable("expense_reports", {
   rejectedAt: timestamp("rejected_at"),
   rejectedBy: varchar("rejected_by").references(() => users.id),
   rejectionNote: text("rejection_note"), // Admin's explanation for rejection
+  // Contractor invoice payment path (independent of reimbursement batches)
+  contractorInvoiceId: varchar("contractor_invoice_id"), // FK set after invoice is created (circular dep avoidance)
+  reimbursementStatus: text("reimbursement_status").default("pending"), // pending, paid (when paid via contractor invoice)
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
@@ -1189,6 +1192,39 @@ export const reimbursementLineItems = pgTable("reimbursement_line_items", {
 }, (table) => ({
   batchIdx: index("reimbursement_line_items_batch_idx").on(table.batchId),
   expenseIdx: index("reimbursement_line_items_expense_idx").on(table.expenseId),
+}));
+
+// Contractor Invoices - Formal invoices submitted by contractors for approved expense reports
+export const contractorInvoices = pgTable("contractor_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  reportId: varchar("report_id").notNull().references(() => expenseReports.id, { onDelete: 'cascade' }),
+  invoiceNumber: text("invoice_number").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  currency: text("currency").notNull().default("USD"),
+  contractorUserId: varchar("contractor_user_id").notNull().references(() => users.id),
+  // Bill-to (recipient) fields
+  billToName: text("bill_to_name").notNull(),
+  billToAddress: text("bill_to_address"),
+  billToContact: text("bill_to_contact"),
+  // File storage reference for the PDF
+  pdfFileId: text("pdf_file_id"),
+  pdfFileName: text("pdf_file_name"),
+  // Status lifecycle: submitted -> approved -> paid
+  status: text("status").notNull().default("submitted"), // submitted, approved, paid
+  submittedAt: timestamp("submitted_at").notNull().default(sql`now()`),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  paidAt: timestamp("paid_at"),
+  paidBy: varchar("paid_by").references(() => users.id),
+  paymentNote: text("payment_note"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  reportIdx: index("contractor_invoices_report_idx").on(table.reportId),
+  contractorIdx: index("contractor_invoices_contractor_idx").on(table.contractorUserId),
+  statusIdx: index("contractor_invoices_status_idx").on(table.status),
+  tenantIdx: index("contractor_invoices_tenant_idx").on(table.tenantId),
 }));
 
 // Add unique constraint for project rate overrides
@@ -2035,6 +2071,17 @@ export const insertReimbursementLineItemSchema = createInsertSchema(reimbursemen
   reviewedBy: true,
 });
 
+export const insertContractorInvoiceSchema = createInsertSchema(contractorInvoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  approvedAt: true,
+  approvedBy: true,
+  paidAt: true,
+  paidBy: true,
+  submittedAt: true,
+});
+
 export const insertSowSchema = createInsertSchema(sows).omit({
   id: true,
   createdAt: true,
@@ -2194,6 +2241,9 @@ export type InsertReimbursementBatch = z.infer<typeof insertReimbursementBatchSc
 
 export type ReimbursementLineItem = typeof reimbursementLineItems.$inferSelect;
 export type InsertReimbursementLineItem = z.infer<typeof insertReimbursementLineItemSchema>;
+
+export type ContractorInvoice = typeof contractorInvoices.$inferSelect;
+export type InsertContractorInvoice = z.infer<typeof insertContractorInvoiceSchema>;
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;

@@ -128,9 +128,9 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-raidd"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-raidd"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/projects", "/clients", "/resource-management", "/estimates", "/crm/deals"] },
-  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
+  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/contractor-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
@@ -218,6 +218,7 @@ export function Sidebar() {
               <SidebarItem href="/expense-reports" icon={<FileText />} label="Expense Reports" />
               <SubGroupLabel label="Tracking" />
               <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" />
+              <SidebarItem href="/my-contractor-invoices" icon={<FileText />} label="My Contractor Invoices" />
               <SidebarItem href="/my-raidd" icon={<Shield />} label="My RAIDD" />
             </CollapsibleSection>
             
@@ -263,6 +264,7 @@ export function Sidebar() {
                 <SidebarItem href="/expense-management" icon={<CreditCard />} label="Expense Management" />
                 <SidebarItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" />
                 <SidebarItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursement Batches" />
+                <SidebarItem href="/contractor-invoices" icon={<FileText />} label="Contractor Invoices" />
                 <SubGroupLabel label="Rates" />
                 <SidebarItem href="/rates" icon={<Calculator />} label="Rate Management" />
               </CollapsibleSection>

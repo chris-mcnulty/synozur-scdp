@@ -13544,13 +13544,16 @@ Return a JSON response:
       if (!user) return res.status(401).json({ error: "Authentication required" });
 
       if (isConstellationAdmin(user.role)) {
-        const { status, priority, category, tenantId } = req.query as Record<string, string | undefined>;
+        const { status, priority, category, tenantId, includeInProgress } = req.query as Record<string, string | undefined>;
         const isPlatformRole = user.role === 'global_admin' || user.role === 'constellation_admin';
         const effectiveTenantId = isPlatformRole
           ? (tenantId || user.tenantId || undefined)
           : user.tenantId;
+        const statusFilter = includeInProgress === 'true' && status === 'open'
+          ? ['open', 'in_progress']
+          : (status || undefined);
         const tickets = await storage.getAllSupportTickets({
-          status: status || undefined,
+          status: statusFilter,
           priority: priority || undefined,
           category: category || undefined,
           tenantId: effectiveTenantId,

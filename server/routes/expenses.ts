@@ -1561,6 +1561,14 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         return res.status(403).json({ message: "You can only generate invoices for your own expense reports" });
       }
 
+      // Guard: invoice generation is blocked unless the expense report is approved
+      if (report.status !== 'approved') {
+        return res.status(400).json({ 
+          message: "Invoice generation is only allowed for approved expense reports. Please wait for your expense report to be approved before generating a contractor invoice.",
+          reportStatus: report.status
+        });
+      }
+
       const {
         contractorBusinessName,
         contractorBusinessAddress,
@@ -1578,7 +1586,22 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         return res.status(400).json({ message: "Contractor business name is required" });
       }
 
-      if (!recipientCompanyName) {
+      // Server-side Bill-To fallback: if recipient fields are blank, use tenant defaults
+      let effectiveRecipientCompanyName = recipientCompanyName;
+      let effectiveRecipientAddress = recipientAddress;
+      if (!effectiveRecipientCompanyName) {
+        const tenantId = req.user!.tenantId;
+        if (tenantId) {
+          const tenant = await storage.getTenant(tenantId);
+          if (tenant) {
+            effectiveRecipientCompanyName = tenant.name || '';
+            if (!effectiveRecipientAddress) {
+              effectiveRecipientAddress = tenant.companyAddress || '';
+            }
+          }
+        }
+      }
+      if (!effectiveRecipientCompanyName) {
         return res.status(400).json({ message: "Recipient company name is required" });
       }
 
@@ -1587,19 +1610,38 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         return res.status(400).json({ message: "Expense report has no items" });
       }
 
-      const formattedExpenses = items.map((item: any) => ({
-        date: new Date(item.expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        projectName: item.expense.project?.name || 'N/A',
-        category: item.expense.category.charAt(0).toUpperCase() + item.expense.category.slice(1),
-        description: item.expense.description,
-        amount: parseFloat(item.expense.amount).toFixed(2)
+      // Gather receipt attachment image URLs for embedding in PDF (image attachments only; PDF attachments are not embedded)
+      const formattedExpenses = await Promise.all(items.map(async (item: any) => {
+        const attachments = item.expense.attachments || [];
+        const receiptImages: string[] = [];
+        for (const att of attachments) {
+          try {
+            const fileData = await deps.smartFileStorage.downloadFileDirect(att.filePath, req.user!.tenantId);
+            if (fileData && (fileData.mimeType.startsWith('image/') || fileData.mimeType === 'application/pdf')) {
+              if (fileData.mimeType.startsWith('image/')) {
+                const base64 = fileData.buffer.toString('base64');
+                receiptImages.push(`data:${fileData.mimeType};base64,${base64}`);
+              }
+            }
+          } catch (e) {
+            console.warn('[CONTRACTOR_INVOICE] Could not embed receipt attachment:', att.filePath, e);
+          }
+        }
+        return {
+          date: new Date(item.expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          projectName: item.expense.project?.name || 'N/A',
+          category: item.expense.category.charAt(0).toUpperCase() + item.expense.category.slice(1),
+          description: item.expense.description,
+          amount: parseFloat(item.expense.amount).toFixed(2),
+          receiptImages,
+        };
       }));
 
-      const total = items.reduce((sum, item) => sum + parseFloat(item.expense.amount), 0);
+      const total = items.reduce((sum: number, item: any) => sum + parseFloat(item.expense.amount), 0);
 
-      const dates = items.map(item => new Date(item.expense.date));
-      const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-      const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+      const dates = items.map((item: any) => new Date(item.expense.date));
+      const minDate = new Date(Math.min(...dates.map((d: Date) => d.getTime())));
+      const maxDate = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
       const reportPeriod = `${minDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${maxDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
       const { fileURLToPath } = await import('url');
@@ -1615,16 +1657,17 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       const templateSource = fs.readFileSync(templatePath, 'utf8');
       const template = Handlebars.compile(templateSource);
 
+      const effectiveInvoiceNumber = invoiceNumber || `EXP-${report.reportNumber}`;
       const templateData = {
         contractorBusinessName,
         contractorBusinessAddress,
         contractorBillingId,
         contractorPhone,
         contractorEmail,
-        recipientCompanyName,
-        recipientAddress,
+        recipientCompanyName: effectiveRecipientCompanyName,
+        recipientAddress: effectiveRecipientAddress,
         recipientContact,
-        invoiceNumber: invoiceNumber || `EXP-${report.reportNumber}`,
+        invoiceNumber: effectiveInvoiceNumber,
         invoiceDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         generatedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         paymentTerms,
@@ -1674,10 +1717,45 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
       await browser.close();
 
-      const fileName = `Expense_Invoice_${invoiceNumber || report.reportNumber}.pdf`;
+      // Save the PDF to object storage — fail hard if storage fails
+      const pdfBuf = Buffer.from(pdfBuffer);
+      const fileName = `Expense_Invoice_${effectiveInvoiceNumber}.pdf`;
+
+      const stored = await receiptStorage.storeReceipt(pdfBuf, fileName, 'application/pdf', {
+        documentType: 'receipt',
+        createdByUserId: req.user!.id,
+        metadataVersion: 1,
+      });
+      const pdfFileId = stored.fileId;
+      console.log('[CONTRACTOR_INVOICE] PDF saved to storage:', pdfFileId);
+
+      // Create contractor invoice record — fail hard if DB write fails
+      const invoiceRecord = await storage.createContractorInvoice({
+        tenantId: req.user!.tenantId || null,
+        reportId: report.id,
+        invoiceNumber: effectiveInvoiceNumber,
+        amount: total.toFixed(2),
+        currency: report.currency || 'USD',
+        contractorUserId: req.user!.id,
+        billToName: effectiveRecipientCompanyName,
+        billToAddress: effectiveRecipientAddress || null,
+        billToContact: recipientContact || null,
+        pdfFileId: pdfFileId,
+        pdfFileName: fileName,
+        status: 'submitted',
+        paymentNote: null,
+      });
+      console.log('[CONTRACTOR_INVOICE] Invoice record created:', invoiceRecord.id);
+
+      // Link the expense report to this contractor invoice
+      await storage.updateExpenseReport(report.id, { contractorInvoiceId: invoiceRecord.id });
+
+      // Return the invoice ID in the response header so the frontend can link to it
+      res.setHeader('X-Invoice-Id', invoiceRecord.id);
+
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      res.send(Buffer.from(pdfBuffer));
+      res.send(pdfBuf);
     } catch (error: any) {
       console.error("[CONTRACTOR_INVOICE] Failed to generate PDF:", error);
       res.status(500).json({ message: error.message || "Failed to generate contractor invoice PDF" });
@@ -1693,6 +1771,14 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
       if (report.submitterId !== req.user!.id) {
         return res.status(403).json({ message: "You can only generate invoices for your own expense reports" });
+      }
+
+      // Guard: CSV generation is blocked unless the expense report is approved
+      if (report.status !== 'approved') {
+        return res.status(400).json({ 
+          message: "Invoice generation is only allowed for approved expense reports. Please wait for your expense report to be approved before generating a contractor invoice.",
+          reportStatus: report.status
+        });
       }
 
       const {
@@ -1813,6 +1899,118 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
     } catch (error: any) {
       console.error("[CONTRACTOR_PROFILE] Failed to get contractor profile:", error);
       res.status(500).json({ message: error.message || "Failed to get contractor profile" });
+    }
+  });
+
+  // Tenant bill-to defaults endpoint for contractor invoice dialog
+  app.get("/api/tenant/bill-to-defaults", deps.requireAuth, async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) return res.json({ billToName: '', billToAddress: '' });
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) return res.json({ billToName: '', billToAddress: '' });
+      res.json({
+        billToName: tenant.name || '',
+        billToAddress: tenant.companyAddress || '',
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: 'Failed to fetch tenant bill-to defaults' });
+    }
+  });
+
+  // Contractor Invoices - List (admin/billing-admin scoped)
+  app.get("/api/contractor-invoices", deps.requireAuth, deps.requireRole(['admin', 'billing-admin']), async (req, res) => {
+    try {
+      const { status, reportId } = req.query as Record<string, string>;
+      const tenantId = req.user?.tenantId;
+      const filters: any = {};
+      if (tenantId) filters.tenantId = tenantId;
+      if (status) filters.status = status;
+      if (reportId) filters.reportId = reportId;
+      const invoices = await storage.getContractorInvoices(filters);
+      res.json(invoices);
+    } catch (error: any) {
+      console.error('[CONTRACTOR_INVOICES] Failed to list:', error);
+      res.status(500).json({ message: 'Failed to fetch contractor invoices' });
+    }
+  });
+
+  // Contractor Invoices - Get single (admin/billing-admin or the contractor themselves)
+  app.get("/api/contractor-invoices/:id", deps.requireAuth, async (req, res) => {
+    try {
+      const invoice = await storage.getContractorInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: 'Contractor invoice not found' });
+      const reqTenantId = req.user!.tenantId;
+      // Enforce tenant isolation: deny if tenant IDs don't match.
+      // If the requesting user has a tenantId but the invoice tenantId is null (legacy/orphan),
+      // deny access to prevent cross-tenant data leakage.
+      if (reqTenantId) {
+        if (!invoice.tenantId || invoice.tenantId !== reqTenantId) {
+          return res.status(404).json({ message: 'Contractor invoice not found' });
+        }
+      }
+      const isAdmin = ['admin', 'billing-admin'].includes(req.user!.role);
+      const isOwner = invoice.contractorUserId === req.user!.id;
+      if (!isAdmin && !isOwner) return res.status(403).json({ message: 'Access denied' });
+      res.json(invoice);
+    } catch (error: any) {
+      console.error('[CONTRACTOR_INVOICES] Failed to get:', error);
+      res.status(500).json({ message: 'Failed to fetch contractor invoice' });
+    }
+  });
+
+  // Contractor Invoices - Approve
+  app.patch("/api/contractor-invoices/:id/approve", deps.requireAuth, deps.requireRole(['admin', 'billing-admin']), async (req, res) => {
+    try {
+      const invoice = await storage.getContractorInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: 'Contractor invoice not found' });
+      // Enforce tenant isolation (deny-by-default: null tenantId invoices are inaccessible to tenant users)
+      const reqTenantId = req.user!.tenantId;
+      if (reqTenantId) {
+        if (!invoice.tenantId || invoice.tenantId !== reqTenantId) {
+          return res.status(404).json({ message: 'Contractor invoice not found' });
+        }
+      }
+      if (invoice.status !== 'submitted') return res.status(400).json({ message: 'Invoice must be in submitted status to approve' });
+      const updated = await storage.approveContractorInvoice(req.params.id, req.user!.id);
+      res.json(updated);
+    } catch (error: any) {
+      console.error('[CONTRACTOR_INVOICES] Failed to approve:', error);
+      res.status(500).json({ message: 'Failed to approve contractor invoice' });
+    }
+  });
+
+  // Contractor Invoices - Mark as paid (requires approved status first)
+  app.patch("/api/contractor-invoices/:id/pay", deps.requireAuth, deps.requireRole(['admin', 'billing-admin']), async (req, res) => {
+    try {
+      const invoice = await storage.getContractorInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: 'Contractor invoice not found' });
+      // Enforce tenant isolation (deny-by-default: null tenantId invoices are inaccessible to tenant users)
+      const reqTenantId = req.user!.tenantId;
+      if (reqTenantId) {
+        if (!invoice.tenantId || invoice.tenantId !== reqTenantId) {
+          return res.status(404).json({ message: 'Contractor invoice not found' });
+        }
+      }
+      if (invoice.status === 'paid') return res.status(400).json({ message: 'Invoice is already paid' });
+      if (invoice.status !== 'approved') return res.status(400).json({ message: 'Invoice must be approved before it can be marked as paid' });
+      const { paymentNote } = req.body;
+      const updated = await storage.payContractorInvoice(req.params.id, req.user!.id, paymentNote);
+      res.json(updated);
+    } catch (error: any) {
+      console.error('[CONTRACTOR_INVOICES] Failed to mark paid:', error);
+      res.status(500).json({ message: 'Failed to mark contractor invoice as paid' });
+    }
+  });
+
+  // My contractor invoices (for contractors to view their own)
+  app.get("/api/my-contractor-invoices", deps.requireAuth, async (req, res) => {
+    try {
+      const invoices = await storage.getContractorInvoices({ contractorUserId: req.user!.id });
+      res.json(invoices);
+    } catch (error: any) {
+      console.error('[CONTRACTOR_INVOICES] Failed to list own:', error);
+      res.status(500).json({ message: 'Failed to fetch your contractor invoices' });
     }
   });
 

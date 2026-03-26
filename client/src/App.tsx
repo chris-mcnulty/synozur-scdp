@@ -17,6 +17,8 @@ import ExpenseManagement from "@/pages/expense-management";
 import ExpenseReports from "@/pages/expense-reports";
 import ExpenseApproval from "@/pages/expense-approval";
 import ReimbursementBatches from "@/pages/reimbursement-batches";
+import ContractorInvoices from "@/pages/contractor-invoices";
+import MyContractorInvoices from "@/pages/my-contractor-invoices";
 import Billing from "@/pages/billing";
 import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
@@ -256,6 +258,16 @@ function Router() {
       </Route>
       <Route path="/my-reimbursements">
         {user ? <ReimbursementBatches /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/contractor-invoices">
+        {user ? (
+          <PermissionGuard allowedRoles={['admin', 'billing-admin']}>
+            <ContractorInvoices />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/my-contractor-invoices">
+        {user ? <MyContractorInvoices /> : <Redirect to="/login" />}
       </Route>
       <Route path="/billing">
         {user ? <Billing /> : <Redirect to="/login" />}

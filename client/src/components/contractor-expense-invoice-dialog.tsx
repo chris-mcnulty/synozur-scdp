@@ -6,10 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { FileText, Download, Loader2, Save } from "lucide-react";
+import { FileText, Download, Loader2, Save, AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { apiRequest, getSessionId } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 
 interface ContractorExpenseInvoiceDialogProps {
   open: boolean;
@@ -19,6 +22,7 @@ interface ContractorExpenseInvoiceDialogProps {
   reportTitle: string;
   totalAmount: string;
   currency: string;
+  reportStatus: string;
 }
 
 interface ContractorProfile {
@@ -29,6 +33,11 @@ interface ContractorProfile {
   contractorEmail: string | null;
 }
 
+interface TenantBillToDefaults {
+  billToName: string;
+  billToAddress: string;
+}
+
 export function ContractorExpenseInvoiceDialog({
   open,
   onOpenChange,
@@ -36,28 +45,38 @@ export function ContractorExpenseInvoiceDialog({
   reportNumber,
   reportTitle,
   totalAmount,
-  currency
+  currency,
+  reportStatus,
 }: ContractorExpenseInvoiceDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const [contractorBusinessName, setContractorBusinessName] = useState("");
   const [contractorBusinessAddress, setContractorBusinessAddress] = useState("");
   const [contractorBillingId, setContractorBillingId] = useState("");
   const [contractorPhone, setContractorPhone] = useState("");
   const [contractorEmail, setContractorEmail] = useState("");
-  const [recipientCompanyName, setRecipientCompanyName] = useState("SYNOZUR");
+  const [recipientCompanyName, setRecipientCompanyName] = useState("");
   const [recipientAddress, setRecipientAddress] = useState("");
   const [recipientContact, setRecipientContact] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("Due upon client reimbursement");
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isGeneratingCsv, setIsGeneratingCsv] = useState(false);
+  const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null);
+
+  const isApproved = reportStatus === 'approved';
 
   const { data: contractorProfile } = useQuery<ContractorProfile>({
     queryKey: ["/api/users", user?.id, "contractor-profile"],
     enabled: !!user?.id && open,
+  });
+
+  const { data: tenantBillToDefaults } = useQuery<TenantBillToDefaults>({
+    queryKey: ["/api/tenant/bill-to-defaults"],
+    enabled: open,
   });
 
   useEffect(() => {
@@ -73,8 +92,16 @@ export function ContractorExpenseInvoiceDialog({
   }, [contractorProfile, user]);
 
   useEffect(() => {
+    if (tenantBillToDefaults && !recipientCompanyName) {
+      setRecipientCompanyName(tenantBillToDefaults.billToName || "");
+      setRecipientAddress(tenantBillToDefaults.billToAddress || "");
+    }
+  }, [tenantBillToDefaults]);
+
+  useEffect(() => {
     if (open && reportNumber) {
       setInvoiceNumber(`EXP-${reportNumber}`);
+      setSavedInvoiceId(null);
     }
   }, [open, reportNumber]);
 
@@ -146,6 +173,14 @@ export function ContractorExpenseInvoiceDialog({
         throw new Error(error.message || "Failed to generate PDF");
       }
 
+      // Capture the saved invoice ID from the response header
+      const invoiceId = response.headers.get('X-Invoice-Id');
+      if (!invoiceId) {
+        // If no invoice ID is returned, the backend did not create a record — treat as failure
+        throw new Error("Invoice was not saved. The server did not return an invoice record ID. Please try again.");
+      }
+      setSavedInvoiceId(invoiceId);
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -157,9 +192,12 @@ export function ContractorExpenseInvoiceDialog({
       document.body.removeChild(a);
 
       toast({
-        title: "PDF Generated",
-        description: "Your expense invoice PDF has been downloaded.",
+        title: "Invoice Generated & Saved",
+        description: "Your expense invoice PDF has been downloaded and saved to your contractor invoices record.",
       });
+
+      queryClient.invalidateQueries({ queryKey: ["/api/my-contractor-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contractor-invoices"] });
     } catch (error: any) {
       toast({
         title: "Error",
@@ -244,7 +282,36 @@ export function ContractorExpenseInvoiceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        {!isApproved && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Invoice generation is currently blocked.</strong> This expense report has not been approved yet (current status: <Badge variant="outline" className="ml-1 capitalize">{reportStatus}</Badge>). Invoice generation is only allowed for approved expense reports. Please wait for an admin to approve your report before generating a contractor invoice.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {savedInvoiceId && (
+          <Alert className="mb-4 border-green-200 bg-green-50 dark:bg-green-950 dark:border-green-800">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-800 dark:text-green-200">
+              <strong>Invoice saved successfully.</strong> Your invoice has been recorded and is now awaiting admin review.
+              <Button
+                variant="link"
+                size="sm"
+                className="ml-2 p-0 h-auto text-green-700 dark:text-green-300"
+                onClick={() => {
+                  onOpenChange(false);
+                  setLocation('/my-contractor-invoices');
+                }}
+              >
+                View invoice record <ExternalLink className="h-3 w-3 ml-1" />
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className={`space-y-6 py-4 ${!isApproved ? 'opacity-50 pointer-events-none' : ''}`}>
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Your Business Information (Sender)</h3>
             
@@ -335,7 +402,7 @@ export function ContractorExpenseInvoiceDialog({
                   id="recipientCompanyName"
                   value={recipientCompanyName}
                   onChange={(e) => setRecipientCompanyName(e.target.value)}
-                  placeholder="SYNOZUR"
+                  placeholder="Organization name"
                   data-testid="input-recipient-company"
                 />
               </div>
@@ -409,7 +476,7 @@ export function ContractorExpenseInvoiceDialog({
             type="button"
             variant="secondary"
             onClick={handleGenerateCsv}
-            disabled={isGeneratingCsv || !contractorBusinessName || !recipientCompanyName}
+            disabled={isGeneratingCsv || !contractorBusinessName || !recipientCompanyName || !isApproved}
             data-testid="button-generate-csv"
           >
             {isGeneratingCsv ? (
@@ -422,7 +489,7 @@ export function ContractorExpenseInvoiceDialog({
           <Button
             type="button"
             onClick={handleGeneratePdf}
-            disabled={isGeneratingPdf || !contractorBusinessName || !recipientCompanyName}
+            disabled={isGeneratingPdf || !contractorBusinessName || !recipientCompanyName || !isApproved}
             data-testid="button-generate-pdf"
           >
             {isGeneratingPdf ? (
@@ -430,7 +497,7 @@ export function ContractorExpenseInvoiceDialog({
             ) : (
               <FileText className="mr-2 h-4 w-4" />
             )}
-            Download PDF
+            {savedInvoiceId ? "Download Again" : "Generate & Download PDF"}
           </Button>
         </DialogFooter>
       </DialogContent>

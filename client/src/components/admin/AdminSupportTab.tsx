@@ -142,7 +142,7 @@ export function AdminSupportTab() {
   const { toast } = useToast();
   const tenantId = user?.primaryTenantId || (user as any)?.tenantId;
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("pending");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showPlannerDialog, setShowPlannerDialog] = useState(false);
@@ -195,13 +195,22 @@ export function AdminSupportTab() {
     },
   });
 
-  const filters: Record<string, string> = {};
-  if (statusFilter !== "all") filters.status = statusFilter;
-  if (priorityFilter !== "all") filters.priority = priorityFilter;
-  if (categoryFilter !== "all") filters.category = categoryFilter;
+  const queryParams = new URLSearchParams();
+  if (statusFilter === "pending") {
+    queryParams.set("status", "open");
+    queryParams.set("includeInProgress", "true");
+  } else if (statusFilter !== "all") {
+    queryParams.set("status", statusFilter);
+  }
+  if (priorityFilter !== "all") queryParams.set("priority", priorityFilter);
+  if (categoryFilter !== "all") queryParams.set("category", categoryFilter);
+  const ticketQueryString = queryParams.toString();
+  const ticketUrl = ticketQueryString
+    ? `/api/support/tickets?${ticketQueryString}`
+    : "/api/support/tickets";
 
   const { data: tickets, isLoading } = useQuery<TicketListItem[]>({
-    queryKey: ["/api/support/tickets", filters],
+    queryKey: [ticketUrl],
   });
 
   const openCount = tickets?.filter((t) => t.status === "open").length ?? 0;
@@ -402,10 +411,11 @@ export function AdminSupportTab() {
               <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger data-testid="trigger-status-filter">
-                  <SelectValue placeholder="All" />
+                  <SelectValue placeholder="Pending" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="pending">Pending (Open & In Progress)</SelectItem>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="open">Open</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="resolved">Resolved</SelectItem>

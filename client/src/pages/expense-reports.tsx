@@ -1072,6 +1072,7 @@ export default function ExpenseReports() {
             reportTitle={selectedReport.title}
             totalAmount={selectedReport.totalAmount || '0'}
             currency={selectedReport.currency}
+            reportStatus={selectedReport.status}
           />
         )}
       </div>

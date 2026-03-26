@@ -225,6 +225,33 @@
       color: #0c4a6e;
     }
 
+    .receipts-section {
+      margin-top: 40px;
+      page-break-before: always;
+    }
+
+    .receipt-item {
+      margin-bottom: 30px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 15px;
+      page-break-inside: avoid;
+    }
+
+    .receipt-item-header {
+      font-size: 11px;
+      font-weight: bold;
+      color: #374151;
+      margin-bottom: 10px;
+    }
+
+    .receipt-image {
+      max-width: 100%;
+      max-height: 600px;
+      object-fit: contain;
+      display: block;
+    }
+
     @media print {
       body {
         print-color-adjust: exact;
@@ -351,6 +378,20 @@
       <p>Thank you for your business.</p>
       <p style="margin-top: 10px;">{{paymentTerms}}</p>
     </div>
+
+    <!-- Receipt Attachments -->
+    {{#each expenses}}
+    {{#if this.receiptImages.length}}
+    <div class="receipts-section">
+      <div class="section-title" style="margin-bottom: 15px;">Receipt Attachments — {{this.date}} — {{this.category}}: {{this.description}}</div>
+      {{#each this.receiptImages}}
+      <div class="receipt-item">
+        <img class="receipt-image" src="{{this}}" alt="Receipt" />
+      </div>
+      {{/each}}
+    </div>
+    {{/if}}
+    {{/each}}
   </div>
 </body>
 </html>
