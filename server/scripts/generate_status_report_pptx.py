@@ -1737,15 +1737,19 @@ def _inject_placeholder_text(cSld_el, inject_texts, P, A):
             if first_run is not None:
                 first_rPr = first_run.find(f'{{{A}}}rPr')
 
-        # Remove all existing paragraphs and replace with a single clean one
+        # Support either a plain string or a list of strings (one paragraph each)
+        lines = [new_text] if isinstance(new_text, str) else [l for l in new_text if l]
+
+        # Remove all existing paragraphs and replace with one paragraph per line
         for p_el in txBody.findall(f'{{{A}}}p'):
             txBody.remove(p_el)
-        new_p = _etree.SubElement(txBody, f'{{{A}}}p')
-        new_r = _etree.SubElement(new_p, f'{{{A}}}r')
-        if first_rPr is not None:
-            new_r.insert(0, copy.deepcopy(first_rPr))
-        new_t = _etree.SubElement(new_r, f'{{{A}}}t')
-        new_t.text = new_text
+        for line in lines:
+            new_p = _etree.SubElement(txBody, f'{{{A}}}p')
+            new_r = _etree.SubElement(new_p, f'{{{A}}}r')
+            if first_rPr is not None:
+                new_r.insert(0, copy.deepcopy(first_rPr))
+            new_t = _etree.SubElement(new_r, f'{{{A}}}t')
+            new_t.text = line
 
 
 def _strip_placeholder_tags(cSld_el, P):
@@ -1961,16 +1965,19 @@ def generate_pptx(data, output_path):
 
     section_cache = {}
 
-    # Build title slide text from report data
+    # Build title slide text from report data (mirrors what create_title_slide shows)
     period_start = data.get('periodStart', '')
     period_end   = data.get('periodEnd',   '')
     report_date  = data.get('reportDate',  datetime.now().strftime('%B %d, %Y'))
-    period_label = f"{period_start} – {period_end}" if period_start and period_end else report_date
+    period_label = (f"Period: {period_start} to {period_end}"
+                    if period_start and period_end else report_date)
     client_name  = data.get('clientName', '')
-    subtitle_parts = [p for p in [client_name, period_label] if p]
+    pm_name      = data.get('pmName', '')
+    pm_line      = f"Project Manager: {pm_name}" if pm_name else ''
+    subtitle_lines = [l for l in [client_name, period_label, pm_line] if l]
     title_inject = {
         'title':    data.get('projectName', 'Status Report'),
-        'subtitle': '  •  '.join(subtitle_parts),
+        'subtitle': subtitle_lines,
     }
 
     # Title slide: use template if provided, otherwise generate programmatically
