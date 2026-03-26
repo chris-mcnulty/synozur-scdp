@@ -55,9 +55,23 @@ function OutlookIcon({ className = "h-7 w-7" }: { className?: string }) {
   );
 }
 
+// ── Copilot Studio icon ────────────────────────────────────────────────────
+
+function CopilotStudioIcon({ className = "h-7 w-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="3" y="5" width="18" height="13" rx="3" fill="#7719AA" />
+      <circle cx="8.5" cy="11.5" r="1.5" fill="white" />
+      <circle cx="15.5" cy="11.5" r="1.5" fill="white" />
+      <path d="M9 14.5c0.8 0.8 2.2 1 3 1s2.2-0.2 3-1" stroke="white" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+      <path d="M9 3 L12 5 L15 3" stroke="#7719AA" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}
+
 // ── Node color / brand config ──────────────────────────────────────────────
 
-type ServiceKey = "constellation" | "entra" | "sharepoint" | "teams" | "planner" | "outlook";
+type ServiceKey = "constellation" | "entra" | "sharepoint" | "teams" | "planner" | "outlook" | "copilot";
 
 interface ServiceConfig {
   bg: string;
@@ -108,6 +122,13 @@ const SERVICE_CONFIG: Record<ServiceKey, ServiceConfig> = {
     text: "text-white",
     dot: "#0063B1",
     edge: "#0063B1",
+  },
+  copilot: {
+    bg: "bg-[#7719AA]",
+    border: "border-[#7719AA]",
+    text: "text-white",
+    dot: "#7719AA",
+    edge: "#7719AA",
   },
 };
 
@@ -277,6 +298,19 @@ const initialNodes: DiagramNode[] = [
       description: "Constellation sends outbound email notifications through Outlook including expense reminders, time-entry alerts, invoice delivery, and approval workflow messages.",
     },
   },
+  {
+    id: "copilot",
+    type: "service",
+    position: { x: 720, y: 230 },
+    data: {
+      service: "copilot",
+      label: "Copilot Studio",
+      sublabel: "AI Agent",
+      icon: <CopilotStudioIcon className="h-8 w-8" />,
+      tooltipSide: "right",
+      description: "A Microsoft Copilot Studio agent connects to Constellation via the Model Context Protocol (MCP) server. The agent can query project data, retrieve RAIDD logs, check timesheets, and surface insights — all through natural language within Microsoft 365 Copilot.",
+    },
+  },
 ];
 
 // ── Edge label component ───────────────────────────────────────────────────
@@ -350,6 +384,18 @@ const initialEdges: Edge[] = [
     labelBgStyle: { fill: "transparent" },
     markerEnd: { type: MarkerType.ArrowClosed, color: SERVICE_CONFIG.outlook.edge },
     style: { stroke: SERVICE_CONFIG.outlook.edge, strokeWidth: 2 },
+    type: "default",
+  },
+  {
+    id: "cst-copilot",
+    source: "constellation",
+    target: "copilot",
+    animated: true,
+    label: edgeLabel(["MCP Server", "Model Context Protocol", "Natural language queries"]),
+    labelBgStyle: { fill: "transparent" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: SERVICE_CONFIG.copilot.edge },
+    markerStart: { type: MarkerType.ArrowClosed, color: SERVICE_CONFIG.copilot.edge },
+    style: { stroke: SERVICE_CONFIG.copilot.edge, strokeWidth: 2, strokeDasharray: "6 3" },
     type: "default",
   },
 ];
@@ -443,6 +489,10 @@ export default function M365IntegrationDiagram() {
                 <LegendRow color={SERVICE_CONFIG.teams.edge ?? ""} label="Teams ← provisioning" direction="out" />
                 <LegendRow color={SERVICE_CONFIG.planner.edge ?? ""} label="Planner ↔ task sync" direction="both" />
                 <LegendRow color={SERVICE_CONFIG.outlook.edge ?? ""} label="Outlook ← notifications" direction="out" />
+                <div className="pt-1 border-t border-border">
+                  <LegendRow color={SERVICE_CONFIG.copilot.edge ?? ""} label="Copilot Studio ↔ MCP Server" direction="both" />
+                  <p className="text-[9px] text-muted-foreground pl-8 mt-0.5 leading-tight">Dashed = MCP protocol</p>
+                </div>
               </CardContent>
             </Card>
 
@@ -476,6 +526,11 @@ export default function M365IntegrationDiagram() {
                     label: "Outlook",
                     color: SERVICE_CONFIG.outlook.dot,
                     flows: ["Expense reminders", "Time alerts", "Invoice delivery"],
+                  },
+                  {
+                    label: "Copilot Studio",
+                    color: SERVICE_CONFIG.copilot.dot,
+                    flows: ["MCP Server", "Natural language", "Project queries"],
                   },
                 ].map((svc) => (
                   <div key={svc.label} className="space-y-1">
