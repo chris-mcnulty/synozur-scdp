@@ -493,6 +493,18 @@ Generate a complete hierarchical estimate structure with epics, stages, and line
         },
       };
 
+      let weekCounter = 1;
+      for (const epic of structure.epics) {
+        for (const stage of epic.stages) {
+          for (const li of stage.lineItems) {
+            if (li.weekStart == null) {
+              li.weekStart = weekCounter;
+            }
+            weekCounter++;
+          }
+        }
+      }
+
       let totalHours = 0;
       let totalFees = 0;
       let totalCost = 0;

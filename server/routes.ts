@@ -11944,6 +11944,7 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
               marginPercent: String(marginPercent),
               comments: liData.notes || null,
               sortOrder: 0,
+              week: liData.weekStart != null ? liData.weekStart : null,
             } as any);
           }
         }
