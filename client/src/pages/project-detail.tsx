@@ -278,13 +278,17 @@ function TeamsChannelPanel({
   clientTeamId,
   clientId,
   projectName,
+  projectTenantId,
 }: {
   projectId: string;
   clientTeamId?: string | null;
   clientId?: string | null;
   projectName?: string;
+  projectTenantId?: string | null;
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isCrossTenant = !!(projectTenantId && user?.primaryTenantId && projectTenantId !== user.primaryTenantId);
   const [showSetup, setShowSetup] = useState(false);
   const [channelName, setChannelName] = useState(projectName || "");
   const [teamPickMode, setTeamPickMode] = useState<"existing" | "create">("existing");
@@ -385,7 +389,13 @@ function TeamsChannelPanel({
           <CardDescription>No Teams channel is linked to this project yet.</CardDescription>
         </CardHeader>
         <CardContent>
-          {!showSetup ? (
+          {isCrossTenant ? (
+            <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                You are currently working outside your default tenant. Teams channel setup is only available when accessing this project from within your home tenant.
+              </p>
+            </div>
+          ) : !showSetup ? (
             <Button variant="outline" size="sm" onClick={() => setShowSetup(true)}>
               <Plus className="h-4 w-4 mr-1" />
               Set Up Teams Channel
@@ -3261,6 +3271,7 @@ export default function ProjectDetail() {
               clientTeamId={analytics?.project?.client?.microsoftTeamId}
               clientId={analytics?.project?.clientId}
               projectName={analytics?.project?.name}
+              projectTenantId={analytics?.project?.tenantId}
             />
             
             <Card>
