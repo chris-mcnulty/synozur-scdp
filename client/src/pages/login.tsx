@@ -54,16 +54,29 @@ export default function Login() {
       localStorage.setItem('sessionId', sessionId);
       window.location.href = "/";
     } else if (error) {
+      let errorTitle = "SSO Login Failed";
       let errorMessage = error.replace(/_/g, ' ');
+
       if (error === 'redirect_uri_mismatch') {
         errorMessage = 'Redirect URI mismatch. Please check Azure AD configuration.';
       } else if (error === 'invalid_client_credentials') {
         errorMessage = 'Invalid client credentials. Please check your Azure AD secret.';
       } else if (error === 'invalid_authorization_code') {
         errorMessage = 'Invalid or expired authorization code. Please try again.';
+      } else if (error === 'invite_only') {
+        const tenantName = params.get('tenant_name') || 'your organization';
+        errorTitle = "Access Restricted";
+        errorMessage = `${tenantName} requires an invitation to join. Please contact your administrator to request access.`;
+      } else if (error === 'domain_blocked') {
+        errorTitle = "Domain Not Permitted";
+        errorMessage = 'Your email domain is not permitted to access this application. Please contact your administrator.';
+      } else if (error === 'user_not_found') {
+        errorTitle = "Account Not Found";
+        errorMessage = 'Your account was not found. Please contact your administrator to be added.';
       }
+
       toast({
-        title: "SSO Login Failed",
+        title: errorTitle,
         description: errorMessage,
         variant: "destructive",
       });

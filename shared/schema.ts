@@ -241,6 +241,9 @@ export const users = pgTable("users", {
   primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id), // User's primary/home tenant
   platformRole: varchar("platform_role", { length: 50 }).default("user"), // user, constellation_consultant, constellation_admin, global_admin
   lastDismissedChangelogVersion: varchar("last_dismissed_changelog_version", { length: 50 }),
+  // SSO / Entra identity linking
+  authProvider: varchar("auth_provider", { length: 50 }), // 'local' | 'entra'
+  azureObjectId: varchar("azure_object_id", { length: 255 }), // Entra object ID (localAccountId)
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

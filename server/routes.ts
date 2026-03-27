@@ -4,7 +4,8 @@ import * as osNode from "os";
 import { execSync } from "child_process";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels, projectBaselines } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels, projectBaselines, servicePlans, blockedDomains } from "@shared/schema";
+import { isPublicEmailDomain } from "@shared/publicDomains";
 import { eq, sql, inArray, max, and, gte, lte, isNull, desc, or } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -11396,6 +11397,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
       const userEmail = tokenResponse.account.username;
       const azureAdTenantId = tokenResponse.account.tenantId;
+      const azureAdObjectId = tokenResponse.account.localAccountId;
       console.log("[SSO-CALLBACK] Token exchange successful for user:", userEmail);
       console.log("[SSO-CALLBACK] Token details:", {
         hasAccessToken: !!tokenResponse.accessToken,
@@ -11406,31 +11408,168 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       });
 
       // Look up user in database by email (case-insensitive)
-      const [dbUser] = await db.select()
+      const [foundUser] = await db.select()
         .from(users)
         .where(sql`LOWER(${users.email}) = LOWER(${userEmail})`);
 
-      if (!dbUser) {
-        console.error("[SSO-CALLBACK] User not found in database:", userEmail);
-        return res.redirect("/?error=user_not_found");
-      }
+      let activeUser = foundUser;
 
-      console.log("[SSO-CALLBACK] Found user in database:", {
-        id: dbUser.id,
-        email: dbUser.email,
-        role: dbUser.role
-      });
+      if (!activeUser) {
+        // ── JIT provisioning (Vega pattern) ─────────────────────────────────
+        console.log("[SSO-CALLBACK] User not found, starting JIT provisioning for:", userEmail);
+        const emailDomain = userEmail.split('@')[1]?.toLowerCase();
+        if (!emailDomain) return res.redirect("/?error=invalid_email");
 
-      if (azureAdTenantId && dbUser.primaryTenantId) {
-        const [userTenant] = await db.select()
-          .from(tenants)
-          .where(eq(tenants.id, dbUser.primaryTenantId))
-          .limit(1);
-        if (userTenant && !userTenant.azureTenantId) {
-          await db.update(tenants)
-            .set({ azureTenantId: azureAdTenantId })
-            .where(eq(tenants.id, userTenant.id));
-          console.log(`[SSO-CALLBACK] Auto-populated azureTenantId=${azureAdTenantId} for tenant ${userTenant.slug}`);
+        // Find matching tenant: Azure tenant ID first, then email domain
+        const allTenants = await db.select().from(tenants);
+        let matchingTenant = allTenants.find(t => t.azureTenantId === azureAdTenantId) ?? null;
+        const isPublicDomain = isPublicEmailDomain(userEmail);
+        if (!matchingTenant && !isPublicDomain) {
+          matchingTenant = allTenants.find(t => {
+            const domains = (t.allowedDomains as string[] | null) ?? [];
+            return domains.includes(emailDomain);
+          }) ?? null;
+        }
+
+        let isNewTenant = false;
+        let newUserRole = 'employee';
+
+        if (!matchingTenant) {
+          // Check domain block list
+          const [blocked] = await db.select().from(blockedDomains)
+            .where(eq(blockedDomains.domain, emailDomain));
+          if (blocked) {
+            console.log(`[SSO-CALLBACK] Domain ${emailDomain} is blocked`);
+            return res.redirect("/?error=domain_blocked");
+          }
+
+          // Resolve default service plan
+          const [defaultPlan] = await db.select().from(servicePlans)
+            .where(and(eq(servicePlans.isDefault, true), eq(servicePlans.isActive, true)));
+          const planId = defaultPlan?.id ?? null;
+          const now = new Date();
+          const planExpiresAt = defaultPlan?.trialDurationDays
+            ? new Date(now.getTime() + defaultPlan.trialDurationDays * 24 * 60 * 60 * 1000)
+            : null;
+
+          const { randomUUID } = await import('crypto');
+
+          if (isPublicDomain) {
+            // Personal tenant — invite-only, no domain/Azure tenant claim
+            const userName = userEmail.split('@')[0];
+            const slug = `user-${randomUUID().substring(0, 8)}`;
+            const [newTenant] = await db.insert(tenants).values({
+              name: `${userName}'s Organization`,
+              slug,
+              allowedDomains: [],
+              selfServiceSignup: true,
+              signupCompletedAt: now,
+              servicePlanId: planId,
+              planStartedAt: now,
+              planExpiresAt,
+              planStatus: planExpiresAt ? 'trial' : 'active',
+              inviteOnly: true,
+              azureTenantId: null,
+              allowLocalAuth: false,
+            }).returning();
+            matchingTenant = newTenant;
+            console.log(`[SSO-CALLBACK] Created invite-only tenant for public-domain user: ${newTenant.id}`);
+          } else {
+            // Business tenant — claims the domain and links Azure tenant
+            const companyName = emailDomain.split('.')[0];
+            const capName = companyName.charAt(0).toUpperCase() + companyName.slice(1);
+            let slug = emailDomain.replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+            const [existingSlug] = await db.select().from(tenants).where(eq(tenants.slug, slug));
+            if (existingSlug) slug = `${slug}-${randomUUID().substring(0, 6)}`;
+            const [newTenant] = await db.insert(tenants).values({
+              name: `${capName} (${emailDomain})`,
+              slug,
+              allowedDomains: [emailDomain],
+              selfServiceSignup: true,
+              signupCompletedAt: now,
+              servicePlanId: planId,
+              planStartedAt: now,
+              planExpiresAt,
+              planStatus: planExpiresAt ? 'trial' : 'active',
+              inviteOnly: false,
+              azureTenantId: azureAdTenantId ?? null,
+              allowLocalAuth: false,
+            }).returning();
+            matchingTenant = newTenant;
+            console.log(`[SSO-CALLBACK] Created SSO tenant for ${emailDomain}: ${newTenant.id}`);
+          }
+
+          isNewTenant = true;
+          newUserRole = 'admin'; // First user in a new tenant is admin
+
+          // HubSpot CRM notification (non-blocking stub — extend when deal ID is available)
+          try {
+            const hubConnected = await isHubSpotConnected(matchingTenant.id);
+            if (hubConnected) {
+              console.log(`[SSO-JIT] HubSpot connected for new tenant ${matchingTenant.id}; deal creation deferred.`);
+            }
+          } catch { /* non-critical */ }
+
+        } else {
+          // Tenant found — enforce invite-only policy
+          if (matchingTenant.inviteOnly === true) {
+            console.log(`[SSO-CALLBACK] Tenant ${matchingTenant.name} is invite-only, blocking auto-join for ${userEmail}`);
+            const tenantNameEncoded = encodeURIComponent(matchingTenant.name);
+            return res.redirect(`/?error=invite_only&tenant_name=${tenantNameEncoded}`);
+          }
+          console.log(`[SSO-CALLBACK] Found tenant ${matchingTenant.name}, allowing JIT auto-join`);
+        }
+
+        // Infer display name from email local-part (e.g. john.smith → John Smith)
+        const localPart = userEmail.split('@')[0];
+        const nameParts = localPart.split(/[._-]/);
+        const inferredName = nameParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+        const initials = nameParts.map(p => p[0]?.toUpperCase() ?? '').join('').substring(0, 2) || 'U';
+
+        const [newUser] = await db.insert(users).values({
+          email: userEmail.toLowerCase(),
+          name: inferredName,
+          initials,
+          role: newUserRole,
+          canLogin: true,
+          isAssignable: true,
+          isActive: true,
+          primaryTenantId: matchingTenant.id,
+          platformRole: 'user',
+          authProvider: 'entra',
+          azureObjectId: azureAdObjectId ?? null,
+        }).returning();
+
+        await db.insert(tenantUsers).values({
+          userId: newUser.id,
+          tenantId: matchingTenant.id,
+          role: newUserRole,
+          status: 'active',
+          joinedAt: new Date(),
+        });
+
+        activeUser = newUser;
+        console.log(`[SSO-CALLBACK] JIT provisioned ${userEmail} → tenant ${matchingTenant.id} (${isNewTenant ? 'new tenant' : 'existing tenant'}), role: ${newUserRole}`);
+
+      } else {
+        // Existing user — back-fill Azure linkage and auto-populate azureTenantId on tenant
+        console.log("[SSO-CALLBACK] Found existing user:", { id: activeUser.id, email: activeUser.email, role: activeUser.role });
+
+        if (azureAdObjectId && !activeUser.azureObjectId) {
+          await db.update(users)
+            .set({ azureObjectId: azureAdObjectId, authProvider: 'entra' })
+            .where(eq(users.id, activeUser.id));
+        }
+
+        if (azureAdTenantId && activeUser.primaryTenantId) {
+          const [userTenant] = await db.select().from(tenants)
+            .where(eq(tenants.id, activeUser.primaryTenantId)).limit(1);
+          if (userTenant && !userTenant.azureTenantId) {
+            await db.update(tenants)
+              .set({ azureTenantId: azureAdTenantId })
+              .where(eq(tenants.id, userTenant.id));
+            console.log(`[SSO-CALLBACK] Auto-populated azureTenantId=${azureAdTenantId} for tenant ${userTenant.slug}`);
+          }
         }
       }
 
@@ -11472,10 +11611,10 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       });
       
       await createSession(sessionId, {
-        id: dbUser.id,
-        email: dbUser.email,
-        name: dbUser.name,
-        role: dbUser.role,
+        id: activeUser.id,
+        email: activeUser.email,
+        name: activeUser.name,
+        role: activeUser.role,
         ipAddress: req.ip,
         userAgent: req.headers['user-agent']
       }, ssoData);
