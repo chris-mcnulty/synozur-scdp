@@ -12167,6 +12167,8 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         allExpenses,
         allMilestones,
         allUsers,
+        periodInvoiceBatches,
+        periodInvoiceLines,
       ] = await Promise.all([
         aggregateActivityData(tenantId, startDate, endDate),
         db.select().from(projects).where(eq(projects.tenantId, tenantId)),
@@ -12183,6 +12185,26 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
           )
         ),
         db.select().from(users).where(eq(users.primaryTenantId, tenantId)),
+        db.select().from(invoiceBatches).where(
+          and(
+            eq(invoiceBatches.tenantId, tenantId),
+            eq(invoiceBatches.status, "finalized"),
+            lte(invoiceBatches.startDate, endDate),
+            gte(invoiceBatches.endDate, startDate),
+          )
+        ),
+        db.select().from(invoiceLines).where(
+          inArray(invoiceLines.batchId,
+            db.select({ batchId: invoiceBatches.batchId }).from(invoiceBatches).where(
+              and(
+                eq(invoiceBatches.tenantId, tenantId),
+                eq(invoiceBatches.status, "finalized"),
+                lte(invoiceBatches.startDate, endDate),
+                gte(invoiceBatches.endDate, startDate),
+              )
+            )
+          )
+        ),
       ]);
 
       // Lookup maps
@@ -12195,28 +12217,46 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       // ── Time entry aggregation ─────────────────────────────────────────
       const totalHours = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0), 0);
       const billableHours = allTimeEntries.filter(t => t.billable).reduce((s, t) => s + Number(t.hours || 0), 0);
-      const totalRevenue = allTimeEntries.filter(t => t.billable).reduce((s, t) => s + Number(t.hours || 0) * Number(t.billingRate || 0), 0);
       const totalCost = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0) * Number(t.costRate || 0), 0);
 
-      const hoursByProject = new Map<string, { name: string; client: string; hours: number; billable: number; revenue: number }>();
+      // ── Revenue from finalized invoices (fixed-outcome billing) ────────
+      const totalRevenue = periodInvoiceBatches.reduce((s, b) => s + Number(b.totalAmount || 0), 0);
+
+      // Per-project invoiced revenue from invoice lines
+      const revenueByProject = new Map<string, number>();
+      for (const line of periodInvoiceLines) {
+        revenueByProject.set(line.projectId, (revenueByProject.get(line.projectId) || 0) + Number(line.amount || 0));
+      }
+
+      const hoursByProject = new Map<string, { name: string; client: string; hours: number; billable: number; invoicedRevenue: number }>();
       for (const te of allTimeEntries) {
         const proj = projectMap.get(te.projectId);
         const key = te.projectId;
         const existing = hoursByProject.get(key) || {
           name: proj?.name || "Unknown",
           client: clientMap.get(proj?.clientId || "") || "Unknown",
-          hours: 0, billable: 0, revenue: 0
+          hours: 0, billable: 0, invoicedRevenue: 0
         };
         existing.hours += Number(te.hours || 0);
         if (te.billable) {
           existing.billable += Number(te.hours || 0);
-          existing.revenue += Number(te.hours || 0) * Number(te.billingRate || 0);
         }
         hoursByProject.set(key, existing);
       }
+      // Merge in invoiced revenue per project
+      for (const [projId, rev] of revenueByProject) {
+        const proj = projectMap.get(projId);
+        const existing = hoursByProject.get(projId) || {
+          name: proj?.name || "Unknown",
+          client: clientMap.get(proj?.clientId || "") || "Unknown",
+          hours: 0, billable: 0, invoicedRevenue: 0
+        };
+        existing.invoicedRevenue += rev;
+        hoursByProject.set(projId, existing);
+      }
       const projectHoursSummary = Array.from(hoursByProject.values())
-        .sort((a, b) => b.hours - a.hours)
-        .map(p => `- ${p.client} / ${p.name}: ${p.hours.toFixed(1)} total hrs (${p.billable.toFixed(1)} billable), $${p.revenue.toFixed(0)} revenue`)
+        .sort((a, b) => b.invoicedRevenue - a.invoicedRevenue || b.hours - a.hours)
+        .map(p => `- ${p.client} / ${p.name}: ${p.hours.toFixed(1)} total hrs (${p.billable.toFixed(1)} billable)${p.invoicedRevenue > 0 ? `, $${p.invoicedRevenue.toFixed(0)} invoiced` : ''}`)
         .join("\n") || "No time entries recorded.";
 
       const hoursByPerson = new Map<string, { name: string; hours: number }>();
@@ -12319,13 +12359,14 @@ FINANCIAL PERFORMANCE (${startDate} to ${endDate})
 ===================================================
 Total Hours Logged: ${totalHours.toFixed(1)}
 Billable Hours: ${billableHours.toFixed(1)} (${totalHours > 0 ? ((billableHours / totalHours) * 100).toFixed(0) : 0}% utilization)
-Revenue (billed at rate): $${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+Invoiced Revenue (finalized invoices): $${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+Finalized Invoices: ${periodInvoiceBatches.length}
 Internal Cost: $${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 Gross Margin: ${totalRevenue > 0 ? (((totalRevenue - totalCost) / totalRevenue) * 100).toFixed(1) : 0}%
 Total Expenses: $${totalExpenseAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 
-HOURS BY PROJECT
-================
+HOURS & INVOICED REVENUE BY PROJECT
+====================================
 ${projectHoursSummary}
 
 RESOURCE LOADING
