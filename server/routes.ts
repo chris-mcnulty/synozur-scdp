@@ -12444,6 +12444,26 @@ ${raiddSummary}`;
     }
   });
 
+  // GET /api/reports/executive-narratives - List saved executive narratives for the tenant
+  app.get("/api/reports/executive-narratives", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) return res.status(403).json({ message: "No tenant context available" });
+
+      const rows = await db
+        .select()
+        .from(statusReports)
+        .where(and(eq(statusReports.tenantId, tenantId), eq(statusReports.reportType, "executive_narrative")))
+        .orderBy(desc(statusReports.createdAt));
+
+      res.json(rows);
+    } catch (error: any) {
+      console.error("[AI] Executive narratives list failed:", error);
+      res.status(500).json({ message: error.message || "Failed to list executive narratives" });
+    }
+  });
+
   // POST /api/reports/executive-narrative/save - Save executive narrative to status_reports
   app.post("/api/reports/executive-narrative/save", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {

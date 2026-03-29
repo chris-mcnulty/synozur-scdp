@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrendingUp, TrendingDown, Minus, Download, Filter, Calendar, DollarSign, Users, Activity, BarChart3, Target, Clock, AlertCircle, FileText, CreditCard, Receipt } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Download, Filter, Calendar, DollarSign, Users, Activity, BarChart3, Target, Clock, AlertCircle, FileText, CreditCard, Receipt, Brain, ChevronDown, ChevronUp } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { format, subMonths, startOfMonth } from "date-fns";
 import { toast } from "@/hooks/use-toast";
@@ -24,6 +24,7 @@ function Reports() {
   const [reportType, setReportType] = useState("portfolio");
   const [dateRange, setDateRange] = useState("3months");
   const [selectedClient, setSelectedClient] = useState<string>("all");
+  const [expandedNarrative, setExpandedNarrative] = useState<string | null>(null);
   
   const { hasAnyRole, canViewPricing } = useAuth();
   
@@ -200,6 +201,12 @@ function Reports() {
       return response.json();
     },
     enabled: reportType === "compliance"
+  });
+
+  // Executive Narratives Query
+  const { data: narrativesData = [], isLoading: narrativesLoading } = useQuery<any[]>({
+    queryKey: ["/api/reports/executive-narratives"],
+    enabled: reportType === "narratives",
   });
 
   // Resource Utilization Query
@@ -1345,6 +1352,88 @@ function Reports() {
     );
   };
 
+  const renderExecutiveNarratives = () => {
+    if (narrativesLoading) {
+      return (
+        <div className="space-y-3">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      );
+    }
+    if (!narrativesData.length) {
+      return (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Brain className="h-10 w-10 mx-auto mb-3 opacity-40" />
+            <p className="font-medium">No saved narratives yet</p>
+            <p className="text-sm mt-1">Generate and save an executive narrative from the Executive Narrative page.</p>
+          </CardContent>
+        </Card>
+      );
+    }
+    return (
+      <div className="space-y-3">
+        {narrativesData.map((n: any) => {
+          const meta = n.metadata || {};
+          const isExpanded = expandedNarrative === n.id;
+          return (
+            <Card key={n.id}>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-base">{n.title}</CardTitle>
+                    <CardDescription className="mt-0.5">
+                      Period: {n.periodStart} to {n.periodEnd}
+                      {meta.generatedBy && ` · Saved by ${meta.generatedBy}`}
+                      {n.createdAt && ` · ${new Date(n.createdAt).toLocaleDateString()}`}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setExpandedNarrative(isExpanded ? null : n.id)}
+                  >
+                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {isExpanded ? "Collapse" : "View"}
+                  </Button>
+                </div>
+                {/* Stat pills */}
+                {(meta.totalRevenue || meta.totalHours) && (
+                  <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
+                    {meta.totalRevenue > 0 && (
+                      <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" />${Number(meta.totalRevenue).toLocaleString()} invoiced</span>
+                    )}
+                    {meta.totalHours > 0 && (
+                      <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{Number(meta.totalHours).toFixed(1)} hrs</span>
+                    )}
+                    {meta.activeProjects > 0 && (
+                      <span className="flex items-center gap-1"><BarChart3 className="h-3.5 w-3.5" />{meta.activeProjects} active projects</span>
+                    )}
+                    {meta.openRisks > 0 && (
+                      <span className="flex items-center gap-1 text-amber-600"><AlertCircle className="h-3.5 w-3.5" />{meta.openRisks} open risks</span>
+                    )}
+                  </div>
+                )}
+              </CardHeader>
+              {isExpanded && n.reportContent && (
+                <>
+                  <div className="border-t" />
+                  <CardContent className="pt-4">
+                    <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed font-mono bg-muted/40 rounded p-4 max-h-[500px] overflow-y-auto">
+                      {n.reportContent}
+                    </div>
+                  </CardContent>
+                </>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <Layout>
       <div className="flex-1 space-y-4 p-8 pt-6">
@@ -1396,28 +1485,31 @@ function Reports() {
 
       {/* Report Tabs */}
       <Tabs value={reportType} onValueChange={setReportType}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="portfolio" data-testid="tab-portfolio">
-            Portfolio Overview
+            Portfolio
           </TabsTrigger>
           <TabsTrigger value="accuracy" data-testid="tab-accuracy">
-            Estimate Accuracy
+            Estimates
           </TabsTrigger>
           <TabsTrigger value="revenue" data-testid="tab-revenue">
-            Revenue Analysis
+            Revenue
           </TabsTrigger>
           <TabsTrigger 
             value="finance" 
             data-testid="tab-finance"
             disabled={!hasAnyRole(['admin', 'executive', 'billing-admin'])}
           >
-            Finance Report
+            Finance
           </TabsTrigger>
           <TabsTrigger value="utilization" data-testid="tab-utilization">
-            Resource Utilization
+            Utilization
           </TabsTrigger>
           <TabsTrigger value="compliance" data-testid="tab-compliance">
-            Compliance Tracking
+            Compliance
+          </TabsTrigger>
+          <TabsTrigger value="narratives" data-testid="tab-narratives">
+            Exec Narratives
           </TabsTrigger>
         </TabsList>
         
@@ -1443,6 +1535,16 @@ function Reports() {
         
         <TabsContent value="compliance" className="space-y-4">
           {renderComplianceTracking()}
+        </TabsContent>
+
+        <TabsContent value="narratives" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Saved Executive Narratives</h3>
+              <p className="text-sm text-muted-foreground">AI-generated practice-wide summaries saved from the Executive Narrative tool.</p>
+            </div>
+          </div>
+          {renderExecutiveNarratives()}
         </TabsContent>
       </Tabs>
       </div>
