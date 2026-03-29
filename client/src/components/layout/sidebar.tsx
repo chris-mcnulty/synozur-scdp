@@ -321,10 +321,19 @@ export function Sidebar() {
 
       <div className="border-t border-border px-4 py-3 space-y-1">
         <SidebarItem href="/support" icon={<LifeBuoy />} label="Support" />
-        <SidebarItem href="/user-guide" icon={<BookOpen />} label="User Guide" />
-        <SidebarItem href="/changelog" icon={<History />} label="Changelog" />
-        <SidebarItem href="/roadmap" icon={<Map />} label="Roadmap" />
-        <SidebarItem href="/about" icon={<Info />} label="About" />
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center gap-2 w-full rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer group">
+            <BookOpen className="h-4 w-4 flex-shrink-0" />
+            <span className="flex-1 text-left">Docs</span>
+            <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-data-[state=open]:rotate-90" />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-1 pl-3">
+            <SidebarItem href="/user-guide" icon={<BookOpen />} label="User Guide" />
+            <SidebarItem href="/changelog" icon={<History />} label="Changelog" />
+            <SidebarItem href="/roadmap" icon={<Map />} label="Roadmap" />
+            <SidebarItem href="/about" icon={<Info />} label="About" />
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </aside>
   );

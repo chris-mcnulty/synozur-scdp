@@ -359,10 +359,19 @@ export function MobileNav() {
 
           <div className="border-t border-border px-2 py-3 space-y-0.5">
             <MobileNavItem href="/support" icon={<LifeBuoy />} label="Support" onClick={handleNavClick} />
-            <MobileNavItem href="/user-guide" icon={<BookOpen />} label="User Guide" onClick={handleNavClick} />
-            <MobileNavItem href="/changelog" icon={<History />} label="Changelog" onClick={handleNavClick} />
-            <MobileNavItem href="/roadmap" icon={<Map />} label="Roadmap" onClick={handleNavClick} />
-            <MobileNavItem href="/about" icon={<Info />} label="About" onClick={handleNavClick} />
+            <Collapsible>
+              <CollapsibleTrigger className="flex items-center gap-2 w-full rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer group">
+                <BookOpen className="h-4 w-4 flex-shrink-0" />
+                <span className="flex-1 text-left">Docs</span>
+                <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-data-[state=open]:rotate-90" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-0.5 pl-3">
+                <MobileNavItem href="/user-guide" icon={<BookOpen />} label="User Guide" onClick={handleNavClick} />
+                <MobileNavItem href="/changelog" icon={<History />} label="Changelog" onClick={handleNavClick} />
+                <MobileNavItem href="/roadmap" icon={<Map />} label="Roadmap" onClick={handleNavClick} />
+                <MobileNavItem href="/about" icon={<Info />} label="About" onClick={handleNavClick} />
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         </SheetContent>
       </Sheet>
