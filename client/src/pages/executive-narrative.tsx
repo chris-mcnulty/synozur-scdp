@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   FileText,
   Calendar,
@@ -23,6 +24,9 @@ import {
   FolderOpen,
   Target,
   Brain,
+  Save,
+  Presentation,
+  Check,
 } from "lucide-react";
 
 function formatLocalDate(d: Date): string {
@@ -52,8 +56,17 @@ interface NarrativeStats {
   milestonesCompleted: number;
   openRisks: number;
   openIssues: number;
+  openActions: number;
   statusReportsPublished: number;
   activeAssignments: number;
+  raiddHighPriority: Array<{
+    type: string;
+    refNumber: string;
+    title: string;
+    priority: string;
+    impact: string;
+    projectName: string;
+  }>;
 }
 
 interface NarrativeResponse {
@@ -69,6 +82,8 @@ export default function ExecutiveNarrative() {
   const [startDate, setStartDate] = useState(defaults.startDate);
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [result, setResult] = useState<NarrativeResponse | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [templateSlots, setTemplateSlots] = useState({ title: true, section: true, closing: true });
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -80,12 +95,81 @@ export default function ExecutiveNarrative() {
     },
     onSuccess: (data) => {
       setResult(data);
+      setSaved(false);
       toast({ title: "Narrative Generated", description: "Your executive summary is ready." });
     },
     onError: (error: any) => {
       toast({
         title: "Generation Failed",
         description: error.message || "Could not generate the executive narrative.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!result) throw new Error("No narrative to save");
+      await apiRequest("/api/reports/executive-narrative/save", {
+        method: "POST",
+        body: JSON.stringify({
+          narrative: result.narrative,
+          startDate: result.period.startDate,
+          endDate: result.period.endDate,
+          stats: result.stats,
+        }),
+      });
+    },
+    onSuccess: () => {
+      setSaved(true);
+      toast({ title: "Saved", description: "Executive narrative saved to reports." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Save Failed",
+        description: error.message || "Could not save the narrative.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const exportPptxMutation = useMutation({
+    mutationFn: async () => {
+      if (!result) throw new Error("No narrative to export");
+      const response = await fetch("/api/reports/executive-narrative/export-pptx", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": localStorage.getItem("sessionId") || "",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          narrative: result.narrative,
+          startDate: result.period.startDate,
+          endDate: result.period.endDate,
+          stats: result.stats,
+          templateSlots,
+        }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || "Export failed");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Executive_Narrative-${result.period.startDate}_to_${result.period.endDate}.pptx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onSuccess: () => {
+      toast({ title: "Exported", description: "PowerPoint downloaded successfully." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Export Failed",
+        description: error.message || "Could not generate the PowerPoint.",
         variant: "destructive",
       });
     },
@@ -206,23 +290,81 @@ export default function ExecutiveNarrative() {
         {result?.narrative && (
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Generated Narrative</CardTitle>
-                <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg">Generated Narrative</CardTitle>
+                  <CardDescription>
+                    Period: {result.period.startDate} to {result.period.endDate}
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" onClick={handleCopy}>
                     <Copy className="h-4 w-4 mr-1" />
                     Copy
                   </Button>
                   <Button variant="outline" size="sm" onClick={handleDownload}>
                     <Download className="h-4 w-4 mr-1" />
-                    Download
+                    Markdown
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending || saved}
+                  >
+                    {saveMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : saved ? (
+                      <Check className="h-4 w-4 mr-1" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-1" />
+                    )}
+                    {saved ? "Saved" : "Save"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => exportPptxMutation.mutate()}
+                    disabled={exportPptxMutation.isPending}
+                  >
+                    {exportPptxMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Presentation className="h-4 w-4 mr-1" />
+                    )}
+                    {exportPptxMutation.isPending ? "Exporting..." : "Export PPTX"}
                   </Button>
                 </div>
               </div>
-              <CardDescription>
-                Period: {result.period.startDate} to {result.period.endDate}
-              </CardDescription>
             </CardHeader>
+
+            {/* Template slot options */}
+            <div className="px-6 pb-3">
+              <p className="text-xs text-muted-foreground mb-2">Branded slide templates (if configured):</p>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-1.5 text-sm">
+                  <Checkbox
+                    checked={templateSlots.title}
+                    onCheckedChange={(checked) => setTemplateSlots(s => ({ ...s, title: !!checked }))}
+                  />
+                  Title slide
+                </label>
+                <label className="flex items-center gap-1.5 text-sm">
+                  <Checkbox
+                    checked={templateSlots.section}
+                    onCheckedChange={(checked) => setTemplateSlots(s => ({ ...s, section: !!checked }))}
+                  />
+                  Section headers
+                </label>
+                <label className="flex items-center gap-1.5 text-sm">
+                  <Checkbox
+                    checked={templateSlots.closing}
+                    onCheckedChange={(checked) => setTemplateSlots(s => ({ ...s, closing: !!checked }))}
+                  />
+                  Closing slide
+                </label>
+              </div>
+            </div>
+
             <Separator />
             <CardContent className="pt-4">
               <SafeMarkdown content={result.narrative} />

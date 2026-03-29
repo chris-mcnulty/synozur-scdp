@@ -1294,10 +1294,10 @@ export const projectBudgetHistory = pgTable("project_budget_history", {
 // Status Reports - Persisted status reports generated via AI
 export const statusReports = pgTable("status_reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id),
+  projectId: varchar("project_id").references(() => projects.id),
   tenantId: varchar("tenant_id").references(() => tenants.id),
   title: text("title").notNull(),
-  reportType: text("report_type").notNull().default("text"), // text, pptx
+  reportType: text("report_type").notNull().default("text"), // text, pptx, executive_narrative
   reportStyle: text("report_style").notNull().default("detailed_update"), // executive_brief, detailed_update, client_facing
   periodStart: date("period_start").notNull(),
   periodEnd: date("period_end").notNull(),

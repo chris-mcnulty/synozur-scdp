@@ -1946,6 +1946,386 @@ def copy_first_slide(src_pptx_path, dest_prs, _part_cache=None, inject_texts=Non
         return False
 
 
+def create_exec_title_slide(prs, data, primary_color, secondary_color):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    bg_shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, SLIDE_WIDTH, SLIDE_HEIGHT)
+    bg_shape.fill.solid()
+    bg_shape.fill.fore_color.rgb = hex_to_rgb(primary_color)
+    bg_shape.line.fill.background()
+    accent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(5.0), SLIDE_WIDTH, Inches(0.06))
+    accent.fill.solid()
+    accent.fill.fore_color.rgb = hex_to_rgb(secondary_color)
+    accent.line.fill.background()
+
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(2.0), Inches(11), Inches(2.0))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.LEFT
+    run = p.add_run()
+    run.text = "Executive Narrative"
+    set_font(run, size=36, bold=True, color=RGBColor(255, 255, 255))
+    p2 = tf.add_paragraph()
+    run2 = p2.add_run()
+    run2.text = "PRACTICE SUMMARY"
+    set_font(run2, size=20, color=RGBColor(220, 220, 220))
+
+    txBox2 = slide.shapes.add_textbox(Inches(1), Inches(4.2), Inches(8), Inches(1.2))
+    tf2 = txBox2.text_frame
+    tf2.word_wrap = True
+    p = tf2.paragraphs[0]
+    run = p.add_run()
+    tenant_name = data.get('tenantName', '')
+    run.text = tenant_name
+    set_font(run, size=16, bold=True, color=RGBColor(255, 255, 255))
+
+    period_start = data.get('periodStart', '')
+    period_end = data.get('periodEnd', '')
+    report_date = data.get('reportDate', datetime.now().strftime('%B %d, %Y'))
+    period_text = f"Period: {period_start} to {period_end}" if period_start and period_end else report_date
+    p2 = tf2.add_paragraph()
+    run2 = p2.add_run()
+    run2.text = period_text
+    set_font(run2, size=14, color=RGBColor(230, 230, 230))
+
+    p3 = tf2.add_paragraph()
+    run3 = p3.add_run()
+    run3.text = report_date
+    set_font(run3, size=12, color=RGBColor(200, 200, 200))
+
+    logo_path = data.get('logoPath')
+    if logo_path and os.path.exists(logo_path):
+        try:
+            slide.shapes.add_picture(logo_path, Inches(10.5), Inches(4.0), height=Inches(0.8))
+        except Exception:
+            pass
+    return slide
+
+
+def create_exec_financial_slide(prs, data, primary_color, secondary_color):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Financial Performance"
+    set_font(run, size=24, bold=True, color=primary_color)
+
+    stats = data.get('stats', {})
+    metrics = [
+        ('Billable Hours', f"{stats.get('billableHours', 0):.1f}"),
+        ('Total Hours', f"{stats.get('totalHours', 0):.1f}"),
+        ('Revenue', f"${stats.get('totalRevenue', 0):,.0f}"),
+        ('Expenses', f"${stats.get('totalExpenses', 0):,.0f}"),
+        ('Active Projects', str(stats.get('activeProjects', 0))),
+        ('Estimates Created', str(stats.get('estimatesCreated', 0))),
+        ('Milestones Completed', str(stats.get('milestonesCompleted', 0))),
+        ('Status Reports', str(stats.get('statusReportsPublished', 0))),
+    ]
+
+    col_count = 4
+    row_count = 2
+    card_w = Inches(2.7)
+    card_h = Inches(1.3)
+    start_x = Inches(0.8)
+    start_y = Inches(1.2)
+    gap_x = Inches(0.2)
+    gap_y = Inches(0.2)
+
+    for i, (label, value) in enumerate(metrics):
+        col = i % col_count
+        row = i // col_count
+        x = start_x + col * (card_w + gap_x)
+        y = start_y + row * (card_h + gap_y)
+        card = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, card_w, card_h)
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(245, 245, 245)
+        card.line.color.rgb = RGBColor(220, 220, 220)
+        card.line.width = Pt(0.5)
+
+        val_box = slide.shapes.add_textbox(x + Inches(0.2), y + Inches(0.2), card_w - Inches(0.4), Inches(0.6))
+        vf = val_box.text_frame
+        vp = vf.paragraphs[0]
+        vr = vp.add_run()
+        vr.text = value
+        set_font(vr, size=22, bold=True, color=primary_color)
+
+        lbl_box = slide.shapes.add_textbox(x + Inches(0.2), y + Inches(0.8), card_w - Inches(0.4), Inches(0.4))
+        lf = lbl_box.text_frame
+        lp = lf.paragraphs[0]
+        lr = lp.add_run()
+        lr.text = label
+        set_font(lr, size=10, color='#666666')
+
+    utilization = stats.get('totalHours', 0)
+    if utilization > 0:
+        pct = (stats.get('billableHours', 0) / utilization) * 100
+        util_text = f"Utilization Rate: {pct:.0f}%"
+    else:
+        util_text = "Utilization Rate: N/A"
+
+    revenue = stats.get('totalRevenue', 0)
+    if revenue > 0:
+        margin = ((revenue - stats.get('totalExpenses', 0)) / revenue) * 100
+        margin_text = f"Gross Margin: {margin:.1f}%"
+    else:
+        margin_text = "Gross Margin: N/A"
+
+    summary_box = slide.shapes.add_textbox(Inches(0.8), Inches(4.2), Inches(10), Inches(0.5))
+    sf = summary_box.text_frame
+    sp = sf.paragraphs[0]
+    sr = sp.add_run()
+    sr.text = f"{util_text}   |   {margin_text}   |   Active Assignments: {stats.get('activeAssignments', 0)}"
+    set_font(sr, size=11, bold=True, color='#444444')
+
+    return slide
+
+
+def create_exec_narrative_slides(prs, data, sections, primary_color, secondary_color):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Practice Overview"
+    set_font(run, size=24, bold=True, color=primary_color)
+
+    content_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.1), Inches(11.5), Inches(6.0))
+    tf = content_box.text_frame
+    tf.word_wrap = True
+
+    found = False
+    for key in ['Practice Overview', 'Progress Summary', 'Executive Summary', 'Summary', 'Overview']:
+        if key in sections and sections[key].strip():
+            render_markdown_text(tf, sections[key], primary_color, size=11, start_fresh=True)
+            found = True
+            break
+
+    if not found:
+        all_text = '\n'.join(sections.values())
+        if all_text.strip():
+            lines = all_text.strip().split('\n')
+            overview_lines = lines[:40]
+            render_markdown_text(tf, '\n'.join(overview_lines), primary_color, size=11, start_fresh=True)
+
+    return slide
+
+
+def create_exec_raidd_summary_slide(prs, data, sections, primary_color, secondary_color):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Risks, Issues & Key Decisions"
+    set_font(run, size=24, bold=True, color=primary_color)
+
+    stats = data.get('stats', {})
+    counts_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.0), Inches(10), Inches(0.4))
+    cf = counts_box.text_frame
+    cp = cf.paragraphs[0]
+    cr = cp.add_run()
+    cr.text = f"Open Risks: {stats.get('openRisks', 0)}   |   Open Issues: {stats.get('openIssues', 0)}   |   Open Actions: {stats.get('openActions', 0)}"
+    set_font(cr, size=11, bold=True, color='#444444')
+
+    content_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.6), Inches(11.5), Inches(5.5))
+    tf = content_box.text_frame
+    tf.word_wrap = True
+
+    for key in ['Risks, Issues & Key Decisions (RAIDD)', 'RAIDD', 'Risk Summary', 'Risks and Issues']:
+        if key in sections and sections[key].strip():
+            render_markdown_text(tf, sections[key], primary_color, size=10, start_fresh=True)
+            return slide
+
+    raidd_items = data.get('raiddHighPriority', [])
+    if raidd_items:
+        first = True
+        for item in raidd_items[:12]:
+            if first:
+                p = tf.paragraphs[0]
+                first = False
+            else:
+                p = tf.add_paragraph()
+            p.space_before = Pt(4)
+            run = p.add_run()
+            prefix = f"[{item.get('type', '').upper()}] "
+            ref = item.get('refNumber', '')
+            if ref:
+                prefix += f"{ref} "
+            run.text = f"• {prefix}{item.get('title', '')}"
+            set_font(run, size=10, bold=True, color=primary_color)
+
+            detail = item.get('impact') or item.get('description') or ''
+            if detail:
+                p2 = tf.add_paragraph()
+                p2.space_before = Pt(1)
+                r2 = p2.add_run()
+                r2.text = f"  {detail}"
+                set_font(r2, size=9, color='#444444')
+    else:
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = "No high-priority risks or issues in this period."
+        set_font(r, size=11, color='#666666')
+
+    return slide
+
+
+def create_exec_outlook_slide(prs, data, sections, primary_color, secondary_color):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Outlook & Recommendations"
+    set_font(run, size=24, bold=True, color=primary_color)
+
+    content_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.1), Inches(11.5), Inches(6.0))
+    tf = content_box.text_frame
+    tf.word_wrap = True
+
+    for key in ['Upcoming Activities', 'Outlook', 'Next Steps', 'Recommendations', 'Looking Ahead', 'Outlook & Recommendations']:
+        if key in sections and sections[key].strip():
+            render_markdown_text(tf, sections[key], primary_color, size=11, start_fresh=True)
+            return slide
+
+    p = tf.paragraphs[0]
+    r = p.add_run()
+    r.text = "See narrative for forward-looking commentary."
+    set_font(r, size=11, color='#666666')
+    return slide
+
+
+def generate_executive_narrative_pptx(data, output_path):
+    primary_color = data.get('primaryColor', '#810FFB')
+    secondary_color = data.get('secondaryColor', '#E60CB3')
+
+    narrative = data.get('narrative', '')
+    print(f"[EXEC-PPTX] narrative length: {len(narrative)}, first 300: {narrative[:300]}", file=sys.stderr)
+
+    EXEC_SECTION_ALIASES = {
+        'Practice Overview': [
+            'practice overview', 'executive summary', 'overview', 'summary',
+            'progress summary', 'period overview', 'portfolio overview',
+        ],
+        'Financial Performance': [
+            'financial performance', 'financial summary', 'financials',
+            'financial highlights', 'revenue & utilization', 'revenue and utilization',
+        ],
+        'Key Accomplishments': [
+            'key accomplishments', 'accomplishments', 'highlights',
+            'key highlights', 'achievements', 'progress & accomplishments',
+        ],
+        'Risks, Issues & Key Decisions (RAIDD)': [
+            'risks, issues & key decisions', 'raidd', 'risks and issues',
+            'risks, issues & key decisions (raidd)', 'risk summary',
+            'raidd summary', 'raidd log', 'risk & issue summary',
+        ],
+        'Upcoming Activities': [
+            'upcoming activities', 'next steps', 'outlook', 'recommendations',
+            'looking ahead', 'outlook & recommendations', 'forward look',
+        ],
+    }
+
+    def _normalize_exec_section(raw_name):
+        lower = raw_name.lower().strip()
+        lower = re.sub(r'\s*\(.*?\)\s*$', '', lower).strip()
+        for canonical, aliases in EXEC_SECTION_ALIASES.items():
+            if lower in aliases:
+                return canonical
+            for alias in aliases:
+                if alias in lower or lower in alias:
+                    return canonical
+        return raw_name
+
+    sections = {}
+    if narrative:
+        current_section = None
+        current_content = []
+        for line in narrative.split('\n'):
+            header_match = re.match(r'^(#{1,3})\s+(.+)$', line)
+            if header_match:
+                if current_section:
+                    sections[current_section] = '\n'.join(current_content).strip()
+                raw_name = header_match.group(2).strip()
+                current_section = _normalize_exec_section(raw_name)
+                current_content = []
+            else:
+                current_content.append(line)
+        if current_section:
+            sections[current_section] = '\n'.join(current_content).strip()
+
+    print(f"[EXEC-PPTX] Sections found: {list(sections.keys())}", file=sys.stderr)
+
+    title_template_path = data.get('titleTemplatePath')
+    section_template_path = data.get('sectionTemplatePath')
+    closing_template_path = data.get('closingTemplatePath')
+
+    prs = Presentation()
+    prs.slide_width = SLIDE_WIDTH
+    prs.slide_height = SLIDE_HEIGHT
+
+    section_cache = {}
+
+    period_start = data.get('periodStart', '')
+    period_end = data.get('periodEnd', '')
+    report_date = data.get('reportDate', datetime.now().strftime('%B %d, %Y'))
+    period_label = (f"Period: {period_start} to {period_end}"
+                    if period_start and period_end else report_date)
+    tenant_name = data.get('tenantName', '')
+    subtitle_lines = [l for l in [tenant_name, period_label] if l]
+    title_inject = {
+        'title': 'Executive Narrative',
+        'subtitle': subtitle_lines,
+    }
+
+    if title_template_path and os.path.exists(title_template_path):
+        print(f"[EXEC-PPTX] Using title template: {title_template_path}", file=sys.stderr)
+        if not copy_first_slide(title_template_path, prs, inject_texts=title_inject):
+            create_exec_title_slide(prs, data, primary_color, secondary_color)
+    else:
+        create_exec_title_slide(prs, data, primary_color, secondary_color)
+
+    def insert_section_header(section_name):
+        if section_template_path and os.path.exists(section_template_path):
+            ok = copy_first_slide(
+                section_template_path, prs,
+                _part_cache=section_cache,
+                inject_texts={'title': section_name},
+            )
+            if not ok:
+                print(f"[EXEC-PPTX] Section header failed for '{section_name}'", file=sys.stderr)
+
+    insert_section_header('Financial Performance')
+    create_exec_financial_slide(prs, data, primary_color, secondary_color)
+
+    insert_section_header('Practice Overview')
+    create_exec_narrative_slides(prs, data, sections, primary_color, secondary_color)
+
+    insert_section_header('Risks & Issues')
+    create_exec_raidd_summary_slide(prs, data, sections, primary_color, secondary_color)
+
+    insert_section_header('Outlook')
+    create_exec_outlook_slide(prs, data, sections, primary_color, secondary_color)
+
+    if closing_template_path and os.path.exists(closing_template_path):
+        print(f"[EXEC-PPTX] Using closing template: {closing_template_path}", file=sys.stderr)
+        ok = copy_first_slide(closing_template_path, prs)
+        if not ok:
+            print(f"[EXEC-PPTX] Closing template failed", file=sys.stderr)
+
+    prs.save(output_path)
+    return output_path
+
+
 def generate_pptx(data, output_path):
     primary_color = data.get('primaryColor', '#810FFB')
     secondary_color = data.get('secondaryColor', '#E60CB3')
@@ -2029,10 +2409,15 @@ def generate_pptx(data, output_path):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: generate_status_report_pptx.py <output_path>", file=sys.stderr)
+        print("Usage: generate_status_report_pptx.py <output_path> [--executive-narrative]", file=sys.stderr)
         sys.exit(1)
 
     output_path = sys.argv[1]
+    is_exec_narrative = '--executive-narrative' in sys.argv
     input_data = json.load(sys.stdin)
-    result = generate_pptx(input_data, output_path)
+
+    if is_exec_narrative:
+        result = generate_executive_narrative_pptx(input_data, output_path)
+    else:
+        result = generate_pptx(input_data, output_path)
     print(json.dumps({"success": True, "path": result}))

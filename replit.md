@@ -1,7 +1,7 @@
 # Constellation - Synozur Consulting Delivery Platform (SCDP)
 
 ## Overview
-Constellation is a comprehensive platform designed to manage the entire consulting project lifecycle, from estimation and resource allocation to time tracking, expense management, and automated invoice generation. It aims to enhance efficiency, streamline operations, and support data-driven consulting practices through features like AI-powered narrative generation and automated expense calculations. The platform prioritizes improved file management, transparent quote displays, advanced resource capacity planning, and milestone-based invoice generation.
+Constellation is a comprehensive platform for managing the entire consulting project lifecycle, from estimation and resource allocation to time tracking, expense management, and automated invoice generation. It aims to enhance efficiency, streamline operations, and support data-driven consulting practices through features like AI-powered narrative generation and automated expense calculations. The platform prioritizes improved file management, transparent quote displays, advanced resource capacity planning, and milestone-based invoice generation.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -16,7 +16,8 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Frontend
 - **Framework**: React 18 with TypeScript and Vite.
 - **UI**: Radix UI components with shadcn/ui design system, styled using Tailwind CSS.
-- **UI/UX Decisions**: Refactored estimate tables, mobile optimization, responsive navigation, user persona-based navigation, prominent quote totals, dark/light mode, and advanced project list/detail views with consolidated tabs and deep linking. Standardized project selectors.
+- **UI/UX Decisions**: Refactored estimate tables, mobile optimization, responsive navigation, user persona-based navigation, prominent quote totals, dark/light mode, advanced project list/detail views, and standardized project selectors.
+- **Theme System**: Modular CSS variable-based theming with Aurora, Night Sky, and Navigator's Chart themes.
 
 ### Backend
 - **Runtime**: Node.js with Express.js.
@@ -28,7 +29,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Database
 - **Type**: PostgreSQL.
 - **Schema Management**: Drizzle Kit.
-- **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses, Invoices, Payment Milestones, Rate overrides, Project Engagements.
+- **Key Entities**: Users, Clients, Projects, Estimates, Time entries, Expenses, Invoices, Payment Milestones, Rate overrides, Project Engagements.
 
 ### Project Structure
 - **Monorepo**: Organized into `/client`, `/server`, and `/shared`.
@@ -39,45 +40,40 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Roles**: Six-tier hierarchy with feature-based permissions.
 
 ### Document Storage
-- **Strategy**: Multi-tier using SharePoint Embedded (primary) and Replit Object Storage (legacy fallback). A smart storage layer directs document types based on tenant configuration (`speStorageEnabled` flag).
-- **Tenant SPE Opt-in**: Tenants can configure individual SharePoint Embedded containers for document storage, with a migration service to move existing files.
-- **Per-Tenant Azure AD Isolation**: All file operations and container management are tenant-scoped, ensuring data isolation using each tenant's Azure AD tenant ID.
-- **SPE Billing**: All SharePoint Embedded storage costs are billed to Synozur, not directly to customers.
+- **Strategy**: Multi-tier using SharePoint Embedded (primary) and Replit Object Storage (legacy fallback) with smart routing based on tenant configuration.
+- **Tenant SPE Opt-in**: Tenants can configure individual SharePoint Embedded containers, ensuring per-tenant Azure AD isolation.
 
 ### Core Features
-- **AI Integration**: Multi-provider AI (Replit AI, Azure AI Foundry) with configurable model selection, usage logging, and cost tracking. Includes usage alerts for token budgets.
-- **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence. Includes detailed, program, block, and retainer estimate types. AI-powered generation of structured estimates from narrative text.
+- **AI Integration**: Multi-provider AI (Replit AI, Azure AI Foundry) with configurable models, usage logging, and cost tracking. Includes AI-powered narrative generation and structured estimate generation.
+- **Estimate Management**: Supports Excel/CSV import/export, status-based locking, hierarchical rate precedence, and various estimate types.
 - **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, and expense receipt inclusion.
 - **Expense Approval Workflow**: Comprehensive system with finite state machine and role-based access.
 - **Resource Management**: Dual List/Timeline views, capacity planning, and conflict detection.
-- **Assignment Baselines**: Snapshot current assignments as frozen baselines for future slip/impact analysis. Baselines are excluded from all normal views, status reports, dashboards, and Planner sync. Created automatically during "Remove and Replace" imports (opt-in) or manually via "Save Baseline" button. Multiple baselines can accumulate per project. Schema: `project_baselines` table + `isBaseline`/`baselineId` fields on `project_allocations`. API: `GET/POST /api/projects/:projectId/baselines`, `GET /api/projects/:projectId/baselines/:baselineId/allocations`.
-- **Slippage Analytics Engine**: Composite slippage scoring (0–100) per project from 5 weighted signals: Schedule Position (30%, SPI-based), Assignment Health (25%, overdue allocations), Milestone Health (20%, overdue/at-risk deliverables), RAIDD Signals (15%, open critical/high risks+issues), Velocity Lag (10%, days since last time entry). Levels: on-track/watch/at-risk/critical. Predictive slip-day projection using trailing 4-week burn rate. Portfolio dashboard at `/api/portfolio/slippage` (2-min server cache, concurrency-limited). User alerts at `/api/dashboard/slippage-alerts`. Frontend: `portfolio-slippage.tsx` with sortable table, level filters, Excel export. All allocation queries exclude baseline records.
-- **Microsoft Planner Integration**: Bidirectional sync of project assignments with Microsoft Planner tasks.
+- **Assignment Baselines**: Snapshot current assignments for future analysis, excluded from normal views.
+- **Slippage Analytics Engine**: Composite slippage scoring per project based on weighted signals (Schedule Position, Assignment Health, Milestone Health, RAIDD Signals, Velocity Lag).
+- **Microsoft Planner Integration**: Bidirectional synchronization of project assignments with Microsoft Planner tasks.
 - **Scheduled Jobs**: Background system for reminders and Planner sync.
 - **Financial Reporting**: Comprehensive reports on revenue, cost, profit, and margins.
 - **Contractor Expense Invoices**: Contractors can generate invoices from expense reports.
 - **Project Rate Overrides**: Project-level billing and cost rate overrides.
-- **Bulk Role-to-Person Reassignment**: When editing a project assignment and changing the person for a role, the system detects other assignments with the same role and prompts to bulk-update all of them. Supports `roleInstanceLabel` field on `project_allocations` to distinguish multiple people in the same role (e.g., "UX Design 1", "UX Design 2"). Backend: `POST /api/projects/:projectId/allocations/reassign-role` with `{ roleId, personId, roleInstanceLabel? }`. Frontend: confirmation AlertDialog in project detail Delivery > Team & Assignments.
-- **Deliverable Tracking**: Management of project deliverables with status workflows, AI narrative extraction, and integration into reports.
-- **Persistent Status Reports**: AI-generated status reports (text + PPTX) are automatically saved to `status_reports` table. CRUD API at `/api/projects/:projectId/status-reports`. Reports track reportType (text/pptx), reportStyle, period, content, status (draft/final), SPE file references, and generation metadata. Frontend "Status Reports" tab on project detail page. MCP endpoints at `/mcp/projects/:projectId/status-reports` and `/mcp/projects/:projectId/status-reports/:reportId`.
-- **Shared Activity Aggregation Service**: `server/services/activity-aggregation.ts` exports `validateDateRange()` and `aggregateActivityData()` — canonical query patterns for estimates (with client LEFT JOIN, archived=false), RAIDD (created OR updated in period OR open/in_progress), status reports (by periodEnd), and assignments (date overlap). Used by both MCP `/mcp/activity-summary` and executive narrative endpoints.
-- **MCP Server (v0 — Read-Only)**: Read-only API surface under `/mcp` for Microsoft 365 Copilot / Copilot Studio integration. ~24 GET endpoints covering user profile, assignments, time entries, expenses, projects, deliverables, RAIDD, portfolio views, financials, CRM deals, and saved status reports. Supports both session-based auth (`x-session-id`) and OAuth bearer tokens (JWT validated against Entra app registration via JWKS). Bearer auth implemented in `server/auth/mcp-bearer-auth.ts` using `jsonwebtoken` + `jwks-rsa`. OpenAPI definition at `docs/constellation-mcp-openapi.json`. Connector setup guide at `docs/MCP_CONNECTOR_SETUP.md`. Endpoint reference at `docs/MCP_README.md`.
-- **Copilot Studio Agent**: Conversational AI agent deployed in Copilot Studio for Teams and M365 Copilot. Uses Power Platform Custom Connector to invoke all MCP endpoints. Multi-tenant Entra authentication. Read-only access to all Constellation data with RBAC enforcement.
-- **Teams Custom Tab**: Embeddable project detail pages at `/embed/projects/:id` for Microsoft Teams Custom Tab integration. Chromeless layout (no sidebar/header/nav). Teams SDK v2 SSO authentication via `POST /api/auth/teams-sso` (validates JWT, creates Constellation session). CSP `frame-ancestors` headers set on all `/embed/*` routes for Teams/Office/SharePoint domains. Supports query params: `tab`, `theme` (light/dark/contrast), `readonly`. Teams app manifest at `teams/manifest.json` (v1.16 schema, references SCDP-Content app registration). Auth fallback shows clean "Sign In Required" UI instead of redirect loops.
-- **Teams App Package Self-Service**: Organization Settings > Integrations tab includes a self-service card for downloading or publishing the Teams app manifest package. Backend at `server/routes/teams-app.ts` generates a ZIP (manifest.json + icons) with dynamic URL/domain/Entra App ID substitution. Supports direct publish to tenant app catalog via Graph API (`AppCatalog.ReadWrite.All`). Download fallback for manual upload to Teams Admin Center. Input validation for domain, UUID, and app name length. Catalog status indicator shows whether app is published and ready for auto-tab.
-- **Teams Tab Auto-Install**: When a project channel is created via `POST /api/planner/teams/:teamId/channels` with a `projectId`, the system automatically: (1) looks up the Constellation app in the tenant's Teams app catalog, (2) adds a project dashboard tab pointing at `/embed/projects/:id`, and (3) persists the project-channel link to the `project_channels` table with tenant isolation validation. Standalone endpoint `POST /api/planner/teams/:teamId/channels/:channelId/constellation-tab` for adding tabs to existing channels. Catalog status check at `GET /api/teams/catalog-status`. Auto-tab is non-blocking — channel creation succeeds even if tab add fails (e.g., app not in catalog).
-- **M365 Channel Provisioning Defaults**: Tenant-level default folder list (`m365DefaultChannelFolders` jsonb string[] on `tenants` table) auto-created in a channel's SharePoint document library when provisioning new Teams channels. Managed via `GET/PATCH /api/tenant/m365-config`. Backend: `plannerService.provisionChannelFolders(teamId, channelId, folderNames[])` in `planner-service.ts`. Retroactive endpoint: `POST /api/planner/teams/:teamId/channels/:channelId/provision-folders`. Frontend: `ChannelProvisioningCard` in Organization Settings > Integrations with drag-to-reorder, add/remove, reset-to-defaults. Default folders: Deliverables, Meeting Notes, SOW & Contracts, Status Reports, Working Documents.
-- **SharePoint Site Configuration**: Tenant-level settings (`m365SharePointConfig` jsonb on `tenants` table) for future provisioning enhancements: auto-create project subfolder, document library naming convention (channel_name/project_code/custom), metadata columns. Settings stored via the same `PATCH /api/tenant/m365-config` endpoint. Frontend: `SharePointSiteConfigCard` in Organization Settings > Integrations. Note: settings are persistence-only in v1.8 — not yet consumed by provisioning logic.
-- **Theme System**: Modular CSS variable-based theming with three production themes: Aurora (warm earth tones), Night Sky (deep navy), Navigator's Chart (clean teal). Theme files at `client/src/themes/`. Active theme imported in `client/src/index.css` (must precede `@tailwind` directives). Guide at `docs/SYNOZUR_THEME_GUIDE.md`.
-- **Navigation Sub-Groups**: Sidebar sections use `SubGroupLabel` component for grouping related items. My Workspace (Daily Work, Time & Expenses, Tracking), Financial (Expenses, Rates), Administration (Users & Org, System Tools, AI Config), Platform (Tenant Management, Reference Data).
+- **Bulk Role-to-Person Reassignment**: Facilitates bulk updates of assignments when changing roles.
+- **Deliverable Tracking**: Management of project deliverables with status workflows and AI narrative extraction.
+- **Persistent Status Reports**: AI-generated status reports (text + PPTX) saved and managed via CRUD API.
+- **MCP Server (v0 — Read-Only)**: Read-only API surface under `/mcp` for Microsoft 365 Copilot / Copilot Studio integration, with session and OAuth bearer token authentication.
+- **Copilot Studio Agent**: Conversational AI agent for Teams and M365 Copilot, using Power Platform Custom Connector to access MCP endpoints.
+- **Teams Custom Tab**: Embeddable, chromeless project detail pages for Microsoft Teams Custom Tab integration, with SSO authentication.
+- **Teams App Package Self-Service**: Organization Settings feature to download or publish the Teams app manifest package dynamically.
+- **Teams Tab Auto-Install**: Automated installation of project dashboard tabs in Teams channels upon creation.
+- **M365 Channel Provisioning Defaults**: Tenant-level default folder list auto-created in a channel's SharePoint document library during channel provisioning.
+- **SharePoint Site Configuration**: Tenant-level settings for future SharePoint provisioning enhancements.
 
 ### Multi-Tenancy
 - **Architecture**: UUID-based tenant IDs, data isolation, service plans, and subdomain routing.
 - **Automatic Tenant Assignment**: Users are auto-assigned to tenants on login.
 - **Platform Roles**: `global_admin` and `constellation_admin` roles for managing all tenants.
-- **Settings Separation**: Tenant-specific settings in Organization Settings; platform-wide settings in System Settings.
-- **User Management**: Tenant-isolated user listings and platform admin tools for managing user memberships across tenants.
-- **Branding & Vocabulary**: Configurable tenant-level branding and tenant-scoped vocabulary.
+- **Settings Separation**: Tenant-specific settings and platform-wide settings.
+- **User Management**: Tenant-isolated user listings and platform admin tools for user membership across tenants.
+- **Branding & Vocabulary**: Configurable tenant-level branding and vocabulary.
 - **Multi-Tenant Identity**: Uses a global `users` table and `tenant_users` for tenant-specific access and roles.
 
 ## External Dependencies
@@ -85,7 +81,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Database Hosting**: Neon Database (PostgreSQL).
 - **Frontend Build**: Vite.
 - **UI Libraries**: Radix UI, Lucide React, Tailwind CSS.
-- **Data Management**: TanStack Query, React Hook Form. **`apiRequest` pattern**: `apiRequest(url, options?)` — NOT the 3-arg form `apiRequest(method, url, body)`. Queries should use the default `queryFn` (configured in `queryClient.ts`) which auto-injects the `x-session-id` header — never use raw `fetch()` in custom `queryFn` for authenticated endpoints (causes 401 → session recovery → reload loop).
+- **Data Management**: TanStack Query, React Hook Form.
 - **PDF Generation**: Puppeteer.
 - **Document Storage**: Replit Object Storage, Microsoft SharePoint Online, Microsoft SharePoint Embedded.
 - **Email Notifications**: Outlook/Microsoft 365 via Microsoft Graph Client.
@@ -93,4 +89,4 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database.
 - **Airport Codes**: IATA 3-letter code database.
 - **Exchange Rates**: Open Exchange Rates API.
-- **HubSpot CRM Integration**: HubSpot API with per-tenant OAuth 2.0 for Deals, Companies, Contacts, and activity logging.
+- **HubSpot CRM Integration**: HubSpot API for Deals, Companies, Contacts, and activity logging.

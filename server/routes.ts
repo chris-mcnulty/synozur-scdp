@@ -12384,13 +12384,245 @@ ${raiddSummary}`;
           milestonesCompleted: completedMilestones.length,
           openRisks: raiddCounts.openRisks,
           openIssues: raiddCounts.openIssues,
+          openActions: raiddCounts.openActions,
           statusReportsPublished: activity.statusReports.length,
           activeAssignments: activity.assignments.length,
+          raiddHighPriority: highPriorityRaidd.map(r => ({
+            type: r.type,
+            refNumber: r.refNumber,
+            title: r.title,
+            priority: r.priority,
+            impact: r.impact || r.description || '',
+            projectName: r.projectName || '',
+          })),
         },
       });
     } catch (error: any) {
       console.error("[AI] Executive narrative generation failed:", error);
       res.status(500).json({ message: error.message || "Failed to generate executive narrative" });
+    }
+  });
+
+  // POST /api/reports/executive-narrative/save - Save executive narrative to status_reports
+  app.post("/api/reports/executive-narrative/save", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const schema = z.object({
+        narrative: z.string().min(1),
+        startDate: z.string().min(1),
+        endDate: z.string().min(1),
+        stats: z.record(z.any()).optional(),
+      });
+      let validated;
+      try { validated = schema.parse(req.body); }
+      catch (e: any) { return res.status(400).json({ message: e.message || "Invalid request body" }); }
+
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) return res.status(403).json({ message: "No tenant context available" });
+
+      const report = await storage.createStatusReport({
+        projectId: null,
+        tenantId,
+        title: `Executive Narrative — ${validated.startDate} to ${validated.endDate}`,
+        reportType: "executive_narrative",
+        reportStyle: "executive_brief",
+        periodStart: validated.startDate,
+        periodEnd: validated.endDate,
+        reportContent: validated.narrative,
+        status: "final",
+        metadata: {
+          ...validated.stats,
+          generatedAt: new Date().toISOString(),
+          generatedBy: user.name || user.email,
+        },
+        generatedBy: user.id,
+      });
+
+      console.log(`[AI] Executive narrative saved for ${validated.startDate}–${validated.endDate} by user ${user.id}`);
+      res.json({ id: report.id, message: "Executive narrative saved successfully" });
+    } catch (error: any) {
+      console.error("[AI] Executive narrative save failed:", error);
+      res.status(500).json({ message: error.message || "Failed to save executive narrative" });
+    }
+  });
+
+  // POST /api/reports/executive-narrative/export-pptx - Export executive narrative as branded PPTX
+  app.post("/api/reports/executive-narrative/export-pptx", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    req.setTimeout(180000);
+    res.setTimeout(180000);
+    try {
+      const schema = z.object({
+        narrative: z.string().min(1),
+        startDate: z.string().min(1),
+        endDate: z.string().min(1),
+        stats: z.record(z.any()).optional(),
+        templateSlots: z.object({
+          title: z.boolean().optional(),
+          section: z.boolean().optional(),
+          closing: z.boolean().optional(),
+        }).optional(),
+      });
+      let validated;
+      try { validated = schema.parse(req.body); }
+      catch (e: any) { return res.status(400).json({ message: e.message || "Invalid request body" }); }
+
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) return res.status(403).json({ message: "No tenant context available" });
+
+      const tenant = await storage.getTenant(tenantId);
+      const branding = (tenant as any)?.branding || {};
+      const primaryColor = branding.primaryColor || '#810FFB';
+      const secondaryColor = branding.secondaryColor || '#E60CB3';
+      const resolvedSlots = validated.templateSlots || { title: true, section: true, closing: true };
+
+      const now = new Date();
+      const reportDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+      let logoPath: string | null = null;
+      const logoUrl = (tenant as any)?.logoUrl;
+      if (logoUrl) {
+        const possiblePaths = [
+          pathNode.join(process.cwd(), 'client', 'public', logoUrl.replace(/^\//, '')),
+          pathNode.join(process.cwd(), logoUrl.replace(/^\//, '')),
+          pathNode.join(process.cwd(), 'client', 'src', 'assets', logoUrl.replace(/^.*\/assets\//, '')),
+        ];
+        for (const p of possiblePaths) {
+          if (fsNode.existsSync(p)) { logoPath = p; break; }
+        }
+      }
+
+      const stats = validated.stats || {};
+      const raiddHighPriority = (stats as any).raiddHighPriority || [];
+
+      const pptxData = {
+        tenantName: (tenant as any)?.name || '',
+        reportDate,
+        periodStart: validated.startDate,
+        periodEnd: validated.endDate,
+        primaryColor,
+        secondaryColor,
+        logoPath,
+        narrative: validated.narrative,
+        stats: {
+          totalHours: stats.totalHours || 0,
+          billableHours: stats.billableHours || 0,
+          totalRevenue: stats.totalRevenue || 0,
+          totalExpenses: stats.totalExpenses || 0,
+          activeProjects: stats.activeProjects || 0,
+          estimatesCreated: stats.estimatesCreated || 0,
+          milestonesCompleted: stats.milestonesCompleted || 0,
+          openRisks: stats.openRisks || 0,
+          openIssues: stats.openIssues || 0,
+          openActions: stats.openActions || 0,
+          statusReportsPublished: stats.statusReportsPublished || 0,
+          activeAssignments: stats.activeAssignments || 0,
+        },
+        raiddHighPriority,
+      };
+
+      // Download branded PPTX templates
+      const templateTempFiles: string[] = [];
+      if (tenant) {
+        const t = tenant as any;
+        const templateSlotDefs: Array<{ fileId: string | null; key: string; slotName: keyof typeof resolvedSlots }> = [
+          { fileId: t.pptxTitleTemplateFileId, key: 'titleTemplatePath', slotName: 'title' },
+          { fileId: t.pptxSectionTemplateFileId, key: 'sectionTemplatePath', slotName: 'section' },
+          { fileId: t.pptxClosingTemplateFileId, key: 'closingTemplatePath', slotName: 'closing' },
+        ];
+        for (const slot of templateSlotDefs) {
+          if (slot.fileId && resolvedSlots[slot.slotName] !== false) {
+            try {
+              const fileContent = await sharePointFileStorage.getFileContent(slot.fileId, tenantId);
+              if (fileContent?.buffer) {
+                const tmpTemplatePath = pathNode.join(osNode.tmpdir(), `pptx-exec-template-${slot.key}-${Date.now()}.pptx`);
+                fsNode.writeFileSync(tmpTemplatePath, fileContent.buffer);
+                (pptxData as any)[slot.key] = tmpTemplatePath;
+                templateTempFiles.push(tmpTemplatePath);
+              }
+            } catch (tmplErr: any) {
+              console.warn(`[EXEC-PPTX] Could not download template for ${slot.key}:`, tmplErr.message);
+            }
+          }
+        }
+      }
+
+      const tmpFile = pathNode.join(osNode.tmpdir(), `exec-narrative-${Date.now()}.pptx`);
+      const scriptPath = pathNode.join(process.cwd(), 'server', 'scripts', 'generate_status_report_pptx.py');
+
+      const cleanupTemplateFiles = () => {
+        for (const f of templateTempFiles) {
+          try { fsNode.unlinkSync(f); } catch {}
+        }
+      };
+
+      try {
+        const { spawnSync } = await import('child_process');
+        const pyResult = spawnSync('python3', [scriptPath, tmpFile, '--executive-narrative'], {
+          input: JSON.stringify(pptxData),
+          timeout: 30000,
+          maxBuffer: 10 * 1024 * 1024,
+        });
+        if (pyResult.stderr && pyResult.stderr.length > 0) {
+          console.log(`[EXEC-PPTX] Python stderr:\n${pyResult.stderr.toString().substring(0, 2000)}`);
+        }
+        if (pyResult.status !== 0) {
+          throw new Error(`Python script exited with code ${pyResult.status}: ${pyResult.stderr?.toString().substring(0, 500)}`);
+        }
+        if (!fsNode.existsSync(tmpFile)) {
+          throw new Error('PPTX file was not generated');
+        }
+
+        const filename = `Executive_Narrative-${validated.startDate}_to_${validated.endDate}.pptx`;
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+        // Save a record to status_reports
+        try {
+          await storage.createStatusReport({
+            projectId: null,
+            tenantId,
+            title: `Executive Narrative PPTX — ${validated.startDate} to ${validated.endDate}`,
+            reportType: "executive_narrative",
+            reportStyle: "executive_brief",
+            periodStart: validated.startDate,
+            periodEnd: validated.endDate,
+            reportContent: validated.narrative,
+            status: "final",
+            metadata: {
+              ...validated.stats,
+              format: 'pptx',
+              generatedAt: new Date().toISOString(),
+              generatedBy: user.name || user.email,
+            },
+            generatedBy: user.id,
+          });
+        } catch (saveErr: any) {
+          console.error("[EXEC-PPTX] Failed to save report record:", saveErr.message);
+        }
+
+        const fileStream = fsNode.createReadStream(tmpFile);
+        fileStream.pipe(res);
+        fileStream.on('end', () => {
+          fsNode.unlink(tmpFile, () => {});
+          cleanupTemplateFiles();
+        });
+        fileStream.on('error', () => {
+          fsNode.unlink(tmpFile, () => {});
+          cleanupTemplateFiles();
+          if (!res.headersSent) {
+            res.status(500).json({ message: "Failed to stream PPTX" });
+          }
+        });
+      } catch (scriptError: any) {
+        console.error("[EXEC-PPTX] Generation script error:", scriptError.message);
+        if (fsNode.existsSync(tmpFile)) fsNode.unlinkSync(tmpFile);
+        cleanupTemplateFiles();
+        res.status(500).json({ message: "Failed to generate PowerPoint report" });
+      }
+    } catch (error: any) {
+      console.error("[EXEC-PPTX] Export error:", error);
+      res.status(500).json({ message: "Failed to export executive narrative PowerPoint" });
     }
   });
 
