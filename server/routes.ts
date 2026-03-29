@@ -12174,7 +12174,11 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         db.select().from(estimates).where(
           and(eq(estimates.tenantId, tenantId), gte(estimates.createdAt, new Date(startDate)), lte(estimates.createdAt, new Date(endDate + "T23:59:59")))
         ),
-        db.select().from(projectMilestones).where(eq(projectMilestones.tenantId, tenantId)),
+        db.select().from(projectMilestones).where(
+          inArray(projectMilestones.projectId,
+            db.select({ id: projects.id }).from(projects).where(eq(projects.tenantId, tenantId))
+          )
+        ),
         db.select().from(raiddEntries).where(
           and(
             eq(raiddEntries.tenantId, tenantId),
