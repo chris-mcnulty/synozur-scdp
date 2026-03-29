@@ -52,6 +52,8 @@ interface NarrativeStats {
   milestonesCompleted: number;
   openRisks: number;
   openIssues: number;
+  statusReportsPublished: number;
+  activeAssignments: number;
 }
 
 interface NarrativeResponse {
@@ -188,12 +190,15 @@ export default function ExecutiveNarrative() {
 
         {/* Stats cards */}
         {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             <StatCard icon={<TrendingUp className="h-4 w-4" />} label="Billable Hours" value={stats.billableHours.toFixed(1)} />
             <StatCard icon={<DollarSign className="h-4 w-4" />} label="Revenue" value={`$${stats.totalRevenue.toLocaleString()}`} />
             <StatCard icon={<FolderOpen className="h-4 w-4" />} label="Active Projects" value={String(stats.activeProjects)} />
             <StatCard icon={<Target className="h-4 w-4" />} label="Milestones Done" value={String(stats.milestonesCompleted)} />
             <StatCard icon={<AlertTriangle className="h-4 w-4" />} label="Open Risks" value={String(stats.openRisks)} />
+            <StatCard icon={<FileText className="h-4 w-4" />} label="Status Reports" value={String(stats.statusReportsPublished)} />
+            <StatCard icon={<Users className="h-4 w-4" />} label="Assignments" value={String(stats.activeAssignments)} />
+            <StatCard icon={<FileText className="h-4 w-4" />} label="Estimates" value={String(stats.estimatesCreated)} />
           </div>
         )}
 

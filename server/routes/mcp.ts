@@ -19,24 +19,6 @@ interface McpRouteDeps {
   requireRole: (roles: string[]) => any;
 }
 
-/** Typed shape of the metadata jsonb stored on a status_reports row. */
-interface StatusReportMetadata {
-  projectName?: string;
-  clientName?: string;
-  startDate?: string;
-  endDate?: string;
-  style?: string;
-  totalHours?: number;
-  totalBillableHours?: number;
-  totalExpenses?: number;
-  teamMemberCount?: number;
-  generatedAt?: string;
-  generatedBy?: string;
-  raidd?: Record<string, number>;
-  // Optional forward-compatible fields that agents may add in the future
-  overallHealth?: string;
-  highlights?: string[];
-}
 
 function getUser(req: Request): any {
   return (req as any).user;
@@ -1082,230 +1064,20 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
     try {
       const tenantId = requireTenantId(req);
 
-      // ── Date range resolution ──────────────────────────────────────────────
-      const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
       const now = new Date();
       const defaultTo = now.toISOString().split("T")[0];
       const defaultFrom = new Date(now.getTime() - 30 * 86400000).toISOString().split("T")[0];
-
       const fromStr = (req.query.from as string) || defaultFrom;
       const toStr = (req.query.to as string) || defaultTo;
 
-      /** Returns true only when the string is a real calendar date (round-trip safe). */
-      const isValidCalendarDate = (s: string): boolean => {
-        const d = new Date(s + "T00:00:00Z");
-        return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
-      };
-
-      if (!ISO_DATE_RE.test(fromStr) || !isValidCalendarDate(fromStr)) {
-        return res.status(400).json({ error: `Invalid 'from' date '${fromStr}'. Expected a real YYYY-MM-DD calendar date.` });
-      }
-      if (!ISO_DATE_RE.test(toStr) || !isValidCalendarDate(toStr)) {
-        return res.status(400).json({ error: `Invalid 'to' date '${toStr}'. Expected a real YYYY-MM-DD calendar date.` });
-      }
-      if (fromStr > toStr) {
-        return res.status(400).json({ error: `'from' (${fromStr}) must not be later than 'to' (${toStr}).` });
+      const { validateDateRange, aggregateActivityData } = await import("../services/activity-aggregation.js");
+      const dateCheck = validateDateRange(fromStr, toStr);
+      if (!dateCheck.valid) {
+        return res.status(400).json({ error: dateCheck.error });
       }
 
-      // Timestamp boundaries for timestamp columns (createdAt / updatedAt)
-      const fromTs = new Date(fromStr + "T00:00:00.000Z");
-      const toTs = new Date(toStr + "T23:59:59.999Z");
-
-      // ── Run all four queries in parallel ───────────────────────────────────
-      const [estimateRows, reportRows, raiddRows, allocationRows] = await Promise.all([
-
-        // 1. Estimates created in period.
-        //    NOTE: the estimates table has no updatedAt column (only createdAt and
-        //    estimateDate), so only newly-created estimates can be captured here.
-        //    The summary field is therefore named estimatesCreated and does not
-        //    attempt to surface updates.
-        db
-          .select({
-            id: estimates.id,
-            name: estimates.name,
-            status: estimates.status,
-            estimateType: estimates.estimateType,
-            pricingType: estimates.pricingType,
-            version: estimates.version,
-            presentedTotal: estimates.presentedTotal,
-            totalFees: estimates.totalFees,
-            estimateDate: estimates.estimateDate,
-            createdAt: estimates.createdAt,
-            clientName: clients.name,
-            projectId: estimates.projectId,
-          })
-          .from(estimates)
-          .leftJoin(clients, eq(estimates.clientId, clients.id))
-          .where(and(
-            eq(estimates.tenantId, tenantId),
-            eq(estimates.archived, false),
-            gte(estimates.createdAt, fromTs),
-            lte(estimates.createdAt, toTs),
-          ))
-          .orderBy(desc(estimates.createdAt)),
-
-        // 2. Status reports whose reporting period ends within the date range
-        //    periodEnd is the canonical "report date" (when was the period being reported on)
-        db
-          .select({
-            id: statusReports.id,
-            title: statusReports.title,
-            reportType: statusReports.reportType,
-            reportStyle: statusReports.reportStyle,
-            periodStart: statusReports.periodStart,
-            periodEnd: statusReports.periodEnd,
-            status: statusReports.status,
-            metadata: statusReports.metadata,
-            createdAt: statusReports.createdAt,
-            projectId: statusReports.projectId,
-            projectName: projects.name,
-            clientName: clients.name,
-          })
-          .from(statusReports)
-          .leftJoin(projects, eq(statusReports.projectId, projects.id))
-          .leftJoin(clients, eq(projects.clientId, clients.id))
-          .where(and(
-            eq(statusReports.tenantId, tenantId),
-            gte(statusReports.periodEnd, fromStr),
-            lte(statusReports.periodEnd, toStr),
-          ))
-          .orderBy(desc(statusReports.periodEnd)),
-
-        // 3. RAIDD entries created OR updated in period (this table has updatedAt)
-        db
-          .select({
-            id: raiddEntries.id,
-            type: raiddEntries.type,
-            refNumber: raiddEntries.refNumber,
-            title: raiddEntries.title,
-            status: raiddEntries.status,
-            priority: raiddEntries.priority,
-            dueDate: raiddEntries.dueDate,
-            createdAt: raiddEntries.createdAt,
-            updatedAt: raiddEntries.updatedAt,
-            projectId: raiddEntries.projectId,
-            projectName: projects.name,
-            clientName: clients.name,
-          })
-          .from(raiddEntries)
-          .leftJoin(projects, eq(raiddEntries.projectId, projects.id))
-          .leftJoin(clients, eq(projects.clientId, clients.id))
-          .where(and(
-            eq(raiddEntries.tenantId, tenantId),
-            or(
-              and(gte(raiddEntries.createdAt, fromTs), lte(raiddEntries.createdAt, toTs)),
-              and(gte(raiddEntries.updatedAt, fromTs), lte(raiddEntries.updatedAt, toTs)),
-            ),
-          ))
-          .orderBy(desc(raiddEntries.updatedAt)),
-
-        // 4. Project assignments active during the period
-        //    (plannedStartDate <= toStr AND plannedEndDate >= fromStr = overlap)
-        db
-          .select({
-            id: projectAllocations.id,
-            projectId: projectAllocations.projectId,
-            projectName: projects.name,
-            clientName: clients.name,
-            personName: users.name,
-            resourceName: projectAllocations.resourceName,
-            taskDescription: projectAllocations.taskDescription,
-            hours: projectAllocations.hours,
-            status: projectAllocations.status,
-            plannedStartDate: projectAllocations.plannedStartDate,
-            plannedEndDate: projectAllocations.plannedEndDate,
-          })
-          .from(projectAllocations)
-          .leftJoin(projects, eq(projectAllocations.projectId, projects.id))
-          .leftJoin(clients, eq(projects.clientId, clients.id))
-          .leftJoin(users, eq(projectAllocations.personId, users.id))
-          .where(and(
-            eq(projectAllocations.tenantId, tenantId),
-            eq(projectAllocations.isBaseline, false),
-            lte(projectAllocations.plannedStartDate, toStr),
-            gte(projectAllocations.plannedEndDate, fromStr),
-          ))
-          .orderBy(projectAllocations.plannedStartDate),
-      ]);
-
-      // ── Summary counts ─────────────────────────────────────────────────────
-      const raiddCreated = raiddRows.filter(
-        r => new Date(r.createdAt) >= fromTs && new Date(r.createdAt) <= toTs
-      ).length;
-      const raiddUpdated = raiddRows.filter(
-        r => new Date(r.updatedAt) >= fromTs && new Date(r.updatedAt) <= toTs &&
-             !(new Date(r.createdAt) >= fromTs && new Date(r.createdAt) <= toTs)
-      ).length;
-
-      res.json({
-        period: { from: fromStr, to: toStr },
-        summary: {
-          estimatesCreated: estimateRows.length,
-          statusReportsPublished: reportRows.length,
-          raiddEntriesCreated: raiddCreated,
-          raiddEntriesUpdated: raiddUpdated,
-          activeAssignments: allocationRows.length,
-        },
-        estimates: estimateRows.map(e => ({
-          id: e.id,
-          name: e.name,
-          status: e.status,
-          estimateType: e.estimateType,
-          pricingType: e.pricingType,
-          version: e.version,
-          clientName: e.clientName || null,
-          projectId: e.projectId || null,
-          presentedTotal: e.presentedTotal ? parseFloat(e.presentedTotal.toString()) : null,
-          totalFees: e.totalFees ? parseFloat(e.totalFees.toString()) : null,
-          estimateDate: e.estimateDate,
-          createdAt: e.createdAt,
-        })),
-        statusReports: reportRows.map(r => ({
-          id: r.id,
-          title: r.title,
-          reportType: r.reportType,
-          reportStyle: r.reportStyle,
-          status: r.status,
-          projectId: r.projectId,
-          projectName: r.projectName || null,
-          clientName: r.clientName || null,
-          periodStart: r.periodStart,
-          periodEnd: r.periodEnd,
-          createdAt: r.createdAt,
-          overallHealth: (r.metadata as StatusReportMetadata | null)?.overallHealth ?? null,
-          highlights: (r.metadata as StatusReportMetadata | null)?.highlights ?? null,
-          totalHours: (r.metadata as StatusReportMetadata | null)?.totalHours ?? null,
-          teamMemberCount: (r.metadata as StatusReportMetadata | null)?.teamMemberCount ?? null,
-          raidd: (r.metadata as StatusReportMetadata | null)?.raidd ?? null,
-        })),
-        raidd: raiddRows.map(r => ({
-          id: r.id,
-          type: r.type,
-          refNumber: r.refNumber || null,
-          title: r.title,
-          status: r.status,
-          priority: r.priority,
-          dueDate: r.dueDate || null,
-          projectId: r.projectId,
-          projectName: r.projectName || null,
-          clientName: r.clientName || null,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-          isNew: new Date(r.createdAt) >= fromTs && new Date(r.createdAt) <= toTs,
-        })),
-        assignments: allocationRows.map(a => ({
-          id: a.id,
-          projectId: a.projectId,
-          projectName: a.projectName || null,
-          clientName: a.clientName || null,
-          personName: a.personName || a.resourceName || null,
-          taskDescription: a.taskDescription || null,
-          hours: a.hours ? parseFloat(a.hours.toString()) : null,
-          status: a.status,
-          plannedStartDate: a.plannedStartDate,
-          plannedEndDate: a.plannedEndDate,
-        })),
-      });
+      const data = await aggregateActivityData(tenantId, fromStr, toStr);
+      res.json(data);
     } catch (error: any) {
       console.error("[MCP] /mcp/activity-summary error:", error);
       res.status(500).json({ error: "Failed to retrieve activity summary" });

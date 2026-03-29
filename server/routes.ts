@@ -12152,17 +12152,23 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       if (!tenantId) return res.status(403).json({ message: "No tenant context available" });
 
-      // ── Parallel data aggregation (all queries tenant-scoped) ──────────
+      const { validateDateRange, aggregateActivityData } = await import('./services/activity-aggregation.js');
+      const dateCheck = validateDateRange(startDate, endDate);
+      if (!dateCheck.valid) {
+        return res.status(400).json({ message: dateCheck.error });
+      }
+
+      // ── Shared activity aggregation (estimates, RAIDD, status reports, assignments) + exec-specific queries ──
       const [
+        activity,
         allProjects,
         allClients,
         allTimeEntries,
         allExpenses,
-        allEstimates,
         allMilestones,
-        allRaiddEntries,
         allUsers,
       ] = await Promise.all([
+        aggregateActivityData(tenantId, startDate, endDate),
         db.select().from(projects).where(eq(projects.tenantId, tenantId)),
         db.select().from(clients).where(eq(clients.tenantId, tenantId)),
         db.select().from(timeEntries).where(
@@ -12171,21 +12177,9 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         db.select().from(expenses).where(
           and(eq(expenses.tenantId, tenantId), gte(expenses.date, startDate), lte(expenses.date, endDate))
         ),
-        db.select().from(estimates).where(
-          and(eq(estimates.tenantId, tenantId), gte(estimates.createdAt, new Date(startDate)), lte(estimates.createdAt, new Date(endDate + "T23:59:59")))
-        ),
         db.select().from(projectMilestones).where(
           inArray(projectMilestones.projectId,
             db.select({ id: projects.id }).from(projects).where(eq(projects.tenantId, tenantId))
-          )
-        ),
-        db.select().from(raiddEntries).where(
-          and(
-            eq(raiddEntries.tenantId, tenantId),
-            or(
-              and(gte(raiddEntries.updatedAt, new Date(startDate)), lte(raiddEntries.updatedAt, new Date(endDate + "T23:59:59"))),
-              inArray(raiddEntries.status, ["open", "in_progress"])
-            )
           )
         ),
         db.select().from(users).where(eq(users.primaryTenantId, tenantId)),
@@ -12196,7 +12190,6 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       const projectMap = new Map(allProjects.map(p => [p.id, p]));
       const userMap = new Map(allUsers.map(u => [u.id, u.name]));
 
-      // Active projects
       const activeProjects = allProjects.filter(p => p.status === "active" || p.status === "in_progress");
 
       // ── Time entry aggregation ─────────────────────────────────────────
@@ -12205,7 +12198,6 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       const totalRevenue = allTimeEntries.filter(t => t.billable).reduce((s, t) => s + Number(t.hours || 0) * Number(t.billingRate || 0), 0);
       const totalCost = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0) * Number(t.costRate || 0), 0);
 
-      // Hours by project
       const hoursByProject = new Map<string, { name: string; client: string; hours: number; billable: number; revenue: number }>();
       for (const te of allTimeEntries) {
         const proj = projectMap.get(te.projectId);
@@ -12222,13 +12214,11 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         }
         hoursByProject.set(key, existing);
       }
-
       const projectHoursSummary = Array.from(hoursByProject.values())
         .sort((a, b) => b.hours - a.hours)
         .map(p => `- ${p.client} / ${p.name}: ${p.hours.toFixed(1)} total hrs (${p.billable.toFixed(1)} billable), $${p.revenue.toFixed(0)} revenue`)
         .join("\n") || "No time entries recorded.";
 
-      // Hours by person
       const hoursByPerson = new Map<string, { name: string; hours: number }>();
       for (const te of allTimeEntries) {
         const key = te.personId;
@@ -12253,14 +12243,11 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         .map(([cat, amt]) => `- ${cat}: $${amt.toFixed(0)}`)
         .join("\n") || "No expenses.";
 
-      // ── Estimate aggregation ───────────────────────────────────────────
-      const estimateSummary = allEstimates.length > 0
-        ? allEstimates
-            .sort((a, b) => Number(b.totalFees || 0) - Number(a.totalFees || 0))
-            .map(e => {
-              const cName = clientMap.get(e.clientId || "") || "Internal";
-              return `- ${e.name} (${cName}): $${Number(e.totalFees || 0).toLocaleString()}, ${Number(e.totalHours || 0)} hrs — Status: ${e.status}`;
-            })
+      // ── Estimate summary (from shared activity data) ───────────────────
+      const estimateSummary = activity.estimates.length > 0
+        ? activity.estimates
+            .sort((a, b) => (b.totalFees || 0) - (a.totalFees || 0))
+            .map(e => `- ${e.name} (${e.clientName || "Internal"}): $${(e.totalFees || 0).toLocaleString()} — Status: ${e.status}`)
             .join("\n")
         : "No new estimates created.";
 
@@ -12288,23 +12275,35 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
           }).join("\n")
         : "None upcoming.";
 
-      // ── RAIDD aggregation ──────────────────────────────────────────────
+      // ── RAIDD summary (from shared activity data) ──────────────────────
       const openStatuses = ["open", "in_progress"];
-      const highPriorityRaidd = allRaiddEntries.filter(r =>
+      const highPriorityRaidd = activity.raidd.filter(r =>
         openStatuses.includes(r.status) && (r.priority === "high" || r.priority === "critical")
       );
       const raiddSummary = highPriorityRaidd.length > 0
-        ? highPriorityRaidd.map(r => {
-            const proj = projectMap.get(r.projectId || "");
-            return `- [${r.type?.toUpperCase()}] ${r.refNumber || ""} ${r.title} (${r.priority}) — ${proj?.name || "?"}: ${r.impact || r.description || ""}`;
-          }).join("\n")
+        ? highPriorityRaidd.map(r =>
+            `- [${r.type?.toUpperCase()}] ${r.refNumber || ""} ${r.title} (${r.priority}) — ${r.projectName || "?"}: ${r.impact || r.description || ""}`
+          ).join("\n")
         : "No high-priority risks or issues.";
 
       const raiddCounts = {
-        openRisks: allRaiddEntries.filter(r => r.type === "risk" && openStatuses.includes(r.status)).length,
-        openIssues: allRaiddEntries.filter(r => r.type === "issue" && openStatuses.includes(r.status)).length,
-        openActions: allRaiddEntries.filter(r => r.type === "action_item" && openStatuses.includes(r.status)).length,
+        openRisks: activity.raidd.filter(r => r.type === "risk" && openStatuses.includes(r.status)).length,
+        openIssues: activity.raidd.filter(r => r.type === "issue" && openStatuses.includes(r.status)).length,
+        openActions: activity.raidd.filter(r => r.type === "action_item" && openStatuses.includes(r.status)).length,
       };
+
+      // ── Status reports summary (from shared activity data) ─────────────
+      const statusReportsSummary = activity.statusReports.length > 0
+        ? activity.statusReports
+            .map(r => `- ${r.projectName || "?"} (${r.clientName || "?"}): "${r.title}" — Health: ${r.overallHealth || "N/A"}`)
+            .join("\n")
+        : "No status reports published in this period.";
+
+      // ── Assignments summary (from shared activity data) ────────────────
+      const uniqueAssignedPeople = new Set(activity.assignments.map(a => a.personName).filter(Boolean));
+      const assignmentsSummary = activity.assignments.length > 0
+        ? `${activity.assignments.length} active assignments across ${uniqueAssignedPeople.size} team members`
+        : "No active assignments in this period.";
 
       // ── Build data payload for AI ──────────────────────────────────────
       const dataPayload = `Generate an executive narrative summary for the period ${startDate} to ${endDate}.
@@ -12314,6 +12313,7 @@ PRACTICE OVERVIEW
 Active Projects: ${activeProjects.length}
 Total Projects: ${allProjects.length}
 Active Clients: ${new Set(activeProjects.map(p => p.clientId).filter(Boolean)).size}
+Active Assignments: ${assignmentsSummary}
 
 FINANCIAL PERFORMANCE (${startDate} to ${endDate})
 ===================================================
@@ -12336,9 +12336,13 @@ EXPENSES BY CATEGORY
 ====================
 ${expenseSummary}
 
-ESTIMATES CREATED / UPDATED
-============================
+ESTIMATES CREATED
+=================
 ${estimateSummary}
+
+STATUS REPORTS PUBLISHED
+========================
+${statusReportsSummary}
 
 MILESTONES COMPLETED
 ====================
@@ -12376,10 +12380,12 @@ ${raiddSummary}`;
           totalRevenue: Math.round(totalRevenue),
           totalExpenses: Math.round(totalExpenseAmount),
           activeProjects: activeProjects.length,
-          estimatesCreated: allEstimates.length,
+          estimatesCreated: activity.estimates.length,
           milestonesCompleted: completedMilestones.length,
           openRisks: raiddCounts.openRisks,
           openIssues: raiddCounts.openIssues,
+          statusReportsPublished: activity.statusReports.length,
+          activeAssignments: activity.assignments.length,
         },
       });
     } catch (error: any) {
