@@ -4,6 +4,7 @@ import { Helmet } from "react-helmet-async";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -108,7 +109,7 @@ export default function ExecutiveNarrative() {
   const stats = result?.stats;
 
   return (
-    <>
+    <Layout>
       <Helmet>
         <title>Executive Narrative | Constellation</title>
       </Helmet>
@@ -123,7 +124,7 @@ export default function ExecutiveNarrative() {
             <h1 className="text-2xl font-semibold tracking-tight">Executive Narrative</h1>
             <p className="text-sm text-muted-foreground">
               AI-generated practice summary across all clients, projects, and estimates.
-              Powered by Azure Foundry GPT-5.4.
+              Powered by AI-assisted analysis.
             </p>
           </div>
         </div>
@@ -179,7 +180,7 @@ export default function ExecutiveNarrative() {
             </div>
             {generateMutation.isPending && (
               <p className="text-sm text-muted-foreground mt-3">
-                Aggregating data and generating narrative with GPT-5.4. This may take 30–60 seconds...
+                Aggregating data and generating narrative. This may take 30–60 seconds...
               </p>
             )}
           </CardContent>
@@ -224,7 +225,7 @@ export default function ExecutiveNarrative() {
           </Card>
         )}
       </div>
-    </>
+    </Layout>
   );
 }
 
