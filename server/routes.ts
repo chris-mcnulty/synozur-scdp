@@ -12135,6 +12135,255 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     }
   });
 
+  // POST /api/reports/executive-narrative - Generate AI executive narrative summary
+  app.post("/api/reports/executive-narrative", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    req.setTimeout(180000);
+    res.setTimeout(180000);
+    try {
+      const schema = z.object({
+        startDate: z.string().min(1),
+        endDate: z.string().min(1),
+      });
+      let validated;
+      try { validated = schema.parse(req.body); }
+      catch (e: any) { return res.status(400).json({ message: e.message || "Invalid request body" }); }
+      const { startDate, endDate } = validated;
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) return res.status(403).json({ message: "No tenant context available" });
+
+      // ── Parallel data aggregation (all queries tenant-scoped) ──────────
+      const [
+        allProjects,
+        allClients,
+        allTimeEntries,
+        allExpenses,
+        allEstimates,
+        allMilestones,
+        allRaiddEntries,
+        allUsers,
+      ] = await Promise.all([
+        db.select().from(projects).where(eq(projects.tenantId, tenantId)),
+        db.select().from(clients).where(eq(clients.tenantId, tenantId)),
+        db.select().from(timeEntries).where(
+          and(eq(timeEntries.tenantId, tenantId), gte(timeEntries.date, startDate), lte(timeEntries.date, endDate))
+        ),
+        db.select().from(expenses).where(
+          and(eq(expenses.tenantId, tenantId), gte(expenses.date, startDate), lte(expenses.date, endDate))
+        ),
+        db.select().from(estimates).where(
+          and(eq(estimates.tenantId, tenantId), gte(estimates.createdAt, new Date(startDate)), lte(estimates.createdAt, new Date(endDate + "T23:59:59")))
+        ),
+        db.select().from(projectMilestones).where(eq(projectMilestones.tenantId, tenantId)),
+        db.select().from(raiddEntries).where(
+          and(
+            eq(raiddEntries.tenantId, tenantId),
+            or(
+              and(gte(raiddEntries.updatedAt, new Date(startDate)), lte(raiddEntries.updatedAt, new Date(endDate + "T23:59:59"))),
+              inArray(raiddEntries.status, ["open", "in_progress"])
+            )
+          )
+        ),
+        db.select().from(users).where(eq(users.primaryTenantId, tenantId)),
+      ]);
+
+      // Lookup maps
+      const clientMap = new Map(allClients.map(c => [c.id, c.name]));
+      const projectMap = new Map(allProjects.map(p => [p.id, p]));
+      const userMap = new Map(allUsers.map(u => [u.id, u.name]));
+
+      // Active projects
+      const activeProjects = allProjects.filter(p => p.status === "active" || p.status === "in_progress");
+
+      // ── Time entry aggregation ─────────────────────────────────────────
+      const totalHours = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0), 0);
+      const billableHours = allTimeEntries.filter(t => t.billable).reduce((s, t) => s + Number(t.hours || 0), 0);
+      const totalRevenue = allTimeEntries.filter(t => t.billable).reduce((s, t) => s + Number(t.hours || 0) * Number(t.billingRate || 0), 0);
+      const totalCost = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0) * Number(t.costRate || 0), 0);
+
+      // Hours by project
+      const hoursByProject = new Map<string, { name: string; client: string; hours: number; billable: number; revenue: number }>();
+      for (const te of allTimeEntries) {
+        const proj = projectMap.get(te.projectId);
+        const key = te.projectId;
+        const existing = hoursByProject.get(key) || {
+          name: proj?.name || "Unknown",
+          client: clientMap.get(proj?.clientId || "") || "Unknown",
+          hours: 0, billable: 0, revenue: 0
+        };
+        existing.hours += Number(te.hours || 0);
+        if (te.billable) {
+          existing.billable += Number(te.hours || 0);
+          existing.revenue += Number(te.hours || 0) * Number(te.billingRate || 0);
+        }
+        hoursByProject.set(key, existing);
+      }
+
+      const projectHoursSummary = Array.from(hoursByProject.values())
+        .sort((a, b) => b.hours - a.hours)
+        .map(p => `- ${p.client} / ${p.name}: ${p.hours.toFixed(1)} total hrs (${p.billable.toFixed(1)} billable), $${p.revenue.toFixed(0)} revenue`)
+        .join("\n") || "No time entries recorded.";
+
+      // Hours by person
+      const hoursByPerson = new Map<string, { name: string; hours: number }>();
+      for (const te of allTimeEntries) {
+        const key = te.personId;
+        const existing = hoursByPerson.get(key) || { name: userMap.get(te.personId) || "Unknown", hours: 0 };
+        existing.hours += Number(te.hours || 0);
+        hoursByPerson.set(key, existing);
+      }
+      const personSummary = Array.from(hoursByPerson.values())
+        .sort((a, b) => b.hours - a.hours)
+        .map(p => `- ${p.name}: ${p.hours.toFixed(1)} hours`)
+        .join("\n") || "No resource data.";
+
+      // ── Expense aggregation ────────────────────────────────────────────
+      const totalExpenseAmount = allExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+      const expenseByCategory = new Map<string, number>();
+      for (const e of allExpenses) {
+        const cat = e.category || "Other";
+        expenseByCategory.set(cat, (expenseByCategory.get(cat) || 0) + Number(e.amount || 0));
+      }
+      const expenseSummary = Array.from(expenseByCategory.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([cat, amt]) => `- ${cat}: $${amt.toFixed(0)}`)
+        .join("\n") || "No expenses.";
+
+      // ── Estimate aggregation ───────────────────────────────────────────
+      const estimateSummary = allEstimates.length > 0
+        ? allEstimates
+            .sort((a, b) => Number(b.totalFees || 0) - Number(a.totalFees || 0))
+            .map(e => {
+              const cName = clientMap.get(e.clientId || "") || "Internal";
+              return `- ${e.name} (${cName}): $${Number(e.totalFees || 0).toLocaleString()}, ${Number(e.totalHours || 0)} hrs — Status: ${e.status}`;
+            })
+            .join("\n")
+        : "No new estimates created.";
+
+      // ── Milestone aggregation ──────────────────────────────────────────
+      const completedMilestones = allMilestones.filter(m => {
+        if (m.status !== "completed" || !m.completedDate) return false;
+        return m.completedDate >= startDate && m.completedDate <= endDate;
+      });
+      const upcomingMilestones = allMilestones.filter(m => {
+        if (m.status === "completed" || m.status === "cancelled") return false;
+        return m.targetDate && m.targetDate > endDate;
+      }).slice(0, 10);
+
+      const completedMilestoneSummary = completedMilestones.length > 0
+        ? completedMilestones.map(m => {
+            const proj = projectMap.get(m.projectId || "");
+            return `- ${proj?.name || "?"}: ${m.name}${m.isPaymentMilestone ? ` (Payment: $${Number(m.amount || 0).toLocaleString()})` : ""}`;
+          }).join("\n")
+        : "None completed in this period.";
+
+      const upcomingMilestoneSummary = upcomingMilestones.length > 0
+        ? upcomingMilestones.map(m => {
+            const proj = projectMap.get(m.projectId || "");
+            return `- ${proj?.name || "?"}: ${m.name} — Due: ${m.targetDate}`;
+          }).join("\n")
+        : "None upcoming.";
+
+      // ── RAIDD aggregation ──────────────────────────────────────────────
+      const openStatuses = ["open", "in_progress"];
+      const highPriorityRaidd = allRaiddEntries.filter(r =>
+        openStatuses.includes(r.status) && (r.priority === "high" || r.priority === "critical")
+      );
+      const raiddSummary = highPriorityRaidd.length > 0
+        ? highPriorityRaidd.map(r => {
+            const proj = projectMap.get(r.projectId || "");
+            return `- [${r.type?.toUpperCase()}] ${r.refNumber || ""} ${r.title} (${r.priority}) — ${proj?.name || "?"}: ${r.impact || r.description || ""}`;
+          }).join("\n")
+        : "No high-priority risks or issues.";
+
+      const raiddCounts = {
+        openRisks: allRaiddEntries.filter(r => r.type === "risk" && openStatuses.includes(r.status)).length,
+        openIssues: allRaiddEntries.filter(r => r.type === "issue" && openStatuses.includes(r.status)).length,
+        openActions: allRaiddEntries.filter(r => r.type === "action_item" && openStatuses.includes(r.status)).length,
+      };
+
+      // ── Build data payload for AI ──────────────────────────────────────
+      const dataPayload = `Generate an executive narrative summary for the period ${startDate} to ${endDate}.
+
+PRACTICE OVERVIEW
+=================
+Active Projects: ${activeProjects.length}
+Total Projects: ${allProjects.length}
+Active Clients: ${new Set(activeProjects.map(p => p.clientId).filter(Boolean)).size}
+
+FINANCIAL PERFORMANCE (${startDate} to ${endDate})
+===================================================
+Total Hours Logged: ${totalHours.toFixed(1)}
+Billable Hours: ${billableHours.toFixed(1)} (${totalHours > 0 ? ((billableHours / totalHours) * 100).toFixed(0) : 0}% utilization)
+Revenue (billed at rate): $${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+Internal Cost: $${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+Gross Margin: ${totalRevenue > 0 ? (((totalRevenue - totalCost) / totalRevenue) * 100).toFixed(1) : 0}%
+Total Expenses: $${totalExpenseAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+
+HOURS BY PROJECT
+================
+${projectHoursSummary}
+
+RESOURCE LOADING
+================
+${personSummary}
+
+EXPENSES BY CATEGORY
+====================
+${expenseSummary}
+
+ESTIMATES CREATED / UPDATED
+============================
+${estimateSummary}
+
+MILESTONES COMPLETED
+====================
+${completedMilestoneSummary}
+
+UPCOMING MILESTONES
+===================
+${upcomingMilestoneSummary}
+
+RAIDD — HIGH PRIORITY ITEMS
+============================
+Open Risks: ${raiddCounts.openRisks} | Open Issues: ${raiddCounts.openIssues} | Open Actions: ${raiddCounts.openActions}
+${raiddSummary}`;
+
+      // ── Call AI with grounding ─────────────────────────────────────────
+      const { buildGroundingContext } = await import('./services/ai-service.js');
+      const groundingDocs = tenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
+        : await storage.getActiveGroundingDocuments();
+      const groundingCtx = buildGroundingContext(groundingDocs, 'executive_narrative');
+
+      const narrative = await aiService.generateExecutiveNarrative(
+        dataPayload,
+        groundingCtx,
+        { tenantId, userId: user?.id, feature: AI_FEATURES.EXECUTIVE_NARRATIVE }
+      );
+
+      console.log(`[AI] Executive narrative generated for ${startDate}–${endDate} by user ${user?.id}`);
+      res.json({
+        narrative,
+        period: { startDate, endDate },
+        stats: {
+          totalHours: Math.round(totalHours * 10) / 10,
+          billableHours: Math.round(billableHours * 10) / 10,
+          totalRevenue: Math.round(totalRevenue),
+          totalExpenses: Math.round(totalExpenseAmount),
+          activeProjects: activeProjects.length,
+          estimatesCreated: allEstimates.length,
+          milestonesCompleted: completedMilestones.length,
+          openRisks: raiddCounts.openRisks,
+          openIssues: raiddCounts.openIssues,
+        },
+      });
+    } catch (error: any) {
+      console.error("[AI] Executive narrative generation failed:", error);
+      res.status(500).json({ message: error.message || "Failed to generate executive narrative" });
+    }
+  });
+
   // POST /api/ai/report-query - Natural language report query
   app.post("/api/ai/report-query", requireAuth, aiRateLimiter, async (req, res) => {
     try {

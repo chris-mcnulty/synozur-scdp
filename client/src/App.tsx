@@ -55,6 +55,7 @@ import PortfolioSlippage from "@/pages/portfolio-slippage";
 import MyRaidd from "@/pages/my-raidd";
 import CrmDeals from "@/pages/crm-deals";
 import AiSettings from "@/pages/ai-settings";
+import ExecutiveNarrative from "@/pages/executive-narrative";
 import M365IntegrationDiagram from "@/pages/m365-integration-diagram";
 import EmbedProject from "@/pages/embed-project";
 import EmbedConfigure from "@/pages/embed-configure";
@@ -390,6 +391,9 @@ function Router() {
       </Route>
       <Route path="/reports">
         {user ? <Reports /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/executive-narrative">
+        {user ? <ExecutiveNarrative /> : <Redirect to="/login" />}
       </Route>
       <Route path="/about">
         {user ? <About /> : <Redirect to="/login" />}

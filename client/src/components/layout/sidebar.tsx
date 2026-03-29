@@ -129,7 +129,7 @@ interface SectionRoute {
 
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-raidd"] },
-  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/projects", "/clients", "/resource-management", "/estimates", "/crm/deals"] },
+  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/contractor-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
@@ -239,6 +239,7 @@ export function Sidebar() {
                   <SidebarItem href="/portfolio/schedule-health" icon={<ActivitySquare />} label="Schedule Health" />
                 )}
                 <SidebarItem href="/reports" icon={<BarChart3 />} label="Reports" />
+                <SidebarItem href="/executive-narrative" icon={<Brain />} label="Executive Narrative" requiredRoles={["admin", "pm", "portfolio-manager", "executive"]} />
                 <SubGroupLabel label="Management" />
                 <SidebarItem href="/projects" icon={<FolderOpen />} label="All Projects" />
                 <SidebarItem href="/clients" icon={<Building2 />} label="Clients" />

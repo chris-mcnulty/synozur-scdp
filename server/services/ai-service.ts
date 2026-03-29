@@ -5,7 +5,7 @@ import { calculateEstimatedCost } from './ai-pricing.js';
 import { checkUsageThresholds } from './ai-usage-alerts.js';
 import { storage } from '../storage.js';
 
-export type GroundingFeature = 'estimate_narrative' | 'estimate_generation' | 'invoice_narrative' | 'status_report' | 'sub_sow' | 'changelog' | 'general';
+export type GroundingFeature = 'estimate_narrative' | 'estimate_generation' | 'invoice_narrative' | 'status_report' | 'sub_sow' | 'changelog' | 'executive_narrative' | 'general';
 
 const FEATURE_CATEGORY_MAP: Record<GroundingFeature, GroundingDocCategory[]> = {
   estimate_narrative: ['estimate_narrative', 'pm_methodology', 'brand_voice', 'general'],
@@ -14,6 +14,7 @@ const FEATURE_CATEGORY_MAP: Record<GroundingFeature, GroundingDocCategory[]> = {
   status_report: ['status_report', 'raidd_guidance', 'pm_methodology', 'brand_voice', 'general'],
   sub_sow: ['estimate_narrative', 'pm_methodology', 'brand_voice', 'general'],
   changelog: ['general', 'brand_voice'],
+  executive_narrative: ['status_report', 'pm_methodology', 'brand_voice', 'general'],
   general: ['general', 'pm_methodology', 'brand_voice'],
 };
 
@@ -339,6 +340,22 @@ For each EPIC, you must address the following key client questions:
 - Note any risks if assumptions prove incorrect
 
 Format the output as professional proposal text with clear headers and sections. Use markdown formatting for rich text (headers, bold, bullets, tables where helpful).`,
+
+    executiveNarrative: `You are a senior consulting partner writing a monthly executive narrative summary for internal leadership. This summary covers ALL delivery activity across the entire practice — all clients, projects, estimates, and resources — for the specified time period.
+
+Write in polished, confident executive prose suitable for a managing partner or C-suite audience. The narrative should:
+
+1. **Open with a high-level practice health statement** — overall trajectory, key wins, and any areas of concern.
+2. **Revenue & Financial Performance** — summarize hours billed, revenue recognized, expenses incurred, margins, and how these compare to capacity/targets.
+3. **Delivery Highlights** — call out notable project milestones, completed deliverables, and successful outcomes by client.
+4. **Pipeline & New Business** — reference new estimates created/approved and their value, new clients onboarded.
+5. **Resource Utilization** — team loading, capacity gaps, and staffing observations.
+6. **Risks & Issues** — escalate any open RAIDD items that need leadership attention, especially high-priority risks and overdue action items.
+7. **Outlook** — what to expect next period, upcoming milestones, and any decisions needed from leadership.
+
+Use specific numbers and percentages wherever possible. Name clients and projects directly. Group observations by client where it improves readability. Keep the tone strategic, not operational — this is a leadership narrative, not a status report.
+
+Use markdown formatting with clear section headers. Target 600–1200 words depending on the volume of activity.`,
 
     general: `You are an AI assistant for SCDP, a consulting delivery management platform. Help users with questions about projects, estimates, resources, expenses, and invoicing.
 
@@ -836,6 +853,38 @@ Please generate a professional Sub-SOW narrative suitable for inclusion in a sub
       return result.content;
     } catch (error: any) {
       logAiUsage(usageCtx || { feature: AI_FEATURES.SUB_SOW_NARRATIVE }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
+  }
+
+  async generateExecutiveNarrative(
+    dataPayload: string,
+    groundingContext?: string,
+    usageCtx?: AiUsageContext
+  ): Promise<string> {
+    const { createAIProvider } = await import('./ai-provider.js');
+    const provider = createAIProvider('foundry', 'gpt-5.4');
+    if (!provider.isConfigured()) {
+      throw new Error('Azure AI Foundry is not configured. Please set AZURE_FOUNDRY_OPENAI_ENDPOINT and AZURE_FOUNDRY_API_KEY environment variables.');
+    }
+
+    const systemContent = this.systemPrompts.executiveNarrative + (groundingContext || '');
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: dataPayload }
+    ];
+
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        temperature: 0.5,
+        maxTokens: 8192,
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.EXECUTIVE_NARRATIVE }, provider, result, Date.now() - startTime);
+      return result.content;
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.EXECUTIVE_NARRATIVE }, provider, null, Date.now() - startTime, error);
       throw error;
     }
   }

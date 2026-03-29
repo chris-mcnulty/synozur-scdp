@@ -3266,6 +3266,7 @@ export const AI_FEATURES = {
   REPORT_QUERY: 'report_query',
   RAIDD_ANALYSIS: 'raidd_analysis',
   SUB_SOW_NARRATIVE: 'sub_sow_narrative',
+  EXECUTIVE_NARRATIVE: 'executive_narrative',
   CUSTOM: 'custom',
   OTHER: 'other',
 } as const;
