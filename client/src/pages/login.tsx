@@ -374,7 +374,10 @@ export default function Login() {
                     </div>
                     <Button 
                       type="submit" 
-                      className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold"
+                      className="w-full text-white font-semibold"
+                      style={{ background: 'linear-gradient(to right, #810FFB, #9b3ffe)', }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'linear-gradient(to right, #6f0de0, #810FFB)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'linear-gradient(to right, #810FFB, #9b3ffe)')}
                       disabled={loginMutation.isPending}
                       data-testid="button-login"
                     >
