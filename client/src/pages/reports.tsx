@@ -294,51 +294,51 @@ function Reports() {
       <div className="space-y-6">
         {/* Summary Cards */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card>
+          <Card className="nebula-card animate-fade-in-up stagger-1">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+              <CardTitle className="text-sm font-light">Total Projects</CardTitle>
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalProjects}</div>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-2xl font-black">{totalProjects}</div>
+              <p className="text-xs font-light text-muted-foreground">
                 Active portfolio
               </p>
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="nebula-card animate-fade-in-up stagger-2">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Completion</CardTitle>
+              <CardTitle className="text-sm font-light">Avg Completion</CardTitle>
               <Target className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{avgCompletion.toFixed(1)}%</div>
+              <div className="text-2xl font-black">{avgCompletion.toFixed(1)}%</div>
               <Progress value={avgCompletion} className="mt-2" />
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="nebula-card animate-fade-in-up stagger-3">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+              <CardTitle className="text-sm font-light">Total Revenue</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${(totalRevenue / 1000).toFixed(1)}k</div>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-2xl font-black">${(totalRevenue / 1000).toFixed(1)}k</div>
+              <p className="text-xs font-light text-muted-foreground">
                 Across all projects
               </p>
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="nebula-card animate-fade-in-up stagger-4">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Profit Margin</CardTitle>
+              <CardTitle className="text-sm font-light">Avg Profit Margin</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{avgProfitMargin.toFixed(1)}%</div>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-2xl font-black">{avgProfitMargin.toFixed(1)}%</div>
+              <p className="text-xs font-light text-muted-foreground">
                 Portfolio average
               </p>
             </CardContent>
@@ -1438,7 +1438,7 @@ function Reports() {
     <Layout>
       <div className="flex-1 space-y-4 p-8 pt-6">
         <div className="flex items-center justify-between space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Portfolio Reports</h2>
+          <h2 className="text-3xl font-bold tracking-tight cosmic-text">Portfolio Reports</h2>
         </div>
       
       {/* Filters */}

@@ -3,6 +3,7 @@ import { Sidebar } from "./sidebar";
 import { HelpChat } from "@/components/HelpChat";
 import { WhatsNewModal } from "@/components/WhatsNewModal";
 import { PlanStatusBanner } from "@/components/plan-status-banner";
+import { Aurora } from "@/components/aurora";
 import { useEmbed } from "@/hooks/use-embed";
 
 interface LayoutProps {
@@ -23,14 +24,17 @@ export function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <PlanStatusBanner />
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-4 lg:p-6">
-          {children}
-        </main>
+    <div className="relative min-h-screen bg-background">
+      <Aurora intensity="low" className="fixed inset-0 z-0" />
+      <div className="relative z-10">
+        <Header />
+        <PlanStatusBanner />
+        <div className="flex">
+          <Sidebar />
+          <main className="flex-1 p-4 lg:p-6">
+            {children}
+          </main>
+        </div>
       </div>
       <HelpChat />
       <WhatsNewModal />

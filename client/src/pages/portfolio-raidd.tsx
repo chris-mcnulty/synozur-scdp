@@ -201,7 +201,7 @@ export default function PortfolioRaidd() {
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-bold">Portfolio RAIDD</h1>
+            <h1 className="text-2xl font-bold cosmic-text">Portfolio RAIDD</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Cross-project view of Risks, Action Items, Issues, Decisions & Dependencies
             </p>
@@ -220,64 +220,64 @@ export default function PortfolioRaidd() {
           </div>
         ) : summary && (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Card className="border-red-200 dark:border-red-800/50">
+            <Card className="nebula-card border-red-200 dark:border-red-800/50 animate-fade-in-up stagger-1">
               <CardContent className="pt-4 pb-3 px-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Shield className="h-4 w-4 text-red-500" />
-                  <span className="text-xs font-medium text-muted-foreground">Open Risks</span>
+                  <span className="text-xs font-light text-muted-foreground">Open Risks</span>
                 </div>
-                <div className="text-2xl font-bold">{summary.openRisks}</div>
+                <div className="text-2xl font-black">{summary.openRisks}</div>
               </CardContent>
             </Card>
-            <Card className="border-orange-200 dark:border-orange-800/50">
+            <Card className="nebula-card border-orange-200 dark:border-orange-800/50 animate-fade-in-up stagger-2">
               <CardContent className="pt-4 pb-3 px-4">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertTriangle className="h-4 w-4 text-orange-500" />
-                  <span className="text-xs font-medium text-muted-foreground">Open Issues</span>
+                  <span className="text-xs font-light text-muted-foreground">Open Issues</span>
                 </div>
-                <div className="text-2xl font-bold">{summary.openIssues}</div>
+                <div className="text-2xl font-black">{summary.openIssues}</div>
               </CardContent>
             </Card>
-            <Card className="border-blue-200 dark:border-blue-800/50">
+            <Card className="nebula-card border-blue-200 dark:border-blue-800/50 animate-fade-in-up stagger-3">
               <CardContent className="pt-4 pb-3 px-4">
                 <div className="flex items-center gap-2 mb-1">
                   <CheckSquare className="h-4 w-4 text-blue-500" />
-                  <span className="text-xs font-medium text-muted-foreground">Action Items</span>
+                  <span className="text-xs font-light text-muted-foreground">Action Items</span>
                 </div>
-                <div className="text-2xl font-bold">{summary.openActionItems}</div>
+                <div className="text-2xl font-black">{summary.openActionItems}</div>
                 {summary.overdueActionItems > 0 && (
                   <span className="text-xs text-red-500 font-medium">{summary.overdueActionItems} overdue</span>
                 )}
               </CardContent>
             </Card>
-            <Card className="border-purple-200 dark:border-purple-800/50">
+            <Card className="nebula-card border-purple-200 dark:border-purple-800/50 animate-fade-in-up stagger-4">
               <CardContent className="pt-4 pb-3 px-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Link2 className="h-4 w-4 text-purple-500" />
-                  <span className="text-xs font-medium text-muted-foreground">Dependencies</span>
+                  <span className="text-xs font-light text-muted-foreground">Dependencies</span>
                 </div>
-                <div className="text-2xl font-bold">{summary.openDependencies}</div>
+                <div className="text-2xl font-black">{summary.openDependencies}</div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="nebula-card animate-fade-in-up stagger-5">
               <CardContent className="pt-4 pb-3 px-4">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertCircle className="h-4 w-4 text-red-600" />
-                  <span className="text-xs font-medium text-muted-foreground">Critical / High</span>
+                  <span className="text-xs font-light text-muted-foreground">Critical / High</span>
                 </div>
-                <div className="text-2xl font-bold">
-                  {summary.criticalItems}<span className="text-sm text-muted-foreground font-normal"> / {summary.highPriorityItems}</span>
+                <div className="text-2xl font-black">
+                  {summary.criticalItems}<span className="text-sm text-muted-foreground font-light"> / {summary.highPriorityItems}</span>
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="nebula-card animate-fade-in-up stagger-6">
               <CardContent className="pt-4 pb-3 px-4">
                 <div className="flex items-center gap-2 mb-1">
                   <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-xs font-medium text-muted-foreground">Closed This Month</span>
+                  <span className="text-xs font-light text-muted-foreground">Closed This Month</span>
                 </div>
-                <div className="text-2xl font-bold">{summary.closedThisMonth}</div>
-                <span className="text-xs text-muted-foreground">{summary.projectsWithEntries} project{summary.projectsWithEntries !== 1 ? "s" : ""}</span>
+                <div className="text-2xl font-black">{summary.closedThisMonth}</div>
+                <span className="text-xs font-light text-muted-foreground">{summary.projectsWithEntries} project{summary.projectsWithEntries !== 1 ? "s" : ""}</span>
               </CardContent>
             </Card>
           </div>

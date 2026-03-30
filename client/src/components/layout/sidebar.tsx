@@ -77,10 +77,10 @@ function SidebarItem({ href, icon, label, badge, requiredRoles }: SidebarItemPro
     <Link 
       href={href}
       className={cn(
-        "flex items-center space-x-3 px-3 py-2 rounded-md transition-colors text-sm",
+        "relative flex items-center space-x-3 px-3 py-2 rounded-md transition-all text-sm",
         isActive 
-          ? 'bg-accent text-accent-foreground font-medium' 
-          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+          ? 'border-l-2 border-primary bg-gradient-to-r from-primary/15 to-transparent text-accent-foreground font-medium sidebar-active-item'
+          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50 border-l-2 border-transparent sidebar-hover-item'
       )}
       data-testid={`link-${label.toLowerCase().replace(/\s+/g, '-')}`}
     >

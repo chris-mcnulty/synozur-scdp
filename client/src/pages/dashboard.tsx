@@ -87,7 +87,7 @@ export default function Dashboard() {
                 <span className="text-sm font-medium text-primary">{activeTenant.name}</span>
               </div>
             )}
-            <h2 className="text-3xl font-bold" data-testid="dashboard-title">Portfolio Dashboard</h2>
+            <h2 className="text-3xl font-bold cosmic-text" data-testid="dashboard-title">Portfolio Dashboard</h2>
             <p className="text-muted-foreground" data-testid="dashboard-subtitle">
               Overview of active projects and team utilization
             </p>
@@ -112,6 +112,7 @@ export default function Dashboard() {
             icon={<FolderOpen />}
             iconColor="bg-primary/10 text-primary"
             change="+2 from last month"
+            staggerIndex={0}
           />
           
           <KPICard
@@ -120,6 +121,7 @@ export default function Dashboard() {
             icon={<PieChart />}
             iconColor="bg-secondary/10 text-secondary"
             subtitle="Target: 85%"
+            staggerIndex={1}
           />
           
           <KPICard
@@ -128,6 +130,7 @@ export default function Dashboard() {
             icon={<DollarSign />}
             iconColor="bg-chart-4/10 text-chart-4"
             change="92% of target"
+            staggerIndex={2}
           />
           
           <KPICard
@@ -136,6 +139,7 @@ export default function Dashboard() {
             icon={<Clock />}
             iconColor="bg-destructive/10 text-destructive"
             change="Requires attention"
+            staggerIndex={3}
           />
         </div>
 
@@ -152,6 +156,7 @@ export default function Dashboard() {
                 icon={<AlertTriangle />}
                 iconColor="bg-orange-100 text-orange-600"
                 subtitle={`${slippageData.summary.critical ?? 0} critical · ${slippageData.summary.atRisk ?? 0} at risk`}
+                staggerIndex={4}
               />
             </button>
             <button
@@ -164,6 +169,7 @@ export default function Dashboard() {
                 icon={<TrendingDown />}
                 iconColor="bg-amber-100 text-amber-600"
                 subtitle="Projects with emerging schedule pressure"
+                staggerIndex={5}
               />
             </button>
           </div>

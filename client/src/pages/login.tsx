@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { SynozurLogo } from "@/components/icons/synozur-logo";
 import { SynozurAppSwitcher } from "@/components/synozur-app-switcher";
+import { Aurora } from "@/components/aurora";
 import heroImage from "@assets/AdobeStock_244105520_1771187192557.jpeg";
 import secondaryImage from "@assets/AdobeStock_189127184_1771187213585.jpeg";
 import constellationLogoWhite from "@assets/Constellation_Logo_-_White_1773876279047.png";
@@ -264,13 +265,14 @@ export default function Login() {
 
       {/* Hero Section with Star Trails */}
       <section aria-label="Hero — Sign in to Constellation" className="relative pt-16 overflow-hidden">
+        <div className="absolute inset-0 bg-gray-950" />
         <div
-          className="absolute inset-0 bg-cover bg-center"
+          className="absolute inset-0 bg-cover bg-center opacity-30"
           style={{ backgroundImage: `url(${heroImage})` }}
         />
-        <div className="absolute inset-0 bg-black/55 lg:hidden" />
-        <div className="absolute inset-0 bg-gradient-to-b from-gray-950/70 via-gray-950/50 to-gray-950" />
-        <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 lg:py-32">
+        <Aurora intensity="high" theme="dark" particles className="z-[1]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-gray-950/40 via-gray-950/20 to-gray-950 z-[2]" />
+        <div className="relative z-[3] max-w-7xl mx-auto px-6 py-20 lg:py-32">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             {/* Left: Hero Content */}
             <div>
@@ -288,7 +290,7 @@ export default function Login() {
               <h1 className="text-4xl lg:text-5xl xl:text-6xl font-bold leading-tight mb-6">
                 The Consulting Delivery Platform
                 <br />
-                <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
+                <span className="cosmic-text">
                   Built for the Stars
                 </span>
               </h1>
@@ -459,12 +461,13 @@ export default function Login() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {primaryFeatures.map((feature) => {
+            {primaryFeatures.map((feature, idx) => {
               const Icon = feature.icon;
+              const staggerClass = `stagger-${Math.min(idx + 1, 6)}`;
               return (
                 <div
                   key={feature.title}
-                  className={`group relative rounded-xl border p-6 transition-all duration-300 hover:-translate-y-1 ${
+                  className={`nebula-card group relative rounded-xl border p-6 transition-all duration-300 hover:-translate-y-1 animate-fade-in-up ${staggerClass} ${
                     feature.highlight
                       ? "border-violet-500/30 bg-gradient-to-br from-violet-950/40 to-purple-950/20 hover:shadow-xl hover:shadow-violet-500/10"
                       : "border-white/10 bg-gray-900/50 hover:bg-gray-900/80 hover:shadow-xl hover:shadow-black/20"

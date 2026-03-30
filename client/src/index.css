@@ -73,3 +73,183 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* Cosmic text gradient */
+.cosmic-text {
+  background: linear-gradient(135deg, hsl(268.98 96.72% 62%) 0%, hsl(314.04 90.08% 57%) 50%, hsl(268.98 96.72% 55%) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow utilities */
+.glow-primary {
+  box-shadow: 0 0 16px 2px hsl(268.98 96.72% 52.16% / 0.35);
+}
+
+.dark .glow-primary {
+  box-shadow: 0 0 20px 4px hsl(268.98 92% 64% / 0.4);
+}
+
+/* Primary CTA button glow — explicit class applied to primary Button variant */
+.primary-cta-glow:hover,
+.primary-cta-glow:focus-visible {
+  box-shadow: 0 0 16px 2px hsl(268.98 96.72% 52.16% / 0.35);
+  transition: box-shadow 0.2s ease;
+}
+
+.dark .primary-cta-glow:hover,
+.dark .primary-cta-glow:focus-visible {
+  box-shadow: 0 0 20px 4px hsl(268.98 92% 64% / 0.4);
+}
+
+/* Sidebar active and hover item glow */
+.sidebar-active-item {
+  box-shadow: 0 0 12px 1px hsl(268.98 96.72% 52.16% / 0.25);
+}
+
+.dark .sidebar-active-item {
+  box-shadow: 0 0 16px 2px hsl(268.98 92% 64% / 0.35);
+}
+
+.sidebar-hover-item:hover,
+.sidebar-hover-item:focus-visible {
+  box-shadow: 0 0 10px 1px hsl(268.98 96.72% 52.16% / 0.15);
+  outline: 2px solid hsl(268.98 96.72% 52.16% / 0.4);
+  outline-offset: 1px;
+}
+
+.dark .sidebar-hover-item:hover,
+.dark .sidebar-hover-item:focus-visible {
+  box-shadow: 0 0 14px 2px hsl(268.98 92% 64% / 0.25);
+  outline: 2px solid hsl(268.98 92% 64% / 0.4);
+  outline-offset: 1px;
+}
+
+.sidebar-active-item:focus-visible {
+  outline: 2px solid hsl(268.98 96.72% 52.16% / 0.6);
+  outline-offset: 1px;
+}
+
+.dark .sidebar-active-item:focus-visible {
+  outline: 2px solid hsl(268.98 92% 64% / 0.6);
+  outline-offset: 1px;
+}
+
+/* Aurora blob animations */
+@keyframes blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -20px) scale(1.08); }
+  66% { transform: translate(-20px, 20px) scale(0.94); }
+}
+
+.animate-blob {
+  animation: blob 12s ease-in-out infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+/* Fade-in-up entrance animation */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.45s ease-out both;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.10s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.20s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.30s; }
+
+/* Nebula skeleton shimmer */
+@keyframes nebula-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.nebula-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(268 15% 89% / 0.6) 0%,
+    hsl(268.98 60% 70% / 0.3) 40%,
+    hsl(314.04 60% 70% / 0.2) 60%,
+    hsl(268 15% 89% / 0.6) 100%
+  );
+  background-size: 200% 100%;
+  animation: nebula-shimmer 1.8s ease-in-out infinite;
+}
+
+.dark .nebula-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(268 15% 15% / 0.8) 0%,
+    hsl(268.98 92% 64% / 0.2) 40%,
+    hsl(314.04 85% 61% / 0.18) 65%,
+    hsl(268 15% 15% / 0.8) 100%
+  );
+  background-size: 200% 100%;
+  animation: nebula-shimmer 1.8s ease-in-out infinite;
+}
+
+
+/* Nebula card border shimmer — dark mode only */
+@keyframes nebula-border-spin {
+  from { --nebula-angle: 0deg; }
+  to { --nebula-angle: 360deg; }
+}
+
+@property --nebula-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.dark .nebula-card {
+  position: relative;
+  border: none !important;
+  background-clip: padding-box;
+}
+
+.dark .nebula-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--nebula-angle),
+    hsl(268.98 92% 64% / 0.0) 0%,
+    hsl(268.98 92% 64% / 0.6) 20%,
+    hsl(314.04 85% 61% / 0.7) 40%,
+    hsl(268.98 92% 64% / 0.0) 60%,
+    hsl(268.98 92% 64% / 0.6) 80%,
+    hsl(268.98 92% 64% / 0.0) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: nebula-border-spin 8s linear infinite;
+}

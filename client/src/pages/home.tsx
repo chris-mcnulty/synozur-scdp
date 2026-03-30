@@ -1,5 +1,6 @@
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
+import { Aurora } from "@/components/aurora";
 import { Button } from "@/components/ui/button";
 import {
   Calculator,
@@ -117,8 +118,9 @@ export default function Home() {
             className="absolute inset-0 bg-cover bg-center"
             style={{ backgroundImage: `url(${heroImage})` }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/60 to-black/40" />
-          <div className="relative z-10 px-8 py-20 lg:py-28 max-w-4xl">
+          <Aurora intensity="medium" theme="dark" particles className="z-[1]" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/60 to-black/40 z-[2]" />
+          <div className="relative z-[3] px-8 py-20 lg:py-28 max-w-4xl">
             <div className="flex items-center gap-2 mb-4">
               <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
               <span className="text-amber-300 text-sm font-medium tracking-wide uppercase">
@@ -128,7 +130,7 @@ export default function Home() {
             <h1 className="text-4xl lg:text-5xl xl:text-6xl font-bold text-white leading-tight mb-6">
               Navigate Your Projects
               <br />
-              <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">
+              <span className="cosmic-text">
                 Like the Stars
               </span>
             </h1>
@@ -161,7 +163,7 @@ export default function Home() {
         {/* Features Grid */}
         <div className="px-6 py-16">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-foreground mb-3">
+            <h2 className="text-3xl font-bold cosmic-text mb-3">
               Everything You Need to Deliver Excellence
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
@@ -171,12 +173,13 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {features.map((feature) => {
+            {features.map((feature, idx) => {
               const Icon = feature.icon;
+              const staggerClass = `stagger-${Math.min(idx + 1, 6)}`;
               return (
                 <div
                   key={feature.title}
-                  className={`group relative rounded-xl border border-border/60 p-6 transition-all duration-300 hover:shadow-xl hover:shadow-black/5 dark:hover:shadow-black/20 hover:-translate-y-1 ${
+                  className={`nebula-card group relative rounded-xl border border-border/60 p-6 transition-all duration-300 hover:shadow-xl hover:shadow-black/5 dark:hover:shadow-black/20 hover:-translate-y-1 animate-fade-in-up ${staggerClass} ${
                     feature.highlight
                       ? "ring-2 ring-violet-500/30 dark:ring-violet-400/20 bg-gradient-to-br from-violet-50/50 to-purple-50/30 dark:from-violet-950/30 dark:to-purple-950/20"
                       : "bg-card hover:bg-accent/30"
