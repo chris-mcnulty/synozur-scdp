@@ -224,23 +224,24 @@ export default function TimeTracking() {
     }
   });
 
-  // Fetch allocations for the selected project filtered to current user's assignments
-  // Includes: directly assigned (personId match) AND role-based assignments matching user's role
+  // For add form: the person being logged for (manager may pick someone else)
+  const formPersonId = form.watch("personId");
+  const effectivePersonId = formPersonId || currentUser?.id;
+
+  // Fetch allocations scoped to the specific person — queryKey includes personId so
+  // this cache entry is separate from the full-project list used elsewhere.
   const { data: allocations } = useQuery({
-    queryKey: ["/api/projects", selectedProjectId, "allocations"],
-    enabled: !!selectedProjectId && !!currentUser,
+    queryKey: ["/api/projects", selectedProjectId, "allocations", effectivePersonId],
+    enabled: !!selectedProjectId && !!effectivePersonId,
     queryFn: async () => {
       const sessionId = localStorage.getItem('sessionId');
-      const response = await fetch(`/api/projects/${selectedProjectId}/allocations`, {
+      const url = `/api/projects/${selectedProjectId}/allocations?personId=${effectivePersonId}`;
+      const response = await fetch(url, {
         credentials: 'include',
         headers: sessionId ? { 'X-Session-Id': sessionId } : {},
       });
       if (!response.ok) throw new Error('Failed to fetch allocations');
-      const data = await response.json();
-      return data.filter((a: any) =>
-        a.personId === currentUser?.id ||
-        (!a.personId && a.roleId && a.roleId === (currentUser as any)?.roleId)
-      );
+      return response.json();
     }
   });
 
@@ -325,22 +326,22 @@ export default function TimeTracking() {
     }
   });
 
-  // Fetch allocations for edit form
+  // For edit form: use the entry's owner, fall back to current user
+  const editEffectivePersonId = editingEntry?.personId || currentUser?.id;
+
+  // Fetch allocations for edit form — scoped to the entry's person
   const { data: editAllocations } = useQuery({
-    queryKey: ["/api/projects", editProjectId, "allocations"],
-    enabled: !!editProjectId && !!currentUser,
+    queryKey: ["/api/projects", editProjectId, "allocations", editEffectivePersonId],
+    enabled: !!editProjectId && !!editEffectivePersonId,
     queryFn: async () => {
       const sessionId = localStorage.getItem('sessionId');
-      const response = await fetch(`/api/projects/${editProjectId}/allocations`, {
+      const url = `/api/projects/${editProjectId}/allocations?personId=${editEffectivePersonId}`;
+      const response = await fetch(url, {
         credentials: 'include',
         headers: sessionId ? { 'X-Session-Id': sessionId } : {},
       });
       if (!response.ok) throw new Error('Failed to fetch allocations');
-      const data = await response.json();
-      return data.filter((a: any) =>
-        a.personId === currentUser?.id ||
-        (!a.personId && a.roleId && a.roleId === (currentUser as any)?.roleId)
-      );
+      return response.json();
     }
   });
 

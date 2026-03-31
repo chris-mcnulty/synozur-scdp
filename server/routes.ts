@@ -3552,6 +3552,12 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/projects/:projectId/allocations", requireAuth, async (req, res) => {
     try {
       const allocations = await storage.getProjectAllocations(req.params.projectId);
+      const { personId } = req.query;
+      if (personId && typeof personId === "string") {
+        // Return only allocations directly assigned to this person
+        const filtered = allocations.filter((a: any) => a.personId === personId);
+        return res.json(filtered);
+      }
       res.json(allocations);
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch project allocations:", error);
