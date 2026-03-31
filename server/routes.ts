@@ -6803,7 +6803,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(401).json({ message: "User not found" });
       }
 
-      const tenantId = req.user?.tenantId;
+      const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
       
       const {
         startDate,
@@ -6856,7 +6856,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const conditions: any[] = [
         eq(projectAllocations.personId, userId),
         eq(projectAllocations.isBaseline, false),
-        ...(tenantId ? [eq(projectAllocations.tenantId, tenantId)] : []),
+        // Scope via projects.tenantId — projectAllocations.tenantId is null on older records
+        ...(tenantId ? [eq(projects.tenantId, tenantId)] : []),
       ];
 
       // Date range filter
