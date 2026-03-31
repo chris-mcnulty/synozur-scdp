@@ -12219,12 +12219,15 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       const billableHours = allTimeEntries.filter(t => t.billable).reduce((s, t) => s + Number(t.hours || 0), 0);
       const totalCost = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0) * Number(t.costRate || 0), 0);
 
-      // ── Revenue from finalized invoices (fixed-outcome billing) ────────
-      const totalRevenue = periodInvoiceBatches.reduce((s, b) => s + Number(b.totalAmount || 0), 0);
+      // ── Revenue = services billed on invoices (time + milestone lines only).
+      //    Excludes expense reimbursements, discounts, no-charge lines, and sales tax.
+      const SERVICE_LINE_TYPES = new Set(["time", "milestone"]);
+      const serviceLines = periodInvoiceLines.filter(l => SERVICE_LINE_TYPES.has(l.type));
+      const totalRevenue = serviceLines.reduce((s, l) => s + Number(l.amount || 0), 0);
 
-      // Per-project invoiced revenue from invoice lines
+      // Per-project invoiced services revenue (same filter)
       const revenueByProject = new Map<string, number>();
-      for (const line of periodInvoiceLines) {
+      for (const line of serviceLines) {
         revenueByProject.set(line.projectId, (revenueByProject.get(line.projectId) || 0) + Number(line.amount || 0));
       }
 
@@ -12359,7 +12362,7 @@ FINANCIAL PERFORMANCE (${startDate} to ${endDate})
 ===================================================
 Total Hours Logged: ${totalHours.toFixed(1)}
 Billable Hours: ${billableHours.toFixed(1)} (${totalHours > 0 ? ((billableHours / totalHours) * 100).toFixed(0) : 0}% utilization)
-Invoiced Revenue (finalized invoices): $${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+Services Revenue (time + milestone lines on finalized invoices; excludes expense reimbursements and tax): $${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 Finalized Invoices: ${periodInvoiceBatches.length}
 Internal Cost: $${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 Gross Margin: ${totalRevenue > 0 ? (((totalRevenue - totalCost) / totalRevenue) * 100).toFixed(1) : 0}%
