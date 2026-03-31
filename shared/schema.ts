@@ -3454,3 +3454,14 @@ export const vocabularyTermsSchema = z.object({
 }).strict();
 
 export type VocabularyTermsInput = z.infer<typeof vocabularyTermsSchema>;
+
+// Page view analytics (public-page visit tracking)
+export const pageViews = pgTable("page_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  path: text("path").notNull(),          // e.g. "/", "/signup"
+  sessionId: text("session_id"),         // anonymous session token from localStorage
+  referrer: text("referrer"),            // document.referrer
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+export type PageView = typeof pageViews.$inferSelect;

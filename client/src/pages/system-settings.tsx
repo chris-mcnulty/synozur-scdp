@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload, LifeBuoy } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload, LifeBuoy, BarChart2, Users, Eye, RefreshCw } from "lucide-react";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -708,6 +708,10 @@ export default function SystemSettings() {
             <TabsTrigger value="support" className="flex items-center space-x-2">
               <LifeBuoy className="w-4 h-4" />
               <span>Support Tickets</span>
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center space-x-2">
+              <BarChart2 className="w-4 h-4" />
+              <span>Page Analytics</span>
             </TabsTrigger>
           </TabsList>
 
@@ -2054,6 +2058,10 @@ export default function SystemSettings() {
           <TabsContent value="support" className="space-y-6">
             <AdminSupportTab />
           </TabsContent>
+
+          <TabsContent value="analytics" className="space-y-6">
+            <PageAnalyticsTab />
+          </TabsContent>
         </Tabs>
       </div>
     </Layout>
@@ -2285,5 +2293,87 @@ function TimeRemindersTab({ settings, toast }: { settings: SystemSetting[]; toas
         </CardContent>
       </Card>
     </TabsContent>
+  );
+}
+
+function PageAnalyticsTab() {
+  const [days, setDays] = useState("30");
+  const { data, isLoading, refetch, isFetching } = useQuery<{ days: number; since: string; rows: Array<{ path: string; visits: number; uniqueSessions: number; lastSeen: string }> }>({
+    queryKey: ["/api/analytics/pageviews", days],
+    queryFn: async () => {
+      const res = await fetch(`/api/analytics/pageviews?days=${days}`, { headers: { "x-session-id": localStorage.getItem("sessionId") || "" } });
+      if (!res.ok) throw new Error("Failed to load analytics");
+      return res.json();
+    },
+  });
+
+  const pathLabels: Record<string, string> = { "/": "Home page", "/login": "Login page", "/signup": "Signup page" };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart2 className="h-5 w-5 text-primary" />
+              Public Page Traffic
+            </CardTitle>
+            <CardDescription>Visits and unique sessions to public pages (home, login, signup).</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={days} onValueChange={setDays}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Last 7 days</SelectItem>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="365">Last 365 days</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching}>
+              <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            <div className="h-16 rounded-lg bg-muted animate-pulse" />
+            <div className="h-16 rounded-lg bg-muted animate-pulse" />
+            <div className="h-16 rounded-lg bg-muted animate-pulse" />
+          </div>
+        ) : !data?.rows.length ? (
+          <div className="py-12 text-center text-muted-foreground">
+            <Eye className="h-8 w-8 mx-auto mb-2 opacity-40" />
+            <p>No visits recorded yet in the last {days} days.</p>
+            <p className="text-xs mt-1">Visits are tracked when someone opens the home, login, or signup pages.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {data.rows.map(row => (
+              <div key={row.path} className="flex items-center justify-between p-4 rounded-lg border bg-card">
+                <div>
+                  <p className="font-medium">{pathLabels[row.path] ?? row.path}</p>
+                  <p className="text-xs text-muted-foreground">{row.path} · Last visit {new Date(row.lastSeen).toLocaleDateString()}</p>
+                </div>
+                <div className="flex gap-6 text-right">
+                  <div>
+                    <p className="text-2xl font-bold">{row.visits.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end"><Eye className="h-3 w-3" />Visits</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{row.uniqueSessions.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end"><Users className="h-3 w-3" />Sessions</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

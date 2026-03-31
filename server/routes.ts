@@ -4,7 +4,7 @@ import * as osNode from "os";
 import { execSync } from "child_process";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels, projectBaselines, servicePlans, blockedDomains } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels, projectBaselines, servicePlans, blockedDomains, pageViews } from "@shared/schema";
 import { isPublicEmailDomain } from "@shared/publicDomains";
 import { eq, sql, inArray, max, and, gte, lte, isNull, desc, or } from "drizzle-orm";
 import { z } from "zod";
@@ -14793,6 +14793,52 @@ Return a JSON response:
     } catch (error: any) {
       console.error("[AI_ALERTS] Error fetching usage alerts:", error);
       res.status(500).json({ message: "Failed to fetch usage alerts" });
+    }
+  });
+
+  // ── Public page analytics ────────────────────────────────────────────────
+  // POST /api/analytics/pageview  — no auth (public pages)
+  app.post("/api/analytics/pageview", async (req, res) => {
+    try {
+      const { path, sessionId, referrer } = req.body || {};
+      if (!path || typeof path !== "string") return res.status(400).json({ message: "path required" });
+      const allowedPaths = ["/", "/signup", "/login"];
+      if (!allowedPaths.includes(path)) return res.status(400).json({ message: "path not tracked" });
+      await db.insert(pageViews).values({
+        path,
+        sessionId: sessionId ? String(sessionId).slice(0, 128) : null,
+        referrer: referrer ? String(referrer).slice(0, 512) : null,
+        userAgent: req.headers["user-agent"]?.slice(0, 512) ?? null,
+      });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("[ANALYTICS] pageview record failed:", error);
+      res.status(500).json({ message: "Failed to record pageview" });
+    }
+  });
+
+  // GET /api/analytics/pageviews  — admin only
+  app.get("/api/analytics/pageviews", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const days = Math.min(parseInt(String(req.query.days || "30")), 365);
+      const since = new Date(Date.now() - days * 86400_000).toISOString();
+
+      const rows = await db
+        .select({
+          path: pageViews.path,
+          visits: sql<number>`cast(count(*) as integer)`,
+          uniqueSessions: sql<number>`cast(count(distinct ${pageViews.sessionId}) as integer)`,
+          lastSeen: sql<string>`max(${pageViews.createdAt})`,
+        })
+        .from(pageViews)
+        .where(gte(pageViews.createdAt, new Date(since)))
+        .groupBy(pageViews.path)
+        .orderBy(desc(sql`count(*)`));
+
+      res.json({ days, since, rows });
+    } catch (error: any) {
+      console.error("[ANALYTICS] pageviews summary failed:", error);
+      res.status(500).json({ message: "Failed to fetch pageviews" });
     }
   });
 

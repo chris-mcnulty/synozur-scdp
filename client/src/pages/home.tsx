@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Aurora } from "@/components/aurora";
@@ -106,8 +107,22 @@ const capabilities = [
   },
 ];
 
+function trackPageView(path: string) {
+  try {
+    let sid = sessionStorage.getItem("anon_session_id");
+    if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("anon_session_id", sid); }
+    fetch("/api/analytics/pageview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, sessionId: sid, referrer: document.referrer }),
+    }).catch(() => {});
+  } catch {}
+}
+
 export default function Home() {
   const [, navigate] = useLocation();
+
+  useEffect(() => { trackPageView("/"); }, []);
 
   return (
     <Layout>

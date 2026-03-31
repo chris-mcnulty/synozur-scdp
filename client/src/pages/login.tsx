@@ -34,12 +34,26 @@ import heroImage from "@assets/AdobeStock_244105520_1771187192557.jpeg";
 import secondaryImage from "@assets/AdobeStock_189127184_1771187213585.jpeg";
 import constellationLogoWhite from "@assets/Constellation_Logo_-_White_1773876279047.png";
 
+function trackPageView(path: string) {
+  try {
+    let sid = sessionStorage.getItem("anon_session_id");
+    if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("anon_session_id", sid); }
+    fetch("/api/analytics/pageview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, sessionId: sid, referrer: document.referrer }),
+    }).catch(() => {});
+  } catch {}
+}
+
 export default function Login() {
   const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSSOLoading, setIsSSOLoading] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => { trackPageView("/login"); }, []);
 
   const { data: ssoStatus } = useQuery({
     queryKey: ["/api/auth/sso/status"],

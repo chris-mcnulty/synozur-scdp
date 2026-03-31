@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -31,10 +31,24 @@ interface ServicePlan {
   isDefault: boolean;
 }
 
+function trackPageView(path: string) {
+  try {
+    let sid = sessionStorage.getItem("anon_session_id");
+    if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("anon_session_id", sid); }
+    fetch("/api/analytics/pageview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, sessionId: sid, referrer: document.referrer }),
+    }).catch(() => {});
+  } catch {}
+}
+
 export default function Signup() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [step, setStep] = useState(1);
+
+  useEffect(() => { trackPageView("/signup"); }, []);
 
   const [organizationName, setOrganizationName] = useState("");
   const [slug, setSlug] = useState("");
