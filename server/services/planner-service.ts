@@ -468,6 +468,16 @@ class PlannerService {
         }));
       }
 
+      // Check for an existing team with the same display name before creating
+      console.log('[PLANNER] Checking for existing team with name:', options.displayName);
+      const existingGroups = await this.searchGroups(options.displayName);
+      const conflict = existingGroups.find(
+        g => g.displayName.toLowerCase() === options.displayName.toLowerCase()
+      );
+      if (conflict) {
+        throw new Error(`A team named "${conflict.displayName}" already exists. Please choose a different name.`);
+      }
+
       // Use raw fetch so we can capture the 202 Location header.
       // The Graph SDK's .post() silently returns undefined for 202 responses,
       // causing the Location header (needed for async polling) to be lost.
