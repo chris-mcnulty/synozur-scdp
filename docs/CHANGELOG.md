@@ -55,11 +55,24 @@ Version 2.0 is a major milestone for Constellation. March 2026 delivered a sweep
 - **Nebula Skeleton Shimmer** — purple/magenta shimmer on loading skeleton components in both light and dark modes
 - **Aurora Component** — reusable `aurora.tsx` component with configurable intensity, theme detection, and particle effects
 
-#### AI & Copilot Enhancements
+#### Azure AI Foundry & Multi-Provider AI
 
-- **MCP Activity Summary Endpoint** — new `/mcp/activity-summary` endpoint for Copilot agent narration covering time entries, expenses, RAIDD items, and assignment status
+- **Azure AI Foundry Integration** — GPT-5.4 model support via Azure AI Foundry as primary AI provider
+- **Multi-Provider AI Architecture** — configurable model selection between Replit AI and Azure AI Foundry with automatic fallback
 - **AI Estimate Week Assignment** — AI-powered sequential week assignment for program estimate staffing blocks
+- **MCP Activity Summary Endpoint** — new `/mcp/activity-summary` endpoint for Copilot agent narration covering time entries, expenses, RAIDD items, and assignment status
 - **Expanded MCP Coverage** — RAIDD, assignments, and improved type safety added to existing MCP endpoints
+
+#### SharePoint Embedded Document Storage
+
+- **Full SPE Integration** — SharePoint Embedded as the primary document storage tier for tenants with Azure AD tenant isolation
+- **Per-Tenant Container Provisioning** — API endpoints for creating and configuring SPE containers per tenant, with dev/prod container ID management
+- **Smart Storage Layer** — automatically directs files to SPE or legacy Object Storage based on tenant `speStorageEnabled` configuration
+- **Direct Graph API Downloads** — file download via Microsoft Graph without metadata lookup, including receipt download pipeline for SPE-stored files
+- **File Repository** — intelligent document type inference from folder paths, expandable metadata panel, and file statistics dashboard
+- **File Reorganization** — tools to move files from nested paths to proper top-level SPE folders
+- **Invoice Receipt Bundler** — direct Graph API downloads for reliable receipt inclusion in generated invoice PDFs
+- **Container Management** — admin interface for SPE container types, custom columns with SharePoint-safe naming, and tenant-level enable/disable toggle
 
 #### Page Analytics
 

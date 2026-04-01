@@ -970,6 +970,8 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 - Added Nebula UX Design System to Recently Completed (Aurora backgrounds, glow utilities, stagger animations, nebula card borders, skeleton shimmer)
 - Added Executive Narrative Reporting to Recently Completed (AI-generated leadership summaries, PPTX export, saved narratives tab)
 - Added Teams Channel Provisioning to Recently Completed (provisioning UI, auto-owner, async 202 handling, duplicate name guard, cross-tenant blocking)
+- Added Azure AI Foundry & Multi-Provider AI to Recently Completed (GPT-5.4 support, configurable model selection, automatic fallback)
+- Added SharePoint Embedded Document Storage to Recently Completed (full SPE integration, per-tenant containers, smart storage layer, Graph API downloads, file repository, container management)
 - Added PowerPoint Status Report Templates to Recently Completed (branded slide templates, dynamic text, design elements)
 - Added Page Analytics to Recently Completed (public page tracking, admin dashboard)
 - Added Client Document Hub to Recently Completed (MSA/NDA upload)
