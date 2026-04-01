@@ -33,6 +33,12 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 
 ### Project Structure
 - **Monorepo**: Organized into `/client`, `/server`, and `/shared`.
+- **Storage Layer**: Modularized into `server/storage/` with domain-focused modules:
+  - `index.ts` - IStorage interface, DatabaseStorage class composition, resolveRatesForTimeEntry, singleton export
+  - `helpers.ts` - Shared utility functions (normalizeAmount, round2, formatDateToYYYYMMDD, etc.)
+  - `pdf-generation.ts` - Invoice and Sub-SOW PDF generation functions
+  - Domain modules: `users.ts`, `projects.ts`, `estimates.ts`, `time-entries.ts`, `expenses.ts`, `invoicing.ts`, `admin.ts`, `documents.ts`, `planner.ts`, `tenant.ts`
+  - `server/storage.ts` is a thin re-export barrel that preserves all existing import paths (`import { storage } from "../storage"`)
 
 ### Authentication & Authorization
 - **Production SSO**: Azure AD (Microsoft Entra ID).
