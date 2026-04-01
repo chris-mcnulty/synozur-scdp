@@ -4394,12 +4394,30 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!displayName) {
         return res.status(400).json({ message: "Team name is required" });
       }
+
+      // Microsoft Graph requires at least one owner when creating a team.
+      // If the caller did not supply ownerIds, resolve the requesting user's
+      // Azure AD object ID from their email so we can set them as owner.
+      let resolvedOwnerIds: string[] | undefined = ownerIds;
+      if (!resolvedOwnerIds || resolvedOwnerIds.length === 0) {
+        const callerEmail = (req.user as any)?.email;
+        if (callerEmail) {
+          console.log('[PLANNER] No ownerIds provided; looking up caller by email:', callerEmail);
+          const azureUser = await plannerService.lookupUserByEmail(callerEmail);
+          if (azureUser?.id) {
+            resolvedOwnerIds = [azureUser.id];
+            console.log('[PLANNER] Resolved owner Azure ID:', azureUser.id);
+          } else {
+            console.warn('[PLANNER] Could not resolve Azure user for email:', callerEmail, '— team will be created without explicit owner (may fail)');
+          }
+        }
+      }
       
       const team = await plannerService.createTeam({
         displayName,
         description,
         templateId,
-        ownerIds
+        ownerIds: resolvedOwnerIds
       });
       
       // If a clientId was provided, verify ownership then persist team details to the client record

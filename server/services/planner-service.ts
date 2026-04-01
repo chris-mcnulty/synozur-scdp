@@ -695,6 +695,19 @@ class PlannerService {
     }
   }
 
+  async lookupUserByEmail(email: string): Promise<AzureUser | null> {
+    try {
+      const client = await this.getClient();
+      const user = await client.api(`/users/${encodeURIComponent(email)}`)
+        .select('id,displayName,mail,userPrincipalName')
+        .get();
+      return user as AzureUser;
+    } catch (error: any) {
+      console.error('[PLANNER] Error looking up user by email:', email, error.message);
+      return null;
+    }
+  }
+
   // ============ PLAN OPERATIONS ============
 
   async listPlansForGroup(groupId: string): Promise<PlannerPlan[]> {
