@@ -1,0 +1,253 @@
+import type { Express } from "express";
+import { z } from "zod";
+import { storage, db } from "../storage";
+import { insertUserSchema, tenantUsers, clients } from "@shared/schema";
+import { eq, and, inArray } from "drizzle-orm";
+
+interface UserRouteDeps {
+  requireAuth: any;
+  requireRole: (roles: string[]) => any;
+}
+
+export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
+
+  app.get("/api/users", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager", "billing-admin", "executive"]), async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const tenantId = currentUser?.tenantId || undefined;
+      const includeInactive = req.query.includeInactive === 'true';
+      const includeStakeholders = req.query.includeStakeholders === 'true';
+      const usersList = await storage.getUsers(tenantId, { includeInactive, includeStakeholders });
+      
+      let enrichedUsers = usersList.map((u: any) => ({ ...u }));
+      {
+        const membershipConditions: any[] = [eq(tenantUsers.status, 'active')];
+        if (tenantId) {
+          membershipConditions.push(eq(tenantUsers.tenantId, tenantId));
+        }
+        const memberships = await db.select({
+          userId: tenantUsers.userId,
+          clientId: tenantUsers.clientId,
+          tenantRole: tenantUsers.role,
+        })
+        .from(tenantUsers)
+        .where(and(...membershipConditions));
+        
+        const userClientMap = new Map<string, string[]>();
+        for (const m of memberships) {
+          if (m.clientId) {
+            const arr = userClientMap.get(m.userId) || [];
+            if (!arr.includes(m.clientId)) arr.push(m.clientId);
+            userClientMap.set(m.userId, arr);
+          }
+        }
+        
+        const allClientIds = Array.from(new Set(memberships.filter(m => m.clientId).map(m => m.clientId!)));
+        const clientNameMap = new Map<string, string>();
+        if (allClientIds.length > 0) {
+          const clientRows = await db.select({ id: clients.id, name: clients.name })
+            .from(clients)
+            .where(inArray(clients.id, allClientIds));
+          for (const c of clientRows) {
+            clientNameMap.set(c.id, c.name);
+          }
+        }
+        
+        enrichedUsers = enrichedUsers.map((u: any) => {
+          const clientIds = userClientMap.get(u.id) || [];
+          const clientNames = clientIds.map(id => clientNameMap.get(id)).filter(Boolean);
+          return {
+            ...u,
+            clientIds,
+            clientNames,
+          };
+        });
+      }
+      
+      if (currentUser?.role === 'portfolio-manager') {
+        enrichedUsers = enrichedUsers.map((u: any) => {
+          if (!u.isSalaried) {
+            return { ...u, defaultCostRate: null };
+          }
+          return u;
+        });
+      }
+      
+      res.json(enrichedUsers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.post("/api/users", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = insertUserSchema.parse(req.body);
+      const user = await storage.createUser(validatedData);
+      res.status(201).json(user);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid user data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  app.patch("/api/users/:id", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const platformRole = currentUser?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      if (!isPlatformAdmin && currentUser?.tenantId) {
+        const [membership] = await db.select({ id: tenantUsers.id })
+          .from(tenantUsers)
+          .where(and(
+            eq(tenantUsers.userId, req.params.id),
+            eq(tenantUsers.tenantId, currentUser.tenantId),
+            eq(tenantUsers.status, 'active')
+          ));
+        
+        if (!membership) {
+          return res.status(403).json({ message: "You can only edit users within your organization" });
+        }
+      }
+
+      const body = { ...req.body };
+      if (body.defaultBillingRate === '' || body.defaultBillingRate === undefined) body.defaultBillingRate = null;
+      if (body.defaultCostRate === '' || body.defaultCostRate === undefined) body.defaultCostRate = null;
+      const allowedFields = ['name', 'firstName', 'lastName', 'initials', 'email', 'role', 'canLogin',
+        'isAssignable', 'defaultBillingRate', 'defaultCostRate', 'isSalaried', 'isActive', 'title',
+        'customRole', 'roleId', 'contractorBusinessName', 'contractorBusinessAddress',
+        'contractorBillingId', 'contractorPhone', 'contractorEmail', 'platformRole',
+        'receiveTimeReminders', 'receiveExpenseReminders', 'primaryTenantId'];
+      const safeBody = Object.fromEntries(Object.entries(body).filter(([k]) => allowedFields.includes(k)));
+
+      const user = await storage.updateUser(req.params.id, safeBody as any);
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user", detail: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.delete("/api/users/:id", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const platformRole = currentUser?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      if (!isPlatformAdmin && currentUser?.tenantId) {
+        const [membership] = await db.select({ id: tenantUsers.id })
+          .from(tenantUsers)
+          .where(and(
+            eq(tenantUsers.userId, req.params.id),
+            eq(tenantUsers.tenantId, currentUser.tenantId),
+            eq(tenantUsers.status, 'active')
+          ));
+        
+        if (!membership) {
+          return res.status(403).json({ message: "You can only delete users within your organization" });
+        }
+      }
+      
+      await storage.deleteUser(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(400).json({ 
+        message: error instanceof Error ? error.message : "Failed to delete user" 
+      });
+    }
+  });
+
+  app.patch("/api/users/:id/reminder-settings", deps.requireAuth, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const currentUser = (req as any).user;
+      
+      if (currentUser.id !== userId && currentUser.role !== 'admin') {
+        return res.status(403).json({ message: "You can only update your own reminder settings" });
+      }
+      
+      const { receiveTimeReminders, receiveExpenseReminders } = req.body;
+      
+      const updates: any = {};
+      if (typeof receiveTimeReminders === 'boolean') {
+        updates.receiveTimeReminders = receiveTimeReminders;
+      }
+      if (typeof receiveExpenseReminders === 'boolean') {
+        updates.receiveExpenseReminders = receiveExpenseReminders;
+      }
+      
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "At least one of receiveTimeReminders or receiveExpenseReminders must be provided as a boolean" });
+      }
+      
+      const user = await storage.updateUser(userId, updates);
+      res.json({ 
+        receiveTimeReminders: user.receiveTimeReminders,
+        receiveExpenseReminders: (user as any).receiveExpenseReminders ?? true
+      });
+    } catch (error) {
+      console.error("Error updating reminder settings:", error);
+      res.status(500).json({ message: "Failed to update reminder settings" });
+    }
+  });
+
+  app.get("/api/users/:id/reminder-settings", deps.requireAuth, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const currentUser = (req as any).user;
+      
+      if (currentUser.id !== userId && currentUser.role !== 'admin') {
+        return res.status(403).json({ message: "You can only view your own reminder settings" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json({ 
+        receiveTimeReminders: user.receiveTimeReminders,
+        receiveExpenseReminders: (user as any).receiveExpenseReminders ?? true
+      });
+    } catch (error) {
+      console.error("Error fetching reminder settings:", error);
+      res.status(500).json({ message: "Failed to fetch reminder settings" });
+    }
+  });
+
+  app.get("/api/users/:userId/active-engagements", deps.requireAuth, async (req, res) => {
+    try {
+      const engagements = await storage.getUserActiveEngagements(req.params.userId);
+      res.json(engagements);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to get user active engagements:", error);
+      res.status(500).json({ message: "Failed to get user active engagements" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/engagements/:userId/check-last-allocation", deps.requireAuth, async (req, res) => {
+    try {
+      const { projectId, userId } = req.params;
+      const { excludeAllocationId } = req.query;
+      
+      const allocations = await storage.getProjectAllocations(projectId);
+      const userActiveAllocations = allocations.filter((a: any) => 
+        a.personId === userId && 
+        ['open', 'in_progress'].includes(a.status) &&
+        a.id !== excludeAllocationId
+      );
+      
+      res.json({ 
+        isLastAllocation: userActiveAllocations.length === 0,
+        remainingAllocations: userActiveAllocations.length 
+      });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to check last allocation:", error);
+      res.status(500).json({ message: "Failed to check last allocation" });
+    }
+  });
+
+}
