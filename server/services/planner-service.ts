@@ -1,5 +1,5 @@
 import { Client } from '@microsoft/microsoft-graph-client';
-import { getPlannerGraphClient, isPlannerConfigured, PlannerCredentials } from './planner-graph-client';
+import { getPlannerGraphClient, getPlannerAccessToken, isPlannerConfigured, PlannerCredentials } from './planner-graph-client';
 import { getUncachableOutlookClient } from './outlook-client';
 
 // Types for Microsoft Planner API responses
@@ -441,12 +441,10 @@ class PlannerService {
   }): Promise<CreatedTeam> {
     try {
       console.log('[PLANNER] Creating team:', options.displayName);
-      const client = await this.getClient();
-      
+
       let teamBody: any;
-      
+
       if (options.templateId) {
-        // Create from template
         console.log('[PLANNER] Using template:', options.templateId);
         teamBody = {
           'template@odata.bind': `https://graph.microsoft.com/v1.0/teamwork/teamTemplates/${options.templateId}`,
@@ -454,59 +452,72 @@ class PlannerService {
           description: options.description || ''
         };
       } else {
-        // Create standard team
         teamBody = {
-          'template@odata.bind': 'https://graph.microsoft.com/v1.0/teamsTemplates(\'standard\')',
+          'template@odata.bind': "https://graph.microsoft.com/v1.0/teamsTemplates('standard')",
           displayName: options.displayName,
           description: options.description || ''
         };
       }
 
-      // Add members/owners if specified
+      // Microsoft Graph requires at least one owner when creating a team
       if (options.ownerIds && options.ownerIds.length > 0) {
         teamBody.members = options.ownerIds.map((userId, index) => ({
           '@odata.type': '#microsoft.graph.aadUserConversationMember',
           'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${userId}')`,
-          roles: index === 0 ? ['owner'] : ['member'] // First user is owner
+          roles: index === 0 ? ['owner'] : ['member']
         }));
       }
 
-      // Create the team - this is an async operation
-      const response = await client.api('/teams').post(teamBody);
-      
-      // The POST returns a 202 with a Location header for the async operation
-      // For now, we need to poll or wait for completion
-      // In Graph SDK, we can get the team ID from the response
-      if (response && response.id) {
-        console.log('[PLANNER] Team created successfully:', response.id);
+      // Use raw fetch so we can capture the 202 Location header.
+      // The Graph SDK's .post() silently returns undefined for 202 responses,
+      // causing the Location header (needed for async polling) to be lost.
+      const accessToken = await getPlannerAccessToken(this.credentials);
+      const httpResponse = await fetch('https://graph.microsoft.com/v1.0/teams', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(teamBody),
+      });
+
+      // 200/201 — synchronous success (rare, but handle it)
+      if (httpResponse.status === 200 || httpResponse.status === 201) {
+        const team = await httpResponse.json();
+        console.log('[PLANNER] Team created synchronously:', team.id);
         return {
-          id: response.id,
-          displayName: options.displayName,
-          description: options.description,
-          webUrl: response.webUrl
+          id: team.id,
+          displayName: team.displayName || options.displayName,
+          description: team.description || options.description,
+          webUrl: team.webUrl
         };
       }
 
-      // If async, the response may have a header we need to parse
-      // For Graph client, it usually returns the created team
-      throw new Error('Team creation response did not contain team ID');
-    } catch (error: any) {
-      console.error('[PLANNER] Error creating team:', error.message);
-      
-      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
-        throw new Error('Team creation requires Team.Create and Group.Create permissions with admin consent');
-      }
-      
-      // Handle async creation (202 response)
-      if (error.statusCode === 202) {
-        // Get the Location header for polling
-        const locationHeader = error.headers?.get?.('Location') || error.headers?.location;
+      // 202 — async creation; poll the Location URL
+      if (httpResponse.status === 202) {
+        const locationHeader = httpResponse.headers.get('Location') || httpResponse.headers.get('location');
         if (locationHeader) {
-          console.log('[PLANNER] Team creation is async, polling location:', locationHeader);
+          console.log('[PLANNER] Team creation is async, polling:', locationHeader);
           return await this.waitForTeamCreation(locationHeader);
         }
+        throw new Error('Team creation accepted (202) but no Location header returned');
       }
-      
+
+      // Any other status is an error
+      let errorMessage = `HTTP ${httpResponse.status}`;
+      try {
+        const errorBody = await httpResponse.json();
+        errorMessage = errorBody?.error?.message || errorBody?.message || errorMessage;
+      } catch {
+        // ignore parse errors
+      }
+
+      if (errorMessage.includes('Insufficient privileges') || errorMessage.includes('Authorization_RequestDenied')) {
+        throw new Error('Team creation requires Team.Create and Group.Create permissions with admin consent');
+      }
+      throw new Error(errorMessage);
+    } catch (error: any) {
+      console.error('[PLANNER] Error creating team:', error.message);
       throw new Error(`Failed to create team: ${error.message}`);
     }
   }

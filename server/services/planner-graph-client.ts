@@ -109,6 +109,16 @@ export async function getPlannerGraphClient(credentials?: PlannerCredentials): P
   });
 }
 
+export async function getPlannerAccessToken(credentials?: PlannerCredentials): Promise<string> {
+  const creds = credentials || getSystemPlannerCredentials();
+  if (!creds) {
+    throw new Error(
+      'Planner integration not configured. Please set PLANNER_TENANT_ID, PLANNER_CLIENT_ID, and PLANNER_CLIENT_SECRET environment variables.'
+    );
+  }
+  return getClientCredentialsToken(creds);
+}
+
 export function isPlannerConfigured(): boolean {
   return getSystemPlannerCredentials() !== null;
 }
