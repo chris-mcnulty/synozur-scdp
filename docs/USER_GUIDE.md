@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.8 | Last Updated: March 15, 2026
+Version 2.0 | Last Updated: April 1, 2026
 
 ---
 
@@ -19,14 +19,17 @@ Version 1.8 | Last Updated: March 15, 2026
 9. [User Roles](#user-roles)
 10. [Constellation Copilot Agent](#constellation-copilot-agent)
 11. [Microsoft Teams Custom Tab](#microsoft-teams-custom-tab)
-12. [Navigation](#navigation)
-13. [Common Workflows](#common-workflows)
-14. [Microsoft 365 Integration](#microsoft-365-integration)
-15. [HubSpot CRM Integration](#hubspot-crm-integration)
-16. [Settings & Preferences](#settings--preferences)
-17. [Tips & Best Practices](#tips--best-practices)
-18. [Troubleshooting](#troubleshooting)
-19. [Detailed Documentation](#detailed-documentation)
+12. [Teams Channel Provisioning](#teams-channel-provisioning)
+13. [Executive Narrative Reporting](#executive-narrative-reporting)
+14. [Page Analytics](#page-analytics)
+15. [Navigation](#navigation)
+16. [Common Workflows](#common-workflows)
+17. [Microsoft 365 Integration](#microsoft-365-integration)
+18. [HubSpot CRM Integration](#hubspot-crm-integration)
+19. [Settings & Preferences](#settings--preferences)
+20. [Tips & Best Practices](#tips--best-practices)
+21. [Troubleshooting](#troubleshooting)
+22. [Detailed Documentation](#detailed-documentation)
 
 ---
 
@@ -43,10 +46,12 @@ Constellation is a comprehensive Consulting Delivery Platform designed to help o
 - **Time & Expense Tracking**: Comprehensive time and expense management with approval workflows
 - **Financial Management**: Invoice generation, expense reimbursement, and financial reporting
 - **Client Management**: Organize clients with custom vocabulary and branding
-- **Microsoft 365 Integration**: Seamless integration with Teams, Planner, SharePoint, and Azure AD
+- **Microsoft 365 Integration**: Seamless integration with Teams, Planner, SharePoint, and Azure AD — including Teams channel provisioning and embedded project tabs
+- **Executive Narrative Reporting**: AI-generated leadership summaries with PowerPoint export
 - **Role-Based Access**: Six-tier permission system tailored to your responsibilities
 - **HubSpot CRM Integration**: Connect your sales pipeline with project delivery
 - **Vocabulary Customization**: Use your organization's terminology throughout the platform
+- **Nebula Design System**: Modern visual experience with Aurora theme, glow effects, and animations
 
 ### Who Should Use This Guide?
 
@@ -601,6 +606,71 @@ When viewing Constellation inside Teams:
 ### Authentication
 
 The Teams tab uses your Microsoft identity for single sign-on. The first time you access the tab, you may see a sign-in prompt — click the sign-in button and authenticate with your Microsoft 365 credentials. After that, your session persists.
+
+---
+
+## Teams Channel Provisioning
+
+### Creating a Team
+
+You can create a Microsoft Team directly from Constellation:
+
+1. Navigate to a **Project**, **Estimate**, or **Client** detail page
+2. Look for the **"Create Team"** or **"Create Channel"** button in the Microsoft Teams section
+3. Enter a team name — Constellation checks for duplicate names and will warn you if the name is already taken
+4. Click **Create** — the system automatically sets you as the team owner and provisions the team in the background
+
+**Important notes:**
+- Teams provisioning is blocked if the project spans multiple Azure AD tenants — all team members must belong to the same tenant
+- The team owner is automatically set to your Microsoft identity (resolved from your login email)
+- Team creation happens asynchronously — the UI will show progress while Microsoft provisions the team
+
+### Creating Channels
+
+After a team exists, you can add channels for specific projects or workstreams from the same provisioning UI. Channels appear in the team's channel list in Microsoft Teams.
+
+---
+
+## Executive Narrative Reporting
+
+### What Are Executive Narratives?
+
+Executive narratives are AI-generated leadership summaries that distill project activity — time entries, milestones, RAIDD items, and financial data — into concise, polished summaries suitable for stakeholders and executives.
+
+### Generating a Narrative
+
+1. Navigate to the **Reports** page
+2. Select the **Executive Narratives** tab
+3. Choose the project(s) and date range
+4. Click **Generate Narrative** — the AI produces a structured summary
+5. Review the generated narrative and edit if needed
+
+### Saving & Exporting
+
+- **Save** narratives for future reference from the Executive Narratives tab
+- **Export as PowerPoint** — download a branded PPTX slide deck with your narrative content
+- Previously saved narratives can be viewed, re-exported, or deleted from the saved narratives list
+
+### Revenue in Narratives
+
+Revenue figures in executive narratives include only **time** and **milestone** invoice line types. Expense reimbursements, sales tax, discounts, and no-charge lines are excluded to reflect true consulting revenue.
+
+---
+
+## Page Analytics
+
+### Overview
+
+Page Analytics tracks visits to Constellation's public-facing pages (home, login, signup) and provides platform administrators with visibility into traffic patterns.
+
+### Viewing Analytics
+
+1. Navigate to **System Settings** (platform admin access required)
+2. Select the **Page Analytics** tab
+3. View page visits and unique sessions by page
+4. Use the date range filter to narrow down the time period
+
+Analytics data is session-based — unique visitors are identified by session rather than by user account, since tracking occurs on public (unauthenticated) pages.
 
 ---
 
@@ -1316,7 +1386,7 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: March 15, 2026*  
-*Version: 1.8*  
+*Last Updated: April 1, 2026*  
+*Version: 2.0*  
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

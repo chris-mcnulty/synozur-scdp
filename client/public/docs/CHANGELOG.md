@@ -17,6 +17,101 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 2.0 (April 1, 2026)
+
+**Release Date:** April 1, 2026  
+**Status:** Production Release  
+**Codename:** Nebula
+
+Version 2.0 is a major milestone for Constellation. March 2026 delivered a sweeping set of enhancements across executive reporting, Microsoft Teams provisioning, the Nebula visual design system, AI-powered features, page analytics, and dozens of quality-of-life improvements and bug fixes.
+
+#### Executive Narrative & Leadership Reporting
+
+- **Executive Narrative Reporting** — AI-generated leadership summaries that distill project activity, milestones, RAIDD items, and financials into a concise narrative for stakeholders
+- **Save & Export as PowerPoint** — Save executive narratives and export them as branded PPTX slide decks
+- **Executive Narratives Tab** on the Reports page for viewing, managing, and re-exporting saved narratives
+- **Revenue Calculation Refined** — Total revenue now sums only `time` and `milestone` invoice line types, correctly excluding expense reimbursements, sales tax, discounts, and no-charge lines
+- **Activity Aggregation Service** — shared service powering both executive narratives and MCP/Copilot endpoints with consistent data
+
+#### Microsoft Teams Channel Provisioning
+
+- **Teams Channel Provisioning UI** — create Microsoft Teams and channels directly from project detail, estimate detail, and client detail pages
+- **Cross-Tenant Blocking** — Teams provisioning is automatically blocked for projects that span multiple Azure AD tenants
+- **Auto-Resolve Team Owner** — the requesting user's Azure AD identity is automatically resolved and set as the team owner (fixes "owner required" error)
+- **Async Team Creation** — proper handling of Microsoft's 202 Accepted response with Location header polling
+- **Duplicate Name Detection** — team name is checked against existing teams before creation to prevent conflicts
+- **Embedded Teams Navigation Flyout** — in-app navigation added to the embedded Teams view
+- **Planner Sync Fix** — bidirectional sync no longer overwrites locally completed task status
+
+#### Nebula UX Design System
+
+- **Aurora Primary Background** — Aurora is now the primary hero background with reduced hero image opacity, dark base, and star particle effects on login and home pages
+- **Glow Utilities** — `.glow-primary` and `.primary-cta-glow` CSS classes for hover and focus effects on buttons and interactive elements
+- **Active Sidebar Styling** — border-l-2 accent, gradient background, and glow on the active sidebar item
+- **Entrance Stagger Animations** — `animate-fade-in-up` with stagger delays applied to dashboard KPI cards, login/home feature cards, portfolio RAIDD stat tiles, and portfolio report summary cards
+- **Typography Weight Contrast** — font-black (900) for values and font-light (300) for labels across KPI cards and stat tiles; cosmic-text gradient on hero headings
+- **Light Mode Nebula Tint** — subtle purple tint on the light mode background
+- **Nebula Card Borders** — animated conic-gradient border rotation on KPI cards, stat tiles, and feature cards (dark mode)
+- **Nebula Skeleton Shimmer** — purple/magenta shimmer on loading skeleton components in both light and dark modes
+- **Aurora Component** — reusable `aurora.tsx` component with configurable intensity, theme detection, and particle effects
+
+#### AI & Copilot Enhancements
+
+- **MCP Activity Summary Endpoint** — new `/mcp/activity-summary` endpoint for Copilot agent narration covering time entries, expenses, RAIDD items, and assignment status
+- **AI Estimate Week Assignment** — AI-powered sequential week assignment for program estimate staffing blocks
+- **Expanded MCP Coverage** — RAIDD, assignments, and improved type safety added to existing MCP endpoints
+
+#### Page Analytics
+
+- **Public Page Tracking** — anonymous page view tracking for home, login, and signup pages with session-based unique visitor identification
+- **Page Analytics Dashboard** — new "Page Analytics" tab in System Settings (platform admin only) showing visits and unique sessions per page with configurable date range
+
+#### User Authentication & Assignment Fixes
+
+- **Just-In-Time Provisioning** — new Microsoft SSO users are automatically provisioned on first login without requiring pre-registration
+- **My Assignments Fix** — resolved production bug where My Assignments appeared empty due to NULL `tenant_id` on `project_allocations` records; query now scopes via `projects.tenantId` through the join
+- **Person-Scoped Assignment Dropdown** — time entry assignment dropdown now shows only the selected person's assignments, preventing cross-user assignment contamination
+
+#### PowerPoint Status Report Templates
+
+- **PPTX Slide Template System** — selectable branded slide templates for PowerPoint status report export
+- **Dynamic Text Injection** — project name, dates, and summary data populate slide placeholders automatically
+- **Background & Design Elements** — branded backgrounds, logos, and design elements inserted into template slides
+- **Layout Content Handling** — empty slides now pull content from their layout master correctly
+- **Multiple Subtitle Lines** — template title slides support multiple subtitle lines for additional context
+
+#### Client & Document Management
+
+- **Client Document Hub** — MSA/NDA upload and management from the client detail page
+- **Orphaned Invoice PDF Cleanup** — utility to identify and remove orphaned invoice PDF files from storage
+
+#### Platform & Architecture
+
+- **M365 Integration Architecture Diagram** — dedicated page visualizing the three-app Entra ID architecture and data flows
+- **Splash Page SEO Optimization** — meta tags, Open Graph tags, and structured data for better search engine and social media visibility
+- **Calendar Date Validation** — report date range inputs now validate for proper date ordering
+- **Support Ticket Defaults** — support tickets default to the pending view with working filter query parameters
+- **API Documentation Updates** — expanded operations in the OpenAPI spec
+
+#### Expense & Billing Fixes
+
+- **Reimbursement Status Tracking** — reimbursement status column added to the expense management view
+- **Currency Selection** — currency picker added to the expense editing form
+- **Invoice Receipt Bundling Fix** — resolved cross-batch contamination when bundling receipts
+- **Expense Count & Recipient Fix** — correct counts and reimbursement recipient names on the batch list
+- **Time Entry Date Fix** — date picker in the Log Time dialog no longer shifts dates due to UTC conversion
+- **Log Time Dialog Fields** — missing fields restored in the project-tab Log Time dialog
+
+#### Documentation
+
+- Updated user guide, admin guide, changelog, and roadmap for v2.0
+- Added M365 architecture diagram documentation
+- Updated revenue calculation documentation in AI grounding
+
+---
+
+## Recent Releases
+
 ### Version 1.8 (March 15, 2026)
 
 **Release Date:** March 15, 2026  

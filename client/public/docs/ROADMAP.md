@@ -223,6 +223,66 @@ The following major features have been delivered and are live in production. See
 - Theme files at `client/src/themes/`
 - Integration guide at `docs/SYNOZUR_THEME_GUIDE.md`
 
+### ✅ Nebula UX Design System
+**Completed:** March 2026
+- Aurora primary hero background with star particle effects on login and home pages
+- Glow utility CSS classes (`.glow-primary`, `.primary-cta-glow`) for interactive elements
+- Active sidebar styling with border accent, gradient background, and glow
+- Entrance stagger animations on dashboard KPI cards, feature cards, and stat tiles
+- Typography weight contrast (font-black values, font-light labels)
+- Light mode nebula tint on background
+- Animated nebula card borders with conic-gradient rotation (dark mode)
+- Nebula skeleton shimmer for loading states
+- Reusable `aurora.tsx` component with configurable intensity, theme, and particles
+
+### ✅ Executive Narrative Reporting
+**Completed:** March 2026
+- AI-generated leadership summaries from project activity, milestones, RAIDD, and financials
+- Save and export executive narratives as branded PowerPoint slide decks
+- Executive Narratives tab on Reports page for viewing, managing, and re-exporting saved narratives
+- Revenue calculation refined to sum only time + milestone invoice lines (excludes expense, tax, discount, no-charge)
+- Shared activity aggregation service powering narratives and MCP/Copilot endpoints
+
+### ✅ Teams Channel Provisioning
+**Completed:** March 2026
+- Teams Channel Provisioning UI for creating Teams and channels from project, estimate, and client detail pages
+- Cross-tenant blocking prevents Teams provisioning for multi-tenant projects
+- Auto-resolve team owner from the requesting user's Azure AD identity
+- Async 202 response handling with Location header polling for team creation
+- Duplicate team name detection before creation
+- Embedded Teams navigation flyout
+- Planner sync fix: bidirectional sync no longer overwrites locally completed task status
+
+### ✅ PowerPoint Status Report Templates
+**Completed:** March 2026
+- PPTX slide template system with selectable branded templates
+- Dynamic text injection (project name, dates, summary data) into slide placeholders
+- Branded backgrounds, logos, and design elements on template slides
+- Proper layout content handling for empty slides
+- Multiple subtitle lines on template title slides
+
+### ✅ Page Analytics
+**Completed:** March 2026
+- Anonymous page view tracking for public pages (home, login, signup)
+- Page Analytics dashboard in System Settings (platform admin only)
+- Session-based unique visitor identification
+- Configurable date range filtering
+
+### ✅ Client Document Hub
+**Completed:** March 2026
+- MSA/NDA upload and management from client detail pages
+- Document type classification and metadata
+
+### ✅ JIT User Provisioning
+**Completed:** March 2026
+- Just-In-Time automatic provisioning of new user accounts on Microsoft SSO first login
+- No pre-registration required for new users
+
+### ✅ SEO & Splash Page Optimization
+**Completed:** March 2026
+- Meta tags, Open Graph tags, and structured data on public-facing pages
+- Improved search engine and social media visibility
+
 ---
 
 ## Current Focus (Q1 2026)
@@ -428,19 +488,25 @@ The following major features have been delivered and are live in production. See
 **Target Completion:** Q2 2026  
 **Value Proposition:** Seamless Microsoft 365 integration enhances team collaboration and centralizes project communications.
 
-#### Delivered (v1.8)
+#### Delivered (v1.8–v2.0)
 
-**Teams Custom Tab ✅ Complete**
+**Teams Custom Tab ✅ Complete (v1.8)**
 - Constellation projects embed as Microsoft Teams tabs with chromeless layout
 - Tab deep-linking, read-only enforcement, SSO authentication
 - Configurable tab setup and embed dashboard
 - Teams app manifest with three-app Entra architecture
 
+**Teams Channel Provisioning ✅ Complete (v2.0)**
+- Teams Channel Provisioning UI from project, estimate, and client detail pages
+- Auto-resolve team owner from Azure AD identity
+- Async 202 response handling with Location header polling
+- Duplicate team name detection
+- Cross-tenant blocking for multi-tenant projects
+- Embedded Teams navigation flyout
+
 #### Remaining Deliverables
 
-**Microsoft Teams Automation**
-- Automatic Team creation for new clients (first project)
-- Channel creation for subsequent client projects
+**Microsoft Teams Automation (Phase 2)**
 - SharePoint site provisioning with Team
 - Team member management based on project assignments
 - Automated member add/remove on assignment changes
@@ -899,12 +965,25 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
+**April 1, 2026 — Version 2.0 (Nebula)**
+- Major version bump to 2.0
+- Added Nebula UX Design System to Recently Completed (Aurora backgrounds, glow utilities, stagger animations, nebula card borders, skeleton shimmer)
+- Added Executive Narrative Reporting to Recently Completed (AI-generated leadership summaries, PPTX export, saved narratives tab)
+- Added Teams Channel Provisioning to Recently Completed (provisioning UI, auto-owner, async 202 handling, duplicate name guard, cross-tenant blocking)
+- Added PowerPoint Status Report Templates to Recently Completed (branded slide templates, dynamic text, design elements)
+- Added Page Analytics to Recently Completed (public page tracking, admin dashboard)
+- Added Client Document Hub to Recently Completed (MSA/NDA upload)
+- Added JIT User Provisioning to Recently Completed (auto-provisioning on SSO first login)
+- Added SEO & Splash Page Optimization to Recently Completed
+- Updated Microsoft 365 Teams Integration status — Teams Channel Provisioning marked complete, remaining items scoped to Phase 2
+- Multiple bug fixes: My Assignments tenant_id, time entry UTC dates, invoice receipt cross-batch contamination, Planner sync overwrite, expense counts, support ticket defaults
+
 **March 10, 2026**
 - Marked MCP Server & Copilot Agent as ✅ Complete (24 endpoints, Power Platform Custom Connector, Copilot Studio agent, Teams channel deployment)
 - Added MCP Server & Constellation Copilot Agent to Recently Completed section
 - Updated Enhanced Status Reporting with Persistent Report Storage (v1.7)
 - Updated version references to 1.7
 
-*Last Updated: March 10, 2026*  
+*Last Updated: April 1, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
