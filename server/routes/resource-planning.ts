@@ -692,10 +692,11 @@ export function registerResourcePlanningRoutes(app: Express, deps: ResourcePlann
 
       // Resolve emails → user IDs
       const emails = [...new Set(rows.map(r => r.userEmail.toLowerCase()))];
-      const userRows = await db.select({ id: users.id, email: users.email })
+      const normalizedUserEmail = sql<string>`lower(${users.email})`;
+      const userRows = await db.select({ id: users.id, email: normalizedUserEmail })
         .from(users)
-        .where(inArray(users.email, emails));
-      const emailToUser = new Map(userRows.map(u => [u.email?.toLowerCase(), u.id]));
+        .where(inArray(normalizedUserEmail, emails));
+      const emailToUser = new Map(userRows.map(u => [u.email, u.id]));
 
       // Resolve role names → role IDs
       const roleNames = [...new Set(rows.map(r => r.roleName))];
