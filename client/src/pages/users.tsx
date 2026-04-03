@@ -487,7 +487,7 @@ export default function Users() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm">{user.weeklyCapacityHours || '40'}</span>
+                        <span className="text-sm">{user.weeklyCapacityHours ?? '40'}</span>
                         {user.capacityNotes && (
                           <span className="block text-xs text-muted-foreground truncate max-w-[100px]" title={user.capacityNotes}>
                             {user.capacityNotes}
