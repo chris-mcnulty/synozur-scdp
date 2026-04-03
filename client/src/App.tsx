@@ -61,6 +61,8 @@ import EmbedProject from "@/pages/embed-project";
 import EmbedConfigure from "@/pages/embed-configure";
 import EmbedDashboard from "@/pages/embed-dashboard";
 import EmbedAuthPopup from "@/pages/embed-auth-popup";
+import ResourcePlanning from "@/pages/resource-planning";
+import CapacityPlanning from "@/pages/capacity-planning";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -296,6 +298,20 @@ function Router() {
       </Route>
       <Route path="/cross-project-resource">
         {user ? <CrossProjectResource /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/resource-planning">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "pm", "portfolio-manager", "executive"]}>
+            <ResourcePlanning />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/resource-planning/capacity">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "pm", "portfolio-manager", "executive"]}>
+            <CapacityPlanning />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/system-settings">
         {user ? <SystemSettings /> : <Redirect to="/login" />}

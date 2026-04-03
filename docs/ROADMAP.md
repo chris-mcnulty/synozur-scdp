@@ -298,27 +298,27 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-### 🎯 Priority: Advanced Resource Management — Phases 1-2
+### ✅ Priority: Advanced Resource Management — Phases 1-2
 
-**Status:** 🎯 In Progress  
-**Target Completion:** Q1-Q2 2026  
+**Status:** ✅ Complete  
+**Completed:** April 2026  
 **Design Document:** `docs/design/advanced-resource-management.md`  
 **Value Proposition:** Multi-role capability mapping and capacity profiles lay the foundation for smart assignment suggestions, cross-project rebalancing, and pipeline-aware capacity planning in later phases.
 
-#### Phase 1: Role Capabilities & Capacity Profiles (~1 week)
+#### Phase 1: Role Capabilities & Capacity Profiles
 - New `user_role_capabilities` table for many-to-many user-role mapping with proficiency levels (primary/secondary/learning)
 - Optional per-role cost/billing rate overrides per person
 - Per-person `weeklyCapacityHours` (default 40), `capacityNotes`, `capacityEffectiveDate` on users table
-- UI: "Capabilities & Capacity" section on user profile, role badges on user list
-- API: CRUD for role capabilities, capable-users-by-role query
+- UI: "Capabilities & Capacity" section on user edit dialog, role badges and weekly hours on user list
+- API: Full CRUD for role capabilities, capable-users-by-role query, capacity profile fields on user PATCH
 
-#### Phase 2: Planner Sync Protection for Generic Roles (~2-3 days)
-- Include role name in Planner task title for unassigned allocations
-- Add role name to task notes for context
-- Define sync field whitelist: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
+#### Phase 2: Planner Sync Protection for Generic Roles
+- Generic role allocations (roleId set, no personId) get `[RoleName]` prefix in Planner task title
+- `ROLE: RoleName` added to task notes for context
+- Sync field whitelist documented: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
 - Prevents future bidirectional sync from overwriting role context
 
-**Note:** Phases 3-6 (smart suggestions, workload rebalancing, capacity analytics, bulk import) remain on the roadmap for H2 2026, gated on Phases 1-2 completion.
+**Note:** Phases 3-6 (smart suggestions, workload rebalancing, capacity analytics, bulk import) were completed in April 2026.
 
 ---
 
@@ -716,33 +716,33 @@ The `IStorage` interface remains unified but its implementation is composed from
 
 ---
 
-### 🎯 Advanced Resource Management — Phases 3-6
+### ✅ Advanced Resource Management — Phases 3-6
 
-**Status:** 📋 Planned  
-**Target Timeframe:** H2 2026  
-**Prerequisites:** Phases 1-2 (advanced to Q1-Q2 2026 Current Focus)  
+**Status:** ✅ Complete  
+**Completed:** April 2026  
 **Design Document:** `docs/design/advanced-resource-management.md`
 
-#### Remaining Phases (~6-7 weeks total)
-
-**Phase 3: Smart Assignment Suggestions (~2 weeks)**
-- Suggestion engine in project assignment module (not during estimate conversion)
+#### Phase 3: Smart Assignment Suggestions
+- Suggestion engine in project Delivery tab — "Suggest People" button on generic role allocations
 - Candidates ranked by role proficiency, availability, cost variance, and salaried status
-- Bulk assignment with review screen and cost impact summary
+- Bulk assignment API with per-role rate recalculation and engagement auto-creation
 
-**Phase 4: Cross-Project Workload & Rebalancing (~2 weeks)**
-- Timeline view and utilization heat map at `/resource-planning`
-- "Find Replacement" with cost impact analysis and margin preview
-- Filters by role, project, date range, utilization threshold
+#### Phase 4: Cross-Project Workload & Rebalancing
+- Resource Planning page at `/resource-planning` with workload table, utilization bars, and project color-coded breakdown
+- Expandable per-person allocation detail with "Reassign" flow for overallocated resources
+- Conflicts summary card highlighting overallocated people
+- Utilization status filtering (overallocated, at capacity, healthy, underutilized)
 
-**Phase 5: Capacity Planning Analytics (~1-2 weeks)**
-- KPI dashboard, bench list, role demand vs supply gap analysis
-- Forecast tool for pipeline impact on team utilization
-- Cost variance trends over time
+#### Phase 5: Capacity Planning Analytics
+- Capacity Planning dashboard at `/resource-planning/capacity` with KPI cards (team utilization, bench count, open roles)
+- Recharts visualizations: capacity utilization pie chart, role demand vs supply bar chart
+- Bench list with role capabilities and available hours
+- Demand vs supply gap analysis by role
 
-**Phase 6: Bulk Import & Polish (~1 week)**
-- CSV/Excel templates for bulk role capability and capacity imports
-- Performance optimization and historical trend charts
+#### Phase 6: Bulk Import & Polish
+- CSV bulk import for role capabilities (email, role, proficiency, rates) with upsert on conflict
+- CSV bulk import for capacity profiles (email, weeklyHours, notes, effectiveDate)
+- Validation and error reporting with per-row results
 
 ---
 

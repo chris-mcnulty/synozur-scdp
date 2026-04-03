@@ -55,9 +55,17 @@ async function syncProjectToPlanner(
       }
     }
 
+    // Sync field whitelist — Constellation-owned fields (roleId, personId, pricingMode, hours,
+    // costRate, billingRate, rackRate, resourceName, estimateLineItemId, weekNumber) are NEVER
+    // overwritten by inbound sync. Planner-owned fields (percentComplete → status mapping,
+    // startDateTime → plannedStartDate, dueDateTime → plannedEndDate) may sync back.
     for (const allocation of allocations) {
       try {
         const syncRecord = existingSyncs.find(s => s.allocationId === allocation.id);
+
+        // Resolve role name for generic role allocations (roleId set, no personId)
+        const isGenericRole = allocation.roleId && !allocation.personId;
+        const roleName = isGenericRole ? (allocation.role?.name || '') : '';
 
         let taskTitle = allocation.taskDescription || '';
         if (!taskTitle && allocation.workstream) {
@@ -65,6 +73,11 @@ async function syncProjectToPlanner(
         }
         if (!taskTitle) {
           taskTitle = `Week ${allocation.weekNumber} Task`;
+        }
+
+        // For generic role allocations, prefix the title with the role name
+        if (isGenericRole && roleName) {
+          taskTitle = `[${roleName}] ${taskTitle}`;
         }
 
         let stageName = 'Unassigned';
@@ -123,8 +136,10 @@ async function syncProjectToPlanner(
         const assignmentLink = `${baseUrl}/projects/${projectId}?tab=delivery&assignmentId=${allocation.id}`;
         const originalNotes = allocation.notes || allocation.taskDescription || '';
         const hoursStr = allocation.hours ? `HOURS: ${allocation.hours}` : '';
+        const roleStr = (isGenericRole && roleName) ? `ROLE: ${roleName}` : '';
         const notesParts = [
           `View in Constellation: ${assignmentLink}`,
+          roleStr,
           hoursStr,
           originalNotes
         ].filter(Boolean);
