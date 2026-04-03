@@ -318,7 +318,7 @@ The following major features have been delivered and are live in production. See
 - Sync field whitelist documented: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
 - Prevents future bidirectional sync from overwriting role context
 
-**Note:** Phases 3-6 (smart suggestions, workload rebalancing, capacity analytics, bulk import) remain on the roadmap for H2 2026, now unblocked.
+**Note:** Phases 3-6 (smart suggestions, workload rebalancing, capacity analytics, bulk import) were completed in April 2026.
 
 ---
 
