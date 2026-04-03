@@ -187,32 +187,35 @@ export function TeamsAutomationPanel({
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label htmlFor="auto-add" className="text-sm">Auto-add members on assignment</Label>
+                <Label htmlFor="auto-add" className={`text-sm ${!syncState?.syncEnabled ? "text-muted-foreground" : ""}`}>Auto-add members on assignment</Label>
                 <Switch
                   id="auto-add"
                   checked={syncState?.autoAddMembers ?? true}
+                  disabled={!syncState?.syncEnabled}
                   onCheckedChange={(checked) => handleToggleSyncSetting("autoAddMembers", checked)}
                 />
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="auto-remove" className="text-sm">Auto-remove on unassignment</Label>
+                  <Label htmlFor="auto-remove" className={`text-sm ${!syncState?.syncEnabled ? "text-muted-foreground" : ""}`}>Auto-remove on unassignment</Label>
                   <p className="text-xs text-muted-foreground">Team owners are never auto-removed</p>
                 </div>
                 <Switch
                   id="auto-remove"
                   checked={syncState?.autoRemoveMembers ?? false}
+                  disabled={!syncState?.syncEnabled}
                   onCheckedChange={(checked) => handleToggleSyncSetting("autoRemoveMembers", checked)}
                 />
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="auto-invite" className="text-sm">Auto-invite external users as guests</Label>
+                  <Label htmlFor="auto-invite" className={`text-sm ${!syncState?.syncEnabled ? "text-muted-foreground" : ""}`}>Auto-invite external users as guests</Label>
                   <p className="text-xs text-muted-foreground">Sends Azure AD B2B invitations</p>
                 </div>
                 <Switch
                   id="auto-invite"
                   checked={syncState?.inviteGuestsAutomatically ?? false}
+                  disabled={!syncState?.syncEnabled}
                   onCheckedChange={(checked) => handleToggleSyncSetting("inviteGuestsAutomatically", checked)}
                 />
               </div>
