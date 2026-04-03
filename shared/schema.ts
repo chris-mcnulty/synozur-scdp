@@ -3526,7 +3526,7 @@ export const guestInvitations = pgTable("guest_invitations", {
   expiresAt: timestamp("expires_at"),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-  updatedAt: timestamp("updated_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
 export const insertGuestInvitationSchema = createInsertSchema(guestInvitations).omit({
