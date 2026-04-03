@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage, db } from "../storage";
-import { projectChannels, projects, teamsTabTemplates, DEFAULT_TAB_TEMPLATES } from "@shared/schema";
+import { projectChannels, projects, clients, teamsTabTemplates, DEFAULT_TAB_TEMPLATES } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 
 interface PlannerRouteDeps {
@@ -424,6 +424,64 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         constellationTabId: constellationTab?.id || null,
         foldersProvisioned: folderResults,
       });
+
+      // Fire SharePoint news post + quick links in background after response is sent.
+      // Only runs when a project channel is provisioned (projectId present).
+      if (projectId) {
+        const teamId = req.params.teamId;
+        const channelWebUrl = channel.webUrl || null;
+        const appBaseUrl = `${req.protocol}://${req.get('host')}`;
+        const user = req.user as any;
+        const tenantId = user?.activeTenantId || user?.primaryTenantId;
+
+        setImmediate(async () => {
+          try {
+            const { teamsAutomationService } = await import('../services/teams-automation-service');
+
+            // Fetch project + client details for the news post content
+            const [proj] = await db
+              .select({
+                name: projects.name,
+                code: projects.code,
+                description: projects.description,
+                startDate: projects.startDate,
+                clientId: projects.clientId,
+              })
+              .from(projects)
+              .where(eq(projects.id, projectId))
+              .limit(1);
+
+            if (!proj) return;
+
+            let clientName: string | undefined;
+            try {
+              const [cl] = await db
+                .select({ name: clients.name })
+                .from(clients)
+                .where(eq(clients.id, proj.clientId))
+                .limit(1);
+              clientName = cl?.name;
+            } catch {}
+
+            await teamsAutomationService.createProjectSharePointPage(
+              teamId,
+              {
+                projectId,
+                projectName: proj.name,
+                projectCode: proj.code,
+                clientName,
+                startDate: proj.startDate,
+                description: proj.description,
+                channelWebUrl,
+                appBaseUrl,
+              },
+              { tenantId, triggeredBy: user?.id }
+            );
+          } catch (spErr: any) {
+            console.warn('[PLANNER] SharePoint page provisioning failed (background):', spErr.message);
+          }
+        });
+      }
     } catch (error: any) {
       console.error("[PLANNER] Failed to create channel:", error);
       res.status(500).json({ message: "Failed to create channel: " + error.message });

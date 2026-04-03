@@ -69,39 +69,37 @@ export function registerTeamsAutomationRoutes(app: Express, deps: TeamsAutomatio
   );
 
   /**
-   * POST /api/teams-automation/teams/:teamId/project-library
-   * Create a project-specific document library on the team's SharePoint site.
+   * POST /api/teams-automation/teams/:teamId/provision-sharepoint-pages
+   * Manually trigger SharePoint news post + quick links provisioning for a project.
+   * This also fires automatically during channel creation. Use this to re-provision
+   * or to provision for channels that were created before this feature existed.
    */
-  app.post("/api/teams-automation/teams/:teamId/project-library",
+  app.post("/api/teams-automation/teams/:teamId/provision-sharepoint-pages",
     deps.requireAuth,
     deps.requireRole(["admin", "pm", "portfolio-manager"]),
     async (req, res) => {
       try {
-        const { projectCode, projectName, folderNames } = req.body;
-        if (!projectCode || !projectName) {
-          return res.status(400).json({ message: "projectCode and projectName are required" });
+        const { projectId, projectName, projectCode, clientName, pmName, startDate, description, channelWebUrl } = req.body;
+        if (!projectId || !projectName || !projectCode) {
+          return res.status(400).json({ message: "projectId, projectName, and projectCode are required" });
         }
+
+        const appBaseUrl = `${req.protocol}://${req.get('host')}`;
 
         const { teamsAutomationService } = await import('../services/teams-automation-service');
-        const library = await teamsAutomationService.createProjectDocumentLibrary(
+        const result = await teamsAutomationService.createProjectSharePointPage(
           req.params.teamId,
-          projectCode,
-          projectName,
-          folderNames,
-          {
-            tenantId: req.user?.tenantId,
-            projectId: req.body.projectId,
-            triggeredBy: req.user?.id,
-          }
+          { projectId, projectName, projectCode, clientName, pmName, startDate, description, channelWebUrl, appBaseUrl },
+          { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
         );
 
-        if (!library) {
-          return res.status(500).json({ message: "Failed to create project document library" });
+        if (!result) {
+          return res.status(500).json({ message: "Failed to provision SharePoint page. The team's SharePoint site may not be ready yet." });
         }
-        res.json(library);
+        res.json(result);
       } catch (error: any) {
-        console.error("[TEAMS-AUTO] Project library creation error:", error);
-        res.status(500).json({ message: "Failed to create project document library" });
+        console.error("[TEAMS-AUTO] SharePoint page provisioning error:", error);
+        res.status(500).json({ message: "Failed to provision SharePoint pages" });
       }
     }
   );

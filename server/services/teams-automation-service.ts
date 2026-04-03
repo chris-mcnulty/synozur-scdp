@@ -128,75 +128,135 @@ class TeamsAutomationService {
   }
 
   /**
-   * Create a project-specific document library on the team's SharePoint site.
+   * Create a SharePoint news post on the team site introducing a project.
+   * Also embeds quick links to the Constellation project page and Teams channel.
+   * Runs as a non-blocking background step after channel provisioning.
    */
-  async createProjectDocumentLibrary(
+  async createProjectSharePointPage(
     teamId: string,
-    projectCode: string,
-    projectName: string,
-    folderNames?: string[],
+    projectData: {
+      projectId: string;
+      projectName: string;
+      projectCode: string;
+      clientName?: string;
+      pmName?: string;
+      startDate?: string | null;
+      description?: string | null;
+      channelWebUrl?: string | null;
+      appBaseUrl?: string;
+    },
     options?: {
       tenantId?: string;
-      projectId?: string;
       triggeredBy?: string;
     }
-  ): Promise<{ libraryId: string; libraryUrl: string } | null> {
+  ): Promise<{ newsPostUrl: string } | null> {
     const logBase: Partial<InsertTeamsAutomationLog> = {
       tenantId: options?.tenantId || null,
-      projectId: options?.projectId || null,
+      projectId: projectData.projectId || null,
       teamId,
       triggeredBy: options?.triggeredBy || null,
     };
 
     try {
+      // Get the team's SharePoint site (created automatically by M365 with the team)
+      const site = await this.getTeamSharePointSite(teamId);
+      if (!site) {
+        console.warn('[TEAMS-AUTO] SharePoint site not yet available for team, skipping news post');
+        return null;
+      }
+
       const { getPlannerGraphClient } = await import('./planner-graph-client');
       const client = await getPlannerGraphClient();
 
-      // Create a project folder in the root
-      const folderName = `${projectCode} - ${projectName}`;
-      const projectFolder = await client.api(`/groups/${teamId}/drive/root/children`)
+      // Build project metadata section
+      const metaLines: string[] = [];
+      if (projectData.clientName) metaLines.push(`<p><strong>Client:</strong> ${projectData.clientName}</p>`);
+      if (projectData.projectCode) metaLines.push(`<p><strong>Project Code:</strong> ${projectData.projectCode}</p>`);
+      if (projectData.pmName) metaLines.push(`<p><strong>Project Manager:</strong> ${projectData.pmName}</p>`);
+      if (projectData.startDate) metaLines.push(`<p><strong>Start Date:</strong> ${projectData.startDate}</p>`);
+
+      const descriptionHtml = projectData.description
+        ? `<h3>Overview</h3><p>${projectData.description}</p>`
+        : '';
+
+      // Build quick links section
+      const appUrl = projectData.appBaseUrl || '';
+      const projectUrl = appUrl && projectData.projectId
+        ? `${appUrl}/projects/${projectData.projectId}`
+        : null;
+
+      const linkItems = [
+        projectUrl ? `<li><a href="${projectUrl}">View Project in Constellation</a></li>` : '',
+        projectData.channelWebUrl ? `<li><a href="${projectData.channelWebUrl}">Open Teams Channel</a></li>` : '',
+      ].filter(Boolean);
+
+      const linksSection = linkItems.length > 0
+        ? `<h3>Key Links</h3><ul>${linkItems.join('\n')}</ul>`
+        : '';
+
+      const innerHtml = [
+        `<h2>${projectData.projectName}</h2>`,
+        ...metaLines,
+        descriptionHtml,
+        linksSection,
+      ].filter(Boolean).join('\n');
+
+      // Page name must be unique within the site and URL-safe
+      const safeCode = projectData.projectCode.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const pageName = `project-${safeCode}-overview.aspx`;
+
+      // Create the news post via Graph API
+      const page = await client.api(`/sites/${site.siteId}/pages`)
         .post({
-          name: folderName,
-          folder: {},
-          '@microsoft.graph.conflictBehavior': 'rename',
+          '@odata.type': '#microsoft.graph.sitePage',
+          name: pageName,
+          title: projectData.projectName,
+          promotionKind: 'newsPost',
+          showComments: false,
+          showPublishedDateTime: true,
+          canvasLayout: {
+            horizontalSections: [{
+              layout: 'oneColumn',
+              id: '1',
+              emphasis: 'none',
+              columns: [{
+                id: '1',
+                width: 12,
+                webparts: [{
+                  '@odata.type': '#microsoft.graph.textWebPart',
+                  innerHtml,
+                }],
+              }],
+            }],
+          },
         });
 
-      // Create subfolders if specified
-      const defaultFolders = folderNames || ['Deliverables', 'SOW & Contracts', 'Meeting Notes', 'Status Reports', 'Working Documents'];
-      for (const subfolder of defaultFolders) {
-        try {
-          await client.api(`/groups/${teamId}/drive/items/${projectFolder.id}/children`)
-            .post({
-              name: subfolder,
-              folder: {},
-            });
-        } catch (err: any) {
-          console.warn(`[TEAMS-AUTO] Failed to create subfolder "${subfolder}":`, err.message);
-        }
+      // Publish so it appears in the news feed immediately
+      try {
+        await client.api(`/sites/${site.siteId}/pages/${page.id}/microsoft.graph.sitePage/publish`).post({});
+        console.log('[TEAMS-AUTO] SharePoint news post published:', page.webUrl);
+      } catch (pubErr: any) {
+        console.warn('[TEAMS-AUTO] News post created but publish failed (draft saved):', pubErr.message);
       }
 
       await storage.createTeamsAutomationLog({
         ...logBase,
-        action: 'sharepoint_provisioned',
+        action: 'sharepoint_news_post_created',
         success: true,
         details: {
-          libraryId: projectFolder.id,
-          libraryUrl: projectFolder.webUrl,
-          folderName,
-          subfolders: defaultFolders,
+          pageId: page.id,
+          pageUrl: page.webUrl,
+          siteId: site.siteId,
+          siteName: site.siteName,
         },
       } as InsertTeamsAutomationLog);
 
-      console.log('[TEAMS-AUTO] Project document library created:', teamId, projectFolder.webUrl);
-      return {
-        libraryId: projectFolder.id,
-        libraryUrl: projectFolder.webUrl,
-      };
+      return { newsPostUrl: page.webUrl };
     } catch (error: any) {
-      console.error('[TEAMS-AUTO] Failed to create project document library:', error.message);
+      console.error('[TEAMS-AUTO] Failed to create SharePoint news post:', error.message);
       await storage.createTeamsAutomationLog({
         ...logBase,
-        action: 'sharepoint_provision_failed',
+        action: 'sharepoint_news_post_failed',
         success: false,
         errorMessage: error.message,
       } as InsertTeamsAutomationLog);
