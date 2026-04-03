@@ -140,11 +140,6 @@ class TeamsAutomationService {
       const { getPlannerGraphClient } = await import('./planner-graph-client');
       const client = await getPlannerGraphClient();
 
-      // Get the team's default drive (document library)
-      const drive = await client.api(`/groups/${teamId}/drive`)
-        .select('id,webUrl')
-        .get();
-
       // Create a project folder in the root
       const folderName = `${projectCode} - ${projectName}`;
       const projectFolder = await client.api(`/groups/${teamId}/drive/root/children`)
