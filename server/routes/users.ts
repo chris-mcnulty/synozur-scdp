@@ -310,6 +310,25 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         userId: req.params.id,
       });
 
+      const [tenantUser] = await db
+        .select({ userId: tenantUsers.userId })
+        .from(tenantUsers)
+        .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.userId, req.params.id)))
+        .limit(1);
+
+      if (!tenantUser) {
+        return res.status(404).json({ message: "User not found in tenant" });
+      }
+
+      const [role] = await db
+        .select({ id: roles.id })
+        .from(roles)
+        .where(and(eq(roles.id, validatedData.roleId), eq(roles.tenantId, tenantId)))
+        .limit(1);
+
+      if (!role) {
+        return res.status(400).json({ message: "Invalid role for tenant" });
+      }
       const [capability] = await db.insert(userRoleCapabilities).values(validatedData).returning();
       res.status(201).json(capability);
     } catch (error: any) {
