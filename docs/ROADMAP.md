@@ -512,6 +512,15 @@ The following major features have been delivered and are live in production. See
 - ~~Automated member add/remove on assignment changes~~ ✅
 - Guest user invitation workflows (Azure AD B2B) ✅
 - Automation audit logging ✅
+- ~~SharePoint project overview news post (auto-created on channel provisioning, includes project summary + quick links to Constellation project page and Teams channel)~~ ✅
+- ~~"Push to SharePoint" button on project Teams panel for manual re-provision of existing channels~~ ✅
+
+**Microsoft Teams Automation (Phase 3) — SharePoint Living Updates**
+- On-demand "Push Project Update" action: publishes a new SharePoint news post reflecting current project health (milestone progress, budget status, recent activity, open risks) at any point in the engagement lifecycle
+- Scheduled project status broadcasts: configurable cadence (weekly/monthly) that auto-generates and posts a status snapshot to the team site news feed
+- Status post format mirrors the Executive Narrative style — AI-generated prose summary with structured data
+- Integration with existing Status Reports: option to cross-post an approved status report as a SharePoint news post
+- Re-uses the same Graph API page publishing infrastructure built in Phase 2
 
 **Enhanced Planner Integration (Phase 2)**
 - Bidirectional sync with Microsoft Graph webhooks

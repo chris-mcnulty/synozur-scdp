@@ -108,7 +108,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2, Search, Loader2
+  Link2, Search, Loader2, Globe
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -278,12 +278,16 @@ function TeamsChannelPanel({
   clientTeamId,
   clientId,
   projectName,
+  projectCode,
+  clientName,
   projectTenantId,
 }: {
   projectId: string;
   clientTeamId?: string | null;
   clientId?: string | null;
   projectName?: string;
+  projectCode?: string;
+  clientName?: string;
   projectTenantId?: string | null;
 }) {
   const { toast } = useToast();
@@ -297,6 +301,35 @@ function TeamsChannelPanel({
   const [newTeamName, setNewTeamName] = useState("");
   const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
   const [provisioning, setProvisioning] = useState(false);
+
+  const pushToSharePointMutation = useMutation({
+    mutationFn: async (channelWebUrl: string | null) => {
+      if (!clientTeamId) throw new Error("No team linked to this client");
+      return apiRequest(`/api/teams-automation/teams/${clientTeamId}/provision-sharepoint-pages`, {
+        method: "POST",
+        body: JSON.stringify({
+          projectId,
+          projectName: projectName || "",
+          projectCode: projectCode || "",
+          clientName,
+          channelWebUrl,
+        }),
+      });
+    },
+    onSuccess: (result: any) => {
+      toast({
+        title: "SharePoint page published",
+        description: "Project overview news post has been created on the team site.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to push to SharePoint",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: channel, isLoading } = useQuery<{
     id: number;
@@ -520,14 +553,30 @@ function TeamsChannelPanel({
             <p className="text-sm font-medium">{channel.channelName}</p>
             <p className="text-xs text-muted-foreground font-mono">{channel.channelId}</p>
           </div>
-          {channel.channelWebUrl && (
-            <a href={channel.channelWebUrl} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="sm">
-                <ExternalLink className="h-4 w-4 mr-1" />
-                Open in Teams
+          <div className="flex items-center gap-2">
+            {clientTeamId && !isCrossTenant && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => pushToSharePointMutation.mutate(channel.channelWebUrl)}
+                disabled={pushToSharePointMutation.isPending}
+              >
+                {pushToSharePointMutation.isPending
+                  ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  : <Globe className="h-4 w-4 mr-1" />
+                }
+                Push to SharePoint
               </Button>
-            </a>
-          )}
+            )}
+            {channel.channelWebUrl && (
+              <a href={channel.channelWebUrl} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm">
+                  <ExternalLink className="h-4 w-4 mr-1" />
+                  Open in Teams
+                </Button>
+              </a>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -3391,6 +3440,8 @@ export default function ProjectDetail() {
               clientTeamId={analytics?.project?.client?.microsoftTeamId}
               clientId={analytics?.project?.clientId}
               projectName={analytics?.project?.name}
+              projectCode={analytics?.project?.code}
+              clientName={analytics?.project?.client?.name}
               projectTenantId={analytics?.project?.tenantId}
             />
             
