@@ -3465,3 +3465,109 @@ export const pageViews = pgTable("page_views", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 export type PageView = typeof pageViews.$inferSelect;
+
+// ============================================================================
+// TEAMS AUTOMATION (Phase 2) — Member sync, SharePoint provisioning, Guest invitations
+// ============================================================================
+
+// Automation action types
+export const teamsAutomationActionEnum = z.enum([
+  'member_added', 'member_removed', 'member_add_failed', 'member_remove_failed',
+  'sharepoint_provisioned', 'sharepoint_provision_failed',
+  'guest_invited', 'guest_invite_failed', 'guest_redeemed',
+  'sync_started', 'sync_completed', 'sync_failed'
+]);
+export type TeamsAutomationAction = z.infer<typeof teamsAutomationActionEnum>;
+
+// Teams Automation Logs — audit trail for all automated Teams operations
+export const teamsAutomationLogs = pgTable("teams_automation_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  teamId: varchar("team_id", { length: 255 }),
+  channelId: varchar("channel_id", { length: 255 }),
+  action: text("action").notNull(), // TeamsAutomationAction values
+  targetUserId: varchar("target_user_id").references(() => users.id, { onDelete: "set null" }),
+  targetAzureUserId: varchar("target_azure_user_id", { length: 255 }),
+  targetEmail: text("target_email"),
+  details: jsonb("details").$type<Record<string, any>>(),
+  success: boolean("success").notNull().default(true),
+  errorMessage: text("error_message"),
+  triggeredBy: varchar("triggered_by").references(() => users.id, { onDelete: "set null" }), // null = system/automatic
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantCreatedIdx: index("idx_teams_auto_logs_tenant_created").on(table.tenantId, table.createdAt),
+  projectCreatedIdx: index("idx_teams_auto_logs_project_created").on(table.projectId, table.createdAt),
+  teamCreatedIdx: index("idx_teams_auto_logs_team_created").on(table.teamId, table.createdAt),
+  actionCreatedIdx: index("idx_teams_auto_logs_action_created").on(table.action, table.createdAt),
+}));
+
+export const insertTeamsAutomationLogSchema = createInsertSchema(teamsAutomationLogs).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertTeamsAutomationLog = z.infer<typeof insertTeamsAutomationLogSchema>;
+export type TeamsAutomationLog = typeof teamsAutomationLogs.$inferSelect;
+
+// Guest Invitations — track Azure AD B2B guest invitations
+export const guestInvitations = pgTable("guest_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  teamId: varchar("team_id", { length: 255 }).notNull(),
+  invitedEmail: text("invited_email").notNull(),
+  invitedDisplayName: text("invited_display_name"),
+  invitedUserId: varchar("invited_user_id").references(() => users.id, { onDelete: "set null" }), // Constellation user if exists
+  azureGuestUserId: varchar("azure_guest_user_id", { length: 255 }), // Set after invitation accepted
+  invitationId: varchar("invitation_id", { length: 255 }), // Azure AD invitation ID
+  redemptionUrl: text("redemption_url"), // URL for guest to accept invitation
+  status: text("status").notNull().default("pending"), // pending, sent, accepted, failed, expired
+  role: text("role").notNull().default("member"), // member or owner
+  sendInvitationMessage: boolean("send_invitation_message").notNull().default(true),
+  customMessage: text("custom_message"),
+  invitedBy: varchar("invited_by").references(() => users.id, { onDelete: "set null" }),
+  sentAt: timestamp("sent_at"),
+  acceptedAt: timestamp("accepted_at"),
+  expiresAt: timestamp("expires_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+export const insertGuestInvitationSchema = createInsertSchema(guestInvitations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertGuestInvitation = z.infer<typeof insertGuestInvitationSchema>;
+export type GuestInvitation = typeof guestInvitations.$inferSelect;
+
+// Teams Member Sync State — tracks per-project member sync configuration and status
+export const teamsMemberSyncState = pgTable("teams_member_sync_state", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  teamId: varchar("team_id", { length: 255 }).notNull(),
+  syncEnabled: boolean("sync_enabled").notNull().default(true),
+  autoAddMembers: boolean("auto_add_members").notNull().default(true),
+  autoRemoveMembers: boolean("auto_remove_members").notNull().default(false), // Conservative default
+  inviteGuestsAutomatically: boolean("invite_guests_automatically").notNull().default(false),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: text("last_sync_status"), // success, error, partial
+  lastSyncError: text("last_sync_error"),
+  membersAdded: integer("members_added").notNull().default(0),
+  membersRemoved: integer("members_removed").notNull().default(0),
+  guestsInvited: integer("guests_invited").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+}, (table) => ({
+  uniqueProject: unique("uq_teams_member_sync_state_project").on(table.projectId),
+}));
+
+export const insertTeamsMemberSyncStateSchema = createInsertSchema(teamsMemberSyncState).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertTeamsMemberSyncState = z.infer<typeof insertTeamsMemberSyncStateSchema>;
+export type TeamsMemberSyncState = typeof teamsMemberSyncState.$inferSelect;

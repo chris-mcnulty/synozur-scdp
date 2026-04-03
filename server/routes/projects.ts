@@ -373,8 +373,15 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       // Auto-create or reactivate engagement when a person is assigned
       if (validatedData.personId) {
         await storage.ensureProjectEngagement(req.params.projectId, validatedData.personId);
+        // Fire-and-forget: auto-add member to Teams if sync is enabled
+        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+          teamsAutomationService.onUserAssignedToProject(
+            req.params.projectId, validatedData.personId!,
+            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+          ).catch(() => {});
+        }).catch(() => {});
       }
-      
+
       res.status(201).json(created);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -422,8 +429,25 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       // Auto-create or reactivate engagement when a person is assigned
       if (req.body.personId) {
         await storage.ensureProjectEngagement(req.params.projectId, req.body.personId);
+        // Fire-and-forget: auto-add member to Teams if sync is enabled
+        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+          teamsAutomationService.onUserAssignedToProject(
+            req.params.projectId, req.body.personId,
+            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+          ).catch(() => {});
+        }).catch(() => {});
       }
-      
+
+      // Fire-and-forget: if personId changed, remove the previous assignee from Teams
+      if (req.body.personId && allocation && allocation.personId && allocation.personId !== req.body.personId) {
+        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+          teamsAutomationService.onUserUnassignedFromProject(
+            req.params.projectId, allocation.personId!,
+            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+          ).catch(() => {});
+        }).catch(() => {});
+      }
+
       res.json(updated);
     } catch (error: any) {
       console.error("[ERROR] Failed to update project allocation:", error);
@@ -433,7 +457,24 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
   app.delete("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
+      // Fetch the allocation before deleting so we can trigger the unassignment hook
+      const allocation = await storage.getProjectAllocation(req.params.id);
+      if (!allocation) {
+        return res.status(404).json({ message: "Allocation not found" });
+      }
+
       await storage.deleteProjectAllocation(req.params.id);
+
+      // Fire-and-forget: auto-remove member from Teams if sync is enabled
+      if (allocation.personId) {
+        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+          teamsAutomationService.onUserUnassignedFromProject(
+            req.params.projectId, allocation.personId!,
+            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+          ).catch(() => {});
+        }).catch(() => {});
+      }
+
       res.status(204).send();
     } catch (error: any) {
       console.error("[ERROR] Failed to delete project allocation:", error);
@@ -455,7 +496,19 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       for (const personId of Array.from(personIds)) {
         await storage.ensureProjectEngagement(req.params.projectId, personId);
       }
-      
+
+      // Fire-and-forget: auto-add all assigned members to Teams if sync is enabled
+      if (personIds.size > 0) {
+        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+          for (const personId of Array.from(personIds)) {
+            teamsAutomationService.onUserAssignedToProject(
+              req.params.projectId, personId,
+              { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+            ).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+
       res.json(updated);
     } catch (error: any) {
       console.error("[ERROR] Failed to bulk update project allocations:", error);
@@ -495,6 +548,14 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       await Promise.all(updatePromises);
 
       await storage.ensureProjectEngagement(projectId, personId);
+
+      // Fire-and-forget: auto-add reassigned member to Teams if sync is enabled
+      import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+        teamsAutomationService.onUserAssignedToProject(
+          projectId, personId,
+          { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+        ).catch(() => {});
+      }).catch(() => {});
 
       res.json({ updatedCount: matchingAllocations.length });
     } catch (error: any) {

@@ -17,6 +17,31 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 2.1 (April 3, 2026)
+
+**Release Date:** April 3, 2026
+**Status:** Production Release
+
+Version 2.1 delivers Microsoft Teams Automation Phase 2, adding automated member management, SharePoint site provisioning, and guest user invitation workflows.
+
+#### Microsoft Teams Automation (Phase 2)
+
+- **Automatic Member Sync** — team membership automatically stays in sync with project assignments; when users are allocated to a project, they are added to the associated Microsoft Team; optional auto-removal when unassigned (disabled by default, owners never removed)
+- **SharePoint Site Provisioning** — retrieve and link the SharePoint site associated with a Team; create project-specific document libraries with configurable folder structure (Deliverables, SOW & Contracts, Meeting Notes, Status Reports, Working Documents)
+- **Guest User Invitation Workflows** — invite external collaborators via Azure AD B2B invitations directly from the project Teams panel; track invitation status (pending, sent, accepted, failed); resend expired invitations
+- **Per-Project Sync Configuration** — configure member sync settings per project: auto-add, auto-remove, and auto-invite guests, with independent toggles for each
+- **Automation Audit Logs** — comprehensive audit trail for all Teams automation actions (member add/remove, SharePoint provisioning, guest invitations) with success/failure tracking
+- **Fire-and-Forget Integration Hooks** — allocation create, update, bulk-update, and role reassignment routes automatically trigger member sync when enabled, without blocking the primary operation
+- **Teams Automation Panel UI** — new tabbed panel component for project detail pages with Members, SharePoint, Guests, and Logs tabs
+
+#### Database Schema
+
+- New tables: `teams_automation_logs`, `guest_invitations`, `teams_member_sync_state`
+- Full audit trail for all automated Teams operations
+- Guest invitation lifecycle tracking with Azure AD B2B integration
+
+---
+
 ### Version 2.0 (April 1, 2026)
 
 **Release Date:** April 1, 2026  

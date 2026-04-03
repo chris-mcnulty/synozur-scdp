@@ -70,7 +70,10 @@ import {
   aiUsageLogs, type AiUsageLog, type InsertAiUsageLog,
   aiUsageSummaries, type AiUsageSummary, type InsertAiUsageSummary,
   aiUsageAlerts, type AiUsageAlert, type InsertAiUsageAlert,
-  statusReports, type StatusReport, type InsertStatusReport
+  statusReports, type StatusReport, type InsertStatusReport,
+  teamsAutomationLogs, type TeamsAutomationLog, type InsertTeamsAutomationLog,
+  guestInvitations, type GuestInvitation, type InsertGuestInvitation,
+  teamsMemberSyncState, type TeamsMemberSyncState, type InsertTeamsMemberSyncState
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -86,6 +89,7 @@ import { adminMethods } from "./admin";
 import { documentsMethods } from "./documents";
 import { plannerMethods } from "./planner";
 import { tenantMethods } from "./tenant";
+import { teamsAutomationMethods } from "./teams-automation";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf } from "./pdf-generation";
@@ -997,6 +1001,19 @@ export interface IStorage {
   createAiUsageAlert(alert: InsertAiUsageAlert): Promise<AiUsageAlert>;
   getAiUsageAlerts(periodMonth?: string): Promise<AiUsageAlert[]>;
   getPlatformAdminEmails(): Promise<string[]>;
+
+  // Teams Automation Methods
+  createTeamsAutomationLog(log: InsertTeamsAutomationLog): Promise<TeamsAutomationLog>;
+  getTeamsAutomationLogs(filters: { projectId?: string; teamId?: string; tenantId?: string; action?: string; limit?: number }): Promise<TeamsAutomationLog[]>;
+  createGuestInvitation(invitation: InsertGuestInvitation): Promise<GuestInvitation>;
+  getGuestInvitation(id: string): Promise<GuestInvitation | undefined>;
+  getGuestInvitations(filters: { projectId?: string; teamId?: string; tenantId?: string; status?: string }): Promise<GuestInvitation[]>;
+  updateGuestInvitation(id: string, updates: Partial<InsertGuestInvitation>): Promise<GuestInvitation>;
+  getGuestInvitationByEmail(email: string, teamId: string): Promise<GuestInvitation | undefined>;
+  getTeamsMemberSyncState(projectId: string): Promise<TeamsMemberSyncState | undefined>;
+  createTeamsMemberSyncState(state: InsertTeamsMemberSyncState): Promise<TeamsMemberSyncState>;
+  updateTeamsMemberSyncState(id: string, updates: Partial<InsertTeamsMemberSyncState>): Promise<TeamsMemberSyncState>;
+  getTeamsMemberSyncStatesForTeam(teamId: string): Promise<TeamsMemberSyncState[]>;
 }
 
 export class DatabaseStorage {
@@ -1016,6 +1033,7 @@ Object.assign(
   documentsMethods,
   plannerMethods,
   tenantMethods,
+  teamsAutomationMethods,
 );
 
 export const storage: IStorage = new DatabaseStorage();

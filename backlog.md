@@ -196,15 +196,17 @@
 - [ ] Phase 6: Bulk import & polish (~1 week)
 
 ### Microsoft 365 Teams Integration
-**Status:** Partially complete — Planner done, Teams pending
-**Effort:** Medium (4-6 weeks remaining)
+**Status:** Phase 2 complete — SharePoint provisioning, member sync, guest invitations
+**Effort:** Medium (2-3 weeks remaining for bidirectional sync & project creation UI)
 
 - [x] Planner one-way sync ✅
 - [x] Database schema for Teams/Channels/Planner ✅
-- [ ] Automatic Team creation for new clients
-- [ ] Channel creation for subsequent projects
-- [ ] SharePoint site provisioning with Team
-- [ ] Team member management (add/remove from assignments)
+- [x] Automatic Team creation for new clients ✅
+- [x] Channel creation for subsequent projects ✅
+- [x] SharePoint site provisioning with Team ✅ (Phase 2)
+- [x] Team member management (add/remove from assignments) ✅ (Phase 2)
+- [x] Guest user invitation workflows ✅ (Phase 2)
+- [x] Automation audit logging ✅ (Phase 2)
 - [ ] Planner Phase 2: Bidirectional sync via Graph webhooks
 - [ ] Project creation UI with M365 options
 
