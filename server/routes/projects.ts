@@ -438,6 +438,16 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         }).catch(() => {});
       }
 
+      // Fire-and-forget: if personId changed, remove the previous assignee from Teams
+      if (req.body.personId && allocation.personId && allocation.personId !== req.body.personId) {
+        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+          teamsAutomationService.onUserUnassignedFromProject(
+            req.params.projectId, allocation.personId!,
+            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+          ).catch(() => {});
+        }).catch(() => {});
+      }
+
       res.json(updated);
     } catch (error: any) {
       console.error("[ERROR] Failed to update project allocation:", error);
@@ -447,7 +457,20 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
   app.delete("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
+      // Fetch the allocation before deleting so we can trigger the unassignment hook
+      const allocation = await storage.getProjectAllocation(req.params.id);
       await storage.deleteProjectAllocation(req.params.id);
+
+      // Fire-and-forget: auto-remove member from Teams if sync is enabled
+      if (allocation?.personId) {
+        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+          teamsAutomationService.onUserUnassignedFromProject(
+            req.params.projectId, allocation.personId!,
+            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
+          ).catch(() => {});
+        }).catch(() => {});
+      }
+
       res.status(204).send();
     } catch (error: any) {
       console.error("[ERROR] Failed to delete project allocation:", error);

@@ -87,7 +87,12 @@ export function registerTeamsAutomationRoutes(app: Express, deps: TeamsAutomatio
           req.params.teamId,
           projectCode,
           projectName,
-          folderNames
+          folderNames,
+          {
+            tenantId: req.user?.tenantId,
+            projectId: req.body.projectId,
+            triggeredBy: req.user?.id,
+          }
         );
 
         if (!library) {

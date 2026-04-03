@@ -152,7 +152,7 @@ export function useSyncProjectMembers() {
         body: JSON.stringify({ teamId, autoAdd, autoRemove, inviteGuests }),
       });
     },
-    onSuccess: (data: MemberSyncResult) => {
+    onSuccess: (data: MemberSyncResult, variables) => {
       const parts = [];
       if (data.added.length > 0) parts.push(`${data.added.length} added`);
       if (data.removed.length > 0) parts.push(`${data.removed.length} removed`);
@@ -163,7 +163,15 @@ export function useSyncProjectMembers() {
         title: "Member sync complete",
         description: parts.length > 0 ? parts.join(", ") : "All members already in sync",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/teams-automation"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/teams-automation/projects", variables.projectId, "sync-state"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/teams-automation/logs"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/teams-automation/guest-invitations"],
+      });
     },
     onError: (error: Error) => {
       toast({ title: "Member sync failed", description: error.message, variant: "destructive" });
@@ -188,9 +196,11 @@ export function useUpdateSyncState() {
         body: JSON.stringify(data),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       toast({ title: "Sync settings updated" });
-      queryClient.invalidateQueries({ queryKey: ["/api/teams-automation"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/teams-automation/projects", variables.projectId, "sync-state"],
+      });
     },
     onError: (error: Error) => {
       toast({ title: "Failed to update sync settings", description: error.message, variant: "destructive" });

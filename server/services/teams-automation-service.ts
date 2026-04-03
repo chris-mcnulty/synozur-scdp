@@ -134,8 +134,20 @@ class TeamsAutomationService {
     teamId: string,
     projectCode: string,
     projectName: string,
-    folderNames?: string[]
+    folderNames?: string[],
+    options?: {
+      tenantId?: string;
+      projectId?: string;
+      triggeredBy?: string;
+    }
   ): Promise<{ libraryId: string; libraryUrl: string } | null> {
+    const logBase: Partial<InsertTeamsAutomationLog> = {
+      tenantId: options?.tenantId || null,
+      projectId: options?.projectId || null,
+      teamId,
+      triggeredBy: options?.triggeredBy || null,
+    };
+
     try {
       const { getPlannerGraphClient } = await import('./planner-graph-client');
       const client = await getPlannerGraphClient();
@@ -163,12 +175,31 @@ class TeamsAutomationService {
         }
       }
 
+      await storage.createTeamsAutomationLog({
+        ...logBase,
+        action: 'sharepoint_provisioned',
+        success: true,
+        details: {
+          libraryId: projectFolder.id,
+          libraryUrl: projectFolder.webUrl,
+          folderName,
+          subfolders: defaultFolders,
+        },
+      } as InsertTeamsAutomationLog);
+
+      console.log('[TEAMS-AUTO] Project document library created:', teamId, projectFolder.webUrl);
       return {
         libraryId: projectFolder.id,
         libraryUrl: projectFolder.webUrl,
       };
     } catch (error: any) {
       console.error('[TEAMS-AUTO] Failed to create project document library:', error.message);
+      await storage.createTeamsAutomationLog({
+        ...logBase,
+        action: 'sharepoint_provision_failed',
+        success: false,
+        errorMessage: error.message,
+      } as InsertTeamsAutomationLog);
       return null;
     }
   }
@@ -505,6 +536,72 @@ class TeamsAutomationService {
     } catch (error: any) {
       // Don't throw — this is a fire-and-forget enhancement
       console.error('[TEAMS-AUTO] onUserAssignedToProject error:', error.message);
+    }
+  }
+
+  /**
+   * Triggered when a user is unassigned from a project (allocation deleted or personId changed).
+   * Removes them from the associated team if auto-remove is enabled.
+   */
+  async onUserUnassignedFromProject(
+    projectId: string,
+    userId: string,
+    options?: { tenantId?: string; triggeredBy?: string }
+  ): Promise<void> {
+    try {
+      const syncState = await storage.getTeamsMemberSyncState(projectId);
+      if (!syncState || !syncState.syncEnabled || !syncState.autoRemoveMembers) return;
+
+      const user = await storage.getUser(userId);
+      if (!user?.email) return;
+
+      // Resolve Azure AD identity
+      let azureUserId: string | null = null;
+      const mapping = await storage.getUserAzureMapping(userId);
+      if (mapping) {
+        azureUserId = mapping.azureUserId;
+      } else {
+        const azureUser = await plannerService.findUserByEmail(user.email);
+        if (azureUser) azureUserId = azureUser.id;
+      }
+
+      if (!azureUserId) return;
+
+      // Never auto-remove team owners
+      const isOwner = await this.isTeamOwner(syncState.teamId, azureUserId);
+      if (isOwner) return;
+
+      try {
+        await this.removeTeamMember(syncState.teamId, azureUserId);
+        await storage.createTeamsAutomationLog({
+          tenantId: options?.tenantId || null,
+          projectId,
+          teamId: syncState.teamId,
+          action: 'member_removed',
+          targetUserId: userId,
+          targetAzureUserId: azureUserId,
+          targetEmail: user.email,
+          success: true,
+          triggeredBy: options?.triggeredBy || null,
+        });
+        console.log(`[TEAMS-AUTO] Auto-removed ${user.email} from team ${syncState.teamId}`);
+      } catch (err: any) {
+        await storage.createTeamsAutomationLog({
+          tenantId: options?.tenantId || null,
+          projectId,
+          teamId: syncState.teamId,
+          action: 'member_remove_failed',
+          targetUserId: userId,
+          targetAzureUserId: azureUserId,
+          targetEmail: user.email,
+          success: false,
+          errorMessage: err.message,
+          triggeredBy: options?.triggeredBy || null,
+        });
+      }
+    } catch (error: any) {
+      // Don't throw — this is a fire-and-forget enhancement
+      console.error('[TEAMS-AUTO] onUserUnassignedFromProject error:', error.message);
     }
   }
 

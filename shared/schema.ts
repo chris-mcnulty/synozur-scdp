@@ -3495,7 +3495,12 @@ export const teamsAutomationLogs = pgTable("teams_automation_logs", {
   errorMessage: text("error_message"),
   triggeredBy: varchar("triggered_by").references(() => users.id, { onDelete: "set null" }), // null = system/automatic
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantCreatedIdx: index("idx_teams_auto_logs_tenant_created").on(table.tenantId, table.createdAt),
+  projectCreatedIdx: index("idx_teams_auto_logs_project_created").on(table.projectId, table.createdAt),
+  teamCreatedIdx: index("idx_teams_auto_logs_team_created").on(table.teamId, table.createdAt),
+  actionCreatedIdx: index("idx_teams_auto_logs_action_created").on(table.action, table.createdAt),
+}));
 
 export const insertTeamsAutomationLogSchema = createInsertSchema(teamsAutomationLogs).omit({
   id: true,
@@ -3555,7 +3560,9 @@ export const teamsMemberSyncState = pgTable("teams_member_sync_state", {
   guestsInvited: integer("guests_invited").notNull().default(0),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
-});
+}, (table) => ({
+  uniqueProject: unique("uq_teams_member_sync_state_project").on(table.projectId),
+}));
 
 export const insertTeamsMemberSyncStateSchema = createInsertSchema(teamsMemberSyncState).omit({
   id: true,
