@@ -3509,7 +3509,7 @@ export const guestInvitations = pgTable("guest_invitations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
-  teamId: varchar("team_id", { length: 255 }),
+  teamId: varchar("team_id", { length: 255 }).notNull(),
   invitedEmail: text("invited_email").notNull(),
   invitedDisplayName: text("invited_display_name"),
   invitedUserId: varchar("invited_user_id").references(() => users.id, { onDelete: "set null" }), // Constellation user if exists
