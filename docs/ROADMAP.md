@@ -506,10 +506,12 @@ The following major features have been delivered and are live in production. See
 
 #### Remaining Deliverables
 
-**Microsoft Teams Automation (Phase 2)**
-- SharePoint site provisioning with Team
-- Team member management based on project assignments
-- Automated member add/remove on assignment changes
+**Microsoft Teams Automation (Phase 2)** ✅ *Completed v2.1 (April 3, 2026)*
+- ~~SharePoint site provisioning with Team~~ ✅
+- ~~Team member management based on project assignments~~ ✅
+- ~~Automated member add/remove on assignment changes~~ ✅
+- Guest user invitation workflows (Azure AD B2B) ✅
+- Automation audit logging ✅
 
 **Enhanced Planner Integration (Phase 2)**
 - Bidirectional sync with Microsoft Graph webhooks
