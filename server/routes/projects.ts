@@ -439,7 +439,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       }
 
       // Fire-and-forget: if personId changed, remove the previous assignee from Teams
-      if (req.body.personId && allocation.personId && allocation.personId !== req.body.personId) {
+      if (req.body.personId && allocation && allocation.personId && allocation.personId !== req.body.personId) {
         import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
           teamsAutomationService.onUserUnassignedFromProject(
             req.params.projectId, allocation.personId!,
@@ -459,10 +459,14 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     try {
       // Fetch the allocation before deleting so we can trigger the unassignment hook
       const allocation = await storage.getProjectAllocation(req.params.id);
+      if (!allocation) {
+        return res.status(404).json({ message: "Allocation not found" });
+      }
+
       await storage.deleteProjectAllocation(req.params.id);
 
       // Fire-and-forget: auto-remove member from Teams if sync is enabled
-      if (allocation?.personId) {
+      if (allocation.personId) {
         import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
           teamsAutomationService.onUserUnassignedFromProject(
             req.params.projectId, allocation.personId!,
