@@ -8,9 +8,8 @@ import {
   roles,
   projectAllocations,
   projects,
-  clients,
 } from "@shared/schema";
-import { eq, and, ne, sql, inArray, gte, lte, or } from "drizzle-orm";
+import { eq, and, ne, inArray } from "drizzle-orm";
 
 interface ResourcePlanningDeps {
   requireAuth: any;
