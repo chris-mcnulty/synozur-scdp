@@ -306,12 +306,15 @@ export function registerTeamsAutomationRoutes(app: Express, deps: TeamsAutomatio
     deps.requireAuth,
     async (req, res) => {
       try {
+        const parsedLimit = parseInt(req.query.limit as string, 10);
+        const limit = Math.max(1, Math.min(parsedLimit || 100, 500));
+
         const logs = await storage.getTeamsAutomationLogs({
           projectId: req.query.projectId as string,
           teamId: req.query.teamId as string,
           tenantId: req.user?.tenantId,
           action: req.query.action as string,
-          limit: parseInt(req.query.limit as string) || 100,
+          limit,
         });
         res.json(logs);
       } catch (error: any) {
