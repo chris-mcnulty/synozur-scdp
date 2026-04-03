@@ -780,10 +780,11 @@ export function registerResourcePlanningRoutes(app: Express, deps: ResourcePlann
       const { rows } = schema.parse(req.body);
 
       const emails = [...new Set(rows.map(r => r.userEmail.toLowerCase()))];
-      const userRows = await db.select({ id: users.id, email: users.email })
+      const loweredEmail = sql<string>`lower(${users.email})`;
+      const userRows = await db.select({ id: users.id, email: loweredEmail })
         .from(users)
-        .where(inArray(users.email, emails));
-      const emailToUser = new Map(userRows.map(u => [u.email?.toLowerCase(), u.id]));
+        .where(inArray(loweredEmail, emails));
+      const emailToUser = new Map(userRows.map(u => [u.email, u.id]));
 
       const results: { row: number; status: string; message?: string }[] = [];
       for (let i = 0; i < rows.length; i++) {
