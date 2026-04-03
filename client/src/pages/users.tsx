@@ -11,11 +11,195 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Search, UserPlus, Edit, Shield, Trash2, Building2, Filter } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, Search, UserPlus, Edit, Shield, Trash2, Building2, Filter, Clock, Briefcase, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getRoleDisplayName } from "@/lib/auth";
+
+// Proficiency badge styling
+function getProficiencyBadge(level: string) {
+  switch (level) {
+    case 'primary': return { label: 'Primary', variant: 'default' as const };
+    case 'secondary': return { label: 'Secondary', variant: 'secondary' as const };
+    case 'learning': return { label: 'Learning', variant: 'outline' as const };
+    default: return { label: level, variant: 'outline' as const };
+  }
+}
+
+// Role Capabilities Section (used in edit dialog)
+function RoleCapabilitiesSection({ userId }: { userId: string }) {
+  const { toast } = useToast();
+  const [addingRole, setAddingRole] = useState(false);
+  const [newRoleId, setNewRoleId] = useState("");
+  const [newProficiency, setNewProficiency] = useState("secondary");
+
+  const { data: capabilities = [], isLoading } = useQuery<any[]>({
+    queryKey: [`/api/users/${userId}/role-capabilities`],
+    enabled: !!userId,
+  });
+
+  const { data: allRoles = [] } = useQuery<any[]>({
+    queryKey: ["/api/roles"],
+  });
+
+  const addCapability = useMutation({
+    mutationFn: (data: any) => apiRequest(`/api/users/${userId}/role-capabilities`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/role-capabilities`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      setAddingRole(false);
+      setNewRoleId("");
+      setNewProficiency("secondary");
+      toast({ title: "Success", description: "Role capability added" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to add capability", variant: "destructive" });
+    },
+  });
+
+  const updateCapability = useMutation({
+    mutationFn: ({ capId, data }: { capId: string; data: any }) =>
+      apiRequest(`/api/users/${userId}/role-capabilities/${capId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/role-capabilities`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+    },
+  });
+
+  const deleteCapability = useMutation({
+    mutationFn: (capId: string) =>
+      apiRequest(`/api/users/${userId}/role-capabilities/${capId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/role-capabilities`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      toast({ title: "Success", description: "Role capability removed" });
+    },
+  });
+
+  // Filter out already-mapped roles
+  const existingRoleIds = new Set(capabilities.map((c: any) => c.roleId));
+  const availableRoles = allRoles.filter((r: any) => !existingRoleIds.has(r.id));
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-semibold flex items-center gap-1.5">
+          <Briefcase className="w-4 h-4" />
+          Role Capabilities
+        </Label>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setAddingRole(true)}
+          disabled={availableRoles.length === 0}
+        >
+          <Plus className="w-3 h-3 mr-1" /> Add Role
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading capabilities...</p>
+      ) : capabilities.length === 0 && !addingRole ? (
+        <p className="text-sm text-muted-foreground">No role capabilities mapped. Add roles this person can fill.</p>
+      ) : (
+        <div className="space-y-2">
+          {capabilities.map((cap: any) => {
+            const badge = getProficiencyBadge(cap.proficiencyLevel);
+            return (
+              <div key={cap.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium truncate">{cap.roleName || 'Unknown Role'}</span>
+                    <Badge variant={badge.variant} className="text-xs">{badge.label}</Badge>
+                  </div>
+                  <div className="flex gap-3 text-xs text-muted-foreground mt-0.5">
+                    {cap.customCostRate && <span>Cost: ${cap.customCostRate}/hr</span>}
+                    {cap.customBillingRate && <span>Bill: ${cap.customBillingRate}/hr</span>}
+                    {cap.notes && <span className="truncate">{cap.notes}</span>}
+                  </div>
+                </div>
+                <Select
+                  value={cap.proficiencyLevel}
+                  onValueChange={(val) => updateCapability.mutate({ capId: cap.id, data: { proficiencyLevel: val } })}
+                >
+                  <SelectTrigger className="w-[110px] h-7 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="primary">Primary</SelectItem>
+                    <SelectItem value="secondary">Secondary</SelectItem>
+                    <SelectItem value="learning">Learning</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                  onClick={() => deleteCapability.mutate(cap.id)}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {addingRole && (
+        <div className="flex items-end gap-2 rounded-md border p-2 bg-muted/50">
+          <div className="flex-1">
+            <Label className="text-xs">Role</Label>
+            <Select value={newRoleId} onValueChange={setNewRoleId}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="Select role..." />
+              </SelectTrigger>
+              <SelectContent>
+                {availableRoles.map((r: any) => (
+                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-[120px]">
+            <Label className="text-xs">Proficiency</Label>
+            <Select value={newProficiency} onValueChange={setNewProficiency}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="primary">Primary</SelectItem>
+                <SelectItem value="secondary">Secondary</SelectItem>
+                <SelectItem value="learning">Learning</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            disabled={!newRoleId || addCapability.isPending}
+            onClick={() => addCapability.mutate({ roleId: newRoleId, proficiencyLevel: newProficiency })}
+          >
+            Add
+          </Button>
+          <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => setAddingRole(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Users() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -225,6 +409,8 @@ export default function Users() {
                     <TableHead>Role</TableHead>
                     <TableHead>Can Login</TableHead>
                     <TableHead>Assignable</TableHead>
+                    <TableHead>Roles</TableHead>
+                    <TableHead>Weekly Hrs</TableHead>
                     <TableHead>Charge Rate</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
@@ -279,6 +465,33 @@ export default function Users() {
                           <span className="text-green-600">✓ Yes</span>
                         ) : (
                           <span className="text-muted-foreground">No</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {user.roleCapabilities?.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {user.roleCapabilities.slice(0, 3).map((cap: any, idx: number) => {
+                              const badge = getProficiencyBadge(cap.proficiencyLevel);
+                              return (
+                                <Badge key={idx} variant={badge.variant} className="text-xs font-normal">
+                                  {cap.roleName}
+                                </Badge>
+                              );
+                            })}
+                            {user.roleCapabilities.length > 3 && (
+                              <Badge variant="outline" className="text-xs font-normal">+{user.roleCapabilities.length - 3}</Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm">{user.weeklyCapacityHours || '40'}</span>
+                        {user.capacityNotes && (
+                          <span className="block text-xs text-muted-foreground truncate max-w-[100px]" title={user.capacityNotes}>
+                            {user.capacityNotes}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -482,9 +695,9 @@ export default function Users() {
         {/* Edit User Dialog */}
         {editingUser && (
           <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Edit User</DialogTitle>
+                <DialogTitle>Edit User — {editingUser.name}</DialogTitle>
               </DialogHeader>
               <form name="edit-user-form" onSubmit={(e) => {
                 e.preventDefault();
@@ -492,6 +705,9 @@ export default function Users() {
                 const firstName = formData.get('firstName') as string;
                 const lastName = formData.get('lastName') as string;
                 const email = formData.get('email') as string;
+                const weeklyCapacityHours = formData.get('weeklyCapacityHours') as string;
+                const capacityNotes = formData.get('capacityNotes') as string;
+                const capacityEffectiveDate = formData.get('capacityEffectiveDate') as string;
                 updateUser.mutate({
                   id: editingUser.id,
                   data: {
@@ -507,6 +723,9 @@ export default function Users() {
                     defaultCostRate: formData.get('defaultCostRate'),
                     isSalaried: formData.get('isSalaried') === 'on',
                     isActive: formData.get('isActive') === 'on',
+                    weeklyCapacityHours: weeklyCapacityHours || "40.00",
+                    capacityNotes: capacityNotes || null,
+                    capacityEffectiveDate: capacityEffectiveDate || null,
                   }
                 });
               }}>
@@ -626,6 +845,51 @@ export default function Users() {
                       defaultChecked={editingUser.isActive}
                     />
                     <Label htmlFor="edit-active">Active</Label>
+                  </div>
+
+                  {/* Capacity Profile Section */}
+                  <div className="border-t pt-4 mt-2">
+                    <Label className="text-sm font-semibold flex items-center gap-1.5 mb-3">
+                      <Clock className="w-4 h-4" />
+                      Capacity Profile
+                    </Label>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-weeklyCapacityHours" className="text-xs">Weekly Hours</Label>
+                        <Input
+                          id="edit-weeklyCapacityHours"
+                          name="weeklyCapacityHours"
+                          type="number"
+                          defaultValue={editingUser.weeklyCapacityHours || "40.00"}
+                          min="0"
+                          max="168"
+                          step="0.5"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-capacityEffectiveDate" className="text-xs">Effective Date</Label>
+                        <Input
+                          id="edit-capacityEffectiveDate"
+                          name="capacityEffectiveDate"
+                          type="date"
+                          defaultValue={editingUser.capacityEffectiveDate || ""}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-capacityNotes" className="text-xs">Notes</Label>
+                        <Input
+                          id="edit-capacityNotes"
+                          name="capacityNotes"
+                          placeholder="e.g., Not available Wednesdays"
+                          defaultValue={editingUser.capacityNotes || ""}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Role Capabilities Section */}
+                  <div className="border-t pt-4 mt-2">
+                    <RoleCapabilitiesSection userId={editingUser.id} />
                   </div>
                 </div>
                 <DialogFooter>

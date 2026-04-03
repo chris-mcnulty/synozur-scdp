@@ -185,11 +185,11 @@
 - [ ] Retry mechanism for failed syncs
 
 ### Advanced Resource Management
-**Status:** Planned — Design complete (`docs/design/advanced-resource-management.md`)
+**Status:** In Progress — Phases 1-2 complete (`docs/design/advanced-resource-management.md`)
 **Effort:** High (~7-8 weeks, 6 phases)
 
-- [ ] Phase 1: Multi-role capability mapping & per-person capacity profiles (~1 week)
-- [ ] Phase 2: Planner sync protection for generic roles (~2-3 days)
+- [x] Phase 1: Multi-role capability mapping & per-person capacity profiles (~1 week)
+- [x] Phase 2: Planner sync protection for generic roles (~2-3 days)
 - [ ] Phase 3: Smart assignment suggestions with cost variance (~2 weeks)
 - [ ] Phase 4: Cross-project workload view & rebalancing dashboard (~2 weeks)
 - [ ] Phase 5: Capacity planning analytics & KPIs (~1-2 weeks)

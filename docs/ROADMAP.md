@@ -298,27 +298,27 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-### 🎯 Priority: Advanced Resource Management — Phases 1-2
+### ✅ Priority: Advanced Resource Management — Phases 1-2
 
-**Status:** 🎯 In Progress  
-**Target Completion:** Q1-Q2 2026  
+**Status:** ✅ Complete  
+**Completed:** April 2026  
 **Design Document:** `docs/design/advanced-resource-management.md`  
 **Value Proposition:** Multi-role capability mapping and capacity profiles lay the foundation for smart assignment suggestions, cross-project rebalancing, and pipeline-aware capacity planning in later phases.
 
-#### Phase 1: Role Capabilities & Capacity Profiles (~1 week)
+#### Phase 1: Role Capabilities & Capacity Profiles
 - New `user_role_capabilities` table for many-to-many user-role mapping with proficiency levels (primary/secondary/learning)
 - Optional per-role cost/billing rate overrides per person
 - Per-person `weeklyCapacityHours` (default 40), `capacityNotes`, `capacityEffectiveDate` on users table
-- UI: "Capabilities & Capacity" section on user profile, role badges on user list
-- API: CRUD for role capabilities, capable-users-by-role query
+- UI: "Capabilities & Capacity" section on user edit dialog, role badges and weekly hours on user list
+- API: Full CRUD for role capabilities, capable-users-by-role query, capacity profile fields on user PATCH
 
-#### Phase 2: Planner Sync Protection for Generic Roles (~2-3 days)
-- Include role name in Planner task title for unassigned allocations
-- Add role name to task notes for context
-- Define sync field whitelist: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
+#### Phase 2: Planner Sync Protection for Generic Roles
+- Generic role allocations (roleId set, no personId) get `[RoleName]` prefix in Planner task title
+- `ROLE: RoleName` added to task notes for context
+- Sync field whitelist documented: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
 - Prevents future bidirectional sync from overwriting role context
 
-**Note:** Phases 3-6 (smart suggestions, workload rebalancing, capacity analytics, bulk import) remain on the roadmap for H2 2026, gated on Phases 1-2 completion.
+**Note:** Phases 3-6 (smart suggestions, workload rebalancing, capacity analytics, bulk import) remain on the roadmap for H2 2026, now unblocked.
 
 ---
 

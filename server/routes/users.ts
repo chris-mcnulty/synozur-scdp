@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage, db } from "../storage";
-import { insertUserSchema, tenantUsers, clients } from "@shared/schema";
+import { insertUserSchema, tenantUsers, clients, userRoleCapabilities, users, roles, insertUserRoleCapabilitySchema } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
 interface UserRouteDeps {
@@ -64,6 +64,36 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         });
       }
       
+      // Enrich with role capabilities
+      {
+        const capConditions: any[] = [];
+        if (tenantId) {
+          capConditions.push(eq(userRoleCapabilities.tenantId, tenantId));
+        }
+        const allCapabilities = await db
+          .select({
+            userId: userRoleCapabilities.userId,
+            roleId: userRoleCapabilities.roleId,
+            proficiencyLevel: userRoleCapabilities.proficiencyLevel,
+            roleName: roles.name,
+          })
+          .from(userRoleCapabilities)
+          .leftJoin(roles, eq(userRoleCapabilities.roleId, roles.id))
+          .where(capConditions.length > 0 ? and(...capConditions) : undefined);
+
+        const userCapMap = new Map<string, { roleName: string; proficiencyLevel: string }[]>();
+        for (const cap of allCapabilities) {
+          const arr = userCapMap.get(cap.userId) || [];
+          arr.push({ roleName: cap.roleName || 'Unknown', proficiencyLevel: cap.proficiencyLevel });
+          userCapMap.set(cap.userId, arr);
+        }
+
+        enrichedUsers = enrichedUsers.map((u: any) => ({
+          ...u,
+          roleCapabilities: userCapMap.get(u.id) || [],
+        }));
+      }
+
       if (currentUser?.role === 'portfolio-manager') {
         enrichedUsers = enrichedUsers.map((u: any) => {
           if (!u.isSalaried) {
@@ -72,7 +102,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
           return u;
         });
       }
-      
+
       res.json(enrichedUsers);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });
@@ -119,7 +149,8 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         'isAssignable', 'defaultBillingRate', 'defaultCostRate', 'isSalaried', 'isActive', 'title',
         'customRole', 'roleId', 'contractorBusinessName', 'contractorBusinessAddress',
         'contractorBillingId', 'contractorPhone', 'contractorEmail', 'platformRole',
-        'receiveTimeReminders', 'receiveExpenseReminders', 'primaryTenantId'];
+        'receiveTimeReminders', 'receiveExpenseReminders', 'primaryTenantId',
+        'weeklyCapacityHours', 'capacityNotes', 'capacityEffectiveDate'];
       const safeBody = Object.fromEntries(Object.entries(body).filter(([k]) => allowedFields.includes(k)));
 
       const user = await storage.updateUser(req.params.id, safeBody as any);
@@ -225,6 +256,182 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
     } catch (error: any) {
       console.error("[ERROR] Failed to get user active engagements:", error);
       res.status(500).json({ message: "Failed to get user active engagements" });
+    }
+  });
+
+  // ── Role Capabilities CRUD ──────────────────────────────────────────
+
+  // GET /api/users/:id/role-capabilities — List a person's role capabilities
+  app.get("/api/users/:id/role-capabilities", deps.requireAuth, async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const tenantId = currentUser?.tenantId;
+      const conditions: any[] = [eq(userRoleCapabilities.userId, req.params.id)];
+      if (tenantId) {
+        conditions.push(eq(userRoleCapabilities.tenantId, tenantId));
+      }
+      const capabilities = await db
+        .select({
+          id: userRoleCapabilities.id,
+          tenantId: userRoleCapabilities.tenantId,
+          userId: userRoleCapabilities.userId,
+          roleId: userRoleCapabilities.roleId,
+          proficiencyLevel: userRoleCapabilities.proficiencyLevel,
+          customCostRate: userRoleCapabilities.customCostRate,
+          customBillingRate: userRoleCapabilities.customBillingRate,
+          notes: userRoleCapabilities.notes,
+          createdAt: userRoleCapabilities.createdAt,
+          roleName: roles.name,
+          roleDefaultRackRate: roles.defaultRackRate,
+          roleDefaultCostRate: roles.defaultCostRate,
+        })
+        .from(userRoleCapabilities)
+        .leftJoin(roles, eq(userRoleCapabilities.roleId, roles.id))
+        .where(and(...conditions));
+      res.json(capabilities);
+    } catch (error) {
+      console.error("Error fetching role capabilities:", error);
+      res.status(500).json({ message: "Failed to fetch role capabilities" });
+    }
+  });
+
+  // POST /api/users/:id/role-capabilities — Add a role capability
+  app.post("/api/users/:id/role-capabilities", deps.requireAuth, deps.requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const tenantId = currentUser?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required" });
+      }
+
+      const validatedData = insertUserRoleCapabilitySchema.parse({
+        ...req.body,
+        tenantId,
+        userId: req.params.id,
+      });
+
+      const [capability] = await db.insert(userRoleCapabilities).values(validatedData).returning();
+      res.status(201).json(capability);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      if (error?.code === '23505') {
+        return res.status(409).json({ message: "This user already has a capability mapping for this role" });
+      }
+      console.error("Error creating role capability:", error);
+      res.status(500).json({ message: "Failed to create role capability" });
+    }
+  });
+
+  // PATCH /api/users/:id/role-capabilities/:capId — Update proficiency or rates
+  app.patch("/api/users/:id/role-capabilities/:capId", deps.requireAuth, deps.requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const tenantId = currentUser?.tenantId;
+      const allowedFields = ['proficiencyLevel', 'customCostRate', 'customBillingRate', 'notes'];
+      const safeBody: Record<string, any> = {};
+      for (const [k, v] of Object.entries(req.body)) {
+        if (allowedFields.includes(k)) {
+          safeBody[k] = v === '' ? null : v;
+        }
+      }
+      if (safeBody.proficiencyLevel && !['primary', 'secondary', 'learning'].includes(safeBody.proficiencyLevel)) {
+        return res.status(400).json({ message: "proficiencyLevel must be primary, secondary, or learning" });
+      }
+
+      const conditions: any[] = [
+        eq(userRoleCapabilities.id, req.params.capId),
+        eq(userRoleCapabilities.userId, req.params.id),
+      ];
+      if (tenantId) {
+        conditions.push(eq(userRoleCapabilities.tenantId, tenantId));
+      }
+
+      const [updated] = await db
+        .update(userRoleCapabilities)
+        .set(safeBody)
+        .where(and(...conditions))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ message: "Capability not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating role capability:", error);
+      res.status(500).json({ message: "Failed to update role capability" });
+    }
+  });
+
+  // DELETE /api/users/:id/role-capabilities/:capId — Remove a capability
+  app.delete("/api/users/:id/role-capabilities/:capId", deps.requireAuth, deps.requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const tenantId = currentUser?.tenantId;
+      const conditions: any[] = [
+        eq(userRoleCapabilities.id, req.params.capId),
+        eq(userRoleCapabilities.userId, req.params.id),
+      ];
+      if (tenantId) {
+        conditions.push(eq(userRoleCapabilities.tenantId, tenantId));
+      }
+      const [deleted] = await db
+        .delete(userRoleCapabilities)
+        .where(and(...conditions))
+        .returning();
+
+      if (!deleted) {
+        return res.status(404).json({ message: "Capability not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting role capability:", error);
+      res.status(500).json({ message: "Failed to delete role capability" });
+    }
+  });
+
+  // GET /api/roles/:id/capable-users — Find all people who can fill a given role
+  app.get("/api/roles/:id/capable-users", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const currentUser = (req as any).user;
+      const tenantId = currentUser?.tenantId;
+      const conditions: any[] = [eq(userRoleCapabilities.roleId, req.params.id)];
+      if (tenantId) {
+        conditions.push(eq(userRoleCapabilities.tenantId, tenantId));
+      }
+      const capableUsers = await db
+        .select({
+          capabilityId: userRoleCapabilities.id,
+          userId: userRoleCapabilities.userId,
+          proficiencyLevel: userRoleCapabilities.proficiencyLevel,
+          customCostRate: userRoleCapabilities.customCostRate,
+          customBillingRate: userRoleCapabilities.customBillingRate,
+          notes: userRoleCapabilities.notes,
+          userName: users.name,
+          userEmail: users.email,
+          userTitle: users.title,
+          isActive: users.isActive,
+          isAssignable: users.isAssignable,
+          isSalaried: users.isSalaried,
+          defaultCostRate: users.defaultCostRate,
+          defaultBillingRate: users.defaultBillingRate,
+          weeklyCapacityHours: users.weeklyCapacityHours,
+        })
+        .from(userRoleCapabilities)
+        .innerJoin(users, eq(userRoleCapabilities.userId, users.id))
+        .where(and(...conditions));
+
+      // Filter to active, assignable users only by default
+      const includeInactive = req.query.includeInactive === 'true';
+      const filtered = includeInactive
+        ? capableUsers
+        : capableUsers.filter(u => u.isActive && u.isAssignable);
+
+      res.json(filtered);
+    } catch (error) {
+      console.error("Error fetching capable users:", error);
+      res.status(500).json({ message: "Failed to fetch capable users for role" });
     }
   });
 

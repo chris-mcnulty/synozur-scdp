@@ -244,6 +244,10 @@ export const users = pgTable("users", {
   // SSO / Entra identity linking
   authProvider: varchar("auth_provider", { length: 50 }), // 'local' | 'entra'
   azureObjectId: varchar("azure_object_id", { length: 255 }), // Entra object ID (localAccountId)
+  // Capacity profile fields (Advanced Resource Management)
+  weeklyCapacityHours: decimal("weekly_capacity_hours", { precision: 5, scale: 2 }).default("40.00"),
+  capacityNotes: text("capacity_notes"), // e.g., "Not available Wednesdays", "20hr/week contract"
+  capacityEffectiveDate: date("capacity_effective_date"), // When this capacity setting takes effect
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -935,6 +939,24 @@ export const projectEngagements = pgTable("project_engagements", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
+
+// User Role Capabilities (multi-role mapping with proficiency levels)
+export const userRoleCapabilities = pgTable("user_role_capabilities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  roleId: varchar("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  proficiencyLevel: text("proficiency_level").notNull().default("primary"), // primary, secondary, learning
+  customCostRate: decimal("custom_cost_rate", { precision: 10, scale: 2 }),
+  customBillingRate: decimal("custom_billing_rate", { precision: 10, scale: 2 }),
+  notes: text("notes"), // Certifications, experience notes
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueUserTenantRole: uniqueIndex("unique_user_tenant_role").on(table.tenantId, table.userId, table.roleId),
+  tenantIdx: index("idx_user_role_caps_tenant").on(table.tenantId),
+  userIdx: index("idx_user_role_caps_user").on(table.userId),
+  roleIdx: index("idx_user_role_caps_role").on(table.roleId),
+}));
 
 // Weekly staffing allocations (Weekly Staffing Grid)
 export const estimateAllocations = pgTable("estimate_allocations", {
@@ -1923,6 +1945,13 @@ export const insertProjectEngagementSchema = createInsertSchema(projectEngagemen
   updatedAt: true,
 });
 
+export const insertUserRoleCapabilitySchema = createInsertSchema(userRoleCapabilities).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  proficiencyLevel: z.enum(["primary", "secondary", "learning"]).default("primary"),
+});
+
 export const insertUserRateScheduleSchema = createInsertSchema(userRateSchedules).omit({
   id: true,
   createdAt: true,
@@ -2220,6 +2249,8 @@ export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;
 export type InsertProjectRateOverride = z.infer<typeof insertProjectRateOverrideSchema>;
 export type UserRateSchedule = typeof userRateSchedules.$inferSelect;
 export type InsertUserRateSchedule = z.infer<typeof insertUserRateScheduleSchema>;
+export type UserRoleCapability = typeof userRoleCapabilities.$inferSelect;
+export type InsertUserRoleCapability = z.infer<typeof insertUserRoleCapabilitySchema>;
 
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
