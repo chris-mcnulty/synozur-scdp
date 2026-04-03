@@ -38,6 +38,7 @@ import {
   LifeBuoy,
   ActivitySquare,
   Network,
+  TrendingUp,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -129,7 +130,7 @@ interface SectionRoute {
 
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-raidd"] },
-  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/estimates", "/crm/deals"] },
+  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/contractor-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
@@ -244,6 +245,8 @@ export function Sidebar() {
                 <SidebarItem href="/projects" icon={<FolderOpen />} label="All Projects" />
                 <SidebarItem href="/clients" icon={<Building2 />} label="Clients" />
                 <SidebarItem href="/resource-management" icon={<Users />} label="Resources" />
+                <SidebarItem href="/resource-planning" icon={<GanttChart />} label="Resource Planning" requiredRoles={["admin", "pm", "portfolio-manager", "executive"]} />
+                <SidebarItem href="/resource-planning/capacity" icon={<TrendingUp />} label="Capacity Planning" requiredRoles={["admin", "pm", "portfolio-manager", "executive"]} />
                 <SidebarItem href="/estimates" icon={<FileText />} label="Estimates" />
                 <SubGroupLabel label="Pipeline" />
                 <SidebarItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm", "portfolio-manager"]} />

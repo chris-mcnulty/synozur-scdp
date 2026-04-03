@@ -37,6 +37,7 @@ import { registerClientRoutes } from "./routes/clients.js";
 import { registerTimeEntryRoutes } from "./routes/time-entries.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerRaiddRoutes } from "./routes/raidd.js";
+import { registerResourcePlanningRoutes } from "./routes/resource-planning.js";
 import { registerSupportRoutes } from "./routes/support.js";
 
 // Initialize SharePoint storage with database access
@@ -495,6 +496,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerAiRoutes(app, { requireAuth, requireRole, requirePlatformAdmin });
     registerRaiddRoutes(app, { requireAuth, requireRole });
     registerSupportRoutes(app, { requireAuth, requireRole });
+    registerResourcePlanningRoutes(app, { requireAuth, requireRole });
   
 
   // System Settings (read: admin, write: platform admin only)

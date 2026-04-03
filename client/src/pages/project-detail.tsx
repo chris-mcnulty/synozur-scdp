@@ -534,6 +534,125 @@ function TeamsChannelPanel({
   );
 }
 
+// Assignment Suggestions Dialog — Phase 3 Smart Assignment
+function AssignmentSuggestionsDialog({ projectId, allocationId, onClose, onAssign }: {
+  projectId: string;
+  allocationId: string;
+  onClose: () => void;
+  onAssign: () => void;
+}) {
+  const { toast } = useToast();
+  const [selectedPerson, setSelectedPerson] = useState<string>("");
+
+  const { data: suggestions = [], isLoading } = useQuery<any[]>({
+    queryKey: [`/api/projects/${projectId}/assignment-suggestions`, allocationId],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/assignment-suggestions?allocationId=${allocationId}`),
+    enabled: !!allocationId,
+  });
+
+  const bulkAssign = useMutation({
+    mutationFn: (data: any) => apiRequest(`/api/projects/${projectId}/bulk-assign`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      toast({ title: "Success", description: "Person assigned to allocation" });
+      onAssign();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to assign", variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open onOpenChange={() => onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Suggest People for Assignment</DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <p className="text-center py-8 text-muted-foreground">Analyzing candidates...</p>
+        ) : suggestions.length === 0 ? (
+          <p className="text-center py-8 text-muted-foreground">No candidates found with matching role capabilities.</p>
+        ) : (
+          <div className="space-y-2">
+            {suggestions.map((s: any) => {
+              const isUnavailable = s.availabilityPct < 1;
+              return (
+                <div
+                  key={s.userId}
+                  className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                    selectedPerson === s.userId ? 'border-primary bg-primary/5' :
+                    isUnavailable ? 'opacity-50 bg-muted/30' : 'hover:bg-muted/50'
+                  }`}
+                  onClick={() => !isUnavailable && setSelectedPerson(s.userId)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium">{s.userName}</span>
+                      <span className="text-sm text-muted-foreground ml-2">
+                        {s.userTitle || ''}
+                      </span>
+                      <Badge
+                        variant={s.proficiencyLevel === 'primary' ? 'default' : s.proficiencyLevel === 'secondary' ? 'secondary' : 'outline'}
+                        className="ml-2 text-xs"
+                      >
+                        {s.proficiencyLevel}
+                      </Badge>
+                    </div>
+                    <span className="text-sm font-medium">Score: {s.score}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 mt-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Capacity:</span>{' '}
+                      {s.weeklyCapacityHours}h/wk
+                      {s.capacityNotes && <span className="text-xs text-muted-foreground block">{s.capacityNotes}</span>}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Available:</span>{' '}
+                      <span className={s.availabilityPct >= 100 ? 'text-green-600' : s.availabilityPct >= 50 ? 'text-amber-600' : 'text-red-600'}>
+                        {s.availableHours}h of {s.hoursNeeded}h
+                      </span>
+                      {' '}
+                      {s.availabilityPct >= 100 ? (
+                        <Badge className="bg-green-600 text-xs">Full</Badge>
+                      ) : s.availabilityPct > 0 ? (
+                        <Badge className="bg-amber-500 text-xs">Partial</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-xs">None</Badge>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Cost:</span>{' '}
+                      {s.isSalaried ? (
+                        <Badge variant="outline" className="text-xs">$0 project impact</Badge>
+                      ) : (
+                        <span className={s.costVarianceDollar <= 0 ? 'text-green-600' : 'text-red-600'}>
+                          ${s.effectiveCostRate}/hr vs ${s.budgetCostRate}/hr
+                          {' '}({s.costVarianceDollar > 0 ? '+' : ''}{s.costVariancePct}%)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={!selectedPerson || bulkAssign.isPending}
+            onClick={() => bulkAssign.mutate({ assignments: [{ allocationId, personId: selectedPerson }] })}
+          >
+            {bulkAssign.isPending ? "Assigning..." : "Assign Selected Person"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
@@ -607,6 +726,7 @@ export default function ProjectDetail() {
     matchingCount: number;
   } | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [suggestionsAllocationId, setSuggestionsAllocationId] = useState<string | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
   const [importSaveBaseline, setImportSaveBaseline] = useState(true);
@@ -3594,6 +3714,18 @@ export default function ProjectDetail() {
                           {!embedReadonly && (
                           <TableCell>
                             <div className="flex items-center gap-2">
+                              {allocation.roleId && !allocation.personId && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => setSuggestionsAllocationId(allocation.id)}
+                                  data-testid={`button-suggest-${allocation.id}`}
+                                >
+                                  <Users className="w-3 h-3 mr-1" />
+                                  Suggest
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -7249,6 +7381,18 @@ export default function ProjectDetail() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        {/* Assignment Suggestions Dialog */}
+        {suggestionsAllocationId && (
+          <AssignmentSuggestionsDialog
+            projectId={id || ''}
+            allocationId={suggestionsAllocationId}
+            onClose={() => setSuggestionsAllocationId(null)}
+            onAssign={() => {
+              setSuggestionsAllocationId(null);
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+            }}
+          />
+        )}
       </div>
     </Layout>
     </ProjectDetailErrorBoundary>

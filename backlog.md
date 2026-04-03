@@ -185,15 +185,15 @@
 - [ ] Retry mechanism for failed syncs
 
 ### Advanced Resource Management
-**Status:** In Progress — Phases 1-2 complete (`docs/design/advanced-resource-management.md`)
+**Status:** Complete — All 6 phases implemented (`docs/design/advanced-resource-management.md`)
 **Effort:** High (~7-8 weeks, 6 phases)
 
-- [x] Phase 1: Multi-role capability mapping & per-person capacity profiles (~1 week)
-- [x] Phase 2: Planner sync protection for generic roles (~2-3 days)
-- [ ] Phase 3: Smart assignment suggestions with cost variance (~2 weeks)
-- [ ] Phase 4: Cross-project workload view & rebalancing dashboard (~2 weeks)
-- [ ] Phase 5: Capacity planning analytics & KPIs (~1-2 weeks)
-- [ ] Phase 6: Bulk import & polish (~1 week)
+- [x] Phase 1: Multi-role capability mapping & per-person capacity profiles
+- [x] Phase 2: Planner sync protection for generic roles
+- [x] Phase 3: Smart assignment suggestions with cost variance
+- [x] Phase 4: Cross-project workload view & rebalancing dashboard
+- [x] Phase 5: Capacity planning analytics & KPIs
+- [x] Phase 6: Bulk import & polish
 
 ### Microsoft 365 Teams Integration
 **Status:** Phase 2 complete — SharePoint provisioning, member sync, guest invitations
