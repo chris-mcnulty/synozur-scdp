@@ -121,7 +121,13 @@ export function useProvisionSharePoint() {
         body: JSON.stringify({ clientTeamId, projectId }),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/teams-automation/teams", variables.teamId, "sharepoint-site"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/teams-automation/logs"],
+      });
       toast({ title: "SharePoint site provisioned successfully" });
     },
     onError: (error: Error) => {
