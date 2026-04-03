@@ -378,12 +378,18 @@ class TeamsAutomationService {
 
       // Update sync state
       const syncState = await storage.getTeamsMemberSyncState(projectId);
+      const syncErrorMessages = [
+        ...(result.failed.length > 0
+          ? [`${result.failed.length} member(s) failed: ${result.failed.map(f => f.email).join(', ')}`]
+          : []),
+        ...(result.guestsFailed.length > 0
+          ? [`${result.guestsFailed.length} guest invitation(s) failed: ${result.guestsFailed.map(f => f.email).join(', ')}`]
+          : []),
+      ];
       const syncUpdates = {
         lastSyncAt: new Date(),
         lastSyncStatus: result.failed.length === 0 && result.guestsFailed.length === 0 ? 'success' : 'partial',
-        lastSyncError: result.failed.length > 0
-          ? `${result.failed.length} member(s) failed: ${result.failed.map(f => f.email).join(', ')}`
-          : null,
+        lastSyncError: syncErrorMessages.length > 0 ? syncErrorMessages.join(' | ') : null,
         membersAdded: (syncState?.membersAdded || 0) + result.added.length,
         membersRemoved: (syncState?.membersRemoved || 0) + result.removed.length,
         guestsInvited: (syncState?.guestsInvited || 0) + result.guestsInvited.length,
