@@ -9,7 +9,7 @@ import {
   projectAllocations,
   projects,
 } from "@shared/schema";
-import { eq, and, ne, inArray } from "drizzle-orm";
+import { eq, and, ne, inArray, sql } from "drizzle-orm";
 
 interface ResourcePlanningDeps {
   requireAuth: any;

@@ -36,7 +36,6 @@ import {
   Brain,
   LifeBuoy,
   Handshake,
-  GanttChart,
   TrendingUp,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
