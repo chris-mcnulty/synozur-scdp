@@ -37,11 +37,13 @@ import {
   Trash2,
   Search,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { getTodayBusinessDate, formatBusinessDate } from "@/lib/date-utils";
+import { downloadFile } from "@/lib/download";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { UnbilledItemsResponse } from "@shared/schema";
 
@@ -106,6 +108,7 @@ export default function Billing() {
   const [batchYearFilter, setBatchYearFilter] = useState<string>('all');
   const [batchClientFilter, setBatchClientFilter] = useState<string>('all');
   const [batchPage, setBatchPage] = useState(1);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
   const BATCHES_PER_PAGE = 25;
   
   const { canViewPricing, user } = useAuth();
@@ -355,6 +358,17 @@ export default function Billing() {
       setDeleteDialogOpen(false);
       setBatchToDelete(null);
       setDeleteConfirmText('');
+    }
+  };
+
+  const handleTemplateDownload = async () => {
+    setIsDownloadingTemplate(true);
+    try {
+      await downloadFile("/api/time-entries/template", "time-entries-template.xlsx");
+    } catch {
+      toast({ title: "Download failed", description: "Could not download the template. Please try again.", variant: "destructive" });
+    } finally {
+      setIsDownloadingTemplate(false);
     }
   };
 
@@ -700,11 +714,12 @@ export default function Billing() {
             <Button 
               variant="outline" 
               data-testid="button-export-report"
-              onClick={() => {
-                window.open('/api/time-entries/template', '_blank');
-              }}
+              onClick={handleTemplateDownload}
+              disabled={isDownloadingTemplate}
             >
-              <Download className="w-4 h-4 mr-2" />
+              {isDownloadingTemplate
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Download className="w-4 h-4 mr-2" />}
               Export Report
             </Button>
           </div>

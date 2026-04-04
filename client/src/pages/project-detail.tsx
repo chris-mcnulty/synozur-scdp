@@ -123,6 +123,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useEmbed } from "@/hooks/use-embed";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { downloadFile } from "@/lib/download";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
@@ -4109,7 +4110,7 @@ export default function ProjectDetail() {
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => window.open(`/api/sows/${sow.id}/download`, '_blank')}
+                                    onClick={() => downloadFile(`/api/sows/${sow.id}/download`, sow.documentName || "sow-document").catch(console.error)}
                                     className="h-7 px-2"
                                     data-testid={`button-download-sow-${sow.id}`}
                                   >
