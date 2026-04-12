@@ -73,7 +73,7 @@ export default function Estimates() {
   const [retainerTiers, setRetainerTiers] = useState<Array<{name: string, rate: string, maxHours: string}>>([
     { name: '', rate: '', maxHours: '' }
   ]);
-  const [activeTab, setActiveTab] = useState<'draft' | 'final' | 'approved' | 'archive' | 'all'>('draft');
+  const [activeTab, setActiveTab] = useState<'draft' | 'final' | 'approved' | 'declined' | 'archive' | 'all'>('draft');
   const [narrativeGeneratorOpen, setNarrativeGeneratorOpen] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -137,11 +137,13 @@ export default function Estimates() {
   const estimates = allEstimates.filter((estimate) => {
     switch (activeTab) {
       case 'draft':
-        return !estimate.archived && (estimate.status === 'draft' || estimate.status === 'sent' || estimate.status === 'rejected');
+        return !estimate.archived && (estimate.status === 'draft' || estimate.status === 'sent');
       case 'final':
         return !estimate.archived && estimate.status === 'final';
       case 'approved':
         return !estimate.archived && estimate.status === 'approved';
+      case 'declined':
+        return !estimate.archived && estimate.status === 'rejected';
       case 'archive':
         return estimate.archived;
       case 'all':
@@ -277,15 +279,19 @@ export default function Estimates() {
   });
 
   const getStatusBadge = (status: string) => {
-    const styles = {
+    const styles: Record<string, string> = {
       draft: "bg-gray-100 text-gray-700",
       sent: "bg-blue-100 text-blue-700",
+      final: "bg-purple-100 text-purple-700",
       approved: "bg-green-100 text-green-700",
       rejected: "bg-red-100 text-red-700",
     };
+    const labels: Record<string, string> = {
+      rejected: "Declined",
+    };
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[status as keyof typeof styles]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[status] ?? "bg-gray-100 text-gray-700"}`}>
+        {labels[status] ?? (status.charAt(0).toUpperCase() + status.slice(1))}
       </span>
     );
   };
@@ -374,7 +380,7 @@ export default function Estimates() {
                 <TabsTrigger value="draft" data-testid="tab-draft">
                   Draft
                   <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
-                    {allEstimates.filter(e => !e.archived && (e.status === 'draft' || e.status === 'sent' || e.status === 'rejected')).length}
+                    {allEstimates.filter(e => !e.archived && (e.status === 'draft' || e.status === 'sent')).length}
                   </span>
                 </TabsTrigger>
                 <TabsTrigger value="final" data-testid="tab-final">
@@ -387,6 +393,12 @@ export default function Estimates() {
                   Approved
                   <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
                     {allEstimates.filter(e => !e.archived && e.status === 'approved').length}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="declined" data-testid="tab-declined">
+                  Declined
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {allEstimates.filter(e => !e.archived && e.status === 'rejected').length}
                   </span>
                 </TabsTrigger>
                 <TabsTrigger value="archive" data-testid="tab-archive">
@@ -412,6 +424,7 @@ export default function Estimates() {
                 {activeTab === 'draft' && "No draft estimates. Create a new estimate to get started."}
                 {activeTab === 'final' && "No final estimates awaiting approval."}
                 {activeTab === 'approved' && "No approved estimates yet."}
+                {activeTab === 'declined' && "No declined estimates."}
                 {activeTab === 'archive' && "No archived estimates."}
                 {activeTab === 'all' && "No estimates yet. Create your first estimate to get started."}
               </div>

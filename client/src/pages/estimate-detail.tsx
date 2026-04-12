@@ -506,6 +506,8 @@ function EstimateDetailContent() {
   const [splittingItem, setSplittingItem] = useState<EstimateLineItem | null>(null);
   const [splitHours, setSplitHours] = useState({ first: "", second: "" });
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
+  const [showDeclineDialog, setShowDeclineDialog] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [shouldCopyAssignments, setShouldCopyAssignments] = useState(true);
@@ -1151,19 +1153,21 @@ function EstimateDetailContent() {
   });
 
   const rejectEstimateMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reason?: string) => {
       return apiRequest(`/api/estimates/${id}/reject`, {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ reason: reason || "" }),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
-      toast({ title: "Estimate rejected" });
+      setShowDeclineDialog(false);
+      setDeclineReason("");
+      toast({ title: "Estimate declined" });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to reject estimate", 
+        title: "Failed to decline estimate", 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -1960,7 +1964,7 @@ function EstimateDetailContent() {
                   estimate.status === 'sent' ? 'bg-blue-100 text-blue-800' :
                   'bg-gray-100 text-gray-800'
                 }`}>
-                  {estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1)}
+                  {estimate.status === 'rejected' ? 'Declined' : estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1)}
                 </span>
               </div>
             )}
@@ -1995,16 +1999,12 @@ function EstimateDetailContent() {
                       Approve
                     </Button>
                     <Button 
-                      onClick={() => {
-                        if (window.confirm('Are you sure you want to reject this estimate?')) {
-                          rejectEstimateMutation.mutate();
-                        }
-                      }}
+                      onClick={() => setShowDeclineDialog(true)}
                       variant="destructive"
                       data-testid="button-reject-estimate"
                     >
                       <X className="h-4 w-4 mr-2" />
-                      Reject
+                      Decline
                     </Button>
                     <Button 
                       onClick={() => {
@@ -2087,7 +2087,7 @@ function EstimateDetailContent() {
                 {estimate?.status === 'rejected' && (
                   <Button 
                     onClick={() => {
-                      if (window.confirm('Return this estimate to draft status for revisions?')) {
+                      if (window.confirm('Return this declined estimate to draft status for revisions?')) {
                         updateEstimateMutation.mutate({ status: 'draft' });
                       }
                     }}
@@ -2100,21 +2100,41 @@ function EstimateDetailContent() {
                 )}
                 
                 {estimate?.status === 'sent' && (
-                  <Button 
-                    onClick={() => {
-                      if (window.confirm('Return this estimate to draft status for modifications?')) {
-                        updateEstimateMutation.mutate({ status: 'draft' });
-                      }
-                    }}
-                    variant="outline"
-                    data-testid="button-back-to-draft-sent"
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    Back to Draft
-                  </Button>
+                  <>
+                    <Button 
+                      onClick={() => {
+                        setShouldCreateProject(false);
+                        setShowApprovalDialog(true);
+                      }}
+                      variant="default"
+                      className="bg-green-600 hover:bg-green-700"
+                      data-testid="button-approve-estimate-sent"
+                    >
+                      <Check className="h-4 w-4 mr-2" />
+                      Approve (Won)
+                    </Button>
+                    <Button 
+                      onClick={() => setShowDeclineDialog(true)}
+                      variant="destructive"
+                      data-testid="button-decline-estimate-sent"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Decline (Lost)
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        if (window.confirm('Return this estimate to draft status for modifications?')) {
+                          updateEstimateMutation.mutate({ status: 'draft' });
+                        }
+                      }}
+                      variant="outline"
+                      data-testid="button-back-to-draft-sent"
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Back to Draft
+                    </Button>
+                  </>
                 )}
-              </>
-            )}
             
             {/* Excel operations - HIDDEN: See backlog for redevelopment/removal */}
             {/* <div className="flex gap-2">
@@ -2409,6 +2429,28 @@ function EstimateDetailContent() {
                   </>
                 )}
                 
+                {estimate?.status === 'sent' && (
+                  <>
+                    <Button 
+                      onClick={() => {
+                        setShouldCreateProject(false);
+                        setShowApprovalDialog(true);
+                      }}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <Check className="h-4 w-4 mr-2" />
+                      Approve (Won)
+                    </Button>
+                    <Button 
+                      onClick={() => setShowDeclineDialog(true)}
+                      variant="destructive"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Decline (Lost)
+                    </Button>
+                  </>
+                )}
+
                 {estimate?.status === 'approved' && (
                   <>
                     {!estimate?.projectId && (
@@ -5703,6 +5745,50 @@ function EstimateDetailContent() {
               {approveEstimateMutation.isPending 
                 ? (estimate?.status === 'approved' ? "Creating Project..." : "Approving...") 
                 : (estimate?.status === 'approved' ? "Create Project" : "Approve Estimate")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Decline Estimate Dialog */}
+      <Dialog open={showDeclineDialog} onOpenChange={(open) => {
+        setShowDeclineDialog(open);
+        if (!open) setDeclineReason("");
+      }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Decline Estimate</DialogTitle>
+            <DialogDescription>
+              Mark this estimate as declined / lost. You can optionally record a reason for internal reference.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="decline-reason">Reason (optional)</Label>
+            <textarea
+              id="decline-reason"
+              placeholder="e.g. Client went with another vendor, budget not approved..."
+              value={declineReason}
+              onChange={(e) => setDeclineReason(e.target.value)}
+              rows={3}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setShowDeclineDialog(false);
+                setDeclineReason("");
+              }}
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => rejectEstimateMutation.mutate(declineReason || undefined)}
+              disabled={rejectEstimateMutation.isPending}
+              variant="destructive"
+            >
+              {rejectEstimateMutation.isPending ? "Declining..." : "Decline Estimate"}
             </Button>
           </DialogFooter>
         </DialogContent>
