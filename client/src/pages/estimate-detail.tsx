@@ -26,6 +26,7 @@ import { VocabularyProvider, useVocabulary } from "@/lib/vocabulary-context";
 import { useEffectiveRates } from "@/hooks/useEffectiveRates";
 import { useGenerateEstimateNarrative, useAIStatus } from "@/lib/ai";
 import { ProgramEstimateView } from "@/components/ProgramEstimateView";
+import { EstimateCrmPanel } from "@/components/estimates/estimate-crm-panel";
 
 const EPIC_COLORS = [
   "bg-violet-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500",
@@ -608,6 +609,12 @@ function EstimateDetailContent() {
 
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
+  });
+
+  // Fetch client info for CRM panel
+  const { data: estimateClient } = useQuery<{ id: string; name: string }>({
+    queryKey: ["/api/clients", estimate?.clientId],
+    enabled: !!estimate?.clientId,
   });
 
   // Get IDs of users currently assigned to any line item
@@ -2432,6 +2439,17 @@ function EstimateDetailContent() {
             </div>
           </CardContent>
         </Card>
+
+        {/* HubSpot CRM Panel */}
+        {estimate?.clientId && estimateClient && (
+          <EstimateCrmPanel
+            estimateId={estimate.id}
+            estimateName={estimate.name}
+            clientId={estimate.clientId}
+            clientName={estimateClient.name}
+            totalFees={estimate.totalFees}
+          />
+        )}
 
         {/* Show retainer estimate summary for retainer type estimates */}
         {estimate?.estimateType === 'retainer' && estimate?.retainerConfig && (

@@ -17,6 +17,10 @@ import {
   searchHubSpotCompanyContacts,
   getHubSpotContactById,
   searchHubSpotContacts,
+  createHubSpotCompany,
+  createHubSpotDeal,
+  createHubSpotContact,
+  searchHubSpotDeals,
 } from "../services/hubspot-client.js";
 import { db } from "../db.js";
 import { tenantUsers, users } from "@shared/schema";
@@ -400,6 +404,43 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       if (tenantId) {
         await storage.updateCrmSyncStatus(tenantId, "hubspot", "error", error.message);
       }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/crm/deals/search", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const query = req.query.q as string;
+      if (!query || query.length < 2) {
+        return res.json({ deals: [] });
+      }
+
+      const deals = await searchHubSpotDeals(tenantId, query);
+
+      const dealMappingResults = await Promise.all(
+        deals.map(deal => storage.getCrmObjectMapping(tenantId, "hubspot", "deal", deal.id))
+      );
+
+      const enrichedDeals = deals.map((deal, i) => {
+        const mapping = dealMappingResults[i];
+        return {
+          ...deal,
+          isMapped: !!mapping,
+          mappings: mapping ? [{ localObjectId: mapping.localObjectId, mappingId: mapping.id }] : [],
+        };
+      });
+
+      res.json({ deals: enrichedDeals });
+    } catch (error: any) {
+      console.error("[CRM] Error searching deals:", error);
       res.status(500).json({ message: error.message });
     }
   });
@@ -1319,6 +1360,233 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       });
     } catch (error: any) {
       console.error("[CRM] Error fetching client CRM contacts:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================================
+  // Create HubSpot Objects (Company, Deal, Contact)
+  // ============================================================================
+
+  app.post("/api/crm/companies", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const schema = z.object({
+        name: z.string().min(1),
+        domain: z.string().optional(),
+        industry: z.string().optional(),
+        phone: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        country: z.string().optional(),
+        linkClientId: z.string().optional(),
+      });
+      const body = schema.parse(req.body);
+      const { linkClientId, ...companyProps } = body;
+
+      if (linkClientId) {
+        const client = await storage.getClient(linkClientId);
+        if (!client || client.tenantId !== tenantId) {
+          return res.status(404).json({ message: "Client not found" });
+        }
+        const existingMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", linkClientId);
+        if (existingMapping) {
+          return res.status(409).json({ message: "Client is already linked to a HubSpot company" });
+        }
+      }
+
+      const company = await createHubSpotCompany(tenantId, companyProps);
+
+      if (linkClientId) {
+        await storage.createCrmObjectMapping({
+          tenantId,
+          crmProvider: "hubspot",
+          crmObjectType: "company",
+          crmObjectId: company.id,
+          localObjectType: "client",
+          localObjectId: linkClientId,
+          metadata: { companyName: company.name, domain: company.domain, linkedAt: new Date().toISOString() } as any,
+        });
+
+        await storage.createCrmSyncLog({
+          tenantId,
+          crmProvider: "hubspot",
+          action: "company_linked",
+          status: "success",
+          crmObjectType: "company",
+          crmObjectId: company.id,
+          localObjectType: "client",
+          localObjectId: linkClientId,
+          requestPayload: { created: true, ...companyProps } as any,
+        });
+      }
+
+      res.json({ company, linked: !!linkClientId });
+    } catch (error: any) {
+      console.error("[CRM] Error creating HubSpot company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/crm/deals", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const schema = z.object({
+        dealname: z.string().min(1),
+        amount: z.string().optional(),
+        pipeline: z.string().optional(),
+        dealstage: z.string().optional(),
+        closedate: z.string().optional(),
+        companyId: z.string().optional(),
+        linkEstimateId: z.string().optional(),
+      });
+      const body = schema.parse(req.body);
+      const { companyId, linkEstimateId, ...dealProps } = body;
+
+      if (linkEstimateId) {
+        const estimate = await storage.getEstimate(linkEstimateId);
+        if (!estimate || estimate.tenantId !== tenantId) {
+          return res.status(404).json({ message: "Estimate not found" });
+        }
+        const existingMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", linkEstimateId);
+        if (existingMapping) {
+          return res.status(409).json({ message: "Estimate is already linked to a HubSpot deal" });
+        }
+      }
+
+      const deal = await createHubSpotDeal(tenantId, dealProps, companyId);
+
+      if (linkEstimateId) {
+        await storage.createCrmObjectMapping({
+          tenantId,
+          crmProvider: "hubspot",
+          crmObjectType: "deal",
+          crmObjectId: deal.id,
+          localObjectType: "estimate",
+          localObjectId: linkEstimateId,
+          metadata: { dealName: deal.dealName, dealStage: deal.dealStage, pipeline: deal.pipeline, amount: deal.amount, created: true } as any,
+        });
+
+        await storage.createCrmSyncLog({
+          tenantId,
+          crmProvider: "hubspot",
+          action: "link_estimate_to_deal",
+          crmObjectType: "deal",
+          crmObjectId: deal.id,
+          localObjectType: "estimate",
+          localObjectId: linkEstimateId,
+          status: "success",
+          requestPayload: { dealName: deal.dealName, estimateId: linkEstimateId, created: true } as any,
+        });
+      }
+
+      res.json({ deal, linked: !!linkEstimateId });
+    } catch (error: any) {
+      console.error("[CRM] Error creating HubSpot deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/crm/contacts", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const schema = z.object({
+        email: z.string().email(),
+        firstname: z.string().optional(),
+        lastname: z.string().optional(),
+        jobtitle: z.string().optional(),
+        phone: z.string().optional(),
+        companyId: z.string().optional(),
+      });
+      const body = schema.parse(req.body);
+      const { companyId, ...contactProps } = body;
+
+      const contact = await createHubSpotContact(tenantId, contactProps, companyId);
+
+      res.json({ contact });
+    } catch (error: any) {
+      console.error("[CRM] Error creating HubSpot contact:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================================
+  // Estimate CRM link status (for estimate detail page)
+  // ============================================================================
+
+  app.get("/api/estimates/:estimateId/crm-link", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.json({ crmEnabled: false });
+      }
+
+      const { estimateId } = req.params;
+
+      // Verify estimate belongs to this tenant
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate || estimate.tenantId !== tenantId) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      // Find deal mapping for this estimate using targeted lookup
+      const estimateDealMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", estimateId) || null;
+
+      let deal = null;
+      if (estimateDealMapping) {
+        try {
+          deal = await getHubSpotDealById(tenantId, estimateDealMapping.crmObjectId);
+        } catch {}
+      }
+
+      // Find company mapping for estimate's client using targeted lookup
+      let companyMapping = null;
+      let company = null;
+      if (estimate.clientId) {
+        companyMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", estimate.clientId) || null;
+        if (companyMapping) {
+          try {
+            company = await getHubSpotCompanyById(tenantId, companyMapping.crmObjectId);
+          } catch {}
+        }
+      }
+
+      res.json({
+        crmEnabled: true,
+        dealLinked: !!estimateDealMapping,
+        dealMapping: estimateDealMapping || null,
+        deal,
+        companyLinked: !!companyMapping,
+        companyMapping,
+        company,
+        clientId: estimate?.clientId || null,
+      });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching estimate CRM link:", error);
       res.status(500).json({ message: error.message });
     }
   });
