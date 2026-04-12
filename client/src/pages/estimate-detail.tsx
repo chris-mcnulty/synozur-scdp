@@ -2411,6 +2411,8 @@ function EstimateDetailContent() {
                     </Button>
                   </>
                 )}
+              </>
+            )}
             
             {/* Excel operations - HIDDEN: See backlog for redevelopment/removal */}
             {/* <div className="flex gap-2">
