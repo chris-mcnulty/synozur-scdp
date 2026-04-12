@@ -178,6 +178,10 @@ export default function Estimates() {
 
   const { data: defaultTeam } = useQuery<{ teamId: string; teamName: string; source: string } | null>({
     queryKey: ["/api/estimates/resolve-default-team", selectedClientId],
+    queryFn: () =>
+      apiRequest(
+        `/api/estimates/resolve-default-team?clientId=${encodeURIComponent(selectedClientId!)}`
+      ),
     enabled: createDialogOpen && !!selectedClientId && plannerStatus?.connected === true,
     retry: false,
   });
