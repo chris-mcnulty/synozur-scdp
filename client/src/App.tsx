@@ -58,6 +58,7 @@ import AiSettings from "@/pages/ai-settings";
 import ExecutiveNarrative from "@/pages/executive-narrative";
 import M365IntegrationDiagram from "@/pages/m365-integration-diagram";
 import EmbedProject from "@/pages/embed-project";
+import EmbedEstimate from "@/pages/embed-estimate";
 import EmbedConfigure from "@/pages/embed-configure";
 import EmbedDashboard from "@/pages/embed-dashboard";
 import EmbedAuthPopup from "@/pages/embed-auth-popup";
@@ -180,6 +181,7 @@ function Router() {
       <Route path="/embed/configure" component={EmbedConfigure} />
       <Route path="/embed/dashboard" component={EmbedDashboard} />
       <Route path="/embed/projects/:id" component={EmbedProject} />
+      <Route path="/embed/estimates/:id" component={EmbedEstimate} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/">

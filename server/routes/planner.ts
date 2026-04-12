@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage, db } from "../storage";
-import { projectChannels, projects, clients, teamsTabTemplates, DEFAULT_TAB_TEMPLATES } from "@shared/schema";
+import { projectChannels, projects, clients, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, estimateChannels, estimates, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 
 interface PlannerRouteDeps {
@@ -538,6 +538,131 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
     } catch (error: any) {
       console.error("[PLANNER] Failed to add Constellation tab:", error);
       res.status(500).json({ message: "Failed to add Constellation tab: " + error.message });
+    }
+  });
+
+  // ============ ESTIMATE CHANNEL PROVISIONING ============
+
+  app.post("/api/planner/teams/:teamId/channels/estimate", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('../services/planner-service');
+      const { displayName, estimateId, estimateName } = req.body;
+
+      if (!displayName) {
+        return res.status(400).json({ message: "Channel name is required" });
+      }
+      if (!estimateId) {
+        return res.status(400).json({ message: "Estimate ID is required" });
+      }
+
+      const channel = await plannerService.createChannel(req.params.teamId, {
+        displayName,
+      });
+
+      let constellationTab = null;
+      const user4Tab = req.user as any;
+      const tabTenantId = user4Tab?.activeTenantId || user4Tab?.primaryTenantId || user4Tab?.tenantId;
+
+      // Load tab templates for estimate channels
+      let activeTabTemplates: Array<{ tabType: string; tabName: string; sortOrder: number }> = [];
+      if (tabTenantId) {
+        try {
+          activeTabTemplates = await db.select()
+            .from(teamsTabTemplates)
+            .where(and(eq(teamsTabTemplates.tenantId, tabTenantId), eq(teamsTabTemplates.isActive, true)))
+            .orderBy(teamsTabTemplates.sortOrder);
+        } catch { /* non-blocking */ }
+      }
+
+      const effectiveTemplates: Array<{ tabType: string; tabName: string; sortOrder: number }> =
+        activeTabTemplates.length > 0
+          ? activeTabTemplates
+          : DEFAULT_TAB_TEMPLATES.map((t, i) => ({ tabType: t.tabType, tabName: t.tabName, sortOrder: i }));
+
+      for (const tmpl of effectiveTemplates) {
+        try {
+          if (tmpl.tabType === "constellation") {
+            constellationTab = await plannerService.createConstellationTab(
+              req.params.teamId, channel.id,
+              { entityType: 'estimate', entityId: estimateId, entityName: tmpl.tabName || estimateName || displayName }
+            );
+          }
+          // Skip planner tabs for estimate channels — estimates don't need task plans
+        } catch (tabError: any) {
+          console.warn(`[PLANNER] Tab template '${tmpl.tabType}' pin failed for estimate channel (non-blocking):`, tabError.message);
+        }
+      }
+
+      // Persist estimate-channel link
+      if (tabTenantId) {
+        try {
+          const [estimate] = await db.select({ id: estimates.id })
+            .from(estimates)
+            .where(and(eq(estimates.id, estimateId), eq(estimates.tenantId, tabTenantId)))
+            .limit(1);
+
+          if (estimate) {
+            await db.insert(estimateChannels).values({
+              estimateId,
+              tenantId: tabTenantId,
+              teamId: req.params.teamId,
+              teamName: null, // Will be enriched client-side or via a separate query
+              channelId: channel.id,
+              channelName: channel.displayName,
+              channelWebUrl: channel.webUrl || null,
+              createdBy: user4Tab?.id || null,
+            }).onConflictDoUpdate({
+              target: estimateChannels.estimateId,
+              set: {
+                teamId: req.params.teamId,
+                channelId: channel.id,
+                channelName: channel.displayName,
+                channelWebUrl: channel.webUrl || null,
+                updatedAt: sql`now()`,
+              },
+            });
+            console.log(`[PLANNER] Linked channel ${channel.id} to estimate ${estimateId}`);
+          }
+        } catch (linkError: any) {
+          console.warn("[PLANNER] Failed to persist estimate-channel link (non-blocking):", linkError.message);
+        }
+      }
+
+      // Provision estimate-specific folders
+      let folderResults = null;
+      try {
+        if (tabTenantId) {
+          // Look for estimate-scoped folder templates first
+          const estimateFolderTemplates = await db.select()
+            .from(teamsFolderTemplates)
+            .where(and(
+              eq(teamsFolderTemplates.tenantId, tabTenantId),
+              eq(teamsFolderTemplates.scope, 'estimate'),
+              eq(teamsFolderTemplates.isActive, true)
+            ))
+            .orderBy(teamsFolderTemplates.sortOrder);
+
+          const folderNames = estimateFolderTemplates.length > 0
+            ? estimateFolderTemplates.map(f => f.folderName)
+            : DEFAULT_ESTIMATE_FOLDER_TEMPLATES;
+
+          if (folderNames.length > 0) {
+            folderResults = await plannerService.provisionChannelFolders(req.params.teamId, channel.id, folderNames);
+          }
+        }
+      } catch (folderError: any) {
+        console.warn("[PLANNER] Estimate channel folder provisioning failed (non-blocking):", folderError.message);
+      }
+
+      res.json({
+        ...channel,
+        constellationTabAdded: !!constellationTab,
+        constellationTabId: constellationTab?.id || null,
+        foldersProvisioned: folderResults,
+      });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to provision estimate channel:", error);
+      res.status(500).json({ message: "Failed to provision estimate channel: " + error.message });
     }
   });
 

@@ -180,6 +180,8 @@ export const tenants = pgTable("tenants", {
   m365DefaultTeamTemplate: text("m365_default_team_template").default("standard"),
   m365DefaultChannelFolders: jsonb("m365_default_channel_folders").$type<string[]>(),
   m365SharePointConfig: jsonb("m365_sharepoint_config").$type<M365SharePointConfig>(),
+  m365DefaultPursuitTeamId: text("m365_default_pursuit_team_id"),
+  m365DefaultPursuitTeamName: text("m365_default_pursuit_team_name"),
 
   // PPTX Slide Template File IDs (stored in SPE under /pptx_templates)
   pptxTitleTemplateFileId: text("pptx_title_template_file_id"),
@@ -508,6 +510,33 @@ export const insertProjectChannelSchema = createInsertSchema(projectChannels).om
 export type InsertProjectChannel = z.infer<typeof insertProjectChannelSchema>;
 export type ProjectChannel = typeof projectChannels.$inferSelect;
 
+// Estimate-to-Channel mapping
+export const estimateChannels = pgTable("estimate_channels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  teamId: varchar("team_id", { length: 255 }).notNull(),
+  teamName: text("team_name"),
+  channelId: varchar("channel_id", { length: 255 }).notNull(),
+  channelName: text("channel_name"),
+  channelWebUrl: text("channel_web_url"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  estimateIdx: index("idx_estimate_channels_estimate").on(table.estimateId),
+  tenantIdx: index("idx_estimate_channels_tenant").on(table.tenantId),
+  uniqueEstimate: unique("uq_estimate_channels_estimate").on(table.estimateId),
+}));
+
+export const insertEstimateChannelSchema = createInsertSchema(estimateChannels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertEstimateChannel = z.infer<typeof insertEstimateChannelSchema>;
+export type EstimateChannel = typeof estimateChannels.$inferSelect;
+
 // Teams folder templates - configurable folder structure for new channels
 export const teamsFolderTemplates = pgTable("teams_folder_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -535,6 +564,13 @@ export const DEFAULT_FOLDER_TEMPLATES = [
   "SOW & Contracts",
   "Meeting Notes",
   "Status Reports",
+  "Working Documents",
+];
+
+export const DEFAULT_ESTIMATE_FOLDER_TEMPLATES = [
+  "Proposals",
+  "RFP Documents",
+  "Client Correspondence",
   "Working Documents",
 ];
 
@@ -1505,9 +1541,20 @@ export const estimatesRelations = relations(estimates, ({ one, many }) => ({
     fields: [estimates.clientId],
     references: [clients.id],
   }),
+  channel: one(estimateChannels, {
+    fields: [estimates.id],
+    references: [estimateChannels.estimateId],
+  }),
   epics: many(estimateEpics),
   lineItems: many(estimateLineItems),
   rateOverrides: many(estimateRateOverrides),
+}));
+
+export const estimateChannelsRelations = relations(estimateChannels, ({ one }) => ({
+  estimate: one(estimates, {
+    fields: [estimateChannels.estimateId],
+    references: [estimates.id],
+  }),
 }));
 
 export const estimateLineItemsRelations = relations(estimateLineItems, ({ one }) => ({
