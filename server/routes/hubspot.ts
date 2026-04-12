@@ -7,6 +7,7 @@ import {
   getHubSpotPipelines,
   getHubSpotDealCompanyAssociations,
   updateHubSpotDealAmount,
+  updateHubSpotDealStage,
   isHubSpotConnected,
   getHubSpotCompanies,
   getHubSpotCompanyById,
@@ -21,6 +22,7 @@ import {
   createHubSpotDeal,
   createHubSpotContact,
   searchHubSpotDeals,
+  createHubSpotDealNote,
 } from "../services/hubspot-client.js";
 import { db } from "../db.js";
 import { tenantUsers, users } from "@shared/schema";
@@ -1651,6 +1653,81 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       });
     } catch (error: any) {
       console.error("[CRM] Error fetching estimate CRM link:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Explicitly close a linked HubSpot deal as Lost when an estimate is declined.
+  // Uses dealStageMappings.rejected if configured, otherwise falls back to HubSpot's
+  // built-in 'closedlost' stage which is universally available across all pipelines.
+  app.post("/api/estimates/:id/close-hubspot-deal-lost", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const { id: estimateId } = req.params;
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate || estimate.tenantId !== tenantId) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      const connected = await isHubSpotConnected(tenantId);
+      if (!connected) {
+        return res.status(503).json({ message: "HubSpot is not connected" });
+      }
+
+      const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", estimateId);
+      if (!mapping) {
+        return res.json({ updated: false, reason: "no_linked_deal" });
+      }
+
+      const dealId = mapping.crmObjectId;
+
+      // Prefer tenant's configured stage mapping for rejected/declined, fall back to HubSpot's built-in closedlost
+      const settings = (connection.settings || {}) as Record<string, any>;
+      const stageMappings = settings.dealStageMappings as Record<string, string> | undefined;
+      const targetStageId = stageMappings?.["rejected"] || "closedlost";
+
+      await updateHubSpotDealStage(tenantId, dealId, targetStageId);
+
+      // Write an activity note to the deal so it's visible in HubSpot
+      const appUrl = process.env.REPLIT_DEPLOYMENT === '1'
+        ? 'https://constellation.synozur.com'
+        : `https://${process.env.REPLIT_DEV_DOMAIN || 'constellation.synozur.com'}`;
+      const noteBody = [
+        `❌ Constellation Estimate Declined`,
+        ``,
+        `Estimate: ${estimate.name}`,
+        estimate.totalFees ? `Amount: $${parseFloat(estimate.totalFees as string).toLocaleString()}` : null,
+        ``,
+        `This deal has been marked Closed Lost to reflect the declined estimate.`,
+        `View in Constellation: ${appUrl}/estimates/${estimateId}`,
+      ].filter(Boolean).join('\n');
+      createHubSpotDealNote(tenantId, dealId, noteBody).catch(e =>
+        console.warn("[CRM] Could not write decline note to HubSpot deal:", e?.message)
+      );
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "estimate_declined_close_lost",
+        crmObjectType: "deal",
+        crmObjectId: dealId,
+        localObjectType: "estimate",
+        localObjectId: estimateId,
+        status: "success",
+        requestPayload: { targetStageId, estimateId } as any,
+      });
+
+      res.json({ updated: true, dealId, stageId: targetStageId });
+    } catch (error: any) {
+      console.error("[CRM] Error closing HubSpot deal as lost:", error);
       res.status(500).json({ message: error.message });
     }
   });

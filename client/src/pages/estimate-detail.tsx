@@ -508,6 +508,7 @@ function EstimateDetailContent() {
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [showDeclineDialog, setShowDeclineDialog] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
+  const [declineUpdateHubSpot, setDeclineUpdateHubSpot] = useState(true);
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [shouldCopyAssignments, setShouldCopyAssignments] = useState(true);
@@ -618,6 +619,13 @@ function EstimateDetailContent() {
     queryKey: ["/api/clients", estimate?.clientId],
     enabled: !!estimate?.clientId,
   });
+
+  // CRM link state — used by the Decline dialog to know if HubSpot deal update should be offered
+  const { data: crmDealLinks } = useQuery<{ crmEnabled: boolean; linkedEstimateIds: string[] }>({
+    queryKey: ["/api/crm/estimates/deal-links"],
+  });
+  const crmEnabled = crmDealLinks?.crmEnabled ?? false;
+  const estimateLinkedToDeal = crmEnabled && !!(id && crmDealLinks?.linkedEstimateIds?.includes(id));
 
   // Get IDs of users currently assigned to any line item
   const currentlyAssignedUserIds = new Set(
@@ -1153,16 +1161,26 @@ function EstimateDetailContent() {
   });
 
   const rejectEstimateMutation = useMutation({
-    mutationFn: async (reason?: string) => {
-      return apiRequest(`/api/estimates/${id}/reject`, {
+    mutationFn: async ({ reason, updateHubSpot }: { reason?: string; updateHubSpot: boolean }) => {
+      await apiRequest(`/api/estimates/${id}/reject`, {
         method: 'POST',
         body: JSON.stringify({ reason: reason || "" }),
       });
+      if (updateHubSpot) {
+        // Best-effort — don't block on HubSpot failure
+        try {
+          await apiRequest(`/api/estimates/${id}/close-hubspot-deal-lost`, { method: 'POST' });
+        } catch (e: any) {
+          console.warn("[CRM] Could not close HubSpot deal as lost:", e?.message);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/crm/estimates/deal-links'] });
       setShowDeclineDialog(false);
       setDeclineReason("");
+      setDeclineUpdateHubSpot(true);
       toast({ title: "Estimate declined" });
     },
     onError: (error: any) => {
@@ -5753,38 +5771,69 @@ function EstimateDetailContent() {
       {/* Decline Estimate Dialog */}
       <Dialog open={showDeclineDialog} onOpenChange={(open) => {
         setShowDeclineDialog(open);
-        if (!open) setDeclineReason("");
+        if (!open) { setDeclineReason(""); setDeclineUpdateHubSpot(true); }
       }}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle>Decline Estimate</DialogTitle>
             <DialogDescription>
               Mark this estimate as declined / lost. You can optionally record a reason for internal reference.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <Label htmlFor="decline-reason">Reason (optional)</Label>
-            <textarea
-              id="decline-reason"
-              placeholder="e.g. Client went with another vendor, budget not approved..."
-              value={declineReason}
-              onChange={(e) => setDeclineReason(e.target.value)}
-              rows={3}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="decline-reason">Reason (optional)</Label>
+              <textarea
+                id="decline-reason"
+                placeholder="e.g. Client went with another vendor, budget not approved..."
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+              />
+            </div>
+
+            {estimateLinkedToDeal && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                  <p className="text-sm font-medium text-amber-800">
+                    This estimate is linked to a HubSpot deal
+                  </p>
+                </div>
+                <p className="text-xs text-amber-700 pl-6">
+                  The linked deal will be inconsistent with this decision unless you also update it in HubSpot.
+                </p>
+                <label className="flex items-center gap-2 pl-6 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={declineUpdateHubSpot}
+                    onChange={(e) => setDeclineUpdateHubSpot(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary"
+                  />
+                  <span className="text-sm text-amber-900 font-medium">
+                    Update linked HubSpot deal to Closed Lost
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
               onClick={() => {
                 setShowDeclineDialog(false);
                 setDeclineReason("");
+                setDeclineUpdateHubSpot(true);
               }}
               variant="outline"
             >
               Cancel
             </Button>
             <Button
-              onClick={() => rejectEstimateMutation.mutate(declineReason || undefined)}
+              onClick={() => rejectEstimateMutation.mutate({
+                reason: declineReason || undefined,
+                updateHubSpot: estimateLinkedToDeal && declineUpdateHubSpot,
+              })}
               disabled={rejectEstimateMutation.isPending}
               variant="destructive"
             >
