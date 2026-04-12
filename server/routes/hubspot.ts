@@ -619,6 +619,26 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         requestPayload: { dealId, estimateId: body.estimateId },
       });
 
+      // Write a note on the HubSpot deal so it's visible from inside HubSpot.
+      // Fire-and-forget — note failure must not block the linking response.
+      const appUrl = process.env.REPLIT_DEPLOYMENT === '1'
+        ? 'https://constellation.synozur.com'
+        : `https://${process.env.REPLIT_DEV_DOMAIN || 'constellation.synozur.com'}`;
+      const estimateUrl = `${appUrl}/estimates/${body.estimateId}`;
+      const noteLines = [
+        `📋 Constellation Estimate Linked`,
+        ``,
+        `Estimate: ${estimate.name}`,
+        estimate.totalFees ? `Amount: $${parseFloat(estimate.totalFees as string).toLocaleString()}` : null,
+        `Status: ${estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1)}`,
+        estimate.estimateType ? `Type: ${estimate.estimateType.charAt(0).toUpperCase() + estimate.estimateType.slice(1)}` : null,
+        ``,
+        `View in Constellation: ${estimateUrl}`,
+      ].filter(Boolean).join('\n');
+      createHubSpotDealNote(tenantId, dealId, noteLines).catch(e =>
+        console.warn("[CRM] Could not write link note to HubSpot deal:", e?.message)
+      );
+
       res.json({ success: true, dealId, estimateId: body.estimateId });
     } catch (error: any) {
       console.error("[CRM] Error linking estimate to deal:", error);
@@ -1492,6 +1512,26 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
           status: "success",
           requestPayload: { dealName: deal.dealName, estimateId: linkEstimateId, created: true } as any,
         });
+
+        // Write a note on the new HubSpot deal so the link is visible from inside HubSpot.
+        // Fire-and-forget — note failure must not block the response.
+        const appUrl = process.env.REPLIT_DEPLOYMENT === '1'
+          ? 'https://constellation.synozur.com'
+          : `https://${process.env.REPLIT_DEV_DOMAIN || 'constellation.synozur.com'}`;
+        const estimateUrl = `${appUrl}/estimates/${linkEstimateId}`;
+        const noteLines = [
+          `📋 Constellation Estimate Linked`,
+          ``,
+          `Estimate: ${estimate.name}`,
+          estimate.totalFees ? `Amount: $${parseFloat(estimate.totalFees as string).toLocaleString()}` : null,
+          `Status: ${estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1)}`,
+          estimate.estimateType ? `Type: ${estimate.estimateType.charAt(0).toUpperCase() + estimate.estimateType.slice(1)}` : null,
+          ``,
+          `View in Constellation: ${estimateUrl}`,
+        ].filter(Boolean).join('\n');
+        createHubSpotDealNote(tenantId, deal.id, noteLines).catch(e =>
+          console.warn("[CRM] Could not write link note to HubSpot deal:", e?.message)
+        );
       }
 
       res.json({ deal, linked: !!linkEstimateId });
