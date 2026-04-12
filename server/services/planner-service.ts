@@ -377,11 +377,19 @@ class PlannerService {
   }): Promise<TeamsTab | null> {
     // Resolve entity fields: support both legacy (projectId/projectName) and new (entityType/entityId/entityName) signatures
     const entityType = options.entityType || 'project';
-    const entityId = options.entityId || options.projectId || '';
+    const resolvedEntityId = options.entityId ?? options.projectId;
+    const entityId = resolvedEntityId?.trim() || '';
     const entityName = options.entityName || options.projectName || '';
     const embedPath = entityType === 'estimate' ? 'estimates' : 'projects';
     const webPath = entityType === 'estimate' ? 'estimates' : 'projects';
 
+    if (!entityId) {
+      console.warn(`[TEAMS-TAB] Skipping Constellation tab creation for ${entityType}: missing entityId`, {
+        teamId,
+        channelId,
+      });
+      return null;
+    }
     try {
       console.log(`[TEAMS-TAB] Adding Constellation tab for ${entityType}:`, entityId, 'in channel:', channelId);
 
