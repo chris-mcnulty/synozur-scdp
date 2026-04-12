@@ -276,8 +276,24 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     const { teamsTeamId, teamsChannelName, teamsExistingChannelId, teamsExistingChannelName, teamsExistingChannelWebUrl, teamsTeamName } = req.body;
     if (!teamsTeamId) return;
 
-    const tenantId = req.user?.tenantId;
-    const userId = req.user?.id;
+    const requestWithTenant = req as Request & { tenantId?: string };
+    const requestUser = (req.user ?? {}) as {
+      id?: string;
+      tenantId?: string;
+      activeTenantId?: string;
+      primaryTenantId?: string;
+    };
+    const tenantId =
+      requestWithTenant.tenantId ||
+      requestUser.activeTenantId ||
+      requestUser.primaryTenantId ||
+      requestUser.tenantId;
+    const userId = requestUser.id;
+
+    if (!tenantId) {
+      console.warn(`[ESTIMATES] Skipping Teams provisioning for estimate ${estimateId}: missing tenant context`);
+      return;
+    }
 
     setImmediate(async () => {
       try {
@@ -285,7 +301,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           // Link to existing channel
           await db.insert(estimateChannels).values({
             estimateId,
-            tenantId: tenantId || null,
+            tenantId,
             teamId: teamsTeamId,
             teamName: teamsTeamName || null,
             channelId: teamsExistingChannelId,
