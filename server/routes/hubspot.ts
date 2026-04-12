@@ -1542,9 +1542,13 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       // Find company mapping for estimate's client
       const estimate = await storage.getEstimate(estimateId);
+      if (!estimate || estimate.tenantId !== tenantId) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
       let companyMapping = null;
       let company = null;
-      if (estimate?.clientId) {
+      if (estimate.clientId) {
         const companyMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "company");
         companyMapping = companyMappings.find(m => m.localObjectId === estimate.clientId) || null;
         if (companyMapping) {
