@@ -23,6 +23,7 @@ import {
   createHubSpotContact,
   searchHubSpotDeals,
   createHubSpotDealNote,
+  findClosedLostStageId,
 } from "../services/hubspot-client.js";
 import { db } from "../db.js";
 import { tenantUsers, users } from "@shared/schema";
@@ -1658,8 +1659,8 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
   });
 
   // Explicitly close a linked HubSpot deal as Lost when an estimate is declined.
-  // Uses dealStageMappings.rejected if configured, otherwise falls back to HubSpot's
-  // built-in 'closedlost' stage which is universally available across all pipelines.
+  // Uses dealStageMappings.rejected if configured; otherwise fetches the deal's pipeline
+  // and resolves the Closed Lost stage via closedWon metadata (works for any pipeline).
   app.post("/api/estimates/:id/close-hubspot-deal-lost", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
@@ -1689,10 +1690,23 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       const dealId = mapping.crmObjectId;
 
-      // Prefer tenant's configured stage mapping for rejected/declined, fall back to HubSpot's built-in closedlost
+      // Prefer tenant's configured stage mapping for rejected/declined
       const settings = (connection.settings || {}) as Record<string, any>;
       const stageMappings = settings.dealStageMappings as Record<string, string> | undefined;
-      const targetStageId = stageMappings?.["rejected"] || "closedlost";
+      let targetStageId = stageMappings?.["rejected"] || null;
+
+      // No configured mapping — look up the deal's pipeline and find its Closed Lost stage
+      if (!targetStageId) {
+        const deal = await getHubSpotDealById(tenantId, dealId);
+        if (deal?.pipeline) {
+          targetStageId = await findClosedLostStageId(tenantId, deal.pipeline);
+        }
+        if (!targetStageId) {
+          return res.status(400).json({
+            message: "Could not determine the Closed Lost stage for this deal's pipeline. Please configure a deal stage mapping for 'Declined' in CRM Settings.",
+          });
+        }
+      }
 
       await updateHubSpotDealStage(tenantId, dealId, targetStageId);
 

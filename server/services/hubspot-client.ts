@@ -98,6 +98,7 @@ export interface HubSpotDealStage {
   label: string;
   probability: number;
   displayOrder: number;
+  closedWon: boolean | null;
 }
 
 export interface HubSpotPipeline {
@@ -143,6 +144,9 @@ export async function getHubSpotPipelines(tenantId: string): Promise<HubSpotPipe
       label: stage.label,
       probability: parseFloat((stage.metadata as any)?.probability || '0'),
       displayOrder: stage.displayOrder,
+      closedWon: (stage.metadata as any)?.closedWon === 'true' ? true
+        : (stage.metadata as any)?.closedWon === 'false' ? false
+        : null,
     })).sort((a, b) => a.displayOrder - b.displayOrder),
   }));
 
@@ -155,6 +159,35 @@ export async function getHubSpotPipelines(tenantId: string): Promise<HubSpotPipe
   }
 
   return pipelines;
+}
+
+/**
+ * Find the Closed Lost stage ID for a given pipeline.
+ * Priority: stage with closedWon === false and probability === 0.
+ * Falls back to the last stage with probability === 0 if closedWon metadata
+ * isn't present (older HubSpot accounts).
+ * Returns null if no suitable stage can be identified.
+ */
+export async function findClosedLostStageId(tenantId: string, pipelineId: string): Promise<string | null> {
+  const pipelines = await getHubSpotPipelines(tenantId);
+  const pipeline = pipelines.find(p => p.id === pipelineId);
+  if (!pipeline) return null;
+
+  // Prefer explicit closedWon === false with probability 0
+  const explicit = pipeline.stages.find(s => s.closedWon === false && s.probability === 0);
+  if (explicit) return explicit.id;
+
+  // Fall back: any stage with closedWon === false
+  const closedLost = pipeline.stages.find(s => s.closedWon === false);
+  if (closedLost) return closedLost.id;
+
+  // Last resort: last stage with probability 0 (heuristic for pipelines without metadata)
+  const zeroProbStages = pipeline.stages.filter(s => s.probability === 0);
+  if (zeroProbStages.length > 0) {
+    return zeroProbStages[zeroProbStages.length - 1].id;
+  }
+
+  return null;
 }
 
 export async function getHubSpotDealsAboveThreshold(tenantId: string, probabilityThreshold: number): Promise<HubSpotDeal[]> {
