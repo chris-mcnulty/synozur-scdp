@@ -457,21 +457,36 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
         .orderBy(teamsFolderTemplates.sortOrder);
 
-      // Seed defaults if none exist
+      // Seed defaults if none exist. Use a transaction-scoped advisory lock
+      // so concurrent requests for the same tenant/scope cannot both insert.
       if (templates.length === 0) {
-        await db.insert(teamsFolderTemplates).values(
-          DEFAULT_ESTIMATE_FOLDER_TEMPLATES.map((name, i) => ({
-            tenantId,
-            folderName: name,
-            sortOrder: i,
-            scope: 'estimate',
-            isActive: true,
-          }))
-        );
-        templates = await db.select()
-          .from(teamsFolderTemplates)
-          .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
-          .orderBy(teamsFolderTemplates.sortOrder);
+        templates = await db.transaction(async (tx) => {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${`teams_folder_templates:${tenantId}:estimate`}))`
+          );
+
+          const existingTemplates = await tx.select()
+            .from(teamsFolderTemplates)
+            .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
+            .orderBy(teamsFolderTemplates.sortOrder);
+
+          if (existingTemplates.length === 0) {
+            await tx.insert(teamsFolderTemplates).values(
+              DEFAULT_ESTIMATE_FOLDER_TEMPLATES.map((name, i) => ({
+                tenantId,
+                folderName: name,
+                sortOrder: i,
+                scope: 'estimate',
+                isActive: true,
+              }))
+            );
+          }
+
+          return tx.select()
+            .from(teamsFolderTemplates)
+            .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
+            .orderBy(teamsFolderTemplates.sortOrder);
+        });
       }
 
       res.json(templates);
