@@ -147,6 +147,13 @@ export async function getHubSpotPipelines(tenantId: string): Promise<HubSpotPipe
   }));
 
   pipelineCache.set(tenantId, { pipelines, expiresAt: Date.now() + PIPELINE_CACHE_TTL_MS });
+
+  // Evict expired entries to prevent unbounded growth in long-running processes
+  const now = Date.now();
+  for (const [key, entry] of pipelineCache) {
+    if (now >= entry.expiresAt) pipelineCache.delete(key);
+  }
+
   return pipelines;
 }
 
