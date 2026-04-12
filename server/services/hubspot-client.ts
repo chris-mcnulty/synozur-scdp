@@ -677,6 +677,147 @@ export async function searchHubSpotCompanyContacts(tenantId: string, companyId: 
   }
 }
 
+// ============================================================================
+// Create operations — Company, Deal, Contact
+// ============================================================================
+
+export async function createHubSpotCompany(
+  tenantId: string,
+  properties: { name: string; domain?: string; industry?: string; phone?: string; city?: string; state?: string; country?: string }
+): Promise<HubSpotCompany> {
+  const client = await getHubSpotClient(tenantId);
+  const hsProps: Record<string, string> = { name: properties.name };
+  if (properties.domain) hsProps.domain = properties.domain;
+  if (properties.industry) hsProps.industry = properties.industry;
+  if (properties.phone) hsProps.phone = properties.phone;
+  if (properties.city) hsProps.city = properties.city;
+  if (properties.state) hsProps.state = properties.state;
+  if (properties.country) hsProps.country = properties.country;
+
+  const result = await client.crm.companies.basicApi.create({ properties: hsProps, associations: [] });
+  return mapCompany(result);
+}
+
+export async function createHubSpotDeal(
+  tenantId: string,
+  properties: { dealname: string; amount?: string; pipeline?: string; dealstage?: string; closedate?: string },
+  companyId?: string
+): Promise<HubSpotDeal> {
+  const client = await getHubSpotClient(tenantId);
+  const hsProps: Record<string, string> = { dealname: properties.dealname };
+  if (properties.amount) hsProps.amount = properties.amount;
+  if (properties.pipeline) hsProps.pipeline = properties.pipeline;
+  if (properties.dealstage) hsProps.dealstage = properties.dealstage;
+  if (properties.closedate) hsProps.closedate = properties.closedate;
+
+  const associations: any[] = [];
+  if (companyId) {
+    associations.push({
+      to: { id: companyId },
+      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 342 }],
+    });
+  }
+
+  const result = await client.crm.deals.basicApi.create({ properties: hsProps, associations });
+
+  const pipelines = await getHubSpotPipelines(tenantId);
+  const stageMap = new Map<string, { name: string; probability: number; pipelineId: string; pipelineName: string }>();
+  for (const pipeline of pipelines) {
+    for (const stage of pipeline.stages) {
+      stageMap.set(stage.id, { name: stage.label, probability: stage.probability, pipelineId: pipeline.id, pipelineName: pipeline.label });
+    }
+  }
+
+  const props = result.properties;
+  const stageInfo = stageMap.get(props.dealstage || '');
+  return {
+    id: result.id,
+    dealName: props.dealname || 'Untitled Deal',
+    amount: props.amount || null,
+    dealStage: props.dealstage || '',
+    dealStageName: stageInfo?.name || 'Unknown',
+    pipeline: props.pipeline || '',
+    pipelineName: stageInfo?.pipelineName || 'Unknown',
+    probability: stageInfo?.probability ? stageInfo.probability * 100 : 0,
+    closeDate: props.closedate || null,
+    ownerName: null,
+    companyName: null,
+    companyId: companyId || null,
+    createdAt: String(result.createdAt),
+    updatedAt: String(result.updatedAt),
+  };
+}
+
+export async function createHubSpotContact(
+  tenantId: string,
+  properties: { email: string; firstname?: string; lastname?: string; jobtitle?: string; phone?: string },
+  companyId?: string
+): Promise<HubSpotContact> {
+  const client = await getHubSpotClient(tenantId);
+  const hsProps: Record<string, string> = { email: properties.email };
+  if (properties.firstname) hsProps.firstname = properties.firstname;
+  if (properties.lastname) hsProps.lastname = properties.lastname;
+  if (properties.jobtitle) hsProps.jobtitle = properties.jobtitle;
+  if (properties.phone) hsProps.phone = properties.phone;
+
+  const associations: any[] = [];
+  if (companyId) {
+    associations.push({
+      to: { id: companyId },
+      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 280 }],
+    });
+  }
+
+  const result = await client.crm.contacts.basicApi.create({ properties: hsProps, associations });
+  return mapContact(result);
+}
+
+export async function searchHubSpotDeals(tenantId: string, query: string): Promise<HubSpotDeal[]> {
+  const client = await getHubSpotClient(tenantId);
+  const pipelines = await getHubSpotPipelines(tenantId);
+
+  const stageMap = new Map<string, { name: string; probability: number; pipelineId: string; pipelineName: string }>();
+  for (const pipeline of pipelines) {
+    for (const stage of pipeline.stages) {
+      stageMap.set(stage.id, { name: stage.label, probability: stage.probability, pipelineId: pipeline.id, pipelineName: pipeline.label });
+    }
+  }
+
+  try {
+    const response = await client.crm.deals.searchApi.doSearch({
+      query,
+      limit: 20,
+      properties: ['dealname', 'amount', 'dealstage', 'closedate', 'pipeline', 'hubspot_owner_id', 'createdate', 'hs_lastmodifieddate'],
+      filterGroups: [],
+      sorts: [],
+      after: 0 as any,
+    });
+
+    return response.results.map(deal => {
+      const props = deal.properties;
+      const stageInfo = stageMap.get(props.dealstage || '');
+      return {
+        id: deal.id,
+        dealName: props.dealname || 'Untitled Deal',
+        amount: props.amount || null,
+        dealStage: props.dealstage || '',
+        dealStageName: stageInfo?.name || 'Unknown',
+        pipeline: props.pipeline || '',
+        pipelineName: stageInfo?.pipelineName || 'Unknown',
+        probability: stageInfo?.probability ? stageInfo.probability * 100 : 0,
+        closeDate: props.closedate || null,
+        ownerName: null,
+        companyName: null,
+        companyId: null,
+        createdAt: props.createdate || String(deal.createdAt),
+        updatedAt: props.hs_lastmodifieddate || String(deal.updatedAt),
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function isHubSpotConnected(tenantId: string): Promise<boolean> {
   try {
     const connection = await storage.getCrmConnection(tenantId, "hubspot");
