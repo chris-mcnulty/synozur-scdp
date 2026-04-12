@@ -765,7 +765,7 @@ export async function createHubSpotDeal(
   if (companyId) {
     associations.push({
       to: { id: companyId },
-      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 342 }],
+      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 5 }],
     });
   }
 
