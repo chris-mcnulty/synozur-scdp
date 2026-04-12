@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage, db } from "../storage";
-import { insertSystemSettingSchema, tenantUsers, users, teamsTabTemplates, DEFAULT_TAB_TEMPLATES } from "@shared/schema";
+import { insertSystemSettingSchema, tenantUsers, users, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import multer from "multer";
 import { SharePointFileStorage } from "../services/sharepoint-file-storage.js";
@@ -49,6 +49,8 @@ const m365ConfigUpdateSchema = z.object({
     docLibraryCustomPattern: z.string().max(200).optional(),
     metadataColumns: z.array(z.string().min(1).max(100)).max(10).optional(),
   }).optional().nullable(),
+  m365DefaultPursuitTeamId: z.string().max(255).optional().nullable(),
+  m365DefaultPursuitTeamName: z.string().max(255).optional().nullable(),
 });
 
 const tenantSettingsUpdateSchema = z.object({
@@ -303,6 +305,8 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
           docLibraryCustomPattern: '',
           metadataColumns: [],
         },
+        m365DefaultPursuitTeamId: (tenant as any).m365DefaultPursuitTeamId || null,
+        m365DefaultPursuitTeamName: (tenant as any).m365DefaultPursuitTeamName || null,
       });
     } catch (error: any) {
       console.error("[M365_CONFIG] Failed to fetch M365 config:", error);
@@ -337,12 +341,20 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
       if (validationResult.data.m365SharePointConfig !== undefined) {
         updateData.m365SharePointConfig = validationResult.data.m365SharePointConfig;
       }
+      if (validationResult.data.m365DefaultPursuitTeamId !== undefined) {
+        updateData.m365DefaultPursuitTeamId = validationResult.data.m365DefaultPursuitTeamId || null;
+      }
+      if (validationResult.data.m365DefaultPursuitTeamName !== undefined) {
+        updateData.m365DefaultPursuitTeamName = validationResult.data.m365DefaultPursuitTeamName || null;
+      }
 
       const updatedTenant = await storage.updateTenant(tenantId, updateData);
 
       res.json({
         m365DefaultChannelFolders: (updatedTenant as any).m365DefaultChannelFolders || [],
         m365SharePointConfig: (updatedTenant as any).m365SharePointConfig || {},
+        m365DefaultPursuitTeamId: (updatedTenant as any).m365DefaultPursuitTeamId || null,
+        m365DefaultPursuitTeamName: (updatedTenant as any).m365DefaultPursuitTeamName || null,
       });
     } catch (error: any) {
       console.error("[M365_CONFIG] Failed to update M365 config:", error);
@@ -430,6 +442,107 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
     } catch (error: any) {
       console.error("[TAB_TEMPLATES] Failed to update tab templates:", error);
       res.status(500).json({ message: "Failed to update tab templates" });
+    }
+  });
+
+  // Estimate-specific folder templates
+  app.get("/api/tenant/teams-estimate-folder-templates", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(404).json({ message: "No tenant associated with user" });
+
+      let templates = await db.select()
+        .from(teamsFolderTemplates)
+        .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
+        .orderBy(teamsFolderTemplates.sortOrder);
+
+      // Seed defaults if none exist. Use a transaction-scoped advisory lock
+      // so concurrent requests for the same tenant/scope cannot both insert.
+      if (templates.length === 0) {
+        templates = await db.transaction(async (tx) => {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${`teams_folder_templates:${tenantId}:estimate`}))`
+          );
+
+          const existingTemplates = await tx.select()
+            .from(teamsFolderTemplates)
+            .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
+            .orderBy(teamsFolderTemplates.sortOrder);
+
+          if (existingTemplates.length === 0) {
+            await tx.insert(teamsFolderTemplates).values(
+              DEFAULT_ESTIMATE_FOLDER_TEMPLATES.map((name, i) => ({
+                tenantId,
+                folderName: name,
+                sortOrder: i,
+                scope: 'estimate',
+                isActive: true,
+              }))
+            );
+          }
+
+          return tx.select()
+            .from(teamsFolderTemplates)
+            .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
+            .orderBy(teamsFolderTemplates.sortOrder);
+        });
+      }
+
+      res.json(templates);
+    } catch (error: any) {
+      console.error("[ESTIMATE_FOLDER_TEMPLATES] Failed to fetch:", error);
+      res.status(500).json({ message: "Failed to fetch estimate folder templates" });
+    }
+  });
+
+  app.put("/api/tenant/teams-estimate-folder-templates", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(404).json({ message: "No tenant associated with user" });
+
+      const { folders } = req.body;
+      if (!Array.isArray(folders)) return res.status(400).json({ message: "folders must be an array" });
+      if (folders.length > 20) return res.status(400).json({ message: "Maximum 20 folder templates allowed" });
+
+      for (const f of folders) {
+        if (!f.folderName || typeof f.folderName !== 'string' || f.folderName.trim().length === 0) {
+          return res.status(400).json({ message: "Each folder must have a non-empty folderName" });
+        }
+        if (f.folderName.trim().length > 100) {
+          return res.status(400).json({ message: "Folder name must be 100 characters or fewer" });
+        }
+        if (/[\\/:*?"<>|]/.test(f.folderName)) {
+          return res.status(400).json({ message: `Folder name '${f.folderName}' contains invalid characters` });
+        }
+      }
+
+      // Delete existing estimate-scoped templates for this tenant
+      await db.delete(teamsFolderTemplates)
+        .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')));
+
+      if (folders.length > 0) {
+        await db.insert(teamsFolderTemplates).values(
+          folders.map((f: any, i: number) => ({
+            tenantId,
+            folderName: f.folderName.trim(),
+            sortOrder: i,
+            scope: 'estimate',
+            isActive: f.isActive !== false,
+          }))
+        );
+      }
+
+      const updated = await db.select()
+        .from(teamsFolderTemplates)
+        .where(and(eq(teamsFolderTemplates.tenantId, tenantId), eq(teamsFolderTemplates.scope, 'estimate')))
+        .orderBy(teamsFolderTemplates.sortOrder);
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[ESTIMATE_FOLDER_TEMPLATES] Failed to update:", error);
+      res.status(500).json({ message: "Failed to update estimate folder templates" });
     }
   });
 

@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog, Search } from "lucide-react";
 import { MicrosoftPlannerIcon, MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
@@ -1144,6 +1144,267 @@ function ChannelProvisioningCard() {
             Folders are created in the channel's SharePoint document library via Microsoft Graph. Changes apply to newly created channels only. Use the "Provision Folders" action on existing channels to apply retroactively.
           </AlertDescription>
         </Alert>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PursuitTeamCard() {
+  const { toast } = useToast();
+  const [teamSearch, setTeamSearch] = useState("");
+  const [showTeamPicker, setShowTeamPicker] = useState(false);
+
+  const { data: m365Config, isLoading: configLoading } = useQuery<{
+    m365DefaultPursuitTeamId: string | null;
+    m365DefaultPursuitTeamName: string | null;
+  }>({
+    queryKey: ["/api/tenant", "m365-config"],
+  });
+
+  const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["/api/planner/status"],
+    retry: false,
+  });
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[] }>({
+    queryKey: ["/api/planner/teams"],
+    enabled: showTeamPicker && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  const allTeams = teamsData?.teams || [];
+  const filteredTeams = allTeams.filter(t =>
+    !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
+  );
+
+  const saveMutation = useMutation({
+    mutationFn: (data: { m365DefaultPursuitTeamId: string | null; m365DefaultPursuitTeamName: string | null }) =>
+      apiRequest("/api/tenant/m365-config", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant", "m365-config"] });
+      toast({ title: "Default pursuit team saved" });
+      setShowTeamPicker(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save", description: error.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MicrosoftTeamsIcon className="h-5 w-5" />
+            Default Pursuit Team
+          </CardTitle>
+        </div>
+        <CardDescription>
+          The default Microsoft Team for new client pursuits. Estimate channels will be created here when no client-specific team is linked.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {configLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        ) : (
+          <>
+            {m365Config?.m365DefaultPursuitTeamId ? (
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <MicrosoftTeamsIcon className="h-4 w-4" />
+                  <span className="text-sm font-medium">{m365Config.m365DefaultPursuitTeamName || m365Config.m365DefaultPursuitTeamId}</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowTeamPicker(true)}>
+                    Change
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => saveMutation.mutate({ m365DefaultPursuitTeamId: null, m365DefaultPursuitTeamName: null })}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-3">
+                <p className="text-sm text-muted-foreground mb-2">No default pursuit team configured.</p>
+                <Button variant="outline" size="sm" onClick={() => setShowTeamPicker(true)}>
+                  <MicrosoftTeamsIcon className="h-4 w-4 mr-1" />
+                  Select Team
+                </Button>
+              </div>
+            )}
+
+            {showTeamPicker && (
+              <div className="space-y-2 border rounded-lg p-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Filter teams..."
+                    value={teamSearch}
+                    onChange={(e) => setTeamSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                {teamsLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto border rounded-md">
+                    {filteredTeams.map((team) => (
+                      <div
+                        key={team.id}
+                        className="flex items-center p-2 border-b last:border-b-0 cursor-pointer hover:bg-muted/50"
+                        onClick={() => saveMutation.mutate({ m365DefaultPursuitTeamId: team.id, m365DefaultPursuitTeamName: team.displayName })}
+                      >
+                        <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
+                        <span className="text-sm">{team.displayName}</span>
+                      </div>
+                    ))}
+                    {filteredTeams.length === 0 && (
+                      <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                    )}
+                  </div>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => setShowTeamPicker(false)}>Cancel</Button>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EstimateFolderTemplatesCard() {
+  const { toast } = useToast();
+  const [newFolder, setNewFolder] = useState("");
+
+  const { data: templates, isLoading } = useQuery<{ id: string; folderName: string; sortOrder: number; isActive: boolean }[]>({
+    queryKey: ["/api/tenant/teams-estimate-folder-templates"],
+  });
+
+  const [folders, setFolders] = useState<string[]>([]);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => {
+    if (templates) {
+      setFolders(templates.filter(t => t.isActive).map(t => t.folderName));
+    }
+  }, [templates]);
+
+  const saveMutation = useMutation({
+    mutationFn: (data: { folders: { folderName: string; isActive: boolean }[] }) =>
+      apiRequest("/api/tenant/teams-estimate-folder-templates", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/teams-estimate-folder-templates"] });
+      toast({ title: "Estimate folder templates saved" });
+      setHasChanges(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addFolder = () => {
+    const trimmed = newFolder.trim();
+    if (!trimmed) return;
+    if (folders.includes(trimmed)) {
+      toast({ title: "Duplicate folder name", variant: "destructive" });
+      return;
+    }
+    if (/[\\/:*?"<>|]/.test(trimmed)) {
+      toast({ title: "Folder name contains invalid characters", variant: "destructive" });
+      return;
+    }
+    setFolders([...folders, trimmed]);
+    setNewFolder("");
+    setHasChanges(true);
+  };
+
+  const removeFolder = (idx: number) => {
+    setFolders(folders.filter((_, i) => i !== idx));
+    setHasChanges(true);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FolderOpen className="h-5 w-5" />
+            Estimate Channel Folders
+          </CardTitle>
+        </div>
+        <CardDescription>
+          Default folder structure for estimate/pursuit channels. These folders are created in the channel's SharePoint document library when a new estimate channel is provisioned.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1">
+              {folders.map((folder, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2 border rounded-md">
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">{folder}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeFolder(idx)}
+                    className="h-6 w-6 p-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+              {folders.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  No estimate folders configured. New estimate channels will be created without predefined folders.
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Input
+                placeholder="New folder name..."
+                value={newFolder}
+                onChange={(e) => setNewFolder(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addFolder(); } }}
+                className="flex-1"
+              />
+              <Button variant="outline" size="sm" onClick={addFolder}>
+                <Plus className="h-3 w-3 mr-1" /> Add
+              </Button>
+            </div>
+
+            <Button
+              size="sm"
+              disabled={!hasChanges || saveMutation.isPending}
+              onClick={() => saveMutation.mutate({ folders: folders.map(f => ({ folderName: f, isActive: true })) })}
+            >
+              {saveMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+              Save Folders
+            </Button>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -3453,6 +3714,10 @@ export default function OrganizationSettings() {
                   <ChannelProvisioningCard />
 
                   <ChannelTabTemplatesCard />
+
+                  <PursuitTeamCard />
+
+                  <EstimateFolderTemplatesCard />
 
                   <SharePointSiteConfigCard />
 

@@ -367,13 +367,31 @@ class PlannerService {
   }
 
   async createConstellationTab(teamId: string, channelId: string, options: {
-    projectId: string;
-    projectName: string;
+    projectId?: string;
+    projectName?: string;
+    entityType?: 'project' | 'estimate';
+    entityId?: string;
+    entityName?: string;
     baseDomain?: string;
     tab?: string;
   }): Promise<TeamsTab | null> {
+    // Resolve entity fields: support both legacy (projectId/projectName) and new (entityType/entityId/entityName) signatures
+    const entityType = options.entityType || 'project';
+    const resolvedEntityId = options.entityId ?? options.projectId;
+    const entityId = resolvedEntityId?.trim() || '';
+    const entityName = options.entityName || options.projectName || '';
+    const embedPath = entityType === 'estimate' ? 'estimates' : 'projects';
+    const webPath = entityType === 'estimate' ? 'estimates' : 'projects';
+
+    if (!entityId) {
+      console.warn(`[TEAMS-TAB] Skipping Constellation tab creation for ${entityType}: missing entityId`, {
+        teamId,
+        channelId,
+      });
+      return null;
+    }
     try {
-      console.log('[TEAMS-TAB] Adding Constellation tab for project:', options.projectId, 'in channel:', channelId);
+      console.log(`[TEAMS-TAB] Adding Constellation tab for ${entityType}:`, entityId, 'in channel:', channelId);
 
       const catalogApp = await this.findConstellationAppInCatalog();
       if (!catalogApp) {
@@ -385,15 +403,15 @@ class PlannerService {
       const domain = options.baseDomain || process.env.BASE_URL?.replace(/^https?:\/\//, '') || 'constellation.synozur.com';
       const baseUrl = `https://${domain}`;
 
-      const contentUrl = `${baseUrl}/embed/projects/${options.projectId}${options.tab ? `?tab=${options.tab}` : ''}`;
-      const websiteUrl = `${baseUrl}/projects/${options.projectId}`;
+      const contentUrl = `${baseUrl}/embed/${embedPath}/${entityId}${options.tab ? `?tab=${options.tab}` : ''}`;
+      const websiteUrl = `${baseUrl}/${webPath}/${entityId}`;
       const configurationUrl = `${baseUrl}/embed/configure`;
 
       const tab = await client.api(`/teams/${teamId}/channels/${channelId}/tabs`).post({
-        displayName: options.projectName,
+        displayName: entityName,
         'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${catalogApp.teamsAppId}`,
         configuration: {
-          entityId: `constellation-project-${options.projectId}`,
+          entityId: `constellation-${entityType}-${entityId}`,
           contentUrl: contentUrl,
           websiteUrl: websiteUrl,
           removeUrl: configurationUrl,

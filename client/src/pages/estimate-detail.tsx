@@ -434,6 +434,231 @@ function TeamsProvisioningDialog({
   );
 }
 
+function EstimateTeamsProvisioningDialog({
+  open,
+  estimate,
+  onComplete,
+}: {
+  open: boolean;
+  estimate: { id: string; name: string; clientId?: string | null };
+  onComplete: () => void;
+}) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"select-team" | "provisioning" | "done">("select-team");
+  const [teamSearch, setTeamSearch] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const [channelUrl, setChannelUrl] = useState<string | null>(null);
+  const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+
+  const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["/api/planner/status"],
+    enabled: open,
+    retry: false,
+  });
+
+  const { data: defaultTeam } = useQuery<{ teamId: string; teamName: string; source: string } | null>({
+    queryKey: ["/api/estimates/resolve-default-team", estimate.clientId],
+    queryFn: async () => {
+      const response = await apiRequest(
+        "GET",
+        `/api/estimates/resolve-default-team?clientId=${encodeURIComponent(String(estimate.clientId))}`,
+      );
+      return response.json();
+    },
+    enabled: open && !!estimate.clientId && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[] }>({
+    queryKey: ["/api/planner/teams"],
+    enabled: open && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (teamsData?.teams) setAllTeams(teamsData.teams);
+  }, [teamsData]);
+
+  useEffect(() => {
+    if (defaultTeam?.teamId && allTeams.length > 0) {
+      const found = allTeams.find(t => t.id === defaultTeam.teamId);
+      if (found) setSelectedTeam(found);
+    }
+  }, [defaultTeam, allTeams]);
+
+  const filteredTeams = allTeams.filter(t =>
+    !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
+  );
+
+  const provisionMutation = useMutation({
+    mutationFn: (data: { teamId: string; displayName: string; estimateId: string; estimateName: string }) =>
+      apiRequest(`/api/planner/teams/${data.teamId}/channels/estimate`, {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: data.displayName,
+          estimateId: data.estimateId,
+          estimateName: data.estimateName,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      setChannelUrl(data?.webUrl || data?.channel?.webUrl || null);
+      setStep("done");
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', estimate.id, 'channel'] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to provision channel", description: error.message, variant: "destructive" });
+      setStep("select-team");
+    },
+  });
+
+  const handleProvision = () => {
+    if (!selectedTeam) return;
+    setStep("provisioning");
+    provisionMutation.mutate({
+      teamId: selectedTeam.id,
+      displayName: estimate.name,
+      estimateId: estimate.id,
+      estimateName: estimate.name,
+    });
+  };
+
+  const handleClose = () => {
+    setStep("select-team");
+    setTeamSearch("");
+    setSelectedTeam(null);
+    setChannelUrl(null);
+    onComplete();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MicrosoftTeamsIcon className="h-5 w-5" />
+            Set Up Teams Channel for Estimate
+          </DialogTitle>
+          <DialogDescription>
+            {step === "select-team" && "Create a dedicated Microsoft Teams channel for this estimate/pursuit."}
+            {step === "provisioning" && "Creating your Teams channel..."}
+            {step === "done" && "Teams channel created successfully!"}
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === "select-team" && (
+          <div className="space-y-4">
+            {plannerStatus?.connected === false ? (
+              <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  Microsoft Teams integration is not configured. Contact your admin to set up the integration.
+                </p>
+              </div>
+            ) : (
+              <>
+                {defaultTeam && (
+                  <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                    <p className="text-xs text-blue-800 dark:text-blue-300">
+                      {defaultTeam.source === 'client'
+                        ? `This client is linked to the "${defaultTeam.teamName}" team.`
+                        : `Default pursuit team: "${defaultTeam.teamName}".`}
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Select Team</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Filter teams..."
+                      value={teamSearch}
+                      onChange={(e) => setTeamSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                {teamsLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto border rounded-md">
+                    {filteredTeams.map((team) => (
+                      <div
+                        key={team.id}
+                        className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
+                        onClick={() => setSelectedTeam(team)}
+                      >
+                        <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
+                        <span className="text-sm font-medium">{team.displayName}</span>
+                      </div>
+                    ))}
+                    {filteredTeams.length === 0 && (
+                      <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                    )}
+                  </div>
+                )}
+                {selectedTeam && (
+                  <div className="rounded-lg border p-3 space-y-1 bg-muted/30">
+                    <p className="text-xs text-muted-foreground">Channel will be created in:</p>
+                    <p className="text-sm font-medium">{selectedTeam.displayName}</p>
+                    <p className="text-xs text-muted-foreground">Channel name: <strong>{estimate.name}</strong></p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {step === "provisioning" && (
+          <div className="flex flex-col items-center justify-center py-8 gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Creating channel and configuring tabs...</p>
+          </div>
+        )}
+
+        {step === "done" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border p-4 bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                <Check className="h-5 w-5" />
+                <p className="text-sm font-medium">Channel created successfully!</p>
+              </div>
+            </div>
+            {channelUrl && (
+              <a
+                href={channelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 underline"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open in Microsoft Teams
+              </a>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          {step === "select-team" && (
+            <>
+              <Button variant="outline" onClick={handleClose}>Cancel</Button>
+              <Button
+                disabled={plannerStatus?.connected === false || !selectedTeam}
+                onClick={handleProvision}
+              >
+                Create Channel
+              </Button>
+            </>
+          )}
+          {step === "done" && (
+            <Button onClick={handleClose}>Done</Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EstimateDetailContent() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
@@ -513,6 +738,7 @@ function EstimateDetailContent() {
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [shouldCopyAssignments, setShouldCopyAssignments] = useState(true);
   const [showTeamsProvisioningDialog, setShowTeamsProvisioningDialog] = useState(false);
+  const [showEstimateTeamsDialog, setShowEstimateTeamsDialog] = useState(false);
   const [createdProjectForTeams, setCreatedProjectForTeams] = useState<{ id: string; name: string; clientId?: string | null } | null>(null);
   const [kickoffDate, setKickoffDate] = useState<string>("");
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
@@ -560,6 +786,13 @@ function EstimateDetailContent() {
     queryKey: ['/api/estimates', id],
     enabled: !!id,
     retry: 1,
+  });
+
+  // Query for linked Teams channel
+  const { data: estimateChannel } = useQuery<{ channelId: string; channelName: string; channelWebUrl: string; teamId: string; teamName: string } | null>({
+    queryKey: ['/api/estimates', id, 'channel'],
+    enabled: !!id,
+    retry: false,
   });
 
   // Check if estimate is editable (only draft estimates can be modified, and shared-read-only users cannot edit)
@@ -1987,6 +2220,31 @@ function EstimateDetailContent() {
               </div>
             )}
             
+            {/* Teams Channel Link */}
+            {estimateChannel?.channelWebUrl ? (
+              <a
+                href={estimateChannel.channelWebUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                title={`Open ${estimateChannel.channelName || 'channel'} in Teams`}
+              >
+                <MicrosoftTeamsIcon className="h-4 w-4" />
+                <span>{estimateChannel.channelName || 'Teams Channel'}</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowEstimateTeamsDialog(true)}
+                className="gap-1.5"
+              >
+                <MicrosoftTeamsIcon className="h-4 w-4" />
+                Set Up Teams Channel
+              </Button>
+            )}
+
             {/* Status Management Buttons */}
             {(user?.role === 'admin' || user?.role === 'pm' || user?.role === 'billing-admin') && (
               <>
@@ -5843,7 +6101,7 @@ function EstimateDetailContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Teams Channel Provisioning Dialog */}
+      {/* Teams Channel Provisioning Dialog (for project creation after approval) */}
       {createdProjectForTeams && (
         <TeamsProvisioningDialog
           open={showTeamsProvisioningDialog}
@@ -5853,6 +6111,15 @@ function EstimateDetailContent() {
             setCreatedProjectForTeams(null);
             setLocation(`/projects/${createdProjectForTeams.id}`);
           }}
+        />
+      )}
+
+      {/* Teams Channel Provisioning Dialog (for estimate itself) */}
+      {estimate && (
+        <EstimateTeamsProvisioningDialog
+          open={showEstimateTeamsDialog}
+          estimate={{ id: estimate.id, name: estimate.name, clientId: estimate.clientId }}
+          onComplete={() => setShowEstimateTeamsDialog(false)}
         />
       )}
 

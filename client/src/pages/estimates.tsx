@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy, Archive, ArchiveRestore, Sparkles } from "lucide-react";
+import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy, Archive, ArchiveRestore, Sparkles, Search, Loader2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { SiHubspot } from "react-icons/si";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -77,6 +78,14 @@ export default function Estimates() {
   const [narrativeGeneratorOpen, setNarrativeGeneratorOpen] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  // Teams channel setup state
+  const [teamsMode, setTeamsMode] = useState<'new' | 'existing' | 'skip'>('new');
+  const [teamsExpanded, setTeamsExpanded] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const [teamSearch, setTeamSearch] = useState('');
+  const [selectedChannel, setSelectedChannel] = useState<{ id: string; displayName: string; webUrl?: string } | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   // Copy form instances
   const copySameForm = useForm<z.infer<typeof copySameClientSchema>>({
@@ -159,6 +168,67 @@ export default function Estimates() {
   const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
   });
+
+  // Teams integration queries
+  const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["/api/planner/status"],
+    enabled: createDialogOpen,
+    retry: false,
+  });
+
+  const { data: defaultTeam } = useQuery<{ teamId: string; teamName: string; source: string } | null>({
+    queryKey: ["/api/estimates/resolve-default-team", selectedClientId],
+    queryFn: () =>
+      apiRequest(
+        `/api/estimates/resolve-default-team?clientId=${encodeURIComponent(selectedClientId!)}`
+      ),
+    enabled: createDialogOpen && !!selectedClientId && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[] }>({
+    queryKey: ["/api/planner/teams"],
+    enabled: createDialogOpen && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ value?: { id: string; displayName: string; webUrl?: string }[] }>({
+    queryKey: ["/api/planner/teams", selectedTeam?.id, "channels"],
+    queryFn: () => apiRequest(`/api/planner/teams/${selectedTeam!.id}/channels`),
+    enabled: createDialogOpen && teamsMode === 'existing' && !!selectedTeam?.id,
+    retry: false,
+  });
+
+  // Auto-select default team when resolved
+  const allTeams = teamsData?.teams || [];
+  const channels = channelsData?.value || [];
+
+  // When default team resolves, auto-select it
+  useEffect(() => {
+    if (defaultTeam?.teamId && allTeams.length > 0) {
+      const found = allTeams.find(t => t.id === defaultTeam.teamId);
+      if (found) {
+        setSelectedTeam(found);
+        setSelectedChannel(null);
+      }
+    }
+  }, [defaultTeam?.teamId, allTeams.length]);
+
+  // Reset Teams state when dialog closes
+  useEffect(() => {
+    if (!createDialogOpen) {
+      setTeamsMode('new');
+      setTeamsExpanded(false);
+      setSelectedTeam(null);
+      setTeamSearch('');
+      setSelectedChannel(null);
+      setSelectedClientId('');
+    }
+  }, [createDialogOpen]);
+
+  const filteredTeams = allTeams.filter(t =>
+    !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
+  );
 
   const createEstimate = useMutation({
     mutationFn: (data: any) => apiRequest("/api/estimates", {
@@ -618,6 +688,27 @@ export default function Estimates() {
                 estimateDate: formData.get('estimateDate') as string || undefined,
                 potentialStartDate: formData.get('potentialStartDate') as string || undefined,
               };
+
+              // Add Teams channel data if configured
+              if (teamsMode === 'new' && selectedTeam) {
+                estimateData.teamsTeamId = selectedTeam.id;
+                estimateData.teamsTeamName = selectedTeam.displayName;
+                estimateData.teamsChannelName = formData.get('name') as string; // Channel named after estimate
+              } else if (teamsMode === 'existing' && selectedTeam && !selectedChannel) {
+                // User selected a team but no channel — block submission
+                toast({
+                  title: "Teams Channel Required",
+                  description: "Please select an existing channel or choose a different Teams option.",
+                  variant: "destructive",
+                });
+                return;
+              } else if (teamsMode === 'existing' && selectedTeam && selectedChannel) {
+                estimateData.teamsTeamId = selectedTeam.id;
+                estimateData.teamsTeamName = selectedTeam.displayName;
+                estimateData.teamsExistingChannelId = selectedChannel.id;
+                estimateData.teamsExistingChannelName = selectedChannel.displayName;
+                estimateData.teamsExistingChannelWebUrl = selectedChannel.webUrl || null;
+              }
               
               if (selectedEstimateType === 'block') {
                 const blockHours = formData.get('blockHours') as string;
@@ -679,7 +770,7 @@ export default function Estimates() {
                       + New Client
                     </Button>
                   </div>
-                  <Select name="clientId" required>
+                  <Select name="clientId" required onValueChange={(v) => setSelectedClientId(v)}>
                     <SelectTrigger data-testid="select-client">
                       <SelectValue placeholder="Select a client" />
                     </SelectTrigger>
@@ -941,6 +1032,154 @@ export default function Estimates() {
                     Expected project start date for portfolio planning
                   </p>
                 </div>
+
+                {/* Teams Channel Setup */}
+                {plannerStatus?.connected && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between p-3 hover:bg-muted/50 text-left"
+                      onClick={() => setTeamsExpanded(!teamsExpanded)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MicrosoftTeamsIcon className="h-4 w-4" />
+                        <span className="text-sm font-medium">Teams Channel</span>
+                        {teamsMode !== 'skip' && selectedTeam && (
+                          <span className="text-xs text-muted-foreground">
+                            ({teamsMode === 'existing' ? 'Existing' : 'New'} in {selectedTeam.displayName})
+                          </span>
+                        )}
+                        {teamsMode === 'skip' && (
+                          <span className="text-xs text-muted-foreground">(Skipped)</span>
+                        )}
+                      </div>
+                      {teamsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </button>
+
+                    {teamsExpanded && (
+                      <div className="p-3 pt-0 space-y-3 border-t">
+                        {/* Mode selector */}
+                        <div className="flex rounded-md border overflow-hidden text-xs">
+                          <button
+                            type="button"
+                            className={`flex-1 px-2 py-1.5 ${teamsMode === 'new' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('new')}
+                          >
+                            New Channel
+                          </button>
+                          <button
+                            type="button"
+                            className={`flex-1 px-2 py-1.5 border-l ${teamsMode === 'existing' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('existing')}
+                          >
+                            Existing Channel
+                          </button>
+                          <button
+                            type="button"
+                            className={`flex-1 px-2 py-1.5 border-l ${teamsMode === 'skip' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('skip')}
+                          >
+                            Skip
+                          </button>
+                        </div>
+
+                        {teamsMode !== 'skip' && (
+                          <>
+                            {/* Default team hint */}
+                            {defaultTeam && (
+                              <div className="rounded-md border p-2 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                                <p className="text-xs text-blue-800 dark:text-blue-300">
+                                  {defaultTeam.source === 'client'
+                                    ? `This client is linked to the "${defaultTeam.teamName}" team.`
+                                    : `Default pursuit team: "${defaultTeam.teamName}".`}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Team picker */}
+                            <div className="space-y-1">
+                              <Label className="text-xs">Team</Label>
+                              <div className="relative">
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                <Input
+                                  placeholder="Filter teams..."
+                                  value={teamSearch}
+                                  onChange={(e) => setTeamSearch(e.target.value)}
+                                  className="pl-8 h-8 text-sm"
+                                />
+                              </div>
+                            </div>
+
+                            {teamsLoading ? (
+                              <div className="flex items-center justify-center py-3">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              </div>
+                            ) : (
+                              <div className="max-h-32 overflow-y-auto border rounded-md">
+                                {filteredTeams.map((team) => (
+                                  <div
+                                    key={team.id}
+                                    className={`flex items-center p-2 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 text-sm ${selectedTeam?.id === team.id ? 'bg-primary/10' : ''}`}
+                                    onClick={() => { setSelectedTeam(team); setSelectedChannel(null); }}
+                                  >
+                                    <MicrosoftTeamsIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
+                                    <span className="font-medium">{team.displayName}</span>
+                                  </div>
+                                ))}
+                                {filteredTeams.length === 0 && (
+                                  <p className="text-xs text-muted-foreground p-2 text-center">No teams found</p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Channel picker for existing mode */}
+                            {teamsMode === 'existing' && selectedTeam && (
+                              <div className="space-y-1">
+                                <Label className="text-xs">Channel</Label>
+                                {channelsLoading ? (
+                                  <div className="flex items-center justify-center py-3">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  </div>
+                                ) : (
+                                  <div className="max-h-32 overflow-y-auto border rounded-md">
+                                    {channels.map((ch) => (
+                                      <div
+                                        key={ch.id}
+                                        className={`flex items-center p-2 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 text-sm ${selectedChannel?.id === ch.id ? 'bg-primary/10' : ''}`}
+                                        onClick={() => setSelectedChannel(ch)}
+                                      >
+                                        <span className="font-medium">{ch.displayName}</span>
+                                      </div>
+                                    ))}
+                                    {channels.length === 0 && (
+                                      <p className="text-xs text-muted-foreground p-2 text-center">No channels found</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Summary */}
+                            {selectedTeam && teamsMode === 'new' && (
+                              <div className="rounded-md border p-2 bg-muted/30">
+                                <p className="text-xs text-muted-foreground">
+                                  A new channel will be created in <strong>{selectedTeam.displayName}</strong> named after the estimate.
+                                </p>
+                              </div>
+                            )}
+                            {selectedTeam && selectedChannel && teamsMode === 'existing' && (
+                              <div className="rounded-md border p-2 bg-muted/30">
+                                <p className="text-xs text-muted-foreground">
+                                  The estimate will be linked to <strong>{selectedChannel.displayName}</strong> in {selectedTeam.displayName}.
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <DialogFooter>

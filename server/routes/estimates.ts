@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients } from "@shared/schema";
+import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients, estimateChannels, clientTeams } from "@shared/schema";
 import { eq, sql, inArray, max, and, isNull } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 import { RateResolver } from "../rate-resolver";
@@ -270,6 +270,137 @@ interface EstimateRouteDeps {
 
 export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   const { requireAuth, requireRole } = deps;
+
+  // Non-blocking Teams channel provisioning for new estimates
+  function fireTeamsProvisioning(req: Request, estimateId: string, estimateName: string) {
+    const { teamsTeamId, teamsChannelName, teamsExistingChannelId, teamsExistingChannelName, teamsExistingChannelWebUrl, teamsTeamName } = req.body;
+    if (!teamsTeamId) return;
+
+    const requestWithTenant = req as Request & { tenantId?: string };
+    const requestUser = (req.user ?? {}) as {
+      id?: string;
+      tenantId?: string;
+      activeTenantId?: string;
+      primaryTenantId?: string;
+    };
+    const tenantId =
+      requestWithTenant.tenantId ||
+      requestUser.activeTenantId ||
+      requestUser.primaryTenantId ||
+      requestUser.tenantId;
+    const userId = requestUser.id;
+
+    if (!tenantId) {
+      console.warn(`[ESTIMATES] Skipping Teams provisioning for estimate ${estimateId}: missing tenant context`);
+      return;
+    }
+
+    setImmediate(async () => {
+      try {
+        if (teamsExistingChannelId) {
+          // Link to existing channel
+          await db.insert(estimateChannels).values({
+            estimateId,
+            tenantId,
+            teamId: teamsTeamId,
+            teamName: teamsTeamName || null,
+            channelId: teamsExistingChannelId,
+            channelName: teamsExistingChannelName || null,
+            channelWebUrl: teamsExistingChannelWebUrl || null,
+            createdBy: userId || null,
+          }).onConflictDoUpdate({
+            target: estimateChannels.estimateId,
+            set: {
+              teamId: teamsTeamId,
+              channelId: teamsExistingChannelId,
+              channelName: teamsExistingChannelName || null,
+              channelWebUrl: teamsExistingChannelWebUrl || null,
+              updatedAt: sql`now()`,
+            },
+          });
+
+          // Add constellation tab to existing channel
+          try {
+            const { plannerService } = await import('../services/planner-service');
+            await plannerService.createConstellationTab(teamsTeamId, teamsExistingChannelId, {
+              entityType: 'estimate',
+              entityId: estimateId,
+              entityName: estimateName,
+            });
+          } catch (tabErr: any) {
+            console.warn('[ESTIMATES] Constellation tab failed for existing channel (non-blocking):', tabErr.message);
+          }
+
+          console.log(`[ESTIMATES] Linked existing channel ${teamsExistingChannelId} to estimate ${estimateId}`);
+        } else {
+          // Create a new Teams channel directly using plannerService.createChannel,
+          // then provision the Constellation tab and folder structure.
+          const { plannerService } = await import('../services/planner-service');
+          const channelDisplayName = teamsChannelName || estimateName;
+          const channel = await plannerService.createChannel(teamsTeamId, { displayName: channelDisplayName });
+
+          // Add constellation tab
+          try {
+            await plannerService.createConstellationTab(teamsTeamId, channel.id, {
+              entityType: 'estimate',
+              entityId: estimateId,
+              entityName: estimateName,
+            });
+          } catch (tabErr: any) {
+            console.warn('[ESTIMATES] Constellation tab failed (non-blocking):', tabErr.message);
+          }
+
+          // Persist channel link
+          await db.insert(estimateChannels).values({
+            estimateId,
+            tenantId: tenantId || null,
+            teamId: teamsTeamId,
+            teamName: teamsTeamName || null,
+            channelId: channel.id,
+            channelName: channel.displayName,
+            channelWebUrl: channel.webUrl || null,
+            createdBy: userId || null,
+          }).onConflictDoUpdate({
+            target: estimateChannels.estimateId,
+            set: {
+              teamId: teamsTeamId,
+              channelId: channel.id,
+              channelName: channel.displayName,
+              channelWebUrl: channel.webUrl || null,
+              updatedAt: sql`now()`,
+            },
+          });
+
+          // Provision estimate-specific folders
+          try {
+            const { teamsFolderTemplates: folderTemplatesTable, DEFAULT_ESTIMATE_FOLDER_TEMPLATES } = await import('@shared/schema');
+            if (tenantId) {
+              const estimateFolderTemplates = await db.select()
+                .from(folderTemplatesTable)
+                .where(and(
+                  eq(folderTemplatesTable.tenantId, tenantId),
+                  eq(folderTemplatesTable.scope, 'estimate'),
+                  eq(folderTemplatesTable.isActive, true)
+                ))
+                .orderBy(folderTemplatesTable.sortOrder);
+
+              const folderNames = estimateFolderTemplates.length > 0
+                ? estimateFolderTemplates.map(f => f.folderName)
+                : DEFAULT_ESTIMATE_FOLDER_TEMPLATES;
+
+              await plannerService.provisionChannelFolders(teamsTeamId, channel.id, folderNames);
+            }
+          } catch (folderErr: any) {
+            console.warn('[ESTIMATES] Folder provisioning failed (non-blocking):', folderErr.message);
+          }
+
+          console.log(`[ESTIMATES] Created channel ${channel.id} for estimate ${estimateId}`);
+        }
+      } catch (err: any) {
+        console.error('[ESTIMATES] Teams provisioning failed (non-blocking):', err.message);
+      }
+    });
+  }
 
   // ============================================================================
   // PORTFOLIO TIMELINE ENDPOINT
@@ -4673,6 +4804,159 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     return normalized;
   };
 
+  // ============================================================================
+  // TEAMS INTEGRATION ENDPOINTS
+  // ============================================================================
+
+  // Resolve default team for an estimate based on client or tenant settings
+  app.get("/api/estimates/resolve-default-team", requireAuth, async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const { clientId } = req.query;
+
+      if (!clientId || typeof clientId !== 'string') {
+        return res.json(null);
+      }
+
+      // 1. Check clientTeams table for a linked team
+      const [clientTeam] = await db.select({
+        teamId: clientTeams.teamId,
+        teamName: clientTeams.teamName,
+      }).from(clientTeams)
+        .where(and(
+          eq(clientTeams.clientId, clientId),
+          tenantId ? eq(clientTeams.tenantId, tenantId) : isNull(clientTeams.tenantId)
+        ))
+        .limit(1);
+
+      if (clientTeam?.teamId) {
+        return res.json({ teamId: clientTeam.teamId, teamName: clientTeam.teamName, source: 'client' });
+      }
+
+      // 2. Check clients.microsoftTeamId
+      const [client] = await db.select({
+        microsoftTeamId: clients.microsoftTeamId,
+        microsoftTeamName: clients.microsoftTeamName,
+      }).from(clients)
+        .where(and(
+          eq(clients.id, clientId),
+          tenantId ? eq(clients.tenantId, tenantId) : isNull(clients.tenantId)
+        ))
+        .limit(1);
+
+      if (client?.microsoftTeamId) {
+        return res.json({ teamId: client.microsoftTeamId, teamName: client.microsoftTeamName, source: 'client' });
+      }
+
+      // 3. Check tenant's default pursuit team
+      if (tenantId) {
+        const [tenant] = await db.select({
+          pursuitTeamId: tenants.m365DefaultPursuitTeamId,
+          pursuitTeamName: tenants.m365DefaultPursuitTeamName,
+        }).from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+
+        if (tenant?.pursuitTeamId) {
+          return res.json({ teamId: tenant.pursuitTeamId, teamName: tenant.pursuitTeamName, source: 'tenant' });
+        }
+      }
+
+      return res.json(null);
+    } catch (error: any) {
+      console.error("[ESTIMATES] Failed to resolve default team:", error);
+      res.status(500).json({ message: "Failed to resolve default team" });
+    }
+  });
+
+  // Get the Teams channel linked to an estimate
+  app.get("/api/estimates/:id/channel", requireAuth, async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const estimateId = req.params.id;
+
+      const [channel] = await db.select()
+        .from(estimateChannels)
+        .where(and(
+          eq(estimateChannels.estimateId, estimateId),
+          tenantId ? eq(estimateChannels.tenantId, tenantId) : isNull(estimateChannels.tenantId)
+        ))
+        .limit(1);
+
+      return res.json(channel || null);
+    } catch (error: any) {
+      console.error("[ESTIMATES] Failed to get estimate channel:", error);
+      res.status(500).json({ message: "Failed to get estimate channel" });
+    }
+  });
+
+  // Link an existing channel to an estimate (or add Constellation tab)
+  app.post("/api/estimates/:id/channel", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const estimateId = req.params.id;
+      const { teamId, teamName, channelId, channelName, channelWebUrl, addConstellationTab } = req.body;
+
+      if (!teamId || !channelId) {
+        return res.status(400).json({ message: "teamId and channelId are required" });
+      }
+
+      // Verify estimate exists and belongs to tenant
+      const [estimate] = await db.select({ id: estimates.id, name: estimates.name })
+        .from(estimates)
+        .where(and(
+          eq(estimates.id, estimateId),
+          tenantId ? eq(estimates.tenantId, tenantId) : isNull(estimates.tenantId)
+        ))
+        .limit(1);
+
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      // Upsert the channel link
+      const [channel] = await db.insert(estimateChannels).values({
+        estimateId,
+        tenantId: tenantId || null,
+        teamId,
+        teamName: teamName || null,
+        channelId,
+        channelName: channelName || null,
+        channelWebUrl: channelWebUrl || null,
+        createdBy: req.user?.id || null,
+      }).onConflictDoUpdate({
+        target: estimateChannels.estimateId,
+        set: {
+          teamId,
+          teamName: teamName || null,
+          channelId,
+          channelName: channelName || null,
+          channelWebUrl: channelWebUrl || null,
+          updatedAt: sql`now()`,
+        },
+      }).returning();
+
+      // Optionally add Constellation tab
+      if (addConstellationTab !== false) {
+        try {
+          const { plannerService } = await import('../services/planner-service');
+          await plannerService.createConstellationTab(teamId, channelId, {
+            entityType: 'estimate',
+            entityId: estimateId,
+            entityName: estimate.name,
+          });
+        } catch (tabError: any) {
+          console.warn("[ESTIMATES] Constellation tab creation failed (non-blocking):", tabError.message);
+        }
+      }
+
+      return res.json(channel);
+    } catch (error: any) {
+      console.error("[ESTIMATES] Failed to link channel:", error);
+      res.status(500).json({ message: "Failed to link channel to estimate" });
+    }
+  });
+
   // Estimates
   app.get("/api/estimates", requireAuth, async (req, res) => {
     try {
@@ -4938,8 +5222,15 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         }
 
         const updatedEstimate = await storage.getEstimate(estimate.id);
+
+        // Fire non-blocking Teams channel provisioning for retainer estimates
+        fireTeamsProvisioning(req, estimate.id, name);
+
         return res.status(201).json(updatedEstimate);
       }
+
+      // Fire non-blocking Teams channel provisioning
+      fireTeamsProvisioning(req, estimate.id, name);
 
       res.status(201).json(estimate);
     } catch (error: any) {
@@ -4948,7 +5239,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         console.error("[ERROR] Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid estimate data", errors: error.errors });
       }
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to create estimate",
         details: error.message || "Unknown error"
       });
