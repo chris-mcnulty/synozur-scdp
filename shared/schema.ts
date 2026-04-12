@@ -3139,7 +3139,9 @@ export const crmConnections = pgTable("crm_connections", {
   uniqueTenantProvider: uniqueIndex("unique_crm_tenant_provider").on(table.tenantId, table.crmProvider),
 }));
 
-export const insertCrmConnectionSchema = createInsertSchema(crmConnections).omit({
+export const insertCrmConnectionSchema = createInsertSchema(crmConnections, {
+  settings: z.record(z.string(), z.any()).optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
