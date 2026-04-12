@@ -333,7 +333,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
           console.log(`[ESTIMATES] Linked existing channel ${teamsExistingChannelId} to estimate ${estimateId}`);
         } else {
-          // Create new channel via the estimate provisioning endpoint
+          // Create a new Teams channel directly using plannerService.createChannel,
+          // then provision the Constellation tab and folder structure.
           const { plannerService } = await import('../services/planner-service');
           const channelDisplayName = teamsChannelName || estimateName;
           const channel = await plannerService.createChannel(teamsTeamId, { displayName: channelDisplayName });

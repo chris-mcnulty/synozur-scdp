@@ -694,6 +694,14 @@ export default function Estimates() {
                 estimateData.teamsTeamId = selectedTeam.id;
                 estimateData.teamsTeamName = selectedTeam.displayName;
                 estimateData.teamsChannelName = formData.get('name') as string; // Channel named after estimate
+              } else if (teamsMode === 'existing' && selectedTeam && !selectedChannel) {
+                // User selected a team but no channel — block submission
+                toast({
+                  title: "Teams Channel Required",
+                  description: "Please select an existing channel or choose a different Teams option.",
+                  variant: "destructive",
+                });
+                return;
               } else if (teamsMode === 'existing' && selectedTeam && selectedChannel) {
                 estimateData.teamsTeamId = selectedTeam.id;
                 estimateData.teamsTeamName = selectedTeam.displayName;
