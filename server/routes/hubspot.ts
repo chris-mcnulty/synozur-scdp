@@ -425,20 +425,16 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       const deals = await searchHubSpotDeals(tenantId, query);
 
-      const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
-      const dealMappingsMap = new Map<string, typeof mappings>();
-      for (const m of mappings) {
-        const existing = dealMappingsMap.get(m.crmObjectId) || [];
-        existing.push(m);
-        dealMappingsMap.set(m.crmObjectId, existing);
-      }
+      const dealMappingResults = await Promise.all(
+        deals.map(deal => storage.getCrmObjectMapping(tenantId, "hubspot", "deal", deal.id))
+      );
 
-      const enrichedDeals = deals.map(deal => {
-        const dealMappings = dealMappingsMap.get(deal.id) || [];
+      const enrichedDeals = deals.map((deal, i) => {
+        const mapping = dealMappingResults[i];
         return {
           ...deal,
-          isMapped: dealMappings.length > 0,
-          mappings: dealMappings.map(m => ({ localObjectId: m.localObjectId, mappingId: m.id })),
+          isMapped: !!mapping,
+          mappings: mapping ? [{ localObjectId: mapping.localObjectId, mappingId: mapping.id }] : [],
         };
       });
 
@@ -1395,6 +1391,17 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const body = schema.parse(req.body);
       const { linkClientId, ...companyProps } = body;
 
+      if (linkClientId) {
+        const client = await storage.getClient(linkClientId);
+        if (!client || client.tenantId !== tenantId) {
+          return res.status(404).json({ message: "Client not found" });
+        }
+        const existingMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", linkClientId);
+        if (existingMapping) {
+          return res.status(409).json({ message: "Client is already linked to a HubSpot company" });
+        }
+      }
+
       const company = await createHubSpotCompany(tenantId, companyProps);
 
       if (linkClientId) {
@@ -1449,6 +1456,17 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       });
       const body = schema.parse(req.body);
       const { companyId, linkEstimateId, ...dealProps } = body;
+
+      if (linkEstimateId) {
+        const estimate = await storage.getEstimate(linkEstimateId);
+        if (!estimate || estimate.tenantId !== tenantId) {
+          return res.status(404).json({ message: "Estimate not found" });
+        }
+        const existingMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", linkEstimateId);
+        if (existingMapping) {
+          return res.status(409).json({ message: "Estimate is already linked to a HubSpot deal" });
+        }
+      }
 
       const deal = await createHubSpotDeal(tenantId, dealProps, companyId);
 
@@ -1529,9 +1547,14 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       const { estimateId } = req.params;
 
-      // Find deal mapping for this estimate
-      const dealMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
-      const estimateDealMapping = dealMappings.find(m => m.localObjectId === estimateId);
+      // Verify estimate belongs to this tenant
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate || estimate.tenantId !== tenantId) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      // Find deal mapping for this estimate using targeted lookup
+      const estimateDealMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", estimateId) || null;
 
       let deal = null;
       if (estimateDealMapping) {
@@ -1540,17 +1563,11 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         } catch {}
       }
 
-      // Find company mapping for estimate's client
-      const estimate = await storage.getEstimate(estimateId);
-      if (!estimate || estimate.tenantId !== tenantId) {
-        return res.status(404).json({ message: "Estimate not found" });
-      }
-
+      // Find company mapping for estimate's client using targeted lookup
       let companyMapping = null;
       let company = null;
       if (estimate.clientId) {
-        const companyMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "company");
-        companyMapping = companyMappings.find(m => m.localObjectId === estimate.clientId) || null;
+        companyMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", estimate.clientId) || null;
         if (companyMapping) {
           try {
             company = await getHubSpotCompanyById(tenantId, companyMapping.crmObjectId);

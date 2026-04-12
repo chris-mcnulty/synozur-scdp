@@ -106,6 +106,9 @@ export interface HubSpotPipeline {
   stages: HubSpotDealStage[];
 }
 
+const PIPELINE_CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute TTL
+const pipelineCache = new Map<string, { pipelines: HubSpotPipeline[]; expiresAt: number }>();
+
 export interface HubSpotDeal {
   id: string;
   dealName: string;
@@ -124,10 +127,15 @@ export interface HubSpotDeal {
 }
 
 export async function getHubSpotPipelines(tenantId: string): Promise<HubSpotPipeline[]> {
+  const cached = pipelineCache.get(tenantId);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.pipelines;
+  }
+
   const client = await getHubSpotClient(tenantId);
   const response = await client.crm.pipelines.pipelinesApi.getAll('deals');
 
-  return response.results.map(pipeline => ({
+  const pipelines = response.results.map(pipeline => ({
     id: pipeline.id,
     label: pipeline.label,
     stages: pipeline.stages.map(stage => ({
@@ -137,6 +145,9 @@ export async function getHubSpotPipelines(tenantId: string): Promise<HubSpotPipe
       displayOrder: stage.displayOrder,
     })).sort((a, b) => a.displayOrder - b.displayOrder),
   }));
+
+  pipelineCache.set(tenantId, { pipelines, expiresAt: Date.now() + PIPELINE_CACHE_TTL_MS });
+  return pipelines;
 }
 
 export async function getHubSpotDealsAboveThreshold(tenantId: string, probabilityThreshold: number): Promise<HubSpotDeal[]> {

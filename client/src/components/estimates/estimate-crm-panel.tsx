@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,7 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
 
   // Search state
   const [dealSearch, setDealSearch] = useState("");
+  const [debouncedDealSearch, setDebouncedDealSearch] = useState("");
   const [companySearch, setCompanySearch] = useState("");
   const [selectedDealId, setSelectedDealId] = useState<string>("");
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
@@ -106,10 +107,16 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
     queryKey: ["/api/estimates", estimateId, "crm-link"],
   });
 
+  // Debounce deal search to avoid excessive HubSpot API calls on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedDealSearch(dealSearch), 300);
+    return () => clearTimeout(timer);
+  }, [dealSearch]);
+
   const { data: dealsData } = useQuery<{ deals: HubSpotDealResult[] }>({
-    queryKey: ["/api/crm/deals/search", dealSearch],
-    queryFn: () => apiRequest(`/api/crm/deals/search?q=${encodeURIComponent(dealSearch)}`),
-    enabled: showLinkDealDialog && dealSearch.length >= 2 && crmLink?.crmEnabled === true,
+    queryKey: ["/api/crm/deals/search", debouncedDealSearch],
+    queryFn: () => apiRequest(`/api/crm/deals/search?q=${encodeURIComponent(debouncedDealSearch)}`),
+    enabled: showLinkDealDialog && debouncedDealSearch.length >= 2 && crmLink?.crmEnabled === true,
   });
 
   const { data: companiesData } = useQuery<{ companies: HubSpotCompanyResult[] }>({
