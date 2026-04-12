@@ -113,9 +113,12 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
   });
 
   const { data: companiesData } = useQuery<{ companies: HubSpotCompanyResult[] }>({
-    queryKey: ["/api/crm/companies", companySearch],
-    queryFn: () => apiRequest(`/api/crm/companies?search=${encodeURIComponent(companySearch)}`),
-    enabled: showLinkCompanyDialog && crmLink?.crmEnabled === true,
+    queryKey: ["/api/crm/companies", companySearch.trim()],
+    queryFn: () => apiRequest(`/api/crm/companies?search=${encodeURIComponent(companySearch.trim())}`),
+    enabled:
+      showLinkCompanyDialog &&
+      companySearch.trim().length >= 2 &&
+      crmLink?.crmEnabled === true,
   });
 
   const { data: pipelines = [] } = useQuery<HubSpotPipeline[]>({
