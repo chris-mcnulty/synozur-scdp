@@ -4821,7 +4821,10 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         microsoftTeamId: clients.microsoftTeamId,
         microsoftTeamName: clients.microsoftTeamName,
       }).from(clients)
-        .where(eq(clients.id, clientId))
+        .where(and(
+          eq(clients.id, clientId),
+          tenantId ? eq(clients.tenantId, tenantId) : isNull(clients.tenantId)
+        ))
         .limit(1);
 
       if (client?.microsoftTeamId) {
