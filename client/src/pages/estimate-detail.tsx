@@ -458,6 +458,13 @@ function EstimateTeamsProvisioningDialog({
 
   const { data: defaultTeam } = useQuery<{ teamId: string; teamName: string; source: string } | null>({
     queryKey: ["/api/estimates/resolve-default-team", estimate.clientId],
+    queryFn: async () => {
+      const response = await apiRequest(
+        "GET",
+        `/api/estimates/resolve-default-team?clientId=${encodeURIComponent(String(estimate.clientId))}`,
+      );
+      return response.json();
+    },
     enabled: open && !!estimate.clientId && plannerStatus?.connected === true,
     retry: false,
   });
