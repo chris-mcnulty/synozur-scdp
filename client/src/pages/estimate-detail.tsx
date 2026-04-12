@@ -437,18 +437,24 @@ function TeamsProvisioningDialog({
 function EstimateTeamsProvisioningDialog({
   open,
   estimate,
+  clientName,
   onComplete,
 }: {
   open: boolean;
   estimate: { id: string; name: string; clientId?: string | null };
+  clientName?: string | null;
   onComplete: () => void;
 }) {
   const { toast } = useToast();
   const [step, setStep] = useState<"select-team" | "provisioning" | "done">("select-team");
+  const [mode, setMode] = useState<"new" | "existing">("new");
   const [teamSearch, setTeamSearch] = useState("");
+  const [channelSearch, setChannelSearch] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<{ id: string; displayName: string; webUrl?: string } | null>(null);
   const [channelUrl, setChannelUrl] = useState<string | null>(null);
   const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+  const [doneMessage, setDoneMessage] = useState("Channel linked successfully!");
 
   const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
     queryKey: ["/api/planner/status"],
@@ -470,6 +476,13 @@ function EstimateTeamsProvisioningDialog({
     retry: false,
   });
 
+  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ value?: { id: string; displayName: string; webUrl?: string }[] }>({
+    queryKey: ["/api/planner/teams", selectedTeam?.id, "channels"],
+    queryFn: () => apiRequest(`/api/planner/teams/${selectedTeam!.id}/channels`),
+    enabled: open && mode === "existing" && !!selectedTeam?.id,
+    retry: false,
+  });
+
   useEffect(() => {
     if (teamsData?.teams) setAllTeams(teamsData.teams);
   }, [teamsData]);
@@ -481,10 +494,25 @@ function EstimateTeamsProvisioningDialog({
     }
   }, [defaultTeam, allTeams]);
 
+  // Reset channel selection when team or mode changes
+  useEffect(() => {
+    setSelectedChannel(null);
+    setChannelSearch("");
+  }, [selectedTeam, mode]);
+
   const filteredTeams = allTeams.filter(t =>
     !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
   );
 
+  const allChannels = channelsData?.value || [];
+  const filteredChannels = allChannels.filter(c =>
+    !channelSearch.trim() || c.displayName.toLowerCase().includes(channelSearch.toLowerCase())
+  );
+
+  // Build the proposed channel name: "Client – Estimate" when client is known
+  const newChannelName = clientName ? `${clientName} \u2013 ${estimate.name}` : estimate.name;
+
+  // Create new channel
   const provisionMutation = useMutation({
     mutationFn: (data: { teamId: string; displayName: string; estimateId: string; estimateName: string }) =>
       apiRequest(`/api/planner/teams/${data.teamId}/channels/estimate`, {
@@ -497,6 +525,7 @@ function EstimateTeamsProvisioningDialog({
       }),
     onSuccess: (data: any) => {
       setChannelUrl(data?.webUrl || data?.channel?.webUrl || null);
+      setDoneMessage("Channel created successfully!");
       setStep("done");
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', estimate.id, 'channel'] });
     },
@@ -506,24 +535,62 @@ function EstimateTeamsProvisioningDialog({
     },
   });
 
-  const handleProvision = () => {
+  // Link to existing channel
+  const linkChannelMutation = useMutation({
+    mutationFn: (data: { teamId: string; teamName: string; channelId: string; channelName: string; channelWebUrl?: string }) =>
+      apiRequest(`/api/estimates/${estimate.id}/channel`, {
+        method: "POST",
+        body: JSON.stringify({ ...data, addConstellationTab: true }),
+      }),
+    onSuccess: (data: any) => {
+      setChannelUrl(selectedChannel?.webUrl || null);
+      setDoneMessage("Channel linked successfully!");
+      setStep("done");
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', estimate.id, 'channel'] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to link channel", description: error.message, variant: "destructive" });
+      setStep("select-team");
+    },
+  });
+
+  const handleConfirm = () => {
     if (!selectedTeam) return;
     setStep("provisioning");
-    provisionMutation.mutate({
-      teamId: selectedTeam.id,
-      displayName: estimate.name,
-      estimateId: estimate.id,
-      estimateName: estimate.name,
-    });
+    if (mode === "new") {
+      provisionMutation.mutate({
+        teamId: selectedTeam.id,
+        displayName: newChannelName,
+        estimateId: estimate.id,
+        estimateName: estimate.name,
+      });
+    } else {
+      if (!selectedChannel) return;
+      linkChannelMutation.mutate({
+        teamId: selectedTeam.id,
+        teamName: selectedTeam.displayName,
+        channelId: selectedChannel.id,
+        channelName: selectedChannel.displayName,
+        channelWebUrl: selectedChannel.webUrl,
+      });
+    }
   };
 
   const handleClose = () => {
     setStep("select-team");
+    setMode("new");
     setTeamSearch("");
+    setChannelSearch("");
     setSelectedTeam(null);
+    setSelectedChannel(null);
     setChannelUrl(null);
     onComplete();
   };
+
+  const canConfirm =
+    plannerStatus?.connected !== false &&
+    !!selectedTeam &&
+    (mode === "new" || !!selectedChannel);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
@@ -534,9 +601,11 @@ function EstimateTeamsProvisioningDialog({
             Set Up Teams Channel for Estimate
           </DialogTitle>
           <DialogDescription>
-            {step === "select-team" && "Create a dedicated Microsoft Teams channel for this estimate/pursuit."}
-            {step === "provisioning" && "Creating your Teams channel..."}
-            {step === "done" && "Teams channel created successfully!"}
+            {step === "select-team" && (mode === "new"
+              ? "Create a new dedicated Microsoft Teams channel for this estimate."
+              : "Link this estimate to an existing channel in Microsoft Teams.")}
+            {step === "provisioning" && (mode === "new" ? "Creating your Teams channel..." : "Linking channel...")}
+            {step === "done" && doneMessage}
           </DialogDescription>
         </DialogHeader>
 
@@ -550,6 +619,24 @@ function EstimateTeamsProvisioningDialog({
               </div>
             ) : (
               <>
+                {/* Mode toggle */}
+                <div className="flex rounded-md border overflow-hidden text-xs">
+                  <button
+                    type="button"
+                    className={`flex-1 px-3 py-2 font-medium transition-colors ${mode === "new" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => setMode("new")}
+                  >
+                    Create New Channel
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 px-3 py-2 font-medium border-l transition-colors ${mode === "existing" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => setMode("existing")}
+                  >
+                    Use Existing Channel
+                  </button>
+                </div>
+
                 {defaultTeam && (
                   <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
                     <p className="text-xs text-blue-800 dark:text-blue-300">
@@ -559,6 +646,8 @@ function EstimateTeamsProvisioningDialog({
                     </p>
                   </div>
                 )}
+
+                {/* Team picker */}
                 <div className="space-y-2">
                   <Label>Select Team</Label>
                   <div className="relative">
@@ -576,7 +665,7 @@ function EstimateTeamsProvisioningDialog({
                     <Loader2 className="h-5 w-5 animate-spin" />
                   </div>
                 ) : (
-                  <div className="max-h-52 overflow-y-auto border rounded-md">
+                  <div className="max-h-40 overflow-y-auto border rounded-md">
                     {filteredTeams.map((team) => (
                       <div
                         key={team.id}
@@ -585,6 +674,7 @@ function EstimateTeamsProvisioningDialog({
                       >
                         <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
                         <span className="text-sm font-medium">{team.displayName}</span>
+                        {selectedTeam?.id === team.id && <Check className="h-4 w-4 ml-auto text-primary" />}
                       </div>
                     ))}
                     {filteredTeams.length === 0 && (
@@ -592,11 +682,59 @@ function EstimateTeamsProvisioningDialog({
                     )}
                   </div>
                 )}
-                {selectedTeam && (
-                  <div className="rounded-lg border p-3 space-y-1 bg-muted/30">
-                    <p className="text-xs text-muted-foreground">Channel will be created in:</p>
-                    <p className="text-sm font-medium">{selectedTeam.displayName}</p>
-                    <p className="text-xs text-muted-foreground">Channel name: <strong>{estimate.name}</strong></p>
+
+                {/* Channel picker — only shown in "existing" mode once a team is selected */}
+                {mode === "existing" && selectedTeam && (
+                  <div className="space-y-2">
+                    <Label>Select Channel</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Filter channels..."
+                        value={channelSearch}
+                        onChange={(e) => setChannelSearch(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                    {channelsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="max-h-40 overflow-y-auto border rounded-md">
+                        {filteredChannels.map((ch) => (
+                          <div
+                            key={ch.id}
+                            className={`flex items-center p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedChannel?.id === ch.id ? "bg-primary/10" : ""}`}
+                            onClick={() => setSelectedChannel(ch)}
+                          >
+                            <span className="text-sm font-medium flex-1">{ch.displayName}</span>
+                            {selectedChannel?.id === ch.id && <Check className="h-4 w-4 text-primary" />}
+                          </div>
+                        ))}
+                        {filteredChannels.length === 0 && (
+                          <p className="text-sm text-muted-foreground p-3 text-center">No channels found</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Summary card */}
+                {selectedTeam && (mode === "new" || selectedChannel) && (
+                  <div className="rounded-lg border p-3 space-y-1 bg-muted/30 text-sm">
+                    {mode === "new" ? (
+                      <>
+                        <p className="text-xs text-muted-foreground">New channel will be created in:</p>
+                        <p className="font-medium">{selectedTeam.displayName}</p>
+                        <p className="text-xs text-muted-foreground">Channel name: <strong>{newChannelName}</strong></p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground">Linking to existing channel:</p>
+                        <p className="font-medium">{selectedTeam.displayName} → {selectedChannel?.displayName}</p>
+                      </>
+                    )}
                   </div>
                 )}
               </>
@@ -607,7 +745,9 @@ function EstimateTeamsProvisioningDialog({
         {step === "provisioning" && (
           <div className="flex flex-col items-center justify-center py-8 gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Creating channel and configuring tabs...</p>
+            <p className="text-sm text-muted-foreground">
+              {mode === "new" ? "Creating channel and configuring tabs..." : "Linking channel..."}
+            </p>
           </div>
         )}
 
@@ -616,7 +756,7 @@ function EstimateTeamsProvisioningDialog({
             <div className="rounded-lg border p-4 bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
               <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
                 <Check className="h-5 w-5" />
-                <p className="text-sm font-medium">Channel created successfully!</p>
+                <p className="text-sm font-medium">{doneMessage}</p>
               </div>
             </div>
             {channelUrl && (
@@ -637,11 +777,8 @@ function EstimateTeamsProvisioningDialog({
           {step === "select-team" && (
             <>
               <Button variant="outline" onClick={handleClose}>Cancel</Button>
-              <Button
-                disabled={plannerStatus?.connected === false || !selectedTeam}
-                onClick={handleProvision}
-              >
-                Create Channel
+              <Button disabled={!canConfirm} onClick={handleConfirm}>
+                {mode === "new" ? "Create Channel" : "Link Channel"}
               </Button>
             </>
           )}
@@ -6116,6 +6253,7 @@ function EstimateDetailContent() {
         <EstimateTeamsProvisioningDialog
           open={showEstimateTeamsDialog}
           estimate={{ id: estimate.id, name: estimate.name, clientId: estimate.clientId }}
+          clientName={estimateClient?.name}
           onComplete={() => setShowEstimateTeamsDialog(false)}
         />
       )}

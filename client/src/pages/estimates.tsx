@@ -693,7 +693,9 @@ export default function Estimates() {
               if (teamsMode === 'new' && selectedTeam) {
                 estimateData.teamsTeamId = selectedTeam.id;
                 estimateData.teamsTeamName = selectedTeam.displayName;
-                estimateData.teamsChannelName = formData.get('name') as string; // Channel named after estimate
+                const selectedClientName = clients.find((c: any) => c.id === selectedClientId)?.name;
+                const estimateName = formData.get('name') as string;
+                estimateData.teamsChannelName = selectedClientName ? `${selectedClientName} \u2013 ${estimateName}` : estimateName;
               } else if (teamsMode === 'existing' && selectedTeam && !selectedChannel) {
                 // User selected a team but no channel — block submission
                 toast({
@@ -1163,7 +1165,10 @@ export default function Estimates() {
                             {selectedTeam && teamsMode === 'new' && (
                               <div className="rounded-md border p-2 bg-muted/30">
                                 <p className="text-xs text-muted-foreground">
-                                  A new channel will be created in <strong>{selectedTeam.displayName}</strong> named after the estimate.
+                                  A new channel will be created in <strong>{selectedTeam.displayName}</strong>.
+                                  {selectedClientId && clients.find((c: any) => c.id === selectedClientId) && (
+                                    <> Channel name: <strong>{clients.find((c: any) => c.id === selectedClientId)?.name} &ndash; [estimate name]</strong></>
+                                  )}
                                 </p>
                               </div>
                             )}
