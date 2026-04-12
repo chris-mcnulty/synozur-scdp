@@ -459,6 +459,39 @@ The following major features have been delivered and are live in production. See
 
 ---
 
+### 🤖 Copilot Agent Write Activities
+
+**Status:** 🚧 In Progress — Phase 0 + client discovery/create shipped (April 2026)
+**Target Completion:** Q2 2026 (estimate creation, HubSpot, Teams linkage)
+**Value Proposition:** Extend the Copilot Studio agent beyond read-only queries so it can drive the full early-stage consulting workflow from a conversation: discover clients, create them, generate estimates from narratives or fixed-hour/fixed-price summaries, and wire up HubSpot deals and Teams channels — without leaving Teams or M365 Copilot.
+
+#### Phase 0 — Write Infrastructure ✅ (April 2026)
+- Versioned `/mcp/v1/*` write namespace alongside existing read surface
+- `mcp_write_audit` table with per-request idempotency, replay cache, request-hash conflict detection
+- `MCP_WRITES_ENABLED` feature flag (default off); `X-Idempotency-Key` required on every write; `?dryRun=true` universal preview
+- Response envelope extended with `idempotent`, `dryRun`, `auditId`, `correlationId`
+- Stricter write role policy (admin, pm, portfolio-manager; dropped executive and billing-admin from writes)
+- Diagnostic `POST /mcp/v1/ping` endpoint
+- OpenAPI spec bumped to v1.1.0; connector setup doc rewritten to cover the write flow
+
+#### Phase 1-2 — Client Discovery & Creation ✅ (April 2026)
+- `GET /mcp/clients` returns linkage signals (`hasHubspotLink`, `hasTeamsLink`, `activeEstimateCount`) so the agent can branch before acting
+- `POST /mcp/v1/clients` with near-match duplicate detection (normalized-name + Levenshtein); returns 409 with candidates unless `force: true`
+
+#### Phase 3 — Estimate Creation (planned)
+- Three estimate shapes — narrative (AI-generated, ≤8 summary line items), block-of-hours, fixed-price
+- New `aiService.generateEstimateFromNarrative()`
+- Pre-create duplicate check for active estimates on the same client
+
+#### Phase 4 — HubSpot Linkage (planned)
+- `POST /mcp/v1/clients/:id/hubspot-link` with `createIfMissing` flag, writes `crm_object_mappings`
+
+#### Phase 5 — Teams Team & Channel Linkage (planned)
+- `POST /mcp/v1/clients/:id/teams-link` + `POST /mcp/v1/projects/:id/teams-channel`
+- Partial-failure envelope surfaces Teams/HubSpot warnings without rolling back the estimate
+
+---
+
 ### 💹 Priority: QuickBooks Online Integration for Consultants
 
 **Status:** 📋 Planned  

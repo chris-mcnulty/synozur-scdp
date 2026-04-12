@@ -3651,3 +3651,44 @@ export const insertTeamsMemberSyncStateSchema = createInsertSchema(teamsMemberSy
 });
 export type InsertTeamsMemberSyncState = z.infer<typeof insertTeamsMemberSyncStateSchema>;
 export type TeamsMemberSyncState = typeof teamsMemberSyncState.$inferSelect;
+
+// ============================================================================
+// MCP WRITE AUDIT (Phase 0 of Copilot Write Activities)
+// ============================================================================
+// Tracks every mutation that flows through /mcp/v1/* endpoints. Serves three
+// purposes:
+//   1. Idempotency replay: a POST with the same X-Idempotency-Key returns the
+//      cached response instead of re-executing, so a retrying Copilot agent
+//      never double-creates resources.
+//   2. Audit trail: every write is attributable to a user + tenant + endpoint.
+//   3. Forensics: requestHash lets us detect when a replayed key carries a
+//      different payload (treated as a 409 conflict).
+
+export const mcpWriteAudit = pgTable("mcp_write_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  userId: varchar("user_id").references(() => users.id),
+  endpoint: text("endpoint").notNull(),          // e.g. "POST /mcp/v1/clients"
+  idempotencyKey: varchar("idempotency_key", { length: 255 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),  // sha256 hex
+  responseStatus: integer("response_status").notNull(),
+  responseBody: jsonb("response_body"),
+  resourceType: varchar("resource_type", { length: 50 }),
+  resourceId: varchar("resource_id", { length: 255 }),
+  correlationId: varchar("correlation_id", { length: 64 }),
+  dryRun: boolean("dry_run").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueTenantUserKey: uniqueIndex("uq_mcp_write_audit_tenant_user_key")
+    .on(table.tenantId, table.userId, table.idempotencyKey),
+  tenantIdx: index("idx_mcp_write_audit_tenant").on(table.tenantId),
+  createdIdx: index("idx_mcp_write_audit_created").on(table.createdAt),
+  resourceIdx: index("idx_mcp_write_audit_resource").on(table.resourceType, table.resourceId),
+}));
+
+export const insertMcpWriteAuditSchema = createInsertSchema(mcpWriteAudit).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertMcpWriteAudit = z.infer<typeof insertMcpWriteAuditSchema>;
+export type McpWriteAudit = typeof mcpWriteAudit.$inferSelect;

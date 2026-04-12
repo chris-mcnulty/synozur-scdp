@@ -1,7 +1,67 @@
 # Constellation Product Backlog
 
-**Last Updated**: March 19, 2026
-**Version**: 6.1 — v1.8 production bug fixes (invoice deletion contamination, reimbursement data integrity, currency selector on Edit Expense).
+**Last Updated**: April 12, 2026
+**Version**: 6.2 — Copilot Write Activities Phase 0 landed (foundation + client discovery + client create). Phases 3-5 (estimates, HubSpot linkage, Teams channel linkage) tracked below.
+
+---
+
+## 🆕 In Progress — Copilot Agent Write Activities
+
+**Status:** Phase 0 complete; Phases 1–2 shipped for clients
+**Effort:** High (6 phases total, ~8–10 weeks to full scope)
+**Design:** `/root/.claude/plans/recursive-squishing-tower.md` (planning artifact) + this backlog section
+
+### Why
+The MCP server and Copilot Studio agent are currently read-only. Users asking the agent "start an estimate for Acme Corp — block of 120 hours" get routed back to the web UI. Adding a narrow, safe write surface unlocks conversational productivity for the highest-frequency consulting workflow: estimation.
+
+### Phase 0 — Write Infrastructure ✅ COMPLETE (April 12, 2026)
+- [x] `mcp_write_audit` table (tenant, user, endpoint, idempotency key, request hash, response body, resource, dry-run flag, correlation ID)
+- [x] `mcpWriteGuard` middleware: `MCP_WRITES_ENABLED` feature flag, `X-Idempotency-Key` header requirement with replay-cache, request-hash conflict detection, `?dryRun=true` universal short-circuit, envelope wrapper (`idempotent`, `auditId`, `correlationId`, `dryRun`)
+- [x] New `/server/routes/mcp-write.ts` module, `/mcp/v1/*` namespace registered in `server/routes.ts`
+- [x] Write role constants stricter than read (admin, pm, portfolio-manager only — dropped executive and billing-admin for writes)
+- [x] `POST /mcp/v1/ping` diagnostic endpoint for the full write stack
+- [x] OpenAPI spec updated to v1.1.0 with write paths and `X-Idempotency-Key` header
+- [x] `MCP_CONNECTOR_SETUP.md` — removed READ-ONLY language; added Part 4 (write activities) covering feature flag, idempotency, dry-run, envelope, role policy, canonical agent flow
+
+### Phase 1 — Client Discovery ✅ COMPLETE (April 12, 2026)
+- [x] `GET /mcp/clients?search=&limit=` — case-insensitive substring match on name + shortName
+- [x] Linkage signals in response: `hasHubspotLink` (from `crm_object_mappings`), `hasTeamsLink` (from `client_teams` or legacy `clients.microsoftTeamId`), `activeEstimateCount` (draft/sent/approved estimates)
+- [x] Scoped to caller's tenant, role-gated via `ESTIMATE_ROLES`
+
+### Phase 2 — Client Creation ✅ COMPLETE (April 12, 2026)
+- [x] `POST /mcp/v1/clients` with Zod validation, tenant from auth context (body `tenantId` ignored)
+- [x] Near-match duplicate detection (normalize + substring + Levenshtein) against existing clients in tenant — returns 409 with candidates unless `force: true`
+- [x] Shared `insertClientSchema` validation consistent with `/api/clients`
+
+### Phase 3 — Estimate Creation (3 variants) — NEXT
+**Effort:** Medium (2–3 weeks)
+- [ ] `POST /mcp/v1/estimates/from-narrative` — AI-generated 3–8 summary line items (hard cap)
+- [ ] `POST /mcp/v1/estimates/block-hours` — single line item, blended rate via `RateResolver.resolveRates()`
+- [ ] `POST /mcp/v1/estimates/fixed-price` — `pricingType: fixed`, one line per phase
+- [ ] New `aiService.generateEstimateFromNarrative()` alongside `generateSubSOWNarrative()` in `server/services/ai-service.ts`
+- [ ] Pre-create duplicate check for active estimates on the same client (409 unless `force: true`)
+- [ ] Extract `createEstimateCore()` helper from `/server/routes/estimates.ts:5098`
+- [ ] Prompt-injection sanitization on the `narrative` field
+
+### Phase 4 — HubSpot Linkage
+**Effort:** Small-Medium (1–2 weeks)
+- [ ] `GET /mcp/v1/hubspot/search?type=company|deal&query=`
+- [ ] `POST /mcp/v1/clients/:clientId/hubspot-link` with `createIfMissing` flag — writes `crm_object_mappings`, uses `createHubSpotDeal()` from `hubspot-client.ts`
+
+### Phase 5 — Teams Team + Channel Linkage
+**Effort:** Medium (2 weeks)
+- [ ] `POST /mcp/v1/clients/:clientId/teams-link` — ensures `client_teams` row (creates team via Graph when `createIfMissing`)
+- [ ] `POST /mcp/v1/projects/:projectId/teams-channel` — ensures `project_channels` row via `plannerService.createChannel()`
+- [ ] Partial-failure envelope: `warnings[]` preserved; no rollback of prior successful steps
+
+### Phase 6 — Docs, Agent Instructions, Rollout
+- [x] OpenAPI spec updated for each phase
+- [x] Connector setup doc updated with write-flow agent instructions (Phase 0)
+- [ ] `USER_GUIDE.md` — new "Conversational Estimate Creation" section (gated on Phase 3)
+- [ ] Enable `MCP_WRITES_ENABLED=true` in staging for pilot tenant(s) after Phase 3
+
+### Explicit Non-Goals for v1
+Estimate approval/status transitions, invoice generation, line-item-level edits (would defeat the agent metaphor), project creation (use existing approve-estimate flow), user/role management, expense submission.
 
 ---
 

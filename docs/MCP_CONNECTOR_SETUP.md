@@ -1,6 +1,10 @@
 # Constellation MCP — Power Platform Connector & Copilot Studio Agent Setup
 
-This guide walks through creating a Custom Connector in Power Platform and wiring it into a Copilot Studio agent so Microsoft 365 Copilot can query Constellation's read-only MCP endpoints.
+This guide walks through creating a Custom Connector in Power Platform and wiring it into a Copilot Studio agent so Microsoft 365 Copilot can query Constellation MCP endpoints.
+
+The MCP surface has two tiers:
+- **Read endpoints** under `/mcp/*` — broadly available, no feature flag.
+- **Write endpoints** under `/mcp/v1/*` — gated by the `MCP_WRITES_ENABLED` environment variable (default off) and require an `X-Idempotency-Key` header on every call. See [Part 4: Write Activities](#part-4-write-activities-mcpv1) below.
 
 ---
 
@@ -242,7 +246,19 @@ GUIDELINES:
 - When asked about estimates, show key metrics: name, status, total hours, total fees, margin, and type.
 - For estimate line items, group by epic/stage when possible and highlight the totals.
 - For expenses, use the category summary to give a quick breakdown before showing details.
-- This is READ-ONLY access. If the user asks to create, update, or approve anything, explain that Constellation MCP is currently read-only and direct them to the Constellation web application.
+
+WRITE ACTIVITIES (Phase 0 — gated by MCP_WRITES_ENABLED):
+- SearchClients: Find clients by name with linkage signals (hasHubspotLink, hasTeamsLink, activeEstimateCount) before proposing a new record.
+- CreateClient: Create a client. Always call SearchClients first. If any similar client is returned, confirm with the user before retrying with force=true.
+- WritePing: Diagnostic smoke test for the write stack.
+
+For ALL write endpoints:
+- Generate a fresh UUID and pass it as the X-Idempotency-Key header on every call. Reuse the same key only when retrying after a transient error.
+- Before any destructive call, issue the same request with ?dryRun=true and show the preview to the user. Only proceed on explicit confirmation.
+- Read responses — `idempotent: true` means you hit the replay cache; `dryRun: true` means nothing was written.
+- If a write returns 403 with code `mcp_writes_disabled`, writes are not yet enabled on this deployment — tell the user to contact their admin.
+
+If the user asks for write capabilities that are not yet exposed (estimates, HubSpot linkage, Teams channels), explain that the write surface is being rolled out in phases and direct them to the Constellation web application for now.
 ```
 
 ### 3.4 Configure authentication
@@ -296,3 +312,67 @@ To allow the agent to post and respond in Teams chats and channels:
 | 403 "Insufficient permissions" | The user's Constellation role doesn't have access to that endpoint. Check the RBAC table in `docs/MCP_README.md` |
 | Empty results | Check date filters and confirm the user has data in the active tenant |
 | HubSpot endpoints return empty | The tenant hasn't connected HubSpot in Constellation's Organization Settings |
+| 403 `mcp_writes_disabled` on `/mcp/v1/*` | Set `MCP_WRITES_ENABLED=true` in the server environment and redeploy. Default is off. |
+| 400 `mcp_write_missing_idempotency_key` | Every POST to `/mcp/v1/*` must include the `X-Idempotency-Key` header (UUID or opaque token). |
+| 409 `mcp_write_idempotency_conflict` | The same key was reused with a different request body. Generate a fresh UUID. |
+| 409 `mcp_client_near_match` on `CreateClient` | A client with a similar name already exists. Confirm with the user, then retry with `"force": true`. |
+
+---
+
+## Part 4: Write Activities (`/mcp/v1/*`)
+
+The Phase 0 write surface is intentionally minimal — a diagnostic ping plus client creation. Later phases will add estimate creation, HubSpot linkage, and Teams channel provisioning. The conversational contract is identical across all write endpoints.
+
+### 4.1 Enable writes on the server
+
+Writes are off by default in every deployment. To enable:
+
+```
+MCP_WRITES_ENABLED=true
+```
+
+…and redeploy. Leaving this off (or unset) causes every `/mcp/v1/*` POST to return `403 mcp_writes_disabled`. The read surface under `/mcp/*` is unaffected.
+
+### 4.2 Idempotency keys
+
+Every write endpoint requires an `X-Idempotency-Key` header. Generate a fresh UUID per logical operation. If the Copilot agent retries after a transient network error, **reuse the same key**: the server will return the original response instead of creating a duplicate. Reusing a key with a different body is a 409.
+
+Keys are scoped to `(tenantId, userId, key)` and persisted to the `mcp_write_audit` table.
+
+### 4.3 Dry-run previews
+
+Append `?dryRun=true` to any write endpoint. The server validates input, runs duplicate-detection logic, and returns a `wouldCreate` payload without writing to the database or the audit log. The response envelope carries `dryRun: true`. Use this to drive conversational confirmation before the real call.
+
+### 4.4 Response envelope
+
+All write endpoints return an envelope of the form:
+
+```json
+{
+  "data": { ... },
+  "created": true,
+  "idempotent": false,
+  "dryRun": false,
+  "auditId": "<uuid>",
+  "correlationId": "<uuid>"
+}
+```
+
+- `idempotent: true` — this was a replay; the inner `data` is the cached body.
+- `dryRun: true` — nothing was written.
+- `auditId` — the row ID in `mcp_write_audit`; useful for support.
+- `correlationId` — use to correlate across logs.
+
+### 4.5 Role policy
+
+Writes require a stricter role than reads. Phase 0 allows only `admin`, `pm`, and `portfolio-manager`. `executive` and `billing-admin` — who can *read* estimates — are intentionally excluded from client creation.
+
+### 4.6 Canonical agent flow
+
+The client-creation conversation is:
+
+1. Call `SearchClients` with a partial name — present candidates.
+2. If a match is confirmed, stop (use the existing client ID).
+3. If no match or the user wants a new record, call `CreateClient` with `?dryRun=true` and show the preview.
+4. On user confirmation, repeat the call without `dryRun`.
+5. If the real call returns 409 `mcp_client_near_match`, surface the candidates and ask the user whether to link to an existing record or force-create.

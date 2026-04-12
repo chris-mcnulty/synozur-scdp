@@ -13,6 +13,7 @@ import {
   isHubSpotConnected,
 } from "../services/hubspot-client.js";
 import { mcpBearerAuth } from "../auth/mcp-bearer-auth.js";
+import { searchClientsWithLinkage } from "./mcp-write.js";
 
 interface McpRouteDeps {
   requireAuth: any;
@@ -676,6 +677,36 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       res.status(500).json({ error: "Failed to retrieve linked projects" });
     }
   });
+
+  // ═══════════════════════════════════════════════════════════
+  // CLIENTS
+  // ═══════════════════════════════════════════════════════════
+
+  // ─── /mcp/clients — search clients with linkage signals ───
+  // Used by the Copilot agent to discover existing client records before
+  // creating a new one, and to branch on whether HubSpot or Teams are already
+  // wired up. Supports:
+  //   ?search=<substring>  (case-insensitive match on name + shortName)
+  //   ?limit=<1..100>      (default 25)
+  app.get(
+    "/mcp/clients",
+    requireAuth,
+    requireMcpTenant,
+    requireRole(ESTIMATE_ROLES),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = requireTenantId(req);
+        const search = (req.query.search as string | undefined) ?? undefined;
+        const rawLimit = parseInt((req.query.limit as string) || "25", 10);
+        const limit = Number.isFinite(rawLimit) ? rawLimit : 25;
+        const results = await searchClientsWithLinkage(tenantId, search, limit);
+        res.json({ data: results });
+      } catch (error: any) {
+        console.error("[MCP] /mcp/clients error:", error);
+        res.status(500).json({ error: "Failed to retrieve clients" });
+      }
+    }
+  );
 
   // ═══════════════════════════════════════════════════════════
   // ESTIMATES
