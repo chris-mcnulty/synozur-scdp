@@ -584,7 +584,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           if (tmpl.tabType === "constellation") {
             constellationTab = await plannerService.createConstellationTab(
               req.params.teamId, channel.id,
-              { entityType: 'estimate', entityId: estimateId, entityName: tmpl.tabName || estimateName || displayName }
+              { entityType: 'estimate', entityId: estimateId, entityName: 'Estimate' }
             );
           }
           // Skip planner tabs for estimate channels — estimates don't need task plans

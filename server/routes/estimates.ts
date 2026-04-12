@@ -325,7 +325,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             await plannerService.createConstellationTab(teamsTeamId, teamsExistingChannelId, {
               entityType: 'estimate',
               entityId: estimateId,
-              entityName: estimateName,
+              entityName: 'Estimate',
             });
           } catch (tabErr: any) {
             console.warn('[ESTIMATES] Constellation tab failed for existing channel (non-blocking):', tabErr.message);
@@ -344,7 +344,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             await plannerService.createConstellationTab(teamsTeamId, channel.id, {
               entityType: 'estimate',
               entityId: estimateId,
-              entityName: estimateName,
+              entityName: 'Estimate',
             });
           } catch (tabErr: any) {
             console.warn('[ESTIMATES] Constellation tab failed (non-blocking):', tabErr.message);
