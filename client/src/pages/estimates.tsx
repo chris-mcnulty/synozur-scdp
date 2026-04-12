@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy, Archive, ArchiveRestore, Sparkles } from "lucide-react";
+import { SiHubspot } from "react-icons/si";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -125,6 +126,13 @@ export default function Estimates() {
       return Array.isArray(data) ? data : [];
     },
   });
+
+  // Fetch which estimates have a HubSpot deal linked (single bulk query, no per-row requests)
+  const { data: crmDealLinks } = useQuery<{ crmEnabled: boolean; linkedEstimateIds: string[] }>({
+    queryKey: ["/api/crm/estimates/deal-links"],
+  });
+  const crmEnabled = crmDealLinks?.crmEnabled ?? false;
+  const linkedEstimateIds = new Set(crmDealLinks?.linkedEstimateIds ?? []);
 
   const estimates = allEstimates.filter((estimate) => {
     switch (activeTab) {
@@ -416,6 +424,11 @@ export default function Estimates() {
                     <TableHead>Project</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
+                    {crmEnabled && (
+                      <TableHead className="w-16 text-center" title="HubSpot deal link">
+                        <SiHubspot className="h-3.5 w-3.5 mx-auto text-[#ff7a59]" />
+                      </TableHead>
+                    )}
                     <TableHead>Total Hours</TableHead>
                     <TableHead>Quote Total</TableHead>
                     <TableHead>Valid Until</TableHead>
@@ -443,6 +456,17 @@ export default function Estimates() {
                         </span>
                       </TableCell>
                       <TableCell>{getStatusBadge(estimate.status)}</TableCell>
+                      {crmEnabled && (
+                        <TableCell className="text-center">
+                          {linkedEstimateIds.has(estimate.id) ? (
+                            <span title="Linked to HubSpot deal" className="inline-flex items-center justify-center">
+                              <SiHubspot className="h-3.5 w-3.5 text-[#ff7a59]" />
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>{(estimate.totalHours || 0).toFixed(2)}</TableCell>
                       <TableCell>
                         {estimate.presentedTotal && estimate.presentedTotal !== estimate.totalAmount ? (

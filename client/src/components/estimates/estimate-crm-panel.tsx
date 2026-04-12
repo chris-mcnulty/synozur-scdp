@@ -22,6 +22,7 @@ import {
   Loader2,
   UserPlus,
   X,
+  AlertTriangle,
 } from "lucide-react";
 
 interface EstimateCrmPanelProps {
@@ -310,6 +311,16 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Prominent callout when this estimate has no linked deal */}
+          {!crmLink.dealLinked && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Not linked to a HubSpot deal</p>
+                <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">Link or create a deal below to track this estimate in HubSpot.</p>
+              </div>
+            </div>
+          )}
           {/* Company/Client Link Section */}
           <div>
             <div className="flex items-center gap-2 mb-2">

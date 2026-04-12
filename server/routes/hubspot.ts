@@ -1535,6 +1535,30 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
   // Estimate CRM link status (for estimate detail page)
   // ============================================================================
 
+  // Bulk endpoint: which estimates in this tenant have a HubSpot deal linked?
+  // Returns { crmEnabled, linkedEstimateIds } — one cheap query, no HubSpot API calls.
+  app.get("/api/crm/estimates/deal-links", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.json({ crmEnabled: false, linkedEstimateIds: [] });
+      }
+
+      const dealMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
+      const linkedEstimateIds = dealMappings
+        .filter(m => m.localObjectType === "estimate")
+        .map(m => m.localObjectId);
+
+      res.json({ crmEnabled: true, linkedEstimateIds });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching estimate deal links:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/estimates/:estimateId/crm-link", deps.requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
