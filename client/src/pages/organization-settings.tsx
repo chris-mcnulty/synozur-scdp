@@ -6,6 +6,7 @@ import { z } from "zod";
 import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { canManageSystemSettings } from "@/lib/auth";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog, Search } from "lucide-react";
 import { MicrosoftPlannerIcon, MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
+import { TeamsLinksTab } from "@/components/admin/TeamsLinksTab";
 
 interface TenantInfo {
   id: string;
@@ -3002,6 +3004,12 @@ export default function OrganizationSettings() {
                 <Languages className="w-4 h-4" />
                 <span>Vocabulary</span>
               </TabsTrigger>
+              {canManageSystemSettings(user?.role) && (
+                <TabsTrigger value="teams-links" className="flex items-center gap-2" data-testid="tab-teams-links">
+                  <MicrosoftTeamsIcon className="w-4 h-4" />
+                  <span>Teams Links</span>
+                </TabsTrigger>
+              )}
               <TabsTrigger value="support" className="flex items-center gap-2">
                 <LifeBuoy className="w-4 h-4" />
                 <span>Support</span>
@@ -4013,6 +4021,12 @@ export default function OrganizationSettings() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {canManageSystemSettings(user?.role) && (
+              <TabsContent value="teams-links" className="space-y-6">
+                <TeamsLinksTab />
+              </TabsContent>
+            )}
 
             <TabsContent value="support" className="space-y-6">
               <AdminSupportTab />
