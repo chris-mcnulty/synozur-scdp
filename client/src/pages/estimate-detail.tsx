@@ -699,11 +699,30 @@ function EstimateTeamsProvisioningDialog({
                     );
                   }
 
-                  // No existing Teams presence
+                  // No existing Teams presence — check if a default pursuit team is configured
+                  if (defaultTeam?.teamId) {
+                    const isPursuitDefault = defaultTeam.source === 'tenant';
+                    return (
+                      <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 space-y-1">
+                        <p className="text-xs font-medium text-blue-800 dark:text-blue-300">
+                          {isPursuitDefault
+                            ? `First pursuit with ${clientName || 'this client'}`
+                            : `No dedicated team yet for ${clientName || 'this client'}`}
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-400">
+                          {isPursuitDefault
+                            ? `We've pre-selected your default pursuit team: `
+                            : `Using the linked team: `}
+                          <strong>{defaultTeam.teamName}</strong>. You can change this below.
+                        </p>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div className="rounded-lg border p-3 bg-muted/40 border-muted-foreground/20">
                       <p className="text-xs text-muted-foreground">
-                        No existing Teams presence for this client. If this is an ongoing client relationship, consider creating a dedicated Team for them rather than using a general one.
+                        No existing Teams presence for this client. Select a team below, or consider creating a dedicated one if this becomes an ongoing client relationship.
                       </p>
                     </div>
                   );
@@ -1011,6 +1030,26 @@ function EstimateDetailContent() {
     queryKey: ['/api/estimates', id, 'channel'],
     enabled: !!id,
     retry: false,
+  });
+
+  // Re-provision (retry tab + folders) for an already-linked channel
+  const reprovisionMutation = useMutation({
+    mutationFn: () => {
+      if (!estimateChannel) throw new Error("No channel linked");
+      return apiRequest(
+        `/api/planner/teams/${estimateChannel.teamId}/channels/${estimateChannel.channelId}/reprovision-estimate`,
+        { method: "POST", body: JSON.stringify({ estimateId: id }) }
+      );
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Channel setup retried",
+        description: `Tab: ${data.results?.tab ?? '—'}. Folders: ${data.results?.folders ?? '—'}.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Retry failed", description: error.message, variant: "destructive" });
+    },
   });
 
   // Check if estimate is editable (only draft estimates can be modified, and shared-read-only users cannot edit)
@@ -2440,17 +2479,29 @@ function EstimateDetailContent() {
             
             {/* Teams Channel Link */}
             {estimateChannel?.channelWebUrl ? (
-              <a
-                href={estimateChannel.channelWebUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                title={`Open ${estimateChannel.channelName || 'channel'} in Teams`}
-              >
-                <MicrosoftTeamsIcon className="h-4 w-4" />
-                <span>{estimateChannel.channelName || 'Teams Channel'}</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              <div className="flex items-center gap-2">
+                <a
+                  href={estimateChannel.channelWebUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  title={`Open ${estimateChannel.channelName || 'channel'} in Teams`}
+                >
+                  <MicrosoftTeamsIcon className="h-4 w-4" />
+                  <span>{estimateChannel.channelName || 'Teams Channel'}</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                  title="Retry tab and folder setup"
+                  disabled={reprovisionMutation.isPending}
+                  onClick={() => reprovisionMutation.mutate()}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${reprovisionMutation.isPending ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
             ) : (
               <Button
                 variant="outline"

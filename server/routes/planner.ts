@@ -316,6 +316,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       let plannerTabAdded = false;
       const user4Tab = req.user as any;
       const tabTenantId = user4Tab?.activeTenantId || user4Tab?.primaryTenantId || user4Tab?.tenantId;
+      const tabSsoToken = user4Tab?.ssoRefreshToken;
 
       let activeTabTemplates: Array<{ tabType: string; tabName: string; sortOrder: number }> = [];
       if (tabTenantId) {
@@ -338,7 +339,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
             if (tmpl.tabType === "constellation") {
               constellationTab = await plannerService.createConstellationTab(
                 req.params.teamId, channel.id,
-                { projectId, projectName: tmpl.tabName || projectName || displayName }
+                { projectId, projectName: tmpl.tabName || projectName || displayName, ssoRefreshToken: tabSsoToken }
               );
             } else if (tmpl.tabType === "planner") {
               try {
@@ -358,7 +359,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           constellationTab = await plannerService.createConstellationTab(
             req.params.teamId,
             channel.id,
-            { projectId: "", projectName: projectName || displayName }
+            { projectId: "", projectName: projectName || displayName, ssoRefreshToken: tabSsoToken }
           );
         } catch (tabError: any) {
           console.warn("[PLANNER] Constellation tab auto-add failed (non-blocking):", tabError.message);
@@ -522,10 +523,11 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         return res.status(400).json({ message: "projectId and projectName are required" });
       }
 
+      const ssoToken = (req.user as any)?.ssoRefreshToken;
       const tab = await plannerService.createConstellationTab(
         req.params.teamId,
         req.params.channelId,
-        { projectId, projectName }
+        { projectId, projectName, ssoRefreshToken: ssoToken }
       );
 
       if (!tab) {
@@ -562,6 +564,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       let constellationTab = null;
       const user4Tab = req.user as any;
       const tabTenantId = user4Tab?.activeTenantId || user4Tab?.primaryTenantId || user4Tab?.tenantId;
+      const estimateSsoToken = user4Tab?.ssoRefreshToken;
 
       // Load tab templates for estimate channels
       let activeTabTemplates: Array<{ tabType: string; tabName: string; sortOrder: number }> = [];
@@ -584,7 +587,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           if (tmpl.tabType === "constellation") {
             constellationTab = await plannerService.createConstellationTab(
               req.params.teamId, channel.id,
-              { entityType: 'estimate', entityId: estimateId, entityName: 'Estimate' }
+              { entityType: 'estimate', entityId: estimateId, entityName: 'Estimate', ssoRefreshToken: estimateSsoToken }
             );
           }
           // Skip planner tabs for estimate channels — estimates don't need task plans
@@ -647,7 +650,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
             : DEFAULT_ESTIMATE_FOLDER_TEMPLATES;
 
           if (folderNames.length > 0) {
-            folderResults = await plannerService.provisionChannelFolders(req.params.teamId, channel.id, folderNames);
+            folderResults = await plannerService.provisionChannelFolders(req.params.teamId, channel.id, folderNames, estimateSsoToken);
           }
         }
       } catch (folderError: any) {
@@ -663,6 +666,70 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
     } catch (error: any) {
       console.error("[PLANNER] Failed to provision estimate channel:", error);
       res.status(500).json({ message: "Failed to provision estimate channel: " + error.message });
+    }
+  });
+
+  // Re-provision an existing estimate channel: retry tab creation + folder provisioning
+  app.post("/api/planner/teams/:teamId/channels/:channelId/reprovision-estimate", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('../services/planner-service');
+      const { estimateId } = req.body;
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      const ssoToken = user?.ssoRefreshToken;
+
+      if (!estimateId) {
+        return res.status(400).json({ message: "estimateId is required" });
+      }
+
+      const results: { tab: string; folders: string } = { tab: 'skipped', folders: 'skipped' };
+
+      // 1. Retry Constellation tab
+      try {
+        const tab = await plannerService.createConstellationTab(req.params.teamId, req.params.channelId, {
+          entityType: 'estimate',
+          entityId: estimateId,
+          entityName: 'Estimate',
+          ssoRefreshToken: ssoToken,
+        });
+        results.tab = tab ? 'created' : 'failed';
+      } catch (tabErr: any) {
+        results.tab = `error: ${tabErr.message}`;
+        console.warn('[PLANNER] Re-provision tab failed:', tabErr.message);
+      }
+
+      // 2. Retry folder provisioning
+      if (tenantId) {
+        try {
+          const estimateFolderTemplates = await db.select()
+            .from(teamsFolderTemplates)
+            .where(and(
+              eq(teamsFolderTemplates.tenantId, tenantId),
+              eq(teamsFolderTemplates.scope, 'estimate'),
+              eq(teamsFolderTemplates.isActive, true)
+            ))
+            .orderBy(teamsFolderTemplates.sortOrder);
+
+          const folderNames = estimateFolderTemplates.length > 0
+            ? estimateFolderTemplates.map(f => f.folderName)
+            : DEFAULT_ESTIMATE_FOLDER_TEMPLATES;
+
+          if (folderNames.length > 0) {
+            const folderResult = await plannerService.provisionChannelFolders(
+              req.params.teamId, req.params.channelId, folderNames, ssoToken
+            );
+            results.folders = `${folderResult.created.length} created, ${folderResult.failed.length} failed`;
+          }
+        } catch (folderErr: any) {
+          results.folders = `error: ${folderErr.message}`;
+          console.warn('[PLANNER] Re-provision folders failed:', folderErr.message);
+        }
+      }
+
+      res.json({ success: true, results });
+    } catch (error: any) {
+      console.error("[PLANNER] Re-provision failed:", error);
+      res.status(500).json({ message: "Re-provision failed: " + error.message });
     }
   });
 

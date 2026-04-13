@@ -339,10 +339,47 @@ class PlannerService {
 
   // ============ CONSTELLATION TAB OPERATIONS ============
 
-  async findConstellationAppInCatalog(entraAppId?: string): Promise<{ teamsAppId: string; displayName: string } | null> {
+  async findConstellationAppInCatalog(entraAppId?: string, ssoRefreshToken?: string): Promise<{ teamsAppId: string; displayName: string } | null> {
+    const appId = entraAppId || process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+
+    // Strategy 1: delegated token via session SSO refresh token.
+    // AppCatalog.Read.All is only available as a delegated permission on this tenant,
+    // so we exchange the user's refresh token for a scoped AppCatalog token.
+    if (ssoRefreshToken) {
+      try {
+        const { msalInstance } = await import('../auth/entra-config.js');
+        if (msalInstance) {
+          const result = await msalInstance.acquireTokenByRefreshToken({
+            refreshToken: ssoRefreshToken,
+            scopes: ['AppCatalog.Read.All'],
+            forceRefresh: true,
+          });
+          if (result?.accessToken) {
+            const graphResponse = await fetch(
+              `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?$filter=externalId eq '${appId}'&$select=id,displayName,externalId`,
+              { headers: { Authorization: `Bearer ${result.accessToken}` } }
+            );
+            if (graphResponse.ok) {
+              const data = await graphResponse.json();
+              const apps = data.value || [];
+              if (apps.length > 0) {
+                console.log('[TEAMS-TAB] Found Constellation app in catalog (delegated):', apps[0].id, apps[0].displayName);
+                return { teamsAppId: apps[0].id, displayName: apps[0].displayName };
+              }
+              console.log('[TEAMS-TAB] Constellation app not found in tenant catalog for externalId:', appId);
+              return null;
+            }
+            console.warn('[TEAMS-TAB] Delegated catalog lookup returned', graphResponse.status, '— falling back to app-only');
+          }
+        }
+      } catch (delegatedErr: any) {
+        console.warn('[TEAMS-TAB] Delegated catalog lookup failed, falling back to app-only:', delegatedErr.message);
+      }
+    }
+
+    // Strategy 2: app-only client (requires AppCatalog.Read.All application permission).
     try {
       const client = await this.getClient();
-      const appId = entraAppId || process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
 
       const response = await client.api('/appCatalogs/teamsApps')
         .filter(`externalId eq '${appId}'`)
@@ -351,7 +388,7 @@ class PlannerService {
 
       const apps = response.value || [];
       if (apps.length > 0) {
-        console.log('[TEAMS-TAB] Found Constellation app in catalog:', apps[0].id, apps[0].displayName);
+        console.log('[TEAMS-TAB] Found Constellation app in catalog (app-only):', apps[0].id, apps[0].displayName);
         return { teamsAppId: apps[0].id, displayName: apps[0].displayName };
       }
 
@@ -359,8 +396,8 @@ class PlannerService {
       return null;
     } catch (error: any) {
       console.error('[TEAMS-TAB] Error searching app catalog:', error.message);
-      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
-        console.warn('[TEAMS-TAB] AppCatalog.Read.All permission not granted');
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied') || error.message?.includes('Missing role')) {
+        console.warn('[TEAMS-TAB] AppCatalog.Read.All application permission not granted — pass ssoRefreshToken to use delegated auth instead');
       }
       return null;
     }
@@ -374,6 +411,7 @@ class PlannerService {
     entityName?: string;
     baseDomain?: string;
     tab?: string;
+    ssoRefreshToken?: string;
   }): Promise<TeamsTab | null> {
     // Resolve entity fields: support both legacy (projectId/projectName) and new (entityType/entityId/entityName) signatures
     const entityType = options.entityType || 'project';
@@ -393,7 +431,7 @@ class PlannerService {
     try {
       console.log(`[TEAMS-TAB] Adding Constellation tab for ${entityType}:`, entityId, 'in channel:', channelId);
 
-      const catalogApp = await this.findConstellationAppInCatalog();
+      const catalogApp = await this.findConstellationAppInCatalog(undefined, options.ssoRefreshToken);
       if (!catalogApp) {
         console.warn('[TEAMS-TAB] Cannot add tab: Constellation app not published to tenant catalog. Admin should publish via Organization Settings > Integrations first.');
         return null;
@@ -632,16 +670,38 @@ class PlannerService {
     }
   }
 
-  async provisionChannelFolders(teamId: string, channelId: string, folderNames: string[]): Promise<{ created: string[]; failed: { name: string; error: string }[] }> {
+  async provisionChannelFolders(teamId: string, channelId: string, folderNames: string[], ssoRefreshToken?: string): Promise<{ created: string[]; failed: { name: string; error: string }[] }> {
     const created: string[] = [];
     const failed: { name: string; error: string }[] = [];
 
     if (!folderNames.length) return { created, failed };
 
+    // Try to get a delegated Files token if available — the app-only token may lack Files.ReadWrite.All
+    let delegatedHeaders: Record<string, string> | null = null;
+    if (ssoRefreshToken) {
+      try {
+        const { msalInstance } = await import('../auth/entra-config.js');
+        if (msalInstance) {
+          const result = await msalInstance.acquireTokenByRefreshToken({
+            refreshToken: ssoRefreshToken,
+            scopes: ['Files.ReadWrite.All'],
+            forceRefresh: true,
+          });
+          if (result?.accessToken) {
+            delegatedHeaders = { Authorization: `Bearer ${result.accessToken}` };
+            console.log('[PLANNER] Using delegated Files token for folder provisioning');
+          }
+        }
+      } catch (tokenErr: any) {
+        console.warn('[PLANNER] Could not get delegated Files token, falling back to app-only:', tokenErr.message);
+      }
+    }
+
     try {
       console.log('[PLANNER] Provisioning', folderNames.length, 'folders for channel:', channelId);
       const client = await this.getClient();
 
+      // filesFolder lookup always uses app-only (read-only, works with existing perms)
       const filesFolder = await client.api(`/teams/${teamId}/channels/${channelId}/filesFolder`).get();
       const driveId = filesFolder?.parentReference?.driveId;
       const folderPath = filesFolder?.name || '';
@@ -650,19 +710,40 @@ class PlannerService {
         throw new Error('Could not resolve SharePoint drive for channel');
       }
 
+      // Helper: create a folder via direct fetch (supports delegated token override)
+      const graphBase = 'https://graph.microsoft.com/v1.0';
+      const createFolderFetch = async (name: string) => {
+        const parentPath = folderPath ? `root:/${folderPath}:` : 'root';
+        const url = `${graphBase}/drives/${driveId}/${parentPath}/children`;
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(delegatedHeaders ?? {}),
+        };
+        // If no delegated headers, fall back to app-only token via graph client
+        if (!delegatedHeaders) {
+          const accessToken = await getPlannerAccessToken(this.credentials);
+          headers['Authorization'] = `Bearer ${accessToken}`;
+        }
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ name, folder: {}, '@microsoft.graph.conflictBehavior': 'rename' }),
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`${resp.status}: ${text}`);
+        }
+      };
+
       for (const name of folderNames) {
         try {
+          // Check existence with app-only client (no write needed)
           await client.api(`/drives/${driveId}/root:/${folderPath}/${name}:/`).get();
           created.push(name);
           console.log(`[PLANNER] Folder already exists: ${name}`);
         } catch {
           try {
-            const parentPath = folderPath ? `root:/${folderPath}:` : 'root';
-            await client.api(`/drives/${driveId}/${parentPath}/children`).post({
-              name,
-              folder: {},
-              '@microsoft.graph.conflictBehavior': 'rename',
-            });
+            await createFolderFetch(name);
             created.push(name);
             console.log(`[PLANNER] Created folder: ${name}`);
           } catch (err: any) {

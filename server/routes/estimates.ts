@@ -282,6 +282,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       tenantId?: string;
       activeTenantId?: string;
       primaryTenantId?: string;
+      ssoRefreshToken?: string;
     };
     const tenantId =
       requestWithTenant.tenantId ||
@@ -326,6 +327,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
               entityType: 'estimate',
               entityId: estimateId,
               entityName: 'Estimate',
+              ssoRefreshToken: requestUser.ssoRefreshToken,
             });
           } catch (tabErr: any) {
             console.warn('[ESTIMATES] Constellation tab failed for existing channel (non-blocking):', tabErr.message);
@@ -345,6 +347,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
               entityType: 'estimate',
               entityId: estimateId,
               entityName: 'Estimate',
+              ssoRefreshToken: requestUser.ssoRefreshToken,
             });
           } catch (tabErr: any) {
             console.warn('[ESTIMATES] Constellation tab failed (non-blocking):', tabErr.message);
@@ -4986,6 +4989,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             entityType: 'estimate',
             entityId: estimateId,
             entityName: 'Estimate',
+            ssoRefreshToken: (req.user as any)?.ssoRefreshToken,
           });
         } catch (tabError: any) {
           console.warn("[ESTIMATES] Constellation tab creation failed (non-blocking):", tabError.message);
