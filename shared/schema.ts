@@ -3666,8 +3666,8 @@ export type TeamsMemberSyncState = typeof teamsMemberSyncState.$inferSelect;
 
 export const mcpWriteAudit = pgTable("mcp_write_audit", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id),
-  userId: varchar("user_id").references(() => users.id),
+  tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
   endpoint: text("endpoint").notNull(),          // e.g. "POST /mcp/v1/clients"
   idempotencyKey: varchar("idempotency_key", { length: 255 }).notNull(),
   requestHash: varchar("request_hash", { length: 64 }).notNull(),  // sha256 hex
