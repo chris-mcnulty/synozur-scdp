@@ -483,6 +483,16 @@ function EstimateTeamsProvisioningDialog({
     retry: false,
   });
 
+  const { data: teamsContext } = useQuery<{
+    clientTeam: { teamId: string; teamName: string } | null;
+    projectsWithChannels: { projectId: string; projectName: string; channelId: string; channelName: string | null; channelWebUrl: string | null }[];
+  }>({
+    queryKey: ["/api/clients", estimate.clientId, "teams-context"],
+    queryFn: () => apiRequest(`/api/clients/${estimate.clientId}/teams-context`),
+    enabled: open && !!estimate.clientId && plannerStatus?.connected === true,
+    retry: false,
+  });
+
   useEffect(() => {
     if (teamsData?.teams) setAllTeams(teamsData.teams);
   }, [teamsData]);
@@ -643,7 +653,63 @@ function EstimateTeamsProvisioningDialog({
                   </button>
                 </div>
 
-                {defaultTeam && (
+                {/* Smart guidance based on client's existing Teams footprint */}
+                {teamsContext && (() => {
+                  const { clientTeam, projectsWithChannels } = teamsContext;
+                  const hasClientTeam = !!clientTeam;
+                  const hasProjects = projectsWithChannels.length > 0;
+
+                  if (hasClientTeam && hasProjects) {
+                    return (
+                      <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 space-y-1">
+                        <p className="text-xs font-medium text-blue-800 dark:text-blue-300">
+                          This client has a dedicated team: <strong>{clientTeam.teamName}</strong>
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-400">
+                          {projectsWithChannels.length} existing project channel{projectsWithChannels.length > 1 ? "s" : ""} live there
+                          ({projectsWithChannels.slice(0, 2).map(p => p.projectName).join(", ")}{projectsWithChannels.length > 2 ? `, +${projectsWithChannels.length - 2} more` : ""}).
+                          Creating this channel there keeps all client work in one place.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (hasClientTeam && !hasProjects) {
+                    return (
+                      <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                        <p className="text-xs text-blue-800 dark:text-blue-300">
+                          This client has a dedicated team: <strong>{clientTeam.teamName}</strong>. We recommend creating this channel there.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (!hasClientTeam && hasProjects) {
+                    return (
+                      <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 space-y-1">
+                        <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                          This client already has {projectsWithChannels.length} project channel{projectsWithChannels.length > 1 ? "s" : ""} in Teams.
+                        </p>
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          ({projectsWithChannels.slice(0, 2).map(p => p.projectName).join(", ")}{projectsWithChannels.length > 2 ? `, +${projectsWithChannels.length - 2} more` : ""})
+                          — select the same team to keep the client's work together, or create a new one if a dedicated client team doesn't exist yet.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  // No existing Teams presence
+                  return (
+                    <div className="rounded-lg border p-3 bg-muted/40 border-muted-foreground/20">
+                      <p className="text-xs text-muted-foreground">
+                        No existing Teams presence for this client. If this is an ongoing client relationship, consider creating a dedicated Team for them rather than using a general one.
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                {/* Fallback: show default team hint if context not yet loaded */}
+                {!teamsContext && defaultTeam && (
                   <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
                     <p className="text-xs text-blue-800 dark:text-blue-300">
                       {defaultTeam.source === 'client'

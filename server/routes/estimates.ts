@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients, estimateChannels, clientTeams } from "@shared/schema";
+import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients, estimateChannels, clientTeams, projectChannels } from "@shared/schema";
 import { eq, sql, inArray, max, and, isNull } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 import { RateResolver } from "../rate-resolver";
@@ -1159,6 +1159,48 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       res.json(client);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch client" });
+    }
+  });
+
+  // Returns a client's existing Teams footprint so the UI can guide the user
+  app.get("/api/clients/:clientId/teams-context", requireAuth, async (req, res) => {
+    try {
+      const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
+      const { clientId } = req.params;
+
+      // 1. Is the client mapped to a dedicated Team?
+      const [clientTeamRow] = await db
+        .select({ teamId: clientTeams.teamId, teamName: clientTeams.teamName })
+        .from(clientTeams)
+        .where(and(
+          eq(clientTeams.clientId, clientId),
+          tenantId ? eq(clientTeams.tenantId, tenantId) : isNull(clientTeams.tenantId)
+        ))
+        .limit(1);
+
+      // 2. Which projects for this client already have Teams channels?
+      const projectsWithCh = await db
+        .select({
+          projectId: projects.id,
+          projectName: projects.name,
+          channelId: projectChannels.channelId,
+          channelName: projectChannels.channelName,
+          channelWebUrl: projectChannels.channelWebUrl,
+        })
+        .from(projects)
+        .innerJoin(projectChannels, eq(projectChannels.projectId, projects.id))
+        .where(and(
+          eq(projects.clientId, clientId),
+          tenantId ? eq(projects.tenantId, tenantId) : isNull(projects.tenantId)
+        ));
+
+      res.json({
+        clientTeam: clientTeamRow ?? null,
+        projectsWithChannels: projectsWithCh,
+      });
+    } catch (error) {
+      console.error("[CLIENTS] Failed to fetch teams context:", error);
+      res.status(500).json({ message: "Failed to fetch teams context" });
     }
   });
 
