@@ -1480,8 +1480,9 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const body = schema.parse(req.body);
       const { companyId, linkEstimateId, ...dealProps } = body;
 
+      let estimate: any = null;
       if (linkEstimateId) {
-        const estimate = await storage.getEstimate(linkEstimateId);
+        estimate = await storage.getEstimate(linkEstimateId);
         if (!estimate || estimate.tenantId !== tenantId) {
           return res.status(404).json({ message: "Estimate not found" });
         }
