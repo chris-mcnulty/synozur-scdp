@@ -476,7 +476,7 @@ function EstimateTeamsProvisioningDialog({
     retry: false,
   });
 
-  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ value?: { id: string; displayName: string; webUrl?: string }[] }>({
+  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ id: string; displayName: string; webUrl?: string; membershipType?: string }[]>({
     queryKey: ["/api/planner/teams", selectedTeam?.id, "channels"],
     queryFn: () => apiRequest(`/api/planner/teams/${selectedTeam!.id}/channels`),
     enabled: open && mode === "existing" && !!selectedTeam?.id,
@@ -514,7 +514,7 @@ function EstimateTeamsProvisioningDialog({
     !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
   );
 
-  const allChannels = channelsData?.value || [];
+  const allChannels = channelsData ?? [];
   const filteredChannels = allChannels.filter(c =>
     !channelSearch.trim() || c.displayName.toLowerCase().includes(channelSearch.toLowerCase())
   );

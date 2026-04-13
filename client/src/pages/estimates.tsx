@@ -192,7 +192,7 @@ export default function Estimates() {
     retry: false,
   });
 
-  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ value?: { id: string; displayName: string; webUrl?: string }[] }>({
+  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ id: string; displayName: string; webUrl?: string; membershipType?: string }[]>({
     queryKey: ["/api/planner/teams", selectedTeam?.id, "channels"],
     queryFn: () => apiRequest(`/api/planner/teams/${selectedTeam!.id}/channels`),
     enabled: createDialogOpen && teamsMode === 'existing' && !!selectedTeam?.id,
@@ -201,7 +201,7 @@ export default function Estimates() {
 
   // Auto-select default team when resolved
   const allTeams = teamsData?.teams || [];
-  const channels = channelsData?.value || [];
+  const channels = channelsData ?? [];
 
   // When default team resolves, auto-select it
   useEffect(() => {
