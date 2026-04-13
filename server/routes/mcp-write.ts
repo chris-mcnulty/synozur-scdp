@@ -22,17 +22,13 @@ import { db } from "../db.js";
 import {
   clients,
   estimates,
-  estimateEpics,
-  estimateStages,
   estimateActivities,
-  estimateLineItems,
   projectChannels,
   crmObjectMappings,
   clientTeams,
   insertClientSchema,
-  insertEstimateSchema,
 } from "@shared/schema";
-import { and, eq, ilike, sql, inArray, isNull } from "drizzle-orm";
+import { and, eq, ilike, sql, inArray } from "drizzle-orm";
 import { mcpBearerAuth } from "../auth/mcp-bearer-auth.js";
 import { mcpWriteGuard, requireMcpWritesEnabled } from "../auth/mcp-write-guard.js";
 import { storage } from "../storage";
@@ -111,6 +107,15 @@ function isNearMatch(candidate: string, target: string): boolean {
 /** Milliseconds per calendar day — used for validUntil date calculations. */
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * Returns error detail only in non-production environments.
+ * Prevents internal implementation details from leaking to external callers
+ * (Copilot Studio connector, Power Automate, etc.) in production.
+ */
+function devDetail(msg: string): string | undefined {
+  return process.env.NODE_ENV !== "production" ? msg : undefined;
+}
+
 export function registerMcpWriteRoutes(
   app: Express,
   { requireAuth, requireRole }: McpWriteRouteDeps
@@ -134,15 +139,29 @@ export function registerMcpWriteRoutes(
   ];
 
   // ─── POST /mcp/v1/ping — foundation smoke test ───
-  // Accepts any body; returns it back. Used to verify the write stack end-to-end
+  // Accepts any body; returns it back (capped to 512 bytes after JSON
+  // serialization). Used to verify the write stack end-to-end
   // (feature flag + idempotency + audit). No role required beyond authenticated.
+  const PING_ECHO_MAX_BYTES = 512;
   app.post("/mcp/v1/ping", ...writeStack, async (req: Request, res: Response) => {
     try {
+      const rawEcho = req.body ?? null;
+      // Cap the echo payload so oversized bodies don't inflate the audit table.
+      let echo: unknown;
+      try {
+        const serialized = JSON.stringify(rawEcho);
+        echo =
+          serialized.length <= PING_ECHO_MAX_BYTES
+            ? rawEcho
+            : { truncated: true, originalLength: serialized.length };
+      } catch {
+        echo = null;
+      }
       res.json({
         data: {
           pong: true,
           dryRun: req.mcpWrite!.dryRun,
-          echo: req.body ?? null,
+          echo,
           at: new Date().toISOString(),
         },
       });
@@ -188,13 +207,24 @@ export function registerMcpWriteRoutes(
         }
         const input = parsed.data;
 
-        // Near-match scan against existing clients in this tenant.
-        const existingClients = await db
+        // Near-match scan: SQL-prefilter first (ILIKE on first token of the
+        // normalized name), then run the full Levenshtein check in-process on
+        // that smaller candidate set. This avoids loading every client record
+        // for tenants with large client lists.
+        const firstToken = normalizeName(input.name).split(/\s+/)[0];
+        const pattern = `%${firstToken}%`;
+        const prefiltered = await db
           .select({ id: clients.id, name: clients.name, status: clients.status })
           .from(clients)
-          .where(eq(clients.tenantId, tenantId));
+          .where(
+            and(
+              eq(clients.tenantId, tenantId),
+              ilike(clients.name, pattern)
+            )
+          )
+          .limit(50);
 
-        const candidates = existingClients
+        const candidates = prefiltered
           .filter((c) => isNearMatch(c.name, input.name))
           .slice(0, 5);
 
@@ -261,7 +291,7 @@ export function registerMcpWriteRoutes(
         console.error("[MCP-WRITE] POST /mcp/v1/clients error:", error);
         res
           .status(500)
-          .json({ error: "Failed to create client", details: error.message });
+          .json({ error: "Failed to create client", details: devDetail(error.message) });
       }
     }
   );
@@ -449,7 +479,7 @@ export function registerMcpWriteRoutes(
         );
         res.status(500).json({
           error: "Failed to create estimate from narrative",
-          details: error.message,
+          details: devDetail(error.message),
         });
       }
     }
@@ -580,7 +610,7 @@ export function registerMcpWriteRoutes(
         );
         res.status(500).json({
           error: "Failed to create block-hours estimate",
-          details: error.message,
+          details: devDetail(error.message),
         });
       }
     }
@@ -706,7 +736,7 @@ export function registerMcpWriteRoutes(
         );
         res.status(500).json({
           error: "Failed to create fixed-price estimate",
-          details: error.message,
+          details: devDetail(error.message),
         });
       }
     }
@@ -773,7 +803,7 @@ export function registerMcpWriteRoutes(
         console.error("[MCP-WRITE] GET /mcp/v1/hubspot/search error:", error);
         res.status(500).json({
           error: "HubSpot search failed",
-          details: error.message,
+          details: devDetail(error.message),
         });
       }
     }
@@ -954,7 +984,7 @@ export function registerMcpWriteRoutes(
         );
         res.status(500).json({
           error: "Failed to create HubSpot link",
-          details: error.message,
+          details: devDetail(error.message),
         });
       }
     }
@@ -1075,7 +1105,7 @@ export function registerMcpWriteRoutes(
               return res.status(502).json({
                 error: "Failed to create Microsoft Teams team",
                 code: "mcp_teams_create_failed",
-                details: teamErr.message,
+                details: devDetail(teamErr.message),
                 warnings,
               });
             }
@@ -1118,7 +1148,7 @@ export function registerMcpWriteRoutes(
         );
         res.status(500).json({
           error: "Failed to create Teams link",
-          details: error.message,
+          details: devDetail(error.message),
         });
       }
     }
@@ -1245,7 +1275,7 @@ export function registerMcpWriteRoutes(
           return res.status(502).json({
             error: "Failed to create Microsoft Teams channel",
             code: "mcp_teams_channel_create_failed",
-            details: chanErr.message,
+            details: devDetail(chanErr.message),
             warnings,
           });
         }
@@ -1278,7 +1308,7 @@ export function registerMcpWriteRoutes(
         );
         res.status(500).json({
           error: "Failed to create Teams channel",
-          details: error.message,
+          details: devDetail(error.message),
         });
       }
     }

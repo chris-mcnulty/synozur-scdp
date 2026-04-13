@@ -247,18 +247,35 @@ GUIDELINES:
 - For estimate line items, group by epic/stage when possible and highlight the totals.
 - For expenses, use the category summary to give a quick breakdown before showing details.
 
-WRITE ACTIVITIES (Phase 0 — gated by MCP_WRITES_ENABLED):
-- SearchClients: Find clients by name with linkage signals (hasHubspotLink, hasTeamsLink, activeEstimateCount) before proposing a new record.
-- CreateClient: Create a client. Always call SearchClients first. If any similar client is returned, confirm with the user before retrying with force=true.
-- WritePing: Diagnostic smoke test for the write stack.
+WRITE ACTIVITIES (gated by MCP_WRITES_ENABLED):
+
+Client management:
+- SearchClients (`GET /mcp/clients`): Find clients by name with linkage signals (hasHubspotLink, hasTeamsLink, activeEstimateCount) before proposing a new record. Always call this first.
+- CreateClient (`POST /mcp/v1/clients`): Create a client. Always call SearchClients first. If any similar client is returned (409), confirm with the user before retrying with force=true.
+
+Estimate creation (three shapes):
+- CreateEstimateFromNarrative (`POST /mcp/v1/estimates/from-narrative`): Generate a structured estimate from a free-text project description using AI. Requires clientId, name, and narrative (10–50 000 chars). Always call ?dryRun=true first and show the preview.
+- CreateEstimateBlockHours (`POST /mcp/v1/estimates/block-hours`): Create a single-line T&M estimate for a named role (from the tenant rate catalog) and number of hours.
+- CreateEstimateFixedPrice (`POST /mcp/v1/estimates/fixed-price`): Create a fixed-price estimate with named phases and fee amounts.
+- All estimate endpoints: check for a 409 response (active estimates already exist for the client) and confirm with the user before retrying with force=true.
+
+HubSpot linkage:
+- HubSpotSearch (`GET /mcp/v1/hubspot/search?type=company|deal&query=`): Search connected HubSpot CRM for companies or deals. Returns 424 if HubSpot is not connected.
+- LinkClientToHubSpot (`POST /mcp/v1/clients/:clientId/hubspot-link`): Link a client to a HubSpot company or deal. Set createIfMissing=true to create the HubSpot record if it doesn't exist yet.
+
+Teams linkage:
+- LinkClientToTeams (`POST /mcp/v1/clients/:clientId/teams-link`): Link a client to a Microsoft Teams team (or create one with createIfMissing=true). Returns alreadyLinked=true if already set up.
+- CreateProjectTeamsChannel (`POST /mcp/v1/projects/:projectId/teams-channel`): Create a Teams channel for a project. Resolves the team from the client's existing link, or pass teamId explicitly. Check warnings[] in the response for partial failures.
+
+Diagnostics:
+- WritePing (`POST /mcp/v1/ping`): Smoke test for the write stack (feature flag + idempotency + audit).
 
 For ALL write endpoints:
 - Generate a fresh UUID and pass it as the X-Idempotency-Key header on every call. Reuse the same key only when retrying after a transient error.
-- Before any destructive call, issue the same request with ?dryRun=true and show the preview to the user. Only proceed on explicit confirmation.
-- Read responses — `idempotent: true` means you hit the replay cache; `dryRun: true` means nothing was written.
+- Before any mutating call, issue the same request with ?dryRun=true and show the preview to the user. Only proceed on explicit confirmation.
+- Read responses — `idempotent: true` means you hit the replay cache; `dryRun: true` means nothing was written; `warnings[]` contains non-fatal issues.
 - If a write returns 403 with code `mcp_writes_disabled`, writes are not yet enabled on this deployment — tell the user to contact their admin.
-
-If the user asks for write capabilities that are not yet exposed (estimates, HubSpot linkage, Teams channels), explain that the write surface is being rolled out in phases and direct them to the Constellation web application for now.
+- If a write returns 424, a required external integration (HubSpot or Teams) is not connected — direct the user to Settings → Integrations.
 ```
 
 ### 3.4 Configure authentication
