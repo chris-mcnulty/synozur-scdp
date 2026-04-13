@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -26,6 +27,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ExternalLink,
   Unlink,
   RefreshCw,
@@ -36,6 +45,7 @@ import {
   AlertTriangle,
   Link2,
   Link2Off,
+  Loader2,
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 
@@ -90,11 +100,25 @@ type PendingAction =
   | { type: "unlinkProjectChannel"; projectId: string; projectName: string }
   | { type: "unlinkEstimateChannel"; estimateId: string; estimateName: string };
 
+interface LinkTeamDialogState {
+  clientId: string;
+  clientName: string;
+}
+
+interface LinkProjectChannelDialogState {
+  projectId: string;
+  projectName: string;
+  clientTeamId: string | null;
+  clientTeamName: string | null;
+}
+
 export function TeamsLinksTab() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [linkTeamDialog, setLinkTeamDialog] = useState<LinkTeamDialogState | null>(null);
+  const [linkChannelDialog, setLinkChannelDialog] = useState<LinkProjectChannelDialogState | null>(null);
 
   const { data, isLoading, error } = useQuery<TeamsLinksResponse>({
     queryKey: ["/api/org/teams-links"],
@@ -148,14 +172,16 @@ export function TeamsLinksTab() {
   const filteredGroups = useMemo(() => {
     if (!data?.groups) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return data.groups;
-    return data.groups.filter((g) => {
-      if (g.clientName?.toLowerCase().includes(q)) return true;
-      if (g.team?.teamName?.toLowerCase().includes(q)) return true;
-      if (g.projects.some((p) => p.name?.toLowerCase().includes(q) || p.channelName?.toLowerCase().includes(q))) return true;
-      if (g.estimates.some((e) => e.name?.toLowerCase().includes(q) || e.channelName?.toLowerCase().includes(q))) return true;
-      return false;
-    });
+    const groups = q
+      ? data.groups.filter((g) => {
+          if (g.clientName?.toLowerCase().includes(q)) return true;
+          if (g.team?.teamName?.toLowerCase().includes(q)) return true;
+          if (g.projects.some((p) => p.name?.toLowerCase().includes(q) || p.channelName?.toLowerCase().includes(q))) return true;
+          if (g.estimates.some((e) => e.name?.toLowerCase().includes(q) || e.channelName?.toLowerCase().includes(q))) return true;
+          return false;
+        })
+      : [...data.groups];
+    return groups.sort((a, b) => (a.clientName ?? "").localeCompare(b.clientName ?? ""));
   }, [data, search]);
 
   const totalClients = data?.groups.length ?? 0;
@@ -226,11 +252,22 @@ export function TeamsLinksTab() {
                       clientName: group.clientName,
                     })
                   }
+                  onLinkTeam={() =>
+                    setLinkTeamDialog({ clientId: group.clientId, clientName: group.clientName })
+                  }
                   onUnlinkProjectChannel={(p) =>
                     setPending({
                       type: "unlinkProjectChannel",
                       projectId: p.id,
                       projectName: p.name,
+                    })
+                  }
+                  onLinkProjectChannel={(p) =>
+                    setLinkChannelDialog({
+                      projectId: p.id,
+                      projectName: p.name,
+                      clientTeamId: group.team?.teamId ?? null,
+                      clientTeamName: group.team?.teamName ?? null,
                     })
                   }
                   onUnlinkEstimateChannel={(e) =>
@@ -256,6 +293,14 @@ export function TeamsLinksTab() {
                     navigate={setLocation}
                     onUnlink={() =>
                       setPending({ type: "unlinkProjectChannel", projectId: p.id, projectName: p.name })
+                    }
+                    onLink={() =>
+                      setLinkChannelDialog({
+                        projectId: p.id,
+                        projectName: p.name,
+                        clientTeamId: null,
+                        clientTeamName: null,
+                      })
                     }
                   />
                 ))}
@@ -303,6 +348,32 @@ export function TeamsLinksTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {linkTeamDialog && (
+        <LinkTeamDialog
+          clientId={linkTeamDialog.clientId}
+          clientName={linkTeamDialog.clientName}
+          onClose={() => setLinkTeamDialog(null)}
+          onLinked={() => {
+            setLinkTeamDialog(null);
+            invalidate();
+          }}
+        />
+      )}
+
+      {linkChannelDialog && (
+        <LinkProjectChannelDialog
+          projectId={linkChannelDialog.projectId}
+          projectName={linkChannelDialog.projectName}
+          clientTeamId={linkChannelDialog.clientTeamId}
+          clientTeamName={linkChannelDialog.clientTeamName}
+          onClose={() => setLinkChannelDialog(null)}
+          onLinked={() => {
+            setLinkChannelDialog(null);
+            invalidate();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -320,13 +391,17 @@ function ClientGroupRow({
   group,
   navigate,
   onUnlinkTeam,
+  onLinkTeam,
   onUnlinkProjectChannel,
+  onLinkProjectChannel,
   onUnlinkEstimateChannel,
 }: {
   group: ClientGroup;
   navigate: (to: string) => void;
   onUnlinkTeam: () => void;
+  onLinkTeam: () => void;
   onUnlinkProjectChannel: (p: ProjectLink) => void;
+  onLinkProjectChannel: (p: ProjectLink) => void;
   onUnlinkEstimateChannel: (e: EstimateLink) => void;
 }) {
   const hasAnyLink =
@@ -402,10 +477,10 @@ function ClientGroupRow({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/clients/${group.clientId}`)}
+                onClick={onLinkTeam}
                 data-testid={`button-link-team-${group.clientId}`}
               >
-                <RefreshCw className="h-3.5 w-3.5 mr-1" /> Link Team
+                <Link2 className="h-3.5 w-3.5 mr-1" /> Link Team
               </Button>
             )}
           </div>
@@ -426,6 +501,7 @@ function ClientGroupRow({
                   project={p}
                   navigate={navigate}
                   onUnlink={() => onUnlinkProjectChannel(p)}
+                  onLink={() => onLinkProjectChannel(p)}
                 />
               ))}
             </div>
@@ -467,10 +543,12 @@ function ProjectRow({
   project,
   navigate,
   onUnlink,
+  onLink,
 }: {
   project: ProjectLink;
   navigate: (to: string) => void;
   onUnlink: () => void;
+  onLink: () => void;
 }) {
   const linked = !!project.channelId;
   return (
@@ -509,7 +587,7 @@ function ProjectRow({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(`/projects/${project.id}`)}
+          onClick={onLink}
           data-testid={`button-relink-project-${project.id}`}
         >
           <RefreshCw className="h-3.5 w-3.5 mr-1" />
@@ -569,5 +647,266 @@ function EstimateRow({
         </Button>
       </div>
     </div>
+  );
+}
+
+function LinkTeamDialog({
+  clientId,
+  clientName,
+  onClose,
+  onLinked,
+}: {
+  clientId: string;
+  clientName: string;
+  onClose: () => void;
+  onLinked: () => void;
+}) {
+  const { toast } = useToast();
+  const [teamSearch, setTeamSearch] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ id: string; displayName: string }[]>({
+    queryKey: ["/api/planner/teams"],
+  });
+
+  const filteredTeams = useMemo(() => {
+    if (!teamsData) return [];
+    const q = teamSearch.trim().toLowerCase();
+    if (!q) return teamsData;
+    return teamsData.filter((t) => t.displayName.toLowerCase().includes(q));
+  }, [teamsData, teamSearch]);
+
+  const linkMutation = useMutation({
+    mutationFn: (team: { id: string; displayName: string }) =>
+      apiRequest(`/api/clients/${clientId}/microsoft-team`, {
+        method: "POST",
+        body: JSON.stringify({ teamId: team.id, teamName: team.displayName }),
+      }),
+    onSuccess: () => {
+      toast({ title: `Team linked to ${clientName}` });
+      onLinked();
+    },
+    onError: (e: Error) =>
+      toast({ title: "Failed to link team", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Link Microsoft Team</DialogTitle>
+          <DialogDescription>
+            Select an existing Microsoft Team to link to <strong>{clientName}</strong>.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Search teams…"
+              value={teamSearch}
+              onChange={(e) => setTeamSearch(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="border rounded-md max-h-60 overflow-y-auto">
+            {teamsLoading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading teams…
+              </div>
+            ) : filteredTeams.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                {teamSearch ? "No teams match your search." : "No teams available."}
+              </div>
+            ) : (
+              filteredTeams.map((team) => (
+                <button
+                  key={team.id}
+                  type="button"
+                  className={`w-full text-left flex items-center gap-3 p-3 border-b last:border-b-0 hover:bg-muted/50 transition-colors ${
+                    selectedTeam?.id === team.id ? "bg-primary/10" : ""
+                  }`}
+                  onClick={() => setSelectedTeam(team)}
+                >
+                  <MicrosoftTeamsIcon className="h-4 w-4 shrink-0" />
+                  <span className="text-sm">{team.displayName}</span>
+                  {selectedTeam?.id === team.id && (
+                    <Badge variant="secondary" className="ml-auto text-xs">Selected</Badge>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={linkMutation.isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => selectedTeam && linkMutation.mutate(selectedTeam)}
+            disabled={!selectedTeam || linkMutation.isPending}
+          >
+            {linkMutation.isPending ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Linking…</>
+            ) : (
+              "Link Team"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LinkProjectChannelDialog({
+  projectId,
+  projectName,
+  clientTeamId,
+  clientTeamName,
+  onClose,
+  onLinked,
+}: {
+  projectId: string;
+  projectName: string;
+  clientTeamId: string | null;
+  clientTeamName: string | null;
+  onClose: () => void;
+  onLinked: () => void;
+}) {
+  const { toast } = useToast();
+  const [channelName, setChannelName] = useState(projectName);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+
+  const needsTeamPicker = !clientTeamId;
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ id: string; displayName: string }[]>({
+    queryKey: ["/api/planner/teams"],
+    enabled: needsTeamPicker,
+  });
+
+  const filteredTeams = useMemo(() => {
+    if (!teamsData) return [];
+    const q = teamSearch.trim().toLowerCase();
+    if (!q) return teamsData;
+    return teamsData.filter((t) => t.displayName.toLowerCase().includes(q));
+  }, [teamsData, teamSearch]);
+
+  const resolvedTeamId = clientTeamId ?? selectedTeam?.id ?? null;
+
+  const linkMutation = useMutation({
+    mutationFn: async () => {
+      if (!resolvedTeamId) throw new Error("No team selected");
+      await apiRequest(`/api/planner/teams/${resolvedTeamId}/channels`, {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: channelName.trim() || projectName,
+          projectId,
+          projectName,
+        }),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: `Channel created and linked to ${projectName}` });
+      onLinked();
+    },
+    onError: (e: Error) =>
+      toast({ title: "Failed to create channel", description: e.message, variant: "destructive" }),
+  });
+
+  const canSubmit = !!resolvedTeamId && channelName.trim().length > 0 && !linkMutation.isPending;
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Link Teams Channel</DialogTitle>
+          <DialogDescription>
+            Create and link a Microsoft Teams channel for project <strong>{projectName}</strong>.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {clientTeamId ? (
+            <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 text-sm">
+              <MicrosoftTeamsIcon className="h-4 w-4 shrink-0" />
+              <span className="text-muted-foreground">Team:</span>
+              <span className="font-medium">{clientTeamName || clientTeamId}</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Select a Team</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search teams…"
+                  value={teamSearch}
+                  onChange={(e) => setTeamSearch(e.target.value)}
+                />
+              </div>
+              <div className="border rounded-md max-h-40 overflow-y-auto">
+                {teamsLoading ? (
+                  <div className="flex items-center justify-center py-6 text-muted-foreground text-sm gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading teams…
+                  </div>
+                ) : filteredTeams.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm">
+                    {teamSearch ? "No teams match." : "No teams available."}
+                  </div>
+                ) : (
+                  filteredTeams.map((team) => (
+                    <button
+                      key={team.id}
+                      type="button"
+                      className={`w-full text-left flex items-center gap-3 p-2.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors text-sm ${
+                        selectedTeam?.id === team.id ? "bg-primary/10" : ""
+                      }`}
+                      onClick={() => setSelectedTeam(team)}
+                    >
+                      <MicrosoftTeamsIcon className="h-4 w-4 shrink-0" />
+                      {team.displayName}
+                      {selectedTeam?.id === team.id && (
+                        <Badge variant="secondary" className="ml-auto text-xs">Selected</Badge>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="channel-name">Channel name</Label>
+            <Input
+              id="channel-name"
+              value={channelName}
+              onChange={(e) => setChannelName(e.target.value)}
+              placeholder="Channel name…"
+              autoFocus={!!clientTeamId}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={linkMutation.isPending}>
+            Cancel
+          </Button>
+          <Button onClick={() => linkMutation.mutate()} disabled={!canSubmit}>
+            {linkMutation.isPending ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating…</>
+            ) : (
+              "Create & Link Channel"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
