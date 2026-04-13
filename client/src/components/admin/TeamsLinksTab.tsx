@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -663,18 +663,23 @@ function LinkTeamDialog({
 }) {
   const { toast } = useToast();
   const [teamSearch, setTeamSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(teamSearch), 400);
+    return () => clearTimeout(t);
+  }, [teamSearch]);
+
+  const queryKey = debouncedSearch.trim()
+    ? [`/api/planner/teams?search=${encodeURIComponent(debouncedSearch.trim())}`]
+    : ["/api/planner/teams"];
+
   const { data: teamsResponse, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[]; nextLink?: string }>({
-    queryKey: ["/api/planner/teams"],
+    queryKey,
   });
 
-  const filteredTeams = useMemo(() => {
-    const all = teamsResponse?.teams ?? [];
-    const q = teamSearch.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((t) => t.displayName.toLowerCase().includes(q));
-  }, [teamsResponse, teamSearch]);
+  const teams = teamsResponse?.teams ?? [];
 
   const linkMutation = useMutation({
     mutationFn: (team: { id: string; displayName: string }) =>
@@ -716,14 +721,14 @@ function LinkTeamDialog({
             {teamsLoading ? (
               <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Loading teams…
+                {debouncedSearch ? "Searching…" : "Loading teams…"}
               </div>
-            ) : filteredTeams.length === 0 ? (
+            ) : teams.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 {teamSearch ? "No teams match your search." : "No teams available."}
               </div>
             ) : (
-              filteredTeams.map((team) => (
+              teams.map((team) => (
                 <button
                   key={team.id}
                   type="button"
@@ -741,6 +746,11 @@ function LinkTeamDialog({
               ))
             )}
           </div>
+          {!debouncedSearch && teams.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Showing first {teams.length} teams — type to search all teams in your tenant.
+            </p>
+          )}
         </div>
 
         <DialogFooter>
@@ -781,21 +791,26 @@ function LinkProjectChannelDialog({
   const { toast } = useToast();
   const [channelName, setChannelName] = useState(projectName);
   const [teamSearch, setTeamSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
 
   const needsTeamPicker = !clientTeamId;
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(teamSearch), 400);
+    return () => clearTimeout(t);
+  }, [teamSearch]);
+
+  const teamsQueryKey = debouncedSearch.trim()
+    ? [`/api/planner/teams?search=${encodeURIComponent(debouncedSearch.trim())}`]
+    : ["/api/planner/teams"];
+
   const { data: teamsResponse, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[]; nextLink?: string }>({
-    queryKey: ["/api/planner/teams"],
+    queryKey: teamsQueryKey,
     enabled: needsTeamPicker,
   });
 
-  const filteredTeams = useMemo(() => {
-    const all = teamsResponse?.teams ?? [];
-    const q = teamSearch.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((t) => t.displayName.toLowerCase().includes(q));
-  }, [teamsResponse, teamSearch]);
+  const teams = teamsResponse?.teams ?? [];
 
   const resolvedTeamId = clientTeamId ?? selectedTeam?.id ?? null;
 
@@ -854,14 +869,14 @@ function LinkProjectChannelDialog({
                 {teamsLoading ? (
                   <div className="flex items-center justify-center py-6 text-muted-foreground text-sm gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading teams…
+                    {debouncedSearch ? "Searching…" : "Loading teams…"}
                   </div>
-                ) : filteredTeams.length === 0 ? (
+                ) : teams.length === 0 ? (
                   <div className="text-center py-6 text-muted-foreground text-sm">
                     {teamSearch ? "No teams match." : "No teams available."}
                   </div>
                 ) : (
-                  filteredTeams.map((team) => (
+                  teams.map((team) => (
                     <button
                       key={team.id}
                       type="button"
@@ -879,6 +894,11 @@ function LinkProjectChannelDialog({
                   ))
                 )}
               </div>
+              {!debouncedSearch && teams.length > 0 && (
+                <p className="text-xs text-muted-foreground pt-1">
+                  Showing first {teams.length} — type to search all teams.
+                </p>
+              )}
             </div>
           )}
 

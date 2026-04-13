@@ -157,15 +157,25 @@ class PlannerService {
 
   // ============ GROUP/TEAM OPERATIONS ============
 
-  async listMyGroups(pageSize: number = 50, skipToken?: string): Promise<{ groups: PlannerGroup[]; nextLink?: string }> {
+  async listMyGroups(pageSize: number = 50, skipToken?: string, search?: string): Promise<{ groups: PlannerGroup[]; nextLink?: string }> {
     try {
-      console.log('[PLANNER] Attempting to list all groups, pageSize:', pageSize, 'skipToken:', skipToken ? 'yes' : 'no');
+      console.log('[PLANNER] Attempting to list all groups, pageSize:', pageSize, 'skipToken:', skipToken ? 'yes' : 'no', 'search:', search || 'none');
       const client = await this.getClient();
       
       let request;
       if (skipToken) {
         // Use the full nextLink URL for pagination
         request = client.api(skipToken);
+      } else if (search && search.trim()) {
+        // Use $search for name-based lookup — requires ConsistencyLevel: eventual header.
+        // This searches across ALL groups in the tenant, bypassing the 50-item page limit issue.
+        request = client.api('/groups')
+          .header('ConsistencyLevel', 'eventual')
+          .search(`"displayName:${search.trim()}"`)
+          .filter("groupTypes/any(c:c eq 'Unified')")
+          .select('id,displayName,description,mail')
+          .top(pageSize)
+          .count(true);
       } else {
         // Note: orderby not supported when filtering by groupTypes
         request = client.api('/groups')

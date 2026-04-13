@@ -209,7 +209,8 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       const { plannerService } = await import('../services/planner-service');
       const skipToken = req.query.skipToken as string | undefined;
       const pageSize = Math.min(parseInt(req.query.pageSize as string) || 50, 100);
-      const result = await plannerService.listMyGroups(pageSize, skipToken ? decodeURIComponent(skipToken) : undefined);
+      const search = req.query.search as string | undefined;
+      const result = await plannerService.listMyGroups(pageSize, skipToken ? decodeURIComponent(skipToken) : undefined, search);
       res.json({ teams: result.groups, nextLink: result.nextLink });
     } catch (error: any) {
       console.error("[PLANNER] Failed to list teams:", error);
