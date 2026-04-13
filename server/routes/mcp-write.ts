@@ -116,8 +116,15 @@ export function registerMcpWriteRoutes(
   { requireAuth, requireRole }: McpWriteRouteDeps
 ) {
   // Bearer auth applies to everything under /mcp already (registered in mcp.ts).
-  // We still re-apply here so /mcp/v1/* works independently if mcp.ts is not mounted first.
-  app.use("/mcp/v1", mcpBearerAuth);
+  // Keep a local mount so /mcp/v1/* still works independently if mcp.ts is not
+  // mounted first, but skip re-authentication when an upstream middleware has
+  // already populated req.user.
+  app.use("/mcp/v1", (req: Request, res: Response, next: NextFunction) => {
+    if (req.user) {
+      return next();
+    }
+    return mcpBearerAuth(req, res, next);
+  });
 
   const writeStack = [
     requireMcpWritesEnabled,
