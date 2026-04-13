@@ -512,6 +512,12 @@ function EstimateTeamsProvisioningDialog({
   // Build the proposed channel name: "Client – Estimate" when client is known
   const newChannelName = clientName ? `${clientName} \u2013 ${estimate.name}` : estimate.name;
 
+  // Editable draft — seeded from computed name, capped at Teams' 50-char limit
+  const [channelNameDraft, setChannelNameDraft] = useState("");
+  useEffect(() => {
+    setChannelNameDraft(newChannelName.substring(0, 50));
+  }, [newChannelName]);
+
   // Create new channel
   const provisionMutation = useMutation({
     mutationFn: (data: { teamId: string; displayName: string; estimateId: string; estimateName: string }) =>
@@ -560,7 +566,7 @@ function EstimateTeamsProvisioningDialog({
     if (mode === "new") {
       provisionMutation.mutate({
         teamId: selectedTeam.id,
-        displayName: newChannelName,
+        displayName: channelNameDraft.trim() || newChannelName.substring(0, 50),
         estimateId: estimate.id,
         estimateName: estimate.name,
       });
@@ -590,7 +596,7 @@ function EstimateTeamsProvisioningDialog({
   const canConfirm =
     plannerStatus?.connected !== false &&
     !!selectedTeam &&
-    (mode === "new" || !!selectedChannel);
+    (mode === "new" ? !!channelNameDraft.trim() : !!selectedChannel);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
@@ -720,21 +726,34 @@ function EstimateTeamsProvisioningDialog({
                   </div>
                 )}
 
-                {/* Summary card */}
-                {selectedTeam && (mode === "new" || selectedChannel) && (
-                  <div className="rounded-lg border p-3 space-y-1 bg-muted/30 text-sm">
-                    {mode === "new" ? (
-                      <>
-                        <p className="text-xs text-muted-foreground">New channel will be created in:</p>
-                        <p className="font-medium">{selectedTeam.displayName}</p>
-                        <p className="text-xs text-muted-foreground">Channel name: <strong>{newChannelName}</strong></p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-muted-foreground">Linking to existing channel:</p>
-                        <p className="font-medium">{selectedTeam.displayName} → {selectedChannel?.displayName}</p>
-                      </>
+                {/* Editable channel name — only for new channel mode */}
+                {mode === "new" && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label>Channel name</Label>
+                      <span className={`text-xs ${channelNameDraft.length >= 50 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                        {channelNameDraft.length}/50
+                      </span>
+                    </div>
+                    <Input
+                      value={channelNameDraft}
+                      onChange={(e) => setChannelNameDraft(e.target.value.substring(0, 50))}
+                      maxLength={50}
+                      placeholder="Channel name"
+                    />
+                    {newChannelName.length > 50 && channelNameDraft === newChannelName.substring(0, 50) && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Name was trimmed to fit Teams' 50-character limit — edit if needed.
+                      </p>
                     )}
+                  </div>
+                )}
+
+                {/* Summary card for existing channel mode */}
+                {mode === "existing" && selectedTeam && selectedChannel && (
+                  <div className="rounded-lg border p-3 space-y-1 bg-muted/30 text-sm">
+                    <p className="text-xs text-muted-foreground">Linking to existing channel:</p>
+                    <p className="font-medium">{selectedTeam.displayName} → {selectedChannel.displayName}</p>
                   </div>
                 )}
               </>
