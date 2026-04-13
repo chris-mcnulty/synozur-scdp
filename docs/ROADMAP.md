@@ -459,6 +459,45 @@ The following major features have been delivered and are live in production. See
 
 ---
 
+### 🤖 Copilot Agent Write Activities
+
+**Status:** ✅ Complete — Phases 0-5 shipped (April 2026)
+**Target Completion:** Q2 2026 ✅
+**Value Proposition:** Extend the Copilot Studio agent beyond read-only queries so it can drive the full early-stage consulting workflow from a conversation: discover clients, create them, generate estimates from narratives or fixed-hour/fixed-price summaries, and wire up HubSpot deals and Teams channels — without leaving Teams or M365 Copilot.
+
+#### Phase 0 — Write Infrastructure ✅ (April 2026)
+- Versioned `/mcp/v1/*` write namespace alongside existing read surface
+- `mcp_write_audit` table with per-request idempotency, replay cache, request-hash conflict detection
+- `MCP_WRITES_ENABLED` feature flag (default off); `X-Idempotency-Key` required on every write; `?dryRun=true` universal preview
+- Response envelope extended with `idempotent`, `dryRun`, `auditId`, `correlationId`
+- Stricter write role policy (admin, pm, portfolio-manager; dropped executive and billing-admin from writes)
+- Diagnostic `POST /mcp/v1/ping` endpoint
+- OpenAPI spec bumped to v1.1.0; connector setup doc rewritten to cover the write flow
+
+#### Phase 1-2 — Client Discovery & Creation ✅ (April 2026)
+- `GET /mcp/clients` returns linkage signals (`hasHubspotLink`, `hasTeamsLink`, `activeEstimateCount`) so the agent can branch before acting
+- `POST /mcp/v1/clients` with near-match duplicate detection (normalized-name + Levenshtein); returns 409 with candidates unless `force: true`
+
+#### Phase 3 — Estimate Creation ✅ (April 2026)
+- Three estimate shapes — narrative (AI-generated, ≤8 summary line items), block-of-hours, fixed-price
+- Uses existing `aiService.generateEstimateFromNarrative()` with tenant rate catalog
+- Prompt-injection sanitization on `narrative` field
+- Pre-create duplicate check for active estimates on the same client (409 unless `force: true`)
+- Shared `createEstimateCore()` helper + `capEstimateLineItems()` (hard cap 8 items)
+- OpenAPI spec bumped to v1.2.0
+
+#### Phase 4 — HubSpot Linkage ✅ (April 2026)
+- `GET /mcp/v1/hubspot/search?type=company|deal&query=` — tenant-scoped CRM search
+- `POST /mcp/v1/clients/:id/hubspot-link` with `createIfMissing` flag, writes `crm_object_mappings`
+- Uses `createHubSpotCompany()` / `createHubSpotDeal()` from existing hubspot-client.ts
+
+#### Phase 5 — Teams Team & Channel Linkage ✅ (April 2026)
+- `POST /mcp/v1/clients/:id/teams-link` — ensures `client_teams` row, creates team via Graph when `createIfMissing`
+- `POST /mcp/v1/projects/:id/teams-channel` — creates channel via `plannerService.createChannel()`, writes `project_channels` row
+- Partial-failure envelope: `warnings[]` preserved; no rollback of prior successful steps
+
+---
+
 ### 💹 Priority: QuickBooks Online Integration for Consultants
 
 **Status:** 📋 Planned  

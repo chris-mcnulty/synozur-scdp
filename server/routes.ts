@@ -24,6 +24,7 @@ import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
 import { registerTenantStorageRoutes } from "./routes/tenant-storage.js";
 import { registerMcpRoutes } from "./routes/mcp.js";
+import { registerMcpWriteRoutes } from "./routes/mcp-write.js";
 import { registerTeamsAppRoutes } from "./routes/teams-app.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
 import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
@@ -305,6 +306,13 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   registerMcpRoutes(app, {
+    requireAuth,
+    requireRole,
+  });
+
+  // MCP v1 write endpoints — Copilot agent write activities (gated by
+  // MCP_WRITES_ENABLED feature flag). See docs/MCP_CONNECTOR_SETUP.md.
+  registerMcpWriteRoutes(app, {
     requireAuth,
     requireRole,
   });
