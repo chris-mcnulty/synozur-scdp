@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage, db } from "../storage";
-import { projectChannels, projects, clients, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, estimateChannels, estimates, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { projectChannels, projects, clients, clientTeams, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, estimateChannels, estimates, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES } from "@shared/schema";
+import { eq, and, sql, inArray } from "drizzle-orm";
 
 interface PlannerRouteDeps {
   requireAuth: any;
@@ -980,6 +980,176 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
     } catch (error: any) {
       console.error("[PLANNER] Sync failed:", error);
       res.status(500).json({ message: "Planner sync failed: " + error.message });
+    }
+  });
+
+  // ============ TEAMS LINKS: AGGREGATE VIEW (Org Settings) ============
+
+  // Returns clients with their associated Team + project/estimate channels for the current tenant
+  app.get("/api/org/teams-links", deps.requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "No tenant context" });
+      }
+
+      // 1. All clients for tenant (include legacy microsoftTeam* columns and new clientTeams)
+      const clientRows = await db
+        .select({
+          id: clients.id,
+          name: clients.name,
+          legacyTeamId: clients.microsoftTeamId,
+          legacyTeamName: clients.microsoftTeamName,
+          legacyTeamWebUrl: clients.microsoftTeamWebUrl,
+        })
+        .from(clients)
+        .where(eq(clients.tenantId, tenantId));
+
+      const clientIds = clientRows.map(c => c.id);
+
+      // 2. clientTeams entries for these clients
+      const clientTeamRows = clientIds.length
+        ? await db
+            .select()
+            .from(clientTeams)
+            .where(and(
+              eq(clientTeams.tenantId, tenantId),
+              inArray(clientTeams.clientId, clientIds)
+            ))
+        : [];
+
+      // 3. Projects with channel links
+      const projectRows = await db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+          clientId: projects.clientId,
+          status: projects.status,
+          channelId: projectChannels.channelId,
+          channelName: projectChannels.channelName,
+          channelWebUrl: projectChannels.channelWebUrl,
+          plannerPlanId: projectChannels.plannerPlanId,
+          plannerPlanWebUrl: projectChannels.plannerPlanWebUrl,
+        })
+        .from(projects)
+        .leftJoin(projectChannels, and(
+          eq(projectChannels.projectId, projects.id),
+          eq(projectChannels.tenantId, tenantId)
+        ))
+        .where(eq(projects.tenantId, tenantId));
+
+      // 4. Estimates with channel links
+      const estimateRows = await db
+        .select({
+          id: estimates.id,
+          name: estimates.name,
+          clientId: estimates.clientId,
+          status: estimates.status,
+          teamId: estimateChannels.teamId,
+          teamName: estimateChannels.teamName,
+          channelId: estimateChannels.channelId,
+          channelName: estimateChannels.channelName,
+          channelWebUrl: estimateChannels.channelWebUrl,
+        })
+        .from(estimates)
+        .leftJoin(estimateChannels, and(
+          eq(estimateChannels.estimateId, estimates.id),
+          eq(estimateChannels.tenantId, tenantId)
+        ))
+        .where(eq(estimates.tenantId, tenantId));
+
+      // Group by client
+      const clientTeamByClient = new Map<string, typeof clientTeamRows[number]>();
+      for (const ct of clientTeamRows) {
+        clientTeamByClient.set(ct.clientId, ct);
+      }
+
+      const projectsByClient = new Map<string, any[]>();
+      for (const p of projectRows) {
+        if (!p.clientId) continue;
+        if (!projectsByClient.has(p.clientId)) projectsByClient.set(p.clientId, []);
+        projectsByClient.get(p.clientId)!.push(p);
+      }
+
+      const estimatesByClient = new Map<string, any[]>();
+      for (const e of estimateRows) {
+        if (!e.clientId) continue;
+        if (!estimatesByClient.has(e.clientId)) estimatesByClient.set(e.clientId, []);
+        estimatesByClient.get(e.clientId)!.push(e);
+      }
+
+      const groups = clientRows.map(c => {
+        const ct = clientTeamByClient.get(c.id);
+        const teamId = ct?.teamId || c.legacyTeamId || null;
+        const teamName = ct?.teamName || c.legacyTeamName || null;
+        const teamWebUrl = ct?.teamWebUrl || c.legacyTeamWebUrl || null;
+        return {
+          clientId: c.id,
+          clientName: c.name,
+          team: teamId ? {
+            teamId,
+            teamName,
+            teamWebUrl,
+            source: ct ? 'client_teams' : 'legacy',
+          } : null,
+          projects: projectsByClient.get(c.id) || [],
+          estimates: estimatesByClient.get(c.id) || [],
+        };
+      });
+
+      // Include orphaned projects/estimates (no matching client record)
+      const knownClientIds = new Set(clientIds);
+      const orphanProjects = projectRows.filter(p => !p.clientId || !knownClientIds.has(p.clientId));
+      const orphanEstimates = estimateRows.filter(e => !e.clientId || !knownClientIds.has(e.clientId));
+
+      res.json({
+        groups,
+        orphanProjects,
+        orphanEstimates,
+      });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to load teams links overview:", error);
+      res.status(500).json({ message: "Failed to load Teams links overview: " + error.message });
+    }
+  });
+
+  // Unlink a project from its Teams channel (removes db row only; channel itself untouched)
+  app.delete("/api/projects/:projectId/channel", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "No tenant context" });
+      }
+      await db.delete(projectChannels).where(and(
+        eq(projectChannels.projectId, req.params.projectId),
+        eq(projectChannels.tenantId, tenantId)
+      ));
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to unlink project channel:", error);
+      res.status(500).json({ message: "Failed to unlink project channel: " + error.message });
+    }
+  });
+
+  // Unlink an estimate from its Teams channel (removes db row only)
+  app.delete("/api/estimates/:estimateId/channel", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "No tenant context" });
+      }
+      await db.delete(estimateChannels).where(and(
+        eq(estimateChannels.estimateId, req.params.estimateId),
+        eq(estimateChannels.tenantId, tenantId)
+      ));
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to unlink estimate channel:", error);
+      res.status(500).json({ message: "Failed to unlink estimate channel: " + error.message });
     }
   });
 
