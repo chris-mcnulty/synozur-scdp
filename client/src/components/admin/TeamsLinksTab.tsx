@@ -46,6 +46,7 @@ import {
   Link2,
   Link2Off,
   Loader2,
+  Lock,
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 
@@ -944,8 +945,13 @@ function LinkProjectChannelDialog({
                   <button key={ch.id} type="button"
                     className={`w-full text-left flex items-center gap-3 p-2.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors text-sm ${selectedChannel?.id === ch.id ? "bg-primary/10" : ""}`}
                     onClick={() => setSelectedChannel(ch)}>
-                    <span className="text-muted-foreground">#</span>
+                    {ch.membershipType === "private" ? (
+                      <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    ) : (
+                      <span className="text-muted-foreground shrink-0">#</span>
+                    )}
                     <span className="flex-1">{ch.displayName}</span>
+                    {ch.membershipType === "private" && <Badge variant="outline" className="text-xs text-muted-foreground">Private</Badge>}
                     {selectedChannel?.id === ch.id && <Badge variant="secondary" className="text-xs">Selected</Badge>}
                   </button>
                 ))}

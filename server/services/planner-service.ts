@@ -91,7 +91,8 @@ export interface TeamChannel {
   id: string;
   displayName: string;
   description?: string;
-  membershipType?: 'standard' | 'private' | 'unknownFutureValue';
+  webUrl?: string;
+  membershipType?: 'standard' | 'private' | 'shared' | 'unknownFutureValue';
 }
 
 export interface TeamsTab {
@@ -280,10 +281,14 @@ class PlannerService {
       console.log('[PLANNER] Listing channels for team:', teamId);
       const client = await this.getClient();
       const response = await client.api(`/teams/${teamId}/channels`)
-        .select('id,displayName,description,membershipType')
+        .filter("membershipType ne 'unknownFutureValue'")
+        .select('id,displayName,description,membershipType,webUrl')
         .get();
-      console.log('[PLANNER] Found channels:', response.value?.length || 0);
-      return response.value || [];
+      const channels = response.value || [];
+      const privateCount = channels.filter((c: any) => c.membershipType === 'private').length;
+      const sharedCount = channels.filter((c: any) => c.membershipType === 'shared').length;
+      console.log(`[PLANNER] Found channels: ${channels.length} (${channels.length - privateCount - sharedCount} standard, ${privateCount} private, ${sharedCount} shared)`);
+      return channels;
     } catch (error: any) {
       console.error('[PLANNER] Error listing channels:', error.message);
       // If permission not granted, return empty array with General channel fallback
