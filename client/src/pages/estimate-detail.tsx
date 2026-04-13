@@ -600,6 +600,7 @@ function EstimateTeamsProvisioningDialog({
     setSelectedTeam(null);
     setSelectedChannel(null);
     setChannelUrl(null);
+    setChannelNameDraft(newChannelName.substring(0, 50));
     onComplete();
   };
 

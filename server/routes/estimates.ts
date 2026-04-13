@@ -4985,7 +4985,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           await plannerService.createConstellationTab(teamId, channelId, {
             entityType: 'estimate',
             entityId: estimateId,
-            entityName: estimate.name,
+            entityName: 'Estimate',
           });
         } catch (tabError: any) {
           console.warn("[ESTIMATES] Constellation tab creation failed (non-blocking):", tabError.message);
