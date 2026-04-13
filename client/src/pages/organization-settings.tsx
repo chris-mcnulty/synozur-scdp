@@ -6,6 +6,7 @@ import { z } from "zod";
 import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { canManageSystemSettings } from "@/lib/auth";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -3003,10 +3004,12 @@ export default function OrganizationSettings() {
                 <Languages className="w-4 h-4" />
                 <span>Vocabulary</span>
               </TabsTrigger>
-              <TabsTrigger value="teams-links" className="flex items-center gap-2" data-testid="tab-teams-links">
-                <MicrosoftTeamsIcon className="w-4 h-4" />
-                <span>Teams Links</span>
-              </TabsTrigger>
+              {canManageSystemSettings(user?.role) && (
+                <TabsTrigger value="teams-links" className="flex items-center gap-2" data-testid="tab-teams-links">
+                  <MicrosoftTeamsIcon className="w-4 h-4" />
+                  <span>Teams Links</span>
+                </TabsTrigger>
+              )}
               <TabsTrigger value="support" className="flex items-center gap-2">
                 <LifeBuoy className="w-4 h-4" />
                 <span>Support</span>
@@ -4019,9 +4022,11 @@ export default function OrganizationSettings() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="teams-links" className="space-y-6">
-              <TeamsLinksTab />
-            </TabsContent>
+            {canManageSystemSettings(user?.role) && (
+              <TabsContent value="teams-links" className="space-y-6">
+                <TeamsLinksTab />
+              </TabsContent>
+            )}
 
             <TabsContent value="support" className="space-y-6">
               <AdminSupportTab />

@@ -986,7 +986,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
   // ============ TEAMS LINKS: AGGREGATE VIEW (Org Settings) ============
 
   // Returns clients with their associated Team + project/estimate channels for the current tenant
-  app.get("/api/org/teams-links", deps.requireAuth, async (req, res) => {
+  app.get("/api/org/teams-links", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
       const user = req.user as any;
       const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
