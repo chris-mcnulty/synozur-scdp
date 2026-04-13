@@ -789,10 +789,20 @@ function LinkProjectChannelDialog({
   onLinked: () => void;
 }) {
   const { toast } = useToast();
-  const [channelName, setChannelName] = useState(projectName);
+  const [mode, setMode] = useState<"existing" | "create">("existing");
+
+  // Shared team state
   const [teamSearch, setTeamSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const resolvedTeamId = clientTeamId ?? selectedTeam?.id ?? null;
+  const resolvedTeamName = clientTeamName ?? selectedTeam?.displayName ?? null;
+
+  // Create-mode state
+  const [channelName, setChannelName] = useState(projectName);
+
+  // Existing-mode state
+  const [selectedChannel, setSelectedChannel] = useState<{ id: string; displayName: string; webUrl?: string } | null>(null);
 
   const needsTeamPicker = !clientTeamId;
 
@@ -801,6 +811,7 @@ function LinkProjectChannelDialog({
     return () => clearTimeout(t);
   }, [teamSearch]);
 
+  // Teams query (for when no client team is set)
   const teamsQueryKey = debouncedSearch.trim()
     ? [`/api/planner/teams?search=${encodeURIComponent(debouncedSearch.trim())}`]
     : ["/api/planner/teams"];
@@ -809,120 +820,158 @@ function LinkProjectChannelDialog({
     queryKey: teamsQueryKey,
     enabled: needsTeamPicker,
   });
-
   const teams = teamsResponse?.teams ?? [];
 
-  const resolvedTeamId = clientTeamId ?? selectedTeam?.id ?? null;
+  // Channels query — only runs when in existing mode and a team is resolved
+  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ id: string; displayName: string; webUrl?: string; membershipType?: string }[]>({
+    queryKey: resolvedTeamId ? [`/api/planner/teams/${resolvedTeamId}/channels`] : ["no-team"],
+    enabled: mode === "existing" && !!resolvedTeamId,
+  });
+  const channels = channelsData ?? [];
 
-  const linkMutation = useMutation({
+  // Reset channel selection when team changes
+  useEffect(() => { setSelectedChannel(null); }, [resolvedTeamId]);
+
+  const createMutation = useMutation({
     mutationFn: async () => {
       if (!resolvedTeamId) throw new Error("No team selected");
       await apiRequest(`/api/planner/teams/${resolvedTeamId}/channels`, {
         method: "POST",
+        body: JSON.stringify({ displayName: channelName.trim() || projectName, projectId, projectName }),
+      });
+    },
+    onSuccess: () => { toast({ title: `Channel created and linked to ${projectName}` }); onLinked(); },
+    onError: (e: Error) => toast({ title: "Failed to create channel", description: e.message, variant: "destructive" }),
+  });
+
+  const linkExistingMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedChannel) throw new Error("No channel selected");
+      await apiRequest(`/api/projects/${projectId}/channel`, {
+        method: "POST",
         body: JSON.stringify({
-          displayName: channelName.trim() || projectName,
-          projectId,
-          projectName,
+          teamId: resolvedTeamId,
+          channelId: selectedChannel.id,
+          channelName: selectedChannel.displayName,
+          channelWebUrl: selectedChannel.webUrl ?? null,
         }),
       });
     },
-    onSuccess: () => {
-      toast({ title: `Channel created and linked to ${projectName}` });
-      onLinked();
-    },
-    onError: (e: Error) =>
-      toast({ title: "Failed to create channel", description: e.message, variant: "destructive" }),
+    onSuccess: () => { toast({ title: `Linked "${selectedChannel?.displayName}" to ${projectName}` }); onLinked(); },
+    onError: (e: Error) => toast({ title: "Failed to link channel", description: e.message, variant: "destructive" }),
   });
 
-  const canSubmit = !!resolvedTeamId && channelName.trim().length > 0 && !linkMutation.isPending;
+  const isPending = createMutation.isPending || linkExistingMutation.isPending;
+  const canSubmit = mode === "existing"
+    ? !!selectedChannel && !isPending
+    : !!resolvedTeamId && channelName.trim().length > 0 && !isPending;
+
+  const TeamPicker = needsTeamPicker ? (
+    <div className="space-y-2">
+      <Label className="text-sm font-medium">Select a Team</Label>
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input className="pl-9" placeholder="Search teams…" value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)} />
+      </div>
+      <div className="border rounded-md max-h-36 overflow-y-auto">
+        {teamsLoading ? (
+          <div className="flex items-center justify-center py-5 text-muted-foreground text-sm gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />{debouncedSearch ? "Searching…" : "Loading teams…"}
+          </div>
+        ) : teams.length === 0 ? (
+          <div className="text-center py-5 text-muted-foreground text-sm">{teamSearch ? "No teams match." : "No teams available."}</div>
+        ) : teams.map((team) => (
+          <button key={team.id} type="button"
+            className={`w-full text-left flex items-center gap-3 p-2.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors text-sm ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
+            onClick={() => setSelectedTeam(team)}>
+            <MicrosoftTeamsIcon className="h-4 w-4 shrink-0" />{team.displayName}
+            {selectedTeam?.id === team.id && <Badge variant="secondary" className="ml-auto text-xs">Selected</Badge>}
+          </button>
+        ))}
+      </div>
+      {!debouncedSearch && teams.length > 0 && (
+        <p className="text-xs text-muted-foreground">Showing first {teams.length} — type to search all teams.</p>
+      )}
+    </div>
+  ) : (
+    <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 text-sm">
+      <MicrosoftTeamsIcon className="h-4 w-4 shrink-0" />
+      <span className="text-muted-foreground">Team:</span>
+      <span className="font-medium">{resolvedTeamName || resolvedTeamId}</span>
+    </div>
+  );
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Link Teams Channel</DialogTitle>
+          <DialogTitle>Teams Channel — {projectName}</DialogTitle>
           <DialogDescription>
-            Create and link a Microsoft Teams channel for project <strong>{projectName}</strong>.
+            Link a Microsoft Teams channel to this project.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {clientTeamId ? (
-            <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 text-sm">
-              <MicrosoftTeamsIcon className="h-4 w-4 shrink-0" />
-              <span className="text-muted-foreground">Team:</span>
-              <span className="font-medium">{clientTeamName || clientTeamId}</span>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Select a Team</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="Search teams…"
-                  value={teamSearch}
-                  onChange={(e) => setTeamSearch(e.target.value)}
-                />
-              </div>
-              <div className="border rounded-md max-h-40 overflow-y-auto">
-                {teamsLoading ? (
-                  <div className="flex items-center justify-center py-6 text-muted-foreground text-sm gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {debouncedSearch ? "Searching…" : "Loading teams…"}
-                  </div>
-                ) : teams.length === 0 ? (
-                  <div className="text-center py-6 text-muted-foreground text-sm">
-                    {teamSearch ? "No teams match." : "No teams available."}
-                  </div>
-                ) : (
-                  teams.map((team) => (
-                    <button
-                      key={team.id}
-                      type="button"
-                      className={`w-full text-left flex items-center gap-3 p-2.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors text-sm ${
-                        selectedTeam?.id === team.id ? "bg-primary/10" : ""
-                      }`}
-                      onClick={() => setSelectedTeam(team)}
-                    >
-                      <MicrosoftTeamsIcon className="h-4 w-4 shrink-0" />
-                      {team.displayName}
-                      {selectedTeam?.id === team.id && (
-                        <Badge variant="secondary" className="ml-auto text-xs">Selected</Badge>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-              {!debouncedSearch && teams.length > 0 && (
-                <p className="text-xs text-muted-foreground pt-1">
-                  Showing first {teams.length} — type to search all teams.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="channel-name">Channel name</Label>
-            <Input
-              id="channel-name"
-              value={channelName}
-              onChange={(e) => setChannelName(e.target.value)}
-              placeholder="Channel name…"
-              autoFocus={!!clientTeamId}
-            />
-          </div>
+        {/* Mode toggle */}
+        <div className="flex gap-1 p-1 bg-muted rounded-md">
+          <button type="button"
+            className={`flex-1 text-sm py-1.5 rounded transition-colors font-medium ${mode === "existing" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setMode("existing")}>
+            Link existing channel
+          </button>
+          <button type="button"
+            className={`flex-1 text-sm py-1.5 rounded transition-colors font-medium ${mode === "create" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setMode("create")}>
+            Create new channel
+          </button>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={linkMutation.isPending}>
-            Cancel
-          </Button>
-          <Button onClick={() => linkMutation.mutate()} disabled={!canSubmit}>
-            {linkMutation.isPending ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating…</>
+        <div className="space-y-3">
+          {TeamPicker}
+
+          {mode === "existing" ? (
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Select an existing channel</Label>
+              <div className="border rounded-md max-h-48 overflow-y-auto">
+                {!resolvedTeamId ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm italic">Select a team above first.</div>
+                ) : channelsLoading ? (
+                  <div className="flex items-center justify-center py-6 text-muted-foreground text-sm gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading channels…
+                  </div>
+                ) : channels.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm">No channels found.</div>
+                ) : channels.map((ch) => (
+                  <button key={ch.id} type="button"
+                    className={`w-full text-left flex items-center gap-3 p-2.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors text-sm ${selectedChannel?.id === ch.id ? "bg-primary/10" : ""}`}
+                    onClick={() => setSelectedChannel(ch)}>
+                    <span className="text-muted-foreground">#</span>
+                    <span className="flex-1">{ch.displayName}</span>
+                    {selectedChannel?.id === ch.id && <Badge variant="secondary" className="text-xs">Selected</Badge>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="channel-name">New channel name</Label>
+              <Input
+                id="channel-name"
+                value={channelName}
+                onChange={(e) => setChannelName(e.target.value)}
+                placeholder="Channel name…"
+                autoFocus={!!clientTeamId}
+              />
+            </div>
+          )}
+        </div>
+
+                <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isPending}>Cancel</Button>
+          <Button onClick={() => mode === "existing" ? linkExistingMutation.mutate() : createMutation.mutate()} disabled={!canSubmit}>
+            {isPending ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{mode === "existing" ? "Linking..." : "Creating..."}</>
             ) : (
-              "Create & Link Channel"
+              mode === "existing" ? "Link Channel" : "Create & Link Channel"
             )}
           </Button>
         </DialogFooter>

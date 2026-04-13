@@ -1116,6 +1116,48 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
     }
   });
 
+  // Link an existing Teams channel to a project (no channel creation — just saves the DB record)
+  app.post("/api/projects/:projectId/channel", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "No tenant context" });
+
+      const { projectId } = req.params;
+      const { teamId, channelId, channelName, channelWebUrl } = req.body;
+      if (!channelId) return res.status(400).json({ message: "channelId is required" });
+
+      const [project] = await db.select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+        .limit(1);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      await db.insert(projectChannels).values({
+        projectId,
+        tenantId,
+        channelId,
+        channelName: channelName || null,
+        channelWebUrl: channelWebUrl || null,
+        createdBy: user?.id || null,
+      }).onConflictDoUpdate({
+        target: projectChannels.projectId,
+        set: {
+          channelId,
+          channelName: channelName || null,
+          channelWebUrl: channelWebUrl || null,
+          updatedAt: sql`now()`,
+        },
+      });
+
+      console.log(`[PLANNER] Linked existing channel ${channelId} to project ${projectId}`);
+      res.json({ success: true, projectId, channelId, channelName });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to link project channel:", error);
+      res.status(500).json({ message: "Failed to link project channel: " + error.message });
+    }
+  });
+
   // Unlink a project from its Teams channel (removes db row only; channel itself untouched)
   app.delete("/api/projects/:projectId/channel", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
