@@ -2,14 +2,20 @@
   "swagger": "2.0",
   "info": {
     "title": "Constellation MCP",
-    "description": "Model Context Protocol endpoints for Constellation consulting delivery platform. Read endpoints at /mcp/* provide tenant-scoped access to projects, assignments, time entries, expenses, RAIDD, financials, and CRM data. Write endpoints at /mcp/v1/* (Phase 0 — clients) are gated by the MCP_WRITES_ENABLED feature flag and require an X-Idempotency-Key header.",
-    "version": "1.1.0"
+    "description": "Model Context Protocol endpoints for Constellation consulting delivery platform. Read endpoints at /mcp/* provide tenant-scoped access to projects, assignments, time entries, expenses, RAIDD, financials, and CRM data. Write endpoints at /mcp/v1/* (Phase 0 \u2014 Phases 0\u20135: clients, estimates, HubSpot linkage, Teams linkage) are gated by the MCP_WRITES_ENABLED feature flag and require an X-Idempotency-Key header.",
+    "version": "1.2.0"
   },
   "host": "constellation.synozur.com",
   "basePath": "/mcp",
-  "schemes": ["https"],
-  "consumes": ["application/json"],
-  "produces": ["application/json"],
+  "schemes": [
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
   "paths": {
     "/me": {
       "get": {
@@ -25,14 +31,30 @@
                 "data": {
                   "type": "object",
                   "properties": {
-                    "id": { "type": "string" },
-                    "email": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "type": "string" },
-                    "platformRole": { "type": "string" },
-                    "tenantId": { "type": "string" },
-                    "tenantName": { "type": "string" },
-                    "tenantSlug": { "type": "string" }
+                    "id": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "platformRole": {
+                      "type": "string"
+                    },
+                    "tenantId": {
+                      "type": "string"
+                    },
+                    "tenantName": {
+                      "type": "string"
+                    },
+                    "tenantSlug": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -75,7 +97,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -123,7 +150,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -157,7 +189,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -190,7 +227,11 @@
             "type": "string",
             "required": false,
             "description": "Filter by budget health status.",
-            "enum": ["OnTrack", "AtRisk", "OverBudget"]
+            "enum": [
+              "OnTrack",
+              "AtRisk",
+              "OverBudget"
+            ]
           }
         ],
         "responses": {
@@ -199,7 +240,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -226,11 +272,15 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "object" }
+                "data": {
+                  "type": "object"
+                }
               }
             }
           },
-          "404": { "description": "Project not found or not in user's tenant" }
+          "404": {
+            "description": "Project not found or not in user's tenant"
+          }
         }
       }
     },
@@ -253,7 +303,13 @@
             "type": "string",
             "required": false,
             "description": "Filter by deliverable status.",
-            "enum": ["NotStarted", "InProgress", "InReview", "Accepted", "Rejected"]
+            "enum": [
+              "NotStarted",
+              "InProgress",
+              "InReview",
+              "Accepted",
+              "Rejected"
+            ]
           }
         ],
         "responses": {
@@ -262,7 +318,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -310,7 +371,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -357,33 +423,57 @@
                     "project": {
                       "type": "object",
                       "properties": {
-                        "id": { "type": "string" },
-                        "name": { "type": "string" },
-                        "code": { "type": "string" },
-                        "status": { "type": "string" },
-                        "clientName": { "type": "string" }
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "clientName": {
+                          "type": "string"
+                        }
                       }
                     },
                     "period": {
                       "type": "object",
                       "properties": {
-                        "startDate": { "type": "string" },
-                        "endDate": { "type": "string" }
+                        "startDate": {
+                          "type": "string"
+                        },
+                        "endDate": {
+                          "type": "string"
+                        }
                       }
                     },
                     "hours": {
                       "type": "object",
                       "properties": {
-                        "total": { "type": "number" },
-                        "billable": { "type": "number" },
-                        "nonBillable": { "type": "number" }
+                        "total": {
+                          "type": "number"
+                        },
+                        "billable": {
+                          "type": "number"
+                        },
+                        "nonBillable": {
+                          "type": "number"
+                        }
                       }
                     },
                     "expenses": {
                       "type": "object",
                       "properties": {
-                        "total": { "type": "number" },
-                        "count": { "type": "integer" }
+                        "total": {
+                          "type": "number"
+                        },
+                        "count": {
+                          "type": "integer"
+                        }
                       }
                     },
                     "team": {
@@ -391,26 +481,65 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "name": { "type": "string" },
-                          "hours": { "type": "number" },
-                          "topActivities": { "type": "array", "items": { "type": "string" } }
+                          "name": {
+                            "type": "string"
+                          },
+                          "hours": {
+                            "type": "number"
+                          },
+                          "topActivities": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
                         }
                       }
                     },
                     "raidd": {
                       "type": "object",
                       "properties": {
-                        "openRisks": { "type": "integer" },
-                        "openIssues": { "type": "integer" },
-                        "openActions": { "type": "integer" },
-                        "decisions": { "type": "integer" },
-                        "criticalItems": { "type": "integer" },
-                        "items": { "type": "array", "items": { "type": "object" } }
+                        "openRisks": {
+                          "type": "integer"
+                        },
+                        "openIssues": {
+                          "type": "integer"
+                        },
+                        "openActions": {
+                          "type": "integer"
+                        },
+                        "decisions": {
+                          "type": "integer"
+                        },
+                        "criticalItems": {
+                          "type": "integer"
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
                       }
                     },
-                    "milestones": { "type": "array", "items": { "type": "object" } },
-                    "deliverables": { "type": "array", "items": { "type": "object" } },
-                    "allocations": { "type": "array", "items": { "type": "object" } }
+                    "milestones": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "deliverables": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "allocations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
                   }
                 }
               }
@@ -442,23 +571,47 @@
                 "data": {
                   "type": "object",
                   "properties": {
-                    "projectId": { "type": "string" },
-                    "projectName": { "type": "string" },
-                    "teamId": { "type": "string" },
-                    "teamName": { "type": "string" },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "projectName": {
+                      "type": "string"
+                    },
+                    "teamId": {
+                      "type": "string"
+                    },
+                    "teamName": {
+                      "type": "string"
+                    },
                     "plannerConnections": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "planId": { "type": "string" },
-                          "planTitle": { "type": "string" },
-                          "planWebUrl": { "type": "string" },
-                          "groupId": { "type": "string" },
-                          "groupName": { "type": "string" },
-                          "channelId": { "type": "string" },
-                          "channelName": { "type": "string" },
-                          "syncEnabled": { "type": "boolean" }
+                          "planId": {
+                            "type": "string"
+                          },
+                          "planTitle": {
+                            "type": "string"
+                          },
+                          "planWebUrl": {
+                            "type": "string"
+                          },
+                          "groupId": {
+                            "type": "string"
+                          },
+                          "groupName": {
+                            "type": "string"
+                          },
+                          "channelId": {
+                            "type": "string"
+                          },
+                          "channelName": {
+                            "type": "string"
+                          },
+                          "syncEnabled": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     }
@@ -504,7 +657,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -543,15 +701,33 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "projectId": { "type": "string" },
-                      "projectName": { "type": "string" },
-                      "projectCode": { "type": "string" },
-                      "clientName": { "type": "string" },
-                      "clientId": { "type": "string" },
-                      "startDate": { "type": "string" },
-                      "endDate": { "type": "string" },
-                      "status": { "type": "string" },
-                      "commercialScheme": { "type": "string" }
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "projectCode": {
+                        "type": "string"
+                      },
+                      "clientName": {
+                        "type": "string"
+                      },
+                      "clientId": {
+                        "type": "string"
+                      },
+                      "startDate": {
+                        "type": "string"
+                      },
+                      "endDate": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "commercialScheme": {
+                        "type": "string"
+                      }
                     }
                   }
                 }
@@ -595,7 +771,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -614,7 +795,12 @@
             "type": "string",
             "required": false,
             "description": "Group results by dimension. Defaults to Month.",
-            "enum": ["Month", "Quarter", "Client", "Project"]
+            "enum": [
+              "Month",
+              "Quarter",
+              "Client",
+              "Project"
+            ]
           },
           {
             "name": "from",
@@ -642,14 +828,24 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "key": { "type": "string" },
-                      "totalAmount": { "type": "number" },
-                      "invoiceCount": { "type": "integer" },
-                      "lineCount": { "type": "integer" }
+                      "key": {
+                        "type": "string"
+                      },
+                      "totalAmount": {
+                        "type": "number"
+                      },
+                      "invoiceCount": {
+                        "type": "integer"
+                      },
+                      "lineCount": {
+                        "type": "integer"
+                      }
                     }
                   }
                 },
-                "groupBy": { "type": "string" }
+                "groupBy": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -683,8 +879,15 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } },
-                "message": { "type": "string" }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "message": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -711,7 +914,12 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "array", "items": { "type": "object" } }
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -778,24 +986,60 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": { "type": "string" },
-                      "name": { "type": "string" },
-                      "status": { "type": "string" },
-                      "estimateType": { "type": "string" },
-                      "pricingType": { "type": "string" },
-                      "version": { "type": "integer" },
-                      "clientId": { "type": "string" },
-                      "clientName": { "type": "string" },
-                      "projectId": { "type": "string" },
-                      "projectName": { "type": "string" },
-                      "totalHours": { "type": "number" },
-                      "totalFees": { "type": "number" },
-                      "presentedTotal": { "type": "number" },
-                      "margin": { "type": "number" },
-                      "netRevenue": { "type": "number" },
-                      "estimateDate": { "type": "string" },
-                      "validUntil": { "type": "string" },
-                      "archived": { "type": "boolean" }
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "estimateType": {
+                        "type": "string"
+                      },
+                      "pricingType": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "integer"
+                      },
+                      "clientId": {
+                        "type": "string"
+                      },
+                      "clientName": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "totalHours": {
+                        "type": "number"
+                      },
+                      "totalFees": {
+                        "type": "number"
+                      },
+                      "presentedTotal": {
+                        "type": "number"
+                      },
+                      "margin": {
+                        "type": "number"
+                      },
+                      "netRevenue": {
+                        "type": "number"
+                      },
+                      "estimateDate": {
+                        "type": "string"
+                      },
+                      "validUntil": {
+                        "type": "string"
+                      },
+                      "archived": {
+                        "type": "boolean"
+                      }
                     }
                   }
                 }
@@ -828,27 +1072,68 @@
                 "data": {
                   "type": "object",
                   "properties": {
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "status": { "type": "string" },
-                    "estimateType": { "type": "string" },
-                    "pricingType": { "type": "string" },
-                    "totalHours": { "type": "number" },
-                    "totalFees": { "type": "number" },
-                    "presentedTotal": { "type": "number" },
-                    "margin": { "type": "number" },
-                    "netRevenue": { "type": "number" },
-                    "blockHours": { "type": "number" },
-                    "blockDollars": { "type": "number" },
-                    "fixedPrice": { "type": "number" },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "estimateType": {
+                      "type": "string"
+                    },
+                    "pricingType": {
+                      "type": "string"
+                    },
+                    "totalHours": {
+                      "type": "number"
+                    },
+                    "totalFees": {
+                      "type": "number"
+                    },
+                    "presentedTotal": {
+                      "type": "number"
+                    },
+                    "margin": {
+                      "type": "number"
+                    },
+                    "netRevenue": {
+                      "type": "number"
+                    },
+                    "blockHours": {
+                      "type": "number"
+                    },
+                    "blockDollars": {
+                      "type": "number"
+                    },
+                    "fixedPrice": {
+                      "type": "number"
+                    },
                     "structure": {
                       "type": "object",
                       "properties": {
-                        "epics": { "type": "array", "items": { "type": "object" } },
-                        "stages": { "type": "array", "items": { "type": "object" } }
+                        "epics": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "stages": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
                       }
                     },
-                    "milestones": { "type": "array", "items": { "type": "object" } }
+                    "milestones": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
                   }
                 }
               }
@@ -861,7 +1146,7 @@
       "get": {
         "operationId": "GetEstimateLineItems",
         "summary": "Get estimate line items",
-        "description": "Returns the detailed line item breakdown for an estimate — hours, rates, costs, roles, and margin per line. Supports filtering by epic or stage. Includes a summary with totals. Requires PM, Admin, Portfolio Manager, Executive, or Billing Admin role.",
+        "description": "Returns the detailed line item breakdown for an estimate \u2014 hours, rates, costs, roles, and margin per line. Supports filtering by epic or stage. Includes a summary with totals. Requires PM, Admin, Portfolio Manager, Executive, or Billing Admin role.",
         "parameters": [
           {
             "name": "estimateId",
@@ -896,30 +1181,66 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": { "type": "string" },
-                      "epicName": { "type": "string" },
-                      "stageName": { "type": "string" },
-                      "description": { "type": "string" },
-                      "roleName": { "type": "string" },
-                      "assignedUserName": { "type": "string" },
-                      "baseHours": { "type": "number" },
-                      "adjustedHours": { "type": "number" },
-                      "rate": { "type": "number" },
-                      "costRate": { "type": "number" },
-                      "totalAmount": { "type": "number" },
-                      "totalCost": { "type": "number" },
-                      "margin": { "type": "number" },
-                      "marginPercent": { "type": "number" }
+                      "id": {
+                        "type": "string"
+                      },
+                      "epicName": {
+                        "type": "string"
+                      },
+                      "stageName": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "roleName": {
+                        "type": "string"
+                      },
+                      "assignedUserName": {
+                        "type": "string"
+                      },
+                      "baseHours": {
+                        "type": "number"
+                      },
+                      "adjustedHours": {
+                        "type": "number"
+                      },
+                      "rate": {
+                        "type": "number"
+                      },
+                      "costRate": {
+                        "type": "number"
+                      },
+                      "totalAmount": {
+                        "type": "number"
+                      },
+                      "totalCost": {
+                        "type": "number"
+                      },
+                      "margin": {
+                        "type": "number"
+                      },
+                      "marginPercent": {
+                        "type": "number"
+                      }
                     }
                   }
                 },
                 "summary": {
                   "type": "object",
                   "properties": {
-                    "totalLineItems": { "type": "integer" },
-                    "totalHours": { "type": "number" },
-                    "totalAmount": { "type": "number" },
-                    "totalCost": { "type": "number" }
+                    "totalLineItems": {
+                      "type": "integer"
+                    },
+                    "totalHours": {
+                      "type": "number"
+                    },
+                    "totalAmount": {
+                      "type": "number"
+                    },
+                    "totalCost": {
+                      "type": "number"
+                    }
                   }
                 }
               }
@@ -995,34 +1316,68 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": { "type": "string" },
-                      "date": { "type": "string" },
-                      "category": { "type": "string" },
-                      "amount": { "type": "number" },
-                      "currency": { "type": "string" },
-                      "description": { "type": "string" },
-                      "vendor": { "type": "string" },
-                      "billable": { "type": "boolean" },
-                      "reimbursable": { "type": "boolean" },
-                      "approvalStatus": { "type": "string" },
-                      "projectName": { "type": "string" },
-                      "clientName": { "type": "string" },
-                      "personName": { "type": "string" }
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "number"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "vendor": {
+                        "type": "string"
+                      },
+                      "billable": {
+                        "type": "boolean"
+                      },
+                      "reimbursable": {
+                        "type": "boolean"
+                      },
+                      "approvalStatus": {
+                        "type": "string"
+                      },
+                      "projectName": {
+                        "type": "string"
+                      },
+                      "clientName": {
+                        "type": "string"
+                      },
+                      "personName": {
+                        "type": "string"
+                      }
                     }
                   }
                 },
                 "summary": {
                   "type": "object",
                   "properties": {
-                    "totalItems": { "type": "integer" },
-                    "totalAmount": { "type": "number" },
+                    "totalItems": {
+                      "type": "integer"
+                    },
+                    "totalAmount": {
+                      "type": "number"
+                    },
                     "byCategory": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "category": { "type": "string" },
-                          "total": { "type": "number" }
+                          "category": {
+                            "type": "string"
+                          },
+                          "total": {
+                            "type": "number"
+                          }
                         }
                       }
                     }
@@ -1080,16 +1435,36 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": { "type": "string" },
-                      "batchNumber": { "type": "string" },
-                      "status": { "type": "string" },
-                      "totalAmount": { "type": "number" },
-                      "currency": { "type": "string" },
-                      "description": { "type": "string" },
-                      "requestedForUser": { "type": "string" },
-                      "requester": { "type": "string" },
-                      "paymentReferenceNumber": { "type": "string" },
-                      "processedAt": { "type": "string" }
+                      "id": {
+                        "type": "string"
+                      },
+                      "batchNumber": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "totalAmount": {
+                        "type": "number"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "requestedForUser": {
+                        "type": "string"
+                      },
+                      "requester": {
+                        "type": "string"
+                      },
+                      "paymentReferenceNumber": {
+                        "type": "string"
+                      },
+                      "processedAt": {
+                        "type": "string"
+                      }
                     }
                   }
                 }
@@ -1122,31 +1497,65 @@
                 "data": {
                   "type": "object",
                   "properties": {
-                    "id": { "type": "string" },
-                    "batchNumber": { "type": "string" },
-                    "status": { "type": "string" },
-                    "totalAmount": { "type": "number" },
-                    "currency": { "type": "string" },
-                    "requestedForUser": { "type": "string" },
-                    "paymentReferenceNumber": { "type": "string" },
+                    "id": {
+                      "type": "string"
+                    },
+                    "batchNumber": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "totalAmount": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "requestedForUser": {
+                      "type": "string"
+                    },
+                    "paymentReferenceNumber": {
+                      "type": "string"
+                    },
                     "lineItems": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": { "type": "string" },
-                          "status": { "type": "string" },
-                          "reviewNote": { "type": "string" },
+                          "id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "reviewNote": {
+                            "type": "string"
+                          },
                           "expense": {
                             "type": "object",
                             "properties": {
-                              "id": { "type": "string" },
-                              "date": { "type": "string" },
-                              "category": { "type": "string" },
-                              "amount": { "type": "number" },
-                              "description": { "type": "string" },
-                              "vendor": { "type": "string" },
-                              "projectName": { "type": "string" }
+                              "id": {
+                                "type": "string"
+                              },
+                              "date": {
+                                "type": "string"
+                              },
+                              "category": {
+                                "type": "string"
+                              },
+                              "amount": {
+                                "type": "number"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "vendor": {
+                                "type": "string"
+                              },
+                              "projectName": {
+                                "type": "string"
+                              }
                             }
                           }
                         }
@@ -1192,14 +1601,30 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": { "type": "string" },
-                      "name": { "type": "string" },
-                      "shortName": { "type": "string" },
-                      "status": { "type": "string" },
-                      "currency": { "type": "string" },
-                      "hasHubspotLink": { "type": "boolean" },
-                      "hasTeamsLink": { "type": "boolean" },
-                      "activeEstimateCount": { "type": "integer" }
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "shortName": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "hasHubspotLink": {
+                        "type": "boolean"
+                      },
+                      "hasTeamsLink": {
+                        "type": "boolean"
+                      },
+                      "activeEstimateCount": {
+                        "type": "integer"
+                      }
                     }
                   }
                 }
@@ -1233,7 +1658,9 @@
             "name": "body",
             "in": "body",
             "required": false,
-            "schema": { "type": "object" }
+            "schema": {
+              "type": "object"
+            }
           }
         ],
         "responses": {
@@ -1245,15 +1672,29 @@
                 "data": {
                   "type": "object",
                   "properties": {
-                    "pong": { "type": "boolean" },
-                    "dryRun": { "type": "boolean" },
-                    "at": { "type": "string" }
+                    "pong": {
+                      "type": "boolean"
+                    },
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
                   }
                 },
-                "idempotent": { "type": "boolean" },
-                "auditId": { "type": "string" },
-                "correlationId": { "type": "string" },
-                "dryRun": { "type": "boolean" }
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                }
               }
             }
           }
@@ -1264,7 +1705,7 @@
       "post": {
         "operationId": "CreateClient",
         "summary": "Create a client (with duplicate detection)",
-        "description": "Creates a client in the caller's tenant. Performs a near-match scan against existing client names first — if any similar client is found, returns 409 with candidate records unless force=true is set in the body. Supports ?dryRun=true for conversational preview. Requires admin, pm, or portfolio-manager role.",
+        "description": "Creates a client in the caller's tenant. Performs a near-match scan against existing client names first \u2014 if any similar client is found, returns 409 with candidate records unless force=true is set in the body. Supports ?dryRun=true for conversational preview. Requires admin, pm, or portfolio-manager role.",
         "parameters": [
           {
             "name": "X-Idempotency-Key",
@@ -1286,15 +1727,42 @@
             "required": true,
             "schema": {
               "type": "object",
-              "required": ["name"],
+              "required": [
+                "name"
+              ],
               "properties": {
-                "name": { "type": "string", "description": "Client display name (required)." },
-                "shortName": { "type": "string", "description": "Abbreviated name for display (e.g. 'MSFT' for Microsoft)." },
-                "currency": { "type": "string", "description": "ISO 4217 currency code (default 'USD')." },
-                "status": { "type": "string", "enum": ["pending", "active", "inactive", "archived"], "description": "Initial status (default 'pending')." },
-                "contactName": { "type": "string" },
-                "billingContact": { "type": "string" },
-                "force": { "type": "boolean", "description": "If true, bypasses near-match duplicate detection. Use only after confirming with the end user." }
+                "name": {
+                  "type": "string",
+                  "description": "Client display name (required)."
+                },
+                "shortName": {
+                  "type": "string",
+                  "description": "Abbreviated name for display (e.g. 'MSFT' for Microsoft)."
+                },
+                "currency": {
+                  "type": "string",
+                  "description": "ISO 4217 currency code (default 'USD')."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "active",
+                    "inactive",
+                    "archived"
+                  ],
+                  "description": "Initial status (default 'pending')."
+                },
+                "contactName": {
+                  "type": "string"
+                },
+                "billingContact": {
+                  "type": "string"
+                },
+                "force": {
+                  "type": "boolean",
+                  "description": "If true, bypasses near-match duplicate detection. Use only after confirming with the end user."
+                }
               }
             }
           }
@@ -1305,36 +1773,779 @@
             "schema": {
               "type": "object",
               "properties": {
-                "data": { "type": "object" },
-                "created": { "type": "boolean" },
-                "nearMatches": { "type": "array", "items": { "type": "object" } },
-                "forced": { "type": "boolean" },
-                "idempotent": { "type": "boolean" },
-                "auditId": { "type": "string" },
-                "correlationId": { "type": "string" }
+                "data": {
+                  "type": "object"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "nearMatches": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "forced": {
+                  "type": "boolean"
+                },
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                }
               }
             }
           },
           "409": {
-            "description": "Near-match to existing client — confirm with user and retry with force=true",
+            "description": "Near-match to existing client \u2014 confirm with user and retry with force=true",
             "schema": {
               "type": "object",
               "properties": {
-                "error": { "type": "string" },
-                "code": { "type": "string" },
+                "error": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
                 "candidates": {
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": { "type": "string" },
-                      "name": { "type": "string" },
-                      "status": { "type": "string" }
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      }
                     }
                   }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/estimates/from-narrative": {
+      "post": {
+        "operationId": "CreateEstimateFromNarrative",
+        "summary": "Create estimate from project narrative (AI-generated)",
+        "description": "Calls the AI service with the provided narrative and tenant rate catalog to generate a hierarchical estimate with up to 8 summary line items. Performs a duplicate-active-estimate check on the client (409 unless force=true). Supports ?dryRun=true for conversational preview. Requires admin, pm, or portfolio-manager role.",
+        "parameters": [
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "type": "string",
+            "required": true,
+            "description": "Client-supplied UUID or opaque token. Replays with the same key return the cached response."
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "type": "boolean",
+            "required": false,
+            "description": "If true, validates and returns the would-be response but does NOT persist or audit."
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "clientId",
+                "name",
+                "narrative"
+              ],
+              "properties": {
+                "clientId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "SCDP client UUID"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Estimate name"
+                },
+                "narrative": {
+                  "type": "string",
+                  "description": "Free-text project description (10-50 000 chars)"
+                },
+                "clientName": {
+                  "type": "string",
+                  "description": "Override for the client name sent to the AI"
+                },
+                "constraints": {
+                  "type": "string",
+                  "description": "Budget, timeline, or technology constraints"
+                },
+                "projectId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Optional project to attach to"
+                },
+                "validDays": {
+                  "type": "integer",
+                  "description": "Days until the estimate expires"
+                },
+                "force": {
+                  "type": "boolean",
+                  "description": "Skip the duplicate estimate check"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Estimate created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "description": "Persisted estimate record"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "existingEstimates": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "forced": {
+                  "type": "boolean"
+                },
+                "summary": {
+                  "type": "object"
+                },
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active estimate(s) already exist for the client (duplicates returned in existingEstimates)"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/v1/estimates/block-hours": {
+      "post": {
+        "operationId": "CreateEstimateBlockHours",
+        "summary": "Create block-hours estimate (single blended rate)",
+        "description": "Creates a single-line-item estimate using the resolved billing rate for the named role from the tenant rate catalog. Suitable for quick T&M engagements. Supports ?dryRun=true. Requires admin, pm, or portfolio-manager role.",
+        "parameters": [
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "type": "string",
+            "required": true,
+            "description": "Client-supplied UUID or opaque token. Replays with the same key return the cached response."
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "type": "boolean",
+            "required": false,
+            "description": "If true, validates and returns the would-be response but does NOT persist or audit."
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "clientId",
+                "name",
+                "roleName",
+                "hours"
+              ],
+              "properties": {
+                "clientId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "roleName": {
+                  "type": "string",
+                  "description": "Role name from the tenant rate catalog"
+                },
+                "hours": {
+                  "type": "number",
+                  "description": "Total block hours"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "validDays": {
+                  "type": "integer"
+                },
+                "force": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Estimate created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "summary": {
+                  "type": "object"
+                },
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active estimate(s) already exist for the client"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/v1/estimates/fixed-price": {
+      "post": {
+        "operationId": "CreateEstimateFixedPrice",
+        "summary": "Create fixed-price estimate (one line per phase)",
+        "description": "Creates a fixed-price estimate with one epic per phase. Each phase has a name and a fixed fee amount; hours are set to 1 and rate equals the phase price. Supports ?dryRun=true. Requires admin, pm, or portfolio-manager role.",
+        "parameters": [
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "type": "string",
+            "required": true,
+            "description": "Client-supplied UUID or opaque token. Replays with the same key return the cached response."
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "type": "boolean",
+            "required": false,
+            "description": "If true, validates and returns the would-be response but does NOT persist or audit."
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "clientId",
+                "name",
+                "phases"
+              ],
+              "properties": {
+                "clientId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "phases": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "price"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "price": {
+                        "type": "number"
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "projectId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "validDays": {
+                  "type": "integer"
+                },
+                "force": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Estimate created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "summary": {
+                  "type": "object"
+                },
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active estimate(s) already exist for the client"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/v1/hubspot/search": {
+      "get": {
+        "operationId": "HubSpotSearch",
+        "summary": "Search HubSpot companies or deals",
+        "description": "Searches the connected HubSpot CRM for companies or deals matching the query. Returns up to 20 results. Requires HubSpot to be connected in tenant settings. Requires admin, pm, or portfolio-manager role.",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "type": "string",
+            "required": true,
+            "description": "Object type to search: company or deal",
+            "enum": [
+              "company",
+              "deal"
+            ]
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "type": "string",
+            "required": true,
+            "description": "Search string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "type": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "HubSpot not connected for this tenant"
+          }
+        }
+      }
+    },
+    "/v1/clients/{clientId}/hubspot-link": {
+      "post": {
+        "operationId": "LinkClientToHubSpot",
+        "summary": "Link SCDP client to a HubSpot company or deal",
+        "description": "Writes a crm_object_mappings row linking the client to a HubSpot object. If createIfMissing=true and no hubspotObjectId is provided, creates the HubSpot company or deal first. Supports ?dryRun=true. Requires admin, pm, or portfolio-manager role.",
+        "parameters": [
+          {
+            "name": "clientId",
+            "in": "path",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "type": "string",
+            "required": true,
+            "description": "Client-supplied UUID or opaque token. Replays with the same key return the cached response."
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "type": "boolean",
+            "required": false,
+            "description": "If true, validates and returns the would-be response but does NOT persist or audit."
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "hubspotObjectType"
+              ],
+              "properties": {
+                "hubspotObjectType": {
+                  "type": "string",
+                  "enum": [
+                    "company",
+                    "deal"
+                  ]
+                },
+                "hubspotObjectId": {
+                  "type": "string",
+                  "description": "Existing HubSpot object ID"
+                },
+                "createIfMissing": {
+                  "type": "boolean",
+                  "description": "Create a new HubSpot record if no ID given"
+                },
+                "companyName": {
+                  "type": "string"
+                },
+                "dealName": {
+                  "type": "string"
+                },
+                "dealAmount": {
+                  "type": "string"
+                },
+                "dealStage": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Mapping created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "HubSpot not connected for this tenant"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/v1/clients/{clientId}/teams-link": {
+      "post": {
+        "operationId": "LinkClientToTeams",
+        "summary": "Link SCDP client to a Microsoft Teams team",
+        "description": "Ensures a client_teams row exists. If createIfMissing=true and no teamId is provided, creates a new Microsoft Teams team via the Graph API. Returns alreadyLinked=true if the client was already linked. Supports ?dryRun=true. Requires admin, pm, or portfolio-manager role.",
+        "parameters": [
+          {
+            "name": "clientId",
+            "in": "path",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "type": "string",
+            "required": true,
+            "description": "Client-supplied UUID or opaque token. Replays with the same key return the cached response."
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "type": "boolean",
+            "required": false,
+            "description": "If true, validates and returns the would-be response but does NOT persist or audit."
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": false,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "teamId": {
+                  "type": "string",
+                  "description": "Existing Microsoft Teams team ID (GUID)"
+                },
+                "createIfMissing": {
+                  "type": "boolean",
+                  "description": "Create a new team if teamId is not provided"
+                },
+                "teamName": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Team link created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "alreadyLinked": {
+                  "type": "boolean"
+                },
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "Teams Graph integration not configured"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/v1/projects/{projectId}/teams-channel": {
+      "post": {
+        "operationId": "CreateProjectTeamsChannel",
+        "summary": "Create a Microsoft Teams channel for a project",
+        "description": "Creates a channel in the Teams team associated with the project's client (resolved via client_teams) or the provided teamId. Writes a project_channels row. Returns alreadyLinked=true if the project already has a channel. Partial-failure envelope: warnings[] is populated if non-critical errors occurred. Supports ?dryRun=true. Requires admin, pm, or portfolio-manager role.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "type": "string",
+            "required": true,
+            "description": "Client-supplied UUID or opaque token. Replays with the same key return the cached response."
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "type": "boolean",
+            "required": false,
+            "description": "If true, validates and returns the would-be response but does NOT persist or audit."
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "required": [
+                "channelName"
+              ],
+              "properties": {
+                "channelName": {
+                  "type": "string",
+                  "description": "Channel display name (max 50 chars)"
+                },
+                "teamId": {
+                  "type": "string",
+                  "description": "Override: explicit Teams team GUID"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "membershipType": {
+                  "type": "string",
+                  "enum": [
+                    "standard",
+                    "private",
+                    "shared"
+                  ],
+                  "default": "standard"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Channel created",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object"
+                },
+                "created": {
+                  "type": "boolean"
+                },
+                "alreadyLinked": {
+                  "type": "boolean"
+                },
+                "idempotent": {
+                  "type": "boolean"
+                },
+                "auditId": {
+                  "type": "string"
+                },
+                "correlationId": {
+                  "type": "string"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "424": {
+            "description": "Teams Graph integration not configured"
+          },
+          "400": {
+            "description": "Validation error"
           }
         }
       }
@@ -1353,7 +2564,9 @@
   },
   "security": [
     {
-      "oauth2": ["api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user"]
+      "oauth2": [
+        "api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user"
+      ]
     }
   ]
 }

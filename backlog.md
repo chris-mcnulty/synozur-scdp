@@ -33,29 +33,29 @@ The MCP server and Copilot Studio agent are currently read-only. Users asking th
 - [x] Near-match duplicate detection (normalize + substring + Levenshtein) against existing clients in tenant — returns 409 with candidates unless `force: true`
 - [x] Shared `insertClientSchema` validation consistent with `/api/clients`
 
-### Phase 3 — Estimate Creation (3 variants) — NEXT
+### Phase 3 — Estimate Creation (3 variants) ✅ COMPLETE
 **Effort:** Medium (2–3 weeks)
-- [ ] `POST /mcp/v1/estimates/from-narrative` — AI-generated 3–8 summary line items (hard cap)
-- [ ] `POST /mcp/v1/estimates/block-hours` — single line item, blended rate via `RateResolver.resolveRates()`
-- [ ] `POST /mcp/v1/estimates/fixed-price` — `pricingType: fixed`, one line per phase
-- [ ] New `aiService.generateEstimateFromNarrative()` alongside `generateSubSOWNarrative()` in `server/services/ai-service.ts`
-- [ ] Pre-create duplicate check for active estimates on the same client (409 unless `force: true`)
-- [ ] Extract `createEstimateCore()` helper from `/server/routes/estimates.ts:5098`
-- [ ] Prompt-injection sanitization on the `narrative` field
+- [x] `POST /mcp/v1/estimates/from-narrative` — AI-generated 3–8 summary line items (hard cap)
+- [x] `POST /mcp/v1/estimates/block-hours` — single line item, blended rate via role catalog lookup
+- [x] `POST /mcp/v1/estimates/fixed-price` — `estimateType: fixed`, one line per phase
+- [x] Uses existing `aiService.generateEstimateFromNarrative()` in `server/services/ai-service.ts`
+- [x] Pre-create duplicate check for active estimates on the same client (409 unless `force: true`)
+- [x] `createEstimateCore()` helper in `server/routes/mcp-write.ts`
+- [x] Prompt-injection sanitization on the `narrative` field (`sanitizeNarrative()`)
 
-### Phase 4 — HubSpot Linkage
+### Phase 4 — HubSpot Linkage ✅ COMPLETE
 **Effort:** Small-Medium (1–2 weeks)
-- [ ] `GET /mcp/v1/hubspot/search?type=company|deal&query=`
-- [ ] `POST /mcp/v1/clients/:clientId/hubspot-link` with `createIfMissing` flag — writes `crm_object_mappings`, uses `createHubSpotDeal()` from `hubspot-client.ts`
+- [x] `GET /mcp/v1/hubspot/search?type=company|deal&query=`
+- [x] `POST /mcp/v1/clients/:clientId/hubspot-link` with `createIfMissing` flag — writes `crm_object_mappings`, uses `createHubSpotDeal()` / `createHubSpotCompany()` from `hubspot-client.ts`
 
-### Phase 5 — Teams Team + Channel Linkage
+### Phase 5 — Teams Team + Channel Linkage ✅ COMPLETE
 **Effort:** Medium (2 weeks)
-- [ ] `POST /mcp/v1/clients/:clientId/teams-link` — ensures `client_teams` row (creates team via Graph when `createIfMissing`)
-- [ ] `POST /mcp/v1/projects/:projectId/teams-channel` — ensures `project_channels` row via `plannerService.createChannel()`
-- [ ] Partial-failure envelope: `warnings[]` preserved; no rollback of prior successful steps
+- [x] `POST /mcp/v1/clients/:clientId/teams-link` — ensures `client_teams` row (creates team via Graph when `createIfMissing`)
+- [x] `POST /mcp/v1/projects/:projectId/teams-channel` — ensures `project_channels` row via `plannerService.createChannel()`
+- [x] Partial-failure envelope: `warnings[]` preserved; no rollback of prior successful steps
 
 ### Phase 6 — Docs, Agent Instructions, Rollout
-- [x] OpenAPI spec updated for each phase
+- [x] OpenAPI spec updated for each phase (bumped to v1.2.0 for Phase 3-5)
 - [x] Connector setup doc updated with write-flow agent instructions (Phase 0)
 - [ ] `USER_GUIDE.md` — new "Conversational Estimate Creation" section (gated on Phase 3)
 - [ ] Enable `MCP_WRITES_ENABLED=true` in staging for pilot tenant(s) after Phase 3
