@@ -1724,7 +1724,12 @@ export async function searchClientsWithLinkage(
   const ctRows = await db
     .select({ clientId: clientTeams.clientId })
     .from(clientTeams)
-    .where(inArray(clientTeams.clientId, clientIds));
+    .where(
+      and(
+        eq(clientTeams.tenantId, tenantId),
+        inArray(clientTeams.clientId, clientIds)
+      )
+    );
   for (const t of ctRows) linkedTeamsIds.add(t.clientId);
 
   return rows.map((r) => ({
