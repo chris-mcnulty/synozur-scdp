@@ -601,11 +601,13 @@ class PlannerService {
     membershipType?: 'standard' | 'private' | 'shared';
   }): Promise<CreatedChannel> {
     try {
-      console.log('[PLANNER] Creating channel:', options.displayName, 'in team:', teamId);
+      // Teams enforces a 50-character hard limit on channel display names
+      const displayName = options.displayName.substring(0, 50).trim();
+      console.log('[PLANNER] Creating channel:', displayName, 'in team:', teamId);
       const client = await this.getClient();
       
       const channelBody = {
-        displayName: options.displayName,
+        displayName,
         description: options.description || '',
         membershipType: options.membershipType || 'standard'
       };
