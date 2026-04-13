@@ -665,16 +665,16 @@ function LinkTeamDialog({
   const [teamSearch, setTeamSearch] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
 
-  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ id: string; displayName: string }[]>({
+  const { data: teamsResponse, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[]; nextLink?: string }>({
     queryKey: ["/api/planner/teams"],
   });
 
   const filteredTeams = useMemo(() => {
-    if (!teamsData) return [];
+    const all = teamsResponse?.teams ?? [];
     const q = teamSearch.trim().toLowerCase();
-    if (!q) return teamsData;
-    return teamsData.filter((t) => t.displayName.toLowerCase().includes(q));
-  }, [teamsData, teamSearch]);
+    if (!q) return all;
+    return all.filter((t) => t.displayName.toLowerCase().includes(q));
+  }, [teamsResponse, teamSearch]);
 
   const linkMutation = useMutation({
     mutationFn: (team: { id: string; displayName: string }) =>
@@ -785,17 +785,17 @@ function LinkProjectChannelDialog({
 
   const needsTeamPicker = !clientTeamId;
 
-  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ id: string; displayName: string }[]>({
+  const { data: teamsResponse, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[]; nextLink?: string }>({
     queryKey: ["/api/planner/teams"],
     enabled: needsTeamPicker,
   });
 
   const filteredTeams = useMemo(() => {
-    if (!teamsData) return [];
+    const all = teamsResponse?.teams ?? [];
     const q = teamSearch.trim().toLowerCase();
-    if (!q) return teamsData;
-    return teamsData.filter((t) => t.displayName.toLowerCase().includes(q));
-  }, [teamsData, teamSearch]);
+    if (!q) return all;
+    return all.filter((t) => t.displayName.toLowerCase().includes(q));
+  }, [teamsResponse, teamSearch]);
 
   const resolvedTeamId = clientTeamId ?? selectedTeam?.id ?? null;
 
