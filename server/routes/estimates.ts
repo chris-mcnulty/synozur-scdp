@@ -341,13 +341,15 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           const channelDisplayName = teamsChannelName || estimateName;
           const channel = await plannerService.createChannel(teamsTeamId, { displayName: channelDisplayName });
 
-          // Add constellation tab
+          // Add constellation tab — newChannel: true adds a delay + retry since Teams needs
+          // time to fully provision the channel before tabs can be installed.
           try {
             await plannerService.createConstellationTab(teamsTeamId, channel.id, {
               entityType: 'estimate',
               entityId: estimateId,
               entityName: 'Estimate',
               ssoRefreshToken: requestUser.ssoRefreshToken,
+              newChannel: true,
             });
           } catch (tabErr: any) {
             console.warn('[ESTIMATES] Constellation tab failed (non-blocking):', tabErr.message);

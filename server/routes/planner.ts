@@ -340,7 +340,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
             if (tmpl.tabType === "constellation") {
               constellationTab = await plannerService.createConstellationTab(
                 req.params.teamId, channel.id,
-                { projectId, projectName: tmpl.tabName || projectName || displayName, ssoRefreshToken: tabSsoToken }
+                { projectId, projectName: tmpl.tabName || projectName || displayName, ssoRefreshToken: tabSsoToken, newChannel: true }
               );
             } else if (tmpl.tabType === "planner") {
               try {
@@ -360,7 +360,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           constellationTab = await plannerService.createConstellationTab(
             req.params.teamId,
             channel.id,
-            { projectId: "", projectName: projectName || displayName, ssoRefreshToken: tabSsoToken }
+            { projectId: "", projectName: projectName || displayName, ssoRefreshToken: tabSsoToken, newChannel: true }
           );
         } catch (tabError: any) {
           console.warn("[PLANNER] Constellation tab auto-add failed (non-blocking):", tabError.message);
@@ -588,7 +588,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           if (tmpl.tabType === "constellation") {
             constellationTab = await plannerService.createConstellationTab(
               req.params.teamId, channel.id,
-              { entityType: 'estimate', entityId: estimateId, entityName: 'Estimate', ssoRefreshToken: estimateSsoToken }
+              { entityType: 'estimate', entityId: estimateId, entityName: 'Estimate', ssoRefreshToken: estimateSsoToken, newChannel: true }
             );
           }
           // Skip planner tabs for estimate channels — estimates don't need task plans

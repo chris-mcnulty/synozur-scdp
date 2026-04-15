@@ -427,6 +427,7 @@ class PlannerService {
     baseDomain?: string;
     tab?: string;
     ssoRefreshToken?: string;
+    newChannel?: boolean;
   }): Promise<TeamsTab | null> {
     // Resolve entity fields: support both legacy (projectId/projectName) and new (entityType/entityId/entityName) signatures
     const entityType = options.entityType || 'project';
@@ -443,43 +444,69 @@ class PlannerService {
       });
       return null;
     }
-    try {
-      console.log(`[TEAMS-TAB] Adding Constellation tab for ${entityType}:`, entityId, 'in channel:', channelId);
 
-      const catalogApp = await this.findConstellationAppInCatalog(undefined, options.ssoRefreshToken);
-      if (!catalogApp) {
-        console.warn('[TEAMS-TAB] Cannot add tab: Constellation app not published to tenant catalog. Admin should publish via Organization Settings > Integrations first.');
-        return null;
-      }
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-      const client = await this.getClient();
-      const domain = options.baseDomain || process.env.BASE_URL?.replace(/^https?:\/\//, '') || 'constellation.synozur.com';
-      const baseUrl = `https://${domain}`;
+    // New channels need time to fully provision before tabs can be added
+    if (options.newChannel) {
+      console.log('[TEAMS-TAB] New channel — waiting 10s for Teams to finish provisioning...');
+      await sleep(10000);
+    }
 
-      const contentUrl = `${baseUrl}/embed/${embedPath}/${entityId}${options.tab ? `?tab=${options.tab}` : ''}`;
-      const websiteUrl = `${baseUrl}/${webPath}/${entityId}`;
-      const configurationUrl = `${baseUrl}/embed/configure`;
-
-      const tab = await client.api(`/teams/${teamId}/channels/${channelId}/tabs`).post({
-        displayName: entityName,
-        'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${catalogApp.teamsAppId}`,
-        configuration: {
-          entityId: `constellation-${entityType}-${entityId}`,
-          contentUrl: contentUrl,
-          websiteUrl: websiteUrl,
-          removeUrl: configurationUrl,
-        }
-      });
-
-      console.log('[TEAMS-TAB] Constellation tab created successfully:', tab.id);
-      return tab;
-    } catch (error: any) {
-      console.error('[TEAMS-TAB] Error creating Constellation tab:', error.message);
-      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
-        console.warn('[TEAMS-TAB] TeamsTab.Create permission not granted, skipping tab creation');
-      }
+    const catalogApp = await this.findConstellationAppInCatalog(undefined, options.ssoRefreshToken);
+    if (!catalogApp) {
+      console.warn('[TEAMS-TAB] Cannot add tab: Constellation app not published to tenant catalog. Admin should publish via Organization Settings > Integrations first.');
       return null;
     }
+
+    const client = await this.getClient();
+    const domain = options.baseDomain || process.env.BASE_URL?.replace(/^https?:\/\//, '') || 'constellation.synozur.com';
+    const baseUrl = `https://${domain}`;
+
+    const contentUrl = `${baseUrl}/embed/${embedPath}/${entityId}${options.tab ? `?tab=${options.tab}` : ''}`;
+    const websiteUrl = `${baseUrl}/${webPath}/${entityId}`;
+    const configurationUrl = `${baseUrl}/embed/configure`;
+
+    const tabPayload = {
+      displayName: entityName,
+      'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${catalogApp.teamsAppId}`,
+      configuration: {
+        entityId: `constellation-${entityType}-${entityId}`,
+        contentUrl,
+        websiteUrl,
+        removeUrl: configurationUrl,
+      }
+    };
+
+    // Retry up to 3 times on transient errors (Bad Gateway / 502) that occur when Teams
+    // hasn't finished provisioning the channel yet.
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`[TEAMS-TAB] Adding Constellation tab for ${entityType}:`, entityId, 'in channel:', channelId, attempt > 1 ? `(attempt ${attempt})` : '');
+        const tab = await client.api(`/teams/${teamId}/channels/${channelId}/tabs`).post(tabPayload);
+        console.log('[TEAMS-TAB] Constellation tab created successfully:', tab.id);
+        return tab;
+      } catch (error: any) {
+        const isTransient = error.message?.includes('Bad Gateway') || error.message?.includes('502') ||
+          error.message?.includes('Service Unavailable') || error.message?.includes('503') ||
+          error.message?.includes('Gateway Timeout') || error.message?.includes('504');
+
+        if (isTransient && attempt < maxAttempts) {
+          const delay = attempt * 12000; // 12s, 24s
+          console.warn(`[TEAMS-TAB] Transient error on attempt ${attempt}, retrying in ${delay / 1000}s:`, error.message);
+          await sleep(delay);
+          continue;
+        }
+
+        console.error('[TEAMS-TAB] Error creating Constellation tab:', error.message);
+        if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+          console.warn('[TEAMS-TAB] TeamsTab.Create permission not granted, skipping tab creation');
+        }
+        return null;
+      }
+    }
+    return null;
   }
 
   // ============ TEAM CREATION OPERATIONS ============
