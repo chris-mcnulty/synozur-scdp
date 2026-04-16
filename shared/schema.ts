@@ -3664,6 +3664,36 @@ export type TeamsMemberSyncState = typeof teamsMemberSyncState.$inferSelect;
 //   3. Forensics: requestHash lets us detect when a replayed key carries a
 //      different payload (treated as a 409 conflict).
 
+// ============================================================================
+// PROJECT SHAREPOINT STATUS REPORTS
+// ============================================================================
+
+export const projectStatusReports = pgTable("project_status_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  reportPeriod: text("report_period").notNull(), // e.g. "2026-W16" or "Apr 14 – Apr 20, 2026"
+  ragStatus: varchar("rag_status", { length: 10 }).notNull().default("green"), // green, amber, red
+  accomplishments: text("accomplishments"),
+  milestones: text("milestones"),
+  risks: text("risks"),
+  notes: text("notes"),
+  sharepointPageId: text("sharepoint_page_id"),
+  sharepointPageUrl: text("sharepoint_page_url"),
+  publishedAt: timestamp("published_at").notNull().default(sql`now()`),
+  publishedBy: varchar("published_by").references(() => users.id),
+}, (table) => ({
+  projectIdx: index("idx_project_status_reports_project").on(table.projectId),
+  tenantIdx: index("idx_project_status_reports_tenant").on(table.tenantId),
+}));
+
+export const insertProjectStatusReportSchema = createInsertSchema(projectStatusReports).omit({
+  id: true,
+  publishedAt: true,
+});
+export type InsertProjectStatusReport = z.infer<typeof insertProjectStatusReportSchema>;
+export type ProjectStatusReport = typeof projectStatusReports.$inferSelect;
+
 export const mcpWriteAudit = pgTable("mcp_write_audit", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id).notNull(),

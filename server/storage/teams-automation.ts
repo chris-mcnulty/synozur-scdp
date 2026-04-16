@@ -2,12 +2,15 @@ import {
   teamsAutomationLogs,
   guestInvitations,
   teamsMemberSyncState,
+  projectStatusReports,
   type TeamsAutomationLog,
   type InsertTeamsAutomationLog,
   type GuestInvitation,
   type InsertGuestInvitation,
   type TeamsMemberSyncState,
   type InsertTeamsMemberSyncState,
+  type ProjectStatusReport,
+  type InsertProjectStatusReport,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc } from "drizzle-orm";
@@ -127,5 +130,27 @@ export const teamsAutomationMethods = {
     return await db.select()
       .from(teamsMemberSyncState)
       .where(eq(teamsMemberSyncState.teamId, teamId));
+  },
+
+  // SharePoint Status Reports
+  async createProjectStatusReport(data: InsertProjectStatusReport): Promise<ProjectStatusReport> {
+    const [created] = await db.insert(projectStatusReports)
+      .values(data)
+      .returning();
+    return created;
+  },
+
+  async getProjectStatusReports(projectId: string): Promise<ProjectStatusReport[]> {
+    return await db.select()
+      .from(projectStatusReports)
+      .where(eq(projectStatusReports.projectId, projectId))
+      .orderBy(desc(projectStatusReports.publishedAt));
+  },
+
+  async getProjectStatusReport(id: string): Promise<ProjectStatusReport | undefined> {
+    const [report] = await db.select()
+      .from(projectStatusReports)
+      .where(eq(projectStatusReports.id, id));
+    return report || undefined;
   },
 };

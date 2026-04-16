@@ -73,7 +73,8 @@ import {
   statusReports, type StatusReport, type InsertStatusReport,
   teamsAutomationLogs, type TeamsAutomationLog, type InsertTeamsAutomationLog,
   guestInvitations, type GuestInvitation, type InsertGuestInvitation,
-  teamsMemberSyncState, type TeamsMemberSyncState, type InsertTeamsMemberSyncState
+  teamsMemberSyncState, type TeamsMemberSyncState, type InsertTeamsMemberSyncState,
+  type ProjectStatusReport, type InsertProjectStatusReport,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1014,6 +1015,10 @@ export interface IStorage {
   createTeamsMemberSyncState(state: InsertTeamsMemberSyncState): Promise<TeamsMemberSyncState>;
   updateTeamsMemberSyncState(id: string, updates: Partial<InsertTeamsMemberSyncState>): Promise<TeamsMemberSyncState>;
   getTeamsMemberSyncStatesForTeam(teamId: string): Promise<TeamsMemberSyncState[]>;
+  // SharePoint Status Reports
+  createProjectStatusReport(data: InsertProjectStatusReport): Promise<ProjectStatusReport>;
+  getProjectStatusReports(projectId: string): Promise<ProjectStatusReport[]>;
+  getProjectStatusReport(id: string): Promise<ProjectStatusReport | undefined>;
 }
 
 export class DatabaseStorage {

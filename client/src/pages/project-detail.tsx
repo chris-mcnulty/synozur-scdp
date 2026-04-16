@@ -703,6 +703,249 @@ function AssignmentSuggestionsDialog({ projectId, allocationId, onClose, onAssig
   );
 }
 
+// ============ SharePoint Status Report Dialog & History ============
+
+interface SharePointStatusReportDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  projectName: string;
+}
+
+interface SharePointStatusReportFormValues {
+  reportPeriod: string;
+  ragStatus: 'green' | 'amber' | 'red';
+  accomplishments: string;
+  milestones: string;
+  risks: string;
+  notes: string;
+}
+
+interface PublishStatusReportResponse {
+  id: string;
+  projectId: string;
+  reportPeriod: string;
+  ragStatus: string;
+  sharepointPageUrl: string | null;
+  sharepointPageId: string | null;
+  publishedAt: string;
+  published: boolean;
+}
+
+function SharePointStatusReportDialog({ open, onOpenChange, projectId, projectName }: SharePointStatusReportDialogProps) {
+  const { toast } = useToast();
+
+  const getDefaultPeriod = () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - now.getDay() + 1);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${fmt(start)} – ${fmt(end)}`;
+  };
+
+  const form = useForm<SharePointStatusReportFormValues>({
+    defaultValues: {
+      reportPeriod: getDefaultPeriod(),
+      ragStatus: 'green',
+      accomplishments: '',
+      milestones: '',
+      risks: '',
+      notes: '',
+    },
+  });
+
+  const publishMutation = useMutation<PublishStatusReportResponse, Error, SharePointStatusReportFormValues>({
+    mutationFn: (data) =>
+      apiRequest(`/api/projects/${projectId}/sharepoint-status-reports`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }) as Promise<PublishStatusReportResponse>,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'sharepoint-status-reports'] });
+      const description = result.sharepointPageUrl
+        ? `News post is live on SharePoint: ${result.sharepointPageUrl}`
+        : 'Report saved locally (no Teams channel linked yet).';
+      toast({
+        title: 'Status report published',
+        description,
+      });
+      onOpenChange(false);
+      form.reset({ reportPeriod: getDefaultPeriod(), ragStatus: 'green', accomplishments: '', milestones: '', risks: '', notes: '' });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Failed to publish', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const ragColors = {
+    green: 'bg-green-500 hover:bg-green-600 text-white',
+    amber: 'bg-amber-500 hover:bg-amber-600 text-white',
+    red: 'bg-red-500 hover:bg-red-600 text-white',
+  };
+
+  const ragSelected = {
+    green: 'ring-2 ring-green-700',
+    amber: 'ring-2 ring-amber-700',
+    red: 'ring-2 ring-red-700',
+  };
+
+  const ragStatus = form.watch('ragStatus');
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Globe className="h-5 w-5 text-blue-600" />
+            Publish Status Report to SharePoint
+          </DialogTitle>
+          <DialogDescription>
+            Publish a structured status update for <strong>{projectName}</strong> as a SharePoint News post on the project's team site.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={form.handleSubmit((data) => publishMutation.mutate(data))} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1 col-span-2">
+              <Label htmlFor="sp-report-period">Report Period <span className="text-destructive">*</span></Label>
+              <Input
+                id="sp-report-period"
+                {...form.register('reportPeriod', { required: true })}
+                placeholder="e.g. Apr 14 – Apr 20, 2026"
+              />
+            </div>
+
+            <div className="space-y-2 col-span-2">
+              <Label>RAG Status <span className="text-destructive">*</span></Label>
+              <div className="flex gap-3">
+                {(['green', 'amber', 'red'] as const).map((rag) => (
+                  <button
+                    key={rag}
+                    type="button"
+                    onClick={() => form.setValue('ragStatus', rag)}
+                    className={`flex-1 py-2 px-4 rounded-md text-sm font-medium capitalize transition-all ${ragColors[rag]} ${ragStatus === rag ? ragSelected[rag] : 'opacity-70'}`}
+                  >
+                    {rag === 'green' ? '🟢' : rag === 'amber' ? '🟡' : '🔴'} {rag.charAt(0).toUpperCase() + rag.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="sp-accomplishments">Key Accomplishments</Label>
+            <Textarea
+              id="sp-accomplishments"
+              {...form.register('accomplishments')}
+              placeholder="What was completed this period?"
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="sp-milestones">Upcoming Milestones</Label>
+            <Textarea
+              id="sp-milestones"
+              {...form.register('milestones')}
+              placeholder="What milestones are coming up next?"
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="sp-risks">Risks &amp; Blockers</Label>
+            <Textarea
+              id="sp-risks"
+              {...form.register('risks')}
+              placeholder="Any risks, issues, or blockers to highlight?"
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="sp-notes">Additional Notes</Label>
+            <Textarea
+              id="sp-notes"
+              {...form.register('notes')}
+              placeholder="Any other information for the team..."
+              rows={2}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={publishMutation.isPending}>
+              {publishMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Publishing...</>
+              ) : (
+                <><Globe className="h-4 w-4 mr-2" /> Publish to SharePoint</>
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface ProjectStatusReportRecord {
+  id: string;
+  projectId: string;
+  reportPeriod: string;
+  ragStatus: string;
+  sharepointPageUrl: string | null;
+  publishedAt: string;
+}
+
+function SharePointStatusReportHistory({ projectId }: { projectId: string }) {
+  const { data: reports = [], isLoading } = useQuery<ProjectStatusReportRecord[]>({
+    queryKey: ['/api/projects', projectId, 'sharepoint-status-reports'],
+    retry: false,
+  });
+
+  const ragBadge = (status: string) => {
+    if (status === 'green') return <Badge className="bg-green-500 text-white text-xs">🟢 Green</Badge>;
+    if (status === 'amber') return <Badge className="bg-amber-500 text-white text-xs">🟡 Amber</Badge>;
+    return <Badge className="bg-red-500 text-white text-xs">🔴 Red</Badge>;
+  };
+
+  if (isLoading) return <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>;
+  if (reports.length === 0) return <p className="text-sm text-muted-foreground">No status reports have been published to SharePoint yet.</p>;
+
+  return (
+    <div className="space-y-2">
+      {reports.map((report) => (
+        <div key={report.id} className="flex items-center justify-between p-3 rounded-md border bg-card hover:bg-muted/30 transition-colors">
+          <div className="flex items-center gap-3">
+            {ragBadge(report.ragStatus)}
+            <div>
+              <p className="text-sm font-medium">{report.reportPeriod}</p>
+              <p className="text-xs text-muted-foreground">
+                Published {new Date(report.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </p>
+            </div>
+          </div>
+          {report.sharepointPageUrl && (
+            <a
+              href={report.sharepointPageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+            >
+              <ExternalLink className="h-3 w-3" />
+              View on SharePoint
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
@@ -824,6 +1067,7 @@ export default function ProjectDetail() {
   
   // Status report dialog state
   const [showStatusReport, setShowStatusReport] = useState(false);
+  const [showSharePointStatusReport, setShowSharePointStatusReport] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLogTimeDialog, setShowLogTimeDialog] = useState(false);
 
@@ -869,6 +1113,13 @@ export default function ProjectDetail() {
     queryKey: [`/api/projects/${id}/analytics`],
     enabled: !!id,
   });
+
+  const { data: projectChannel } = useQuery<{ channelId: string; channelWebUrl: string | null } | null>({
+    queryKey: ['/api/projects', id, 'channel'],
+    enabled: !!id,
+    retry: false,
+  });
+  const hasLinkedChannel = !!projectChannel;
 
   // Auto-open edit dialog when ?edit=true is in the URL
   useEffect(() => {
@@ -2479,6 +2730,12 @@ export default function ProjectDetail() {
                   <Sparkles className="w-4 h-4 mr-2" />
                   Status Report
                 </Button>
+                {hasLinkedChannel && ['admin', 'pm', 'portfolio-manager'].includes(user?.role || '') && (
+                  <Button variant="outline" size="sm" onClick={() => setShowSharePointStatusReport(true)} data-testid="button-publish-sharepoint-status-report">
+                    <Globe className="w-4 h-4 mr-2" />
+                    Publish Status Report
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setShowExportDialog(true)} data-testid="button-export-report">
                   <Download className="w-4 h-4 mr-2" />
                   Export Data
@@ -3445,6 +3702,28 @@ export default function ProjectDetail() {
               clientName={analytics?.project?.client?.name}
               projectTenantId={analytics?.project?.tenantId}
             />
+
+            {/* SharePoint Status Report History */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Globe className="h-5 w-5 text-blue-600" />
+                    SharePoint Status Reports
+                  </CardTitle>
+                  <CardDescription>Status reports published to the project's SharePoint team site</CardDescription>
+                </div>
+                {!embedReadonly && ['admin', 'pm', 'portfolio-manager'].includes(user?.role || '') && (
+                  <Button size="sm" onClick={() => setShowSharePointStatusReport(true)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Publish Report
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                <SharePointStatusReportHistory projectId={id || ''} />
+              </CardContent>
+            </Card>
             
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -7033,6 +7312,14 @@ export default function ProjectDetail() {
         <StatusReportDialog
           open={showStatusReport}
           onOpenChange={setShowStatusReport}
+          projectId={id || ""}
+          projectName={analytics?.project?.name || ""}
+        />
+
+        {/* SharePoint Status Report Dialog */}
+        <SharePointStatusReportDialog
+          open={showSharePointStatusReport}
+          onOpenChange={setShowSharePointStatusReport}
           projectId={id || ""}
           projectName={analytics?.project?.name || ""}
         />

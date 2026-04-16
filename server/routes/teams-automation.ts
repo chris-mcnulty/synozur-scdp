@@ -2,6 +2,15 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { z } from "zod";
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 interface TeamsAutomationDeps {
   requireAuth: any;
   requireRole: (roles: string[]) => any;
@@ -295,6 +304,203 @@ export function registerTeamsAutomationRoutes(app: Express, deps: TeamsAutomatio
       } catch (error: any) {
         console.error("[TEAMS-AUTO] Resend invitation error:", error);
         res.status(500).json({ message: "Failed to resend invitation" });
+      }
+    }
+  );
+
+  // ============ SHAREPOINT STATUS REPORTS ============
+
+  /**
+   * POST /api/projects/:projectId/sharepoint-status-reports
+   * Publish a project status report to the project's SharePoint team site as a News post.
+   */
+  app.post("/api/projects/:projectId/sharepoint-status-reports",
+    deps.requireAuth,
+    deps.requireRole(["admin", "pm", "portfolio-manager"]),
+    async (req, res) => {
+      try {
+        const { projectId } = req.params;
+        const user = req.user as any;
+        const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+
+        const { reportPeriod, ragStatus, accomplishments, milestones, risks, notes } = req.body;
+        if (!reportPeriod || !ragStatus) {
+          return res.status(400).json({ message: "reportPeriod and ragStatus are required" });
+        }
+
+        const validRag = ["green", "amber", "red"];
+        if (!validRag.includes(ragStatus)) {
+          return res.status(400).json({ message: "ragStatus must be green, amber, or red" });
+        }
+
+        const project = await storage.getProject(projectId);
+        if (!project) return res.status(404).json({ message: "Project not found" });
+        if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+
+        // Try to publish to SharePoint if a Teams channel is linked
+        let sharepointPageId: string | null = null;
+        let sharepointPageUrl: string | null = null;
+
+        try {
+          const { db } = await import('../db');
+          const { projectChannels } = await import('@shared/schema');
+          const { eq } = await import('drizzle-orm');
+
+          const [channel] = await db.select()
+            .from(projectChannels)
+            .where(eq(projectChannels.projectId, projectId))
+            .limit(1);
+
+          if (channel) {
+            const { teamsAutomationService } = await import('../services/teams-automation-service');
+            const { getPlannerGraphClient } = await import('../services/planner-graph-client');
+
+            // Resolve teamId from the channel: we need the group/team ID
+            // The teamId is not stored directly on projectChannels so we derive from client
+            const { projects, clients, users } = await import('@shared/schema');
+            const [proj] = await db.select({
+              clientId: projects.clientId,
+              name: projects.name,
+              code: projects.code,
+              pm: projects.pm,
+            }).from(projects).where(eq(projects.id, projectId)).limit(1);
+
+            let teamId: string | null = null;
+            let clientName: string | undefined;
+            let pmName: string | undefined;
+
+            if (proj?.pm) {
+              try {
+                const [pmUser] = await db.select({ name: users.name })
+                  .from(users).where(eq(users.id, proj.pm)).limit(1);
+                pmName = pmUser?.name;
+              } catch {}
+            }
+
+            if (proj?.clientId) {
+              const [cl] = await db.select({
+                name: clients.name,
+                microsoftTeamId: clients.microsoftTeamId,
+              }).from(clients).where(eq(clients.id, proj.clientId)).limit(1);
+              teamId = cl?.microsoftTeamId || null;
+              clientName = cl?.name;
+            }
+
+            if (teamId) {
+              const site = await teamsAutomationService.getTeamSharePointSite(teamId);
+              if (site) {
+                const graphClient = await getPlannerGraphClient();
+
+                const ragLabel = ragStatus === "green" ? "🟢 Green" : ragStatus === "amber" ? "🟡 Amber" : "🔴 Red";
+                const appBaseUrl = `${req.protocol}://${req.get('host')}`;
+                const projectUrl = `${appBaseUrl}/projects/${projectId}`;
+
+                const esc = escapeHtml;
+                const escLines = (s: string) => esc(s).replace(/\n/g, '<br/>');
+                const sections: string[] = [];
+                sections.push(`<h2>${esc(proj.name)} – Status Report</h2>`);
+                sections.push(`<p><strong>Period:</strong> ${esc(reportPeriod)}</p>`);
+                sections.push(`<p><strong>RAG Status:</strong> ${esc(ragLabel)}</p>`);
+                if (clientName) sections.push(`<p><strong>Client:</strong> ${esc(clientName)}</p>`);
+                if (pmName) sections.push(`<p><strong>Project Manager:</strong> ${esc(pmName)}</p>`);
+                if (accomplishments) sections.push(`<h3>Key Accomplishments</h3><p>${escLines(accomplishments)}</p>`);
+                if (milestones) sections.push(`<h3>Upcoming Milestones</h3><p>${escLines(milestones)}</p>`);
+                if (risks) sections.push(`<h3>Risks &amp; Blockers</h3><p>${escLines(risks)}</p>`);
+                if (notes) sections.push(`<h3>Notes</h3><p>${escLines(notes)}</p>`);
+                sections.push(`<p><a href="${projectUrl}">View project in Constellation</a></p>`);
+
+                const innerHtml = sections.join('\n');
+                const safeCode = (proj.code || projectId).toLowerCase().replace(/[^a-z0-9]/g, '-');
+                const timestamp = Date.now();
+                const pageName = `status-report-${safeCode}-${timestamp}.aspx`;
+
+                const page = await graphClient.api(`/sites/${site.siteId}/pages`).post({
+                  '@odata.type': '#microsoft.graph.sitePage',
+                  name: pageName,
+                  title: `${proj.name} – Status Report (${reportPeriod})`,
+                  promotionKind: 'newsPost',
+                  showComments: false,
+                  showPublishedDateTime: true,
+                  canvasLayout: {
+                    horizontalSections: [{
+                      layout: 'oneColumn',
+                      id: '1',
+                      emphasis: 'none',
+                      columns: [{
+                        id: '1',
+                        width: 12,
+                        webparts: [{
+                          '@odata.type': '#microsoft.graph.textWebPart',
+                          innerHtml,
+                        }],
+                      }],
+                    }],
+                  },
+                });
+
+                try {
+                  await graphClient.api(`/sites/${site.siteId}/pages/${page.id}/microsoft.graph.sitePage/publish`).post({});
+                } catch (pubErr: any) {
+                  console.warn('[SHAREPOINT-STATUS] Publish step failed (draft saved):', pubErr.message);
+                }
+
+                sharepointPageId = page.id || null;
+                sharepointPageUrl = page.webUrl || null;
+                console.log('[SHAREPOINT-STATUS] News post published:', sharepointPageUrl);
+              }
+            }
+          }
+        } catch (spErr: any) {
+          console.warn('[SHAREPOINT-STATUS] SharePoint publish failed (report will still be saved locally):', spErr.message);
+        }
+
+        const report = await storage.createProjectStatusReport({
+          projectId,
+          tenantId: tenantId || null,
+          reportPeriod,
+          ragStatus,
+          accomplishments: accomplishments || null,
+          milestones: milestones || null,
+          risks: risks || null,
+          notes: notes || null,
+          sharepointPageId,
+          sharepointPageUrl,
+          publishedBy: user?.id || null,
+        });
+
+        res.json({ ...report, published: !!sharepointPageUrl });
+      } catch (error: any) {
+        console.error("[SHAREPOINT-STATUS] Failed to publish status report:", error);
+        res.status(500).json({ message: "Failed to publish status report: " + error.message });
+      }
+    }
+  );
+
+  /**
+   * GET /api/projects/:projectId/sharepoint-status-reports
+   * List published SharePoint status reports for a project.
+   */
+  app.get("/api/projects/:projectId/sharepoint-status-reports",
+    deps.requireAuth,
+    async (req, res) => {
+      try {
+        const { projectId } = req.params;
+        const user = req.user as any;
+        const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
+
+        const project = await storage.getProject(projectId);
+        if (!project) return res.status(404).json({ message: "Project not found" });
+        if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+
+        const reports = await storage.getProjectStatusReports(projectId);
+        res.json(reports);
+      } catch (error: any) {
+        console.error("[SHAREPOINT-STATUS] Failed to list status reports:", error);
+        res.status(500).json({ message: "Failed to list status reports" });
       }
     }
   );
