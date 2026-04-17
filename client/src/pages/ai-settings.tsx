@@ -695,6 +695,129 @@ interface TestResult {
   detail: any;
 }
 
+interface AgentCardHealthResponse {
+  result: {
+    status: 'ok' | 'invalid' | 'error';
+    checkedAt: string;
+    skillCount?: number;
+    errors?: string[];
+    message?: string;
+  } | null;
+}
+
+function AgentCardHealthCard() {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<AgentCardHealthResponse>({
+    queryKey: ["/api/admin/agent-card-health"],
+  });
+
+  const checkMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest("/api/admin/agent-card-health/check", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health"] });
+      toast({ title: "Health check complete", description: "Agent card health check has finished." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Check failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const result = data?.result ?? null;
+
+  const statusColor = result?.status === 'ok'
+    ? 'text-green-600 dark:text-green-400'
+    : result?.status === 'invalid'
+    ? 'text-yellow-500'
+    : result?.status === 'error'
+    ? 'text-destructive'
+    : 'text-muted-foreground';
+
+  const StatusIcon = result?.status === 'ok'
+    ? CheckCircle2
+    : result?.status === 'invalid'
+    ? AlertCircle
+    : XCircle;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="w-4 h-4" />
+              Agent Card Health Check
+            </CardTitle>
+            <CardDescription>
+              Scheduled validation result for the A2A agent card. The scheduler runs every hour and emails admins on failure. Use the button below to trigger an immediate re-check.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => checkMutation.mutate()}
+            disabled={checkMutation.isPending}
+            className="shrink-0"
+          >
+            {checkMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            )}
+            Run check now
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : !result ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 rounded-md border bg-muted/30">
+            <Clock className="w-4 h-4 shrink-0" />
+            No health check result available yet. The scheduled check runs every hour, or you can trigger one manually above.
+          </div>
+        ) : (
+          <div className={`p-3 rounded-md border space-y-2 ${result.status === 'ok' ? 'bg-green-50 border-green-200 dark:bg-green-900/10 dark:border-green-800' : result.status === 'invalid' ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/10 dark:border-yellow-800' : 'bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-800'}`}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusIcon className={`w-4 h-4 shrink-0 ${statusColor}`} />
+              <span className={`text-sm font-medium ${statusColor}`}>
+                {result.status === 'ok' ? 'Healthy' : result.status === 'invalid' ? 'Validation failed' : 'Error'}
+              </span>
+              <Badge
+                variant="outline"
+                className={`text-xs ml-auto ${result.status === 'ok' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' : result.status === 'invalid' ? 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'}`}
+              >
+                {result.status.toUpperCase()}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="w-3 h-3 shrink-0" />
+              Checked at {new Date(result.checkedAt).toLocaleString()}
+              {result.skillCount !== undefined && (
+                <span className="ml-2 text-muted-foreground">· {result.skillCount} skill{result.skillCount !== 1 ? 's' : ''}</span>
+              )}
+            </div>
+            {result.message && (
+              <p className="text-xs text-muted-foreground border-t pt-2 mt-1">{result.message}</p>
+            )}
+            {result.errors && result.errors.length > 0 && (
+              <ul className="text-xs space-y-1 border-t pt-2 mt-1">
+                {result.errors.map((err, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <XCircle className="w-3 h-3 shrink-0 mt-0.5 text-destructive" />
+                    <span>{err}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function CopilotStudioPanel() {
   const { toast } = useToast();
   const [newClientId, setNewClientId] = useState("");
@@ -999,7 +1122,10 @@ export default function AiSettings() {
           </TabsContent>
 
           <TabsContent value="copilot">
-            <CopilotStudioPanel />
+            <div className="space-y-6">
+              <AgentCardHealthCard />
+              <CopilotStudioPanel />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

@@ -76,6 +76,12 @@ async function persistState(): Promise<void> {
   }
 }
 
+let _lastResult: AgentCardHealthResult | null = null;
+
+export function getLastAgentCardHealthResult(): AgentCardHealthResult | null {
+  return _lastResult;
+}
+
 export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Promise<AgentCardHealthResult> {
   console.log(`${SCHEDULER_TAG} Running agent card health check (trigger: ${trigger}) via ${HEALTH_ENDPOINT}...`);
 
@@ -106,6 +112,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
         lastAlertSentAt = null;
         await persistState();
       }
+      _lastResult = normalised;
       return normalised;
     }
 
@@ -123,6 +130,8 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
       message: `Failed to reach ${HEALTH_ENDPOINT}: ${message}`,
     };
   }
+
+  _lastResult = result;
 
   const now = new Date().toISOString();
 

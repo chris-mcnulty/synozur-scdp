@@ -3,6 +3,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import { z } from "zod";
 import { storage, db } from "../storage";
+import { runAgentCardHealthCheck, getLastAgentCardHealthResult } from "../services/agent-card-health-scheduler.js";
 import { insertSystemSettingSchema, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertAiConfigurationSchema, users, projects, clients, tenants, tenantUsers, airportCodes, timeEntries, pageViews, supportTickets, supportTicketReplies, supportTicketPlannerSync, groundingDocuments, aiConfiguration, aiUsageLogs, aiUsageSummaries, aiUsageAlerts } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, desc, or } from "drizzle-orm";
 import { emailService } from "../services/email-notification.js";
@@ -2235,6 +2236,26 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
     } catch (error: any) {
       console.error("[ANALYTICS] pageviews summary failed:", error);
       res.status(500).json({ message: "Failed to fetch pageviews" });
+    }
+  });
+
+  // GET /api/admin/agent-card-health — returns the last cached health check result
+  app.get("/api/admin/agent-card-health", requireAuth, requirePlatformAdmin, (_req, res) => {
+    const last = getLastAgentCardHealthResult();
+    if (!last) {
+      return res.json({ result: null });
+    }
+    return res.json({ result: last });
+  });
+
+  // POST /api/admin/agent-card-health/check — triggers a fresh health check on demand
+  app.post("/api/admin/agent-card-health/check", requireAuth, requirePlatformAdmin, async (_req, res) => {
+    try {
+      const result = await runAgentCardHealthCheck('admin-manual');
+      return res.json({ result });
+    } catch (error: any) {
+      console.error("[AGENT-CARD-HEALTH] Manual check failed:", error);
+      return res.status(500).json({ message: "Health check failed", error: error?.message });
     }
   });
 }
