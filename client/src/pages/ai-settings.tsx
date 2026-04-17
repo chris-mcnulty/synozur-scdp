@@ -710,6 +710,7 @@ function AgentCardHealthCard() {
 
   const { data, isLoading } = useQuery<AgentCardHealthResponse>({
     queryKey: ["/api/admin/agent-card-health"],
+    refetchInterval: 5 * 60 * 1000,
   });
 
   const checkMutation = useMutation({
