@@ -2073,7 +2073,13 @@ function TimeRemindersTab({ settings, toast }: { settings: SystemSetting[]; toas
   const timeRemindersEnabled = settings.find(s => s.settingKey === 'TIME_REMINDERS_ENABLED')?.settingValue !== 'false';
   const reminderDay = settings.find(s => s.settingKey === 'TIME_REMINDER_DAY')?.settingValue || '4'; // Default Thursday
   const reminderTime = settings.find(s => s.settingKey === 'TIME_REMINDER_TIME')?.settingValue || '09:00';
-  
+  const agentCardCooldownRaw = settings.find(s => s.settingKey === 'AGENT_CARD_ALERT_COOLDOWN_HOURS')?.settingValue || '24';
+  const [cooldownInput, setCooldownInput] = useState(agentCardCooldownRaw);
+
+  useEffect(() => {
+    setCooldownInput(agentCardCooldownRaw);
+  }, [agentCardCooldownRaw]);
+
   const [isRunning, setIsRunning] = useState(false);
 
   const toggleRemindersMutation = useMutation({
@@ -2165,6 +2171,34 @@ function TimeRemindersTab({ settings, toast }: { settings: SystemSetting[]; toas
       toast({
         title: "Error",
         description: "Failed to send reminders. Check server logs for details.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateCooldownMutation = useMutation({
+    mutationFn: async (hours: string) => {
+      await apiRequest("/api/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          settingKey: "AGENT_CARD_ALERT_COOLDOWN_HOURS",
+          settingValue: hours,
+          settingType: "number",
+          description: "Minimum hours between repeated agent card health alert emails when the card remains in a failed state"
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Cooldown updated",
+        description: "Agent card alert cooldown period has been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update agent card alert cooldown.",
         variant: "destructive",
       });
     },
@@ -2289,6 +2323,65 @@ function TimeRemindersTab({ settings, toast }: { settings: SystemSetting[]; toas
           </Button>
           <p className="text-sm text-muted-foreground mt-2">
             This will immediately send reminder emails to all users with missing time entries for the current week.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Agent Card Alert Cooldown
+          </CardTitle>
+          <CardDescription>
+            Configure how often repeated alert emails are sent when the agent card remains in a failed state
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              When the agent card health check fails, an initial alert is sent immediately. If the card is still failing
+              after the cooldown period, a reminder email is sent and the cooldown resets. Set a shorter value during
+              active incidents and a longer value for routine monitoring.
+            </AlertDescription>
+          </Alert>
+          <div className="flex items-end gap-3">
+            <div className="space-y-2 w-40" data-testid="setting-agent-card-cooldown">
+              <Label htmlFor="cooldown-input">Cooldown Period (hours)</Label>
+              <Input
+                id="cooldown-input"
+                type="number"
+                min="1"
+                max="168"
+                step="1"
+                value={cooldownInput}
+                onChange={(e) => setCooldownInput(e.target.value)}
+                data-testid="input-agent-card-cooldown"
+              />
+            </div>
+            <Button
+              onClick={() => {
+                const num = parseFloat(cooldownInput);
+                if (!isNaN(num) && num >= 1 && num <= 168) {
+                  updateCooldownMutation.mutate(String(num));
+                } else {
+                  toast({
+                    title: "Invalid value",
+                    description: "Cooldown must be between 1 and 168 hours.",
+                    variant: "destructive",
+                  });
+                }
+              }}
+              disabled={updateCooldownMutation.isPending}
+              data-testid="button-save-agent-card-cooldown"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {updateCooldownMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Default: 24 hours. Minimum: 1 hour. Maximum: 168 hours (7 days).
           </p>
         </CardContent>
       </Card>

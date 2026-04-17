@@ -7,9 +7,9 @@
  *
  * Deduplication / cooldown rules:
  *   - An initial alert is sent as soon as the card first fails.
- *   - Subsequent alerts are suppressed for 24 hours (ALERT_COOLDOWN_MS).
- *   - After 24 hours of continued failure a "still failing" reminder is sent
- *     and the 24-hour window resets.
+ *   - Subsequent alerts are suppressed for the configured cooldown period (AGENT_CARD_ALERT_COOLDOWN_HOURS system setting, default 24h).
+ *   - After the cooldown period of continued failure a "still failing" reminder is sent
+ *     and the cooldown window resets.
  *   - When the card recovers the state is cleared so the next failure triggers
  *     a fresh initial alert.
  *   - State is persisted in system_settings so cooldowns survive server restarts.
@@ -25,7 +25,8 @@ const HEALTH_ENDPOINT = `http://localhost:${PORT}/mcp/agent-card-health`;
 
 const SETTING_FAILING_SINCE = 'AGENT_CARD_FAILING_SINCE';
 const SETTING_LAST_ALERT_SENT_AT = 'AGENT_CARD_LAST_ALERT_SENT_AT';
-export const ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DEFAULT_ALERT_COOLDOWN_HOURS = 24;
+export const ALERT_COOLDOWN_MS = DEFAULT_ALERT_COOLDOWN_HOURS * 60 * 60 * 1000;
 export const REMINDER_INTERVAL_MS = ALERT_COOLDOWN_MS; // alias for external consumers
 
 // Module-level cache — loaded from DB on first check, kept in sync after that.
@@ -40,6 +41,19 @@ export function getFailingSince(): string | null {
 
 export function getLastAlertSentAt(): string | null {
   return lastAlertSentAt;
+}
+
+async function getAlertCooldownMs(): Promise<number> {
+  try {
+    const value = await storage.getSystemSettingValue('AGENT_CARD_ALERT_COOLDOWN_HOURS', String(DEFAULT_ALERT_COOLDOWN_HOURS));
+    const parsed = parseFloat(value);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed * 60 * 60 * 1000;
+    }
+  } catch (err) {
+    console.warn(`${SCHEDULER_TAG} Failed to read AGENT_CARD_ALERT_COOLDOWN_HOURS from settings, using default:`, err);
+  }
+  return DEFAULT_ALERT_COOLDOWN_HOURS * 60 * 60 * 1000;
 }
 
 export interface AgentCardHealthResult {
@@ -169,22 +183,24 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
     console.log(`${SCHEDULER_TAG} Card entered failing state — failingSince set to ${failingSince}`);
   }
 
-  // Enforce 24-hour cooldown between alert emails.
+  // Enforce configurable cooldown between alert emails.
+  const cooldownMs = await getAlertCooldownMs();
+  const cooldownHours = cooldownMs / 3_600_000;
   const isFirstAlert = lastAlertSentAt === null;
   const shouldAlert =
     isFirstAlert ||
-    Date.now() - new Date(lastAlertSentAt!).getTime() >= ALERT_COOLDOWN_MS;
+    Date.now() - new Date(lastAlertSentAt!).getTime() >= cooldownMs;
 
   if (shouldAlert) {
     try {
-      await sendAdminAlert(result, !isFirstAlert);
+      await sendAdminAlert(result, !isFirstAlert, cooldownHours);
       lastAlertSentAt = now;
-      console.log(`${SCHEDULER_TAG} Alert sent (isReminder=${!isFirstAlert}). Next alert suppressed for 24 hours.`);
+      console.log(`${SCHEDULER_TAG} Alert sent (isReminder=${!isFirstAlert}). Next alert suppressed for ${cooldownHours}h.`);
     } catch (alertError: unknown) {
       console.error(`${SCHEDULER_TAG} sendAdminAlert threw unexpectedly:`, alertError);
     }
   } else {
-    const nextAlertAt = new Date(new Date(lastAlertSentAt!).getTime() + ALERT_COOLDOWN_MS).toISOString();
+    const nextAlertAt = new Date(new Date(lastAlertSentAt!).getTime() + cooldownMs).toISOString();
     console.log(
       `${SCHEDULER_TAG} Alert suppressed — cooldown active. Next alert eligible at ${nextAlertAt}. Errors: ${(result.errors ?? [result.message ?? 'unknown']).join('; ')}`
     );
@@ -195,7 +211,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
   return result;
 }
 
-async function sendAdminAlert(result: AgentCardHealthResult, isReminder: boolean): Promise<void> {
+async function sendAdminAlert(result: AgentCardHealthResult, isReminder: boolean, cooldownHours: number = DEFAULT_ALERT_COOLDOWN_HOURS): Promise<void> {
   let adminEmails: string[] = [];
 
   try {
@@ -223,11 +239,12 @@ async function sendAdminAlert(result: AgentCardHealthResult, isReminder: boolean
       ? `<ul style="margin:12px 0; padding-left:20px;">${result.errors.map(e => `<li style="margin:4px 0;">${escapeHtml(e)}</li>`).join('')}</ul>`
       : '';
 
+  const cooldownLabel = cooldownHours === 1 ? '1 hour' : `${cooldownHours} hours`;
   const reminderBanner = isReminder
     ? `<p style="background:#fef3c7;padding:10px 14px;border-left:4px solid #f59e0b;margin:0 0 16px 0;">
         <strong>This is a reminder.</strong> The agent card has been in a failed state since
         <strong>${escapeHtml(failingSince ?? 'unknown')}</strong>.
-        Alerts are sent once per 24-hour window while the issue persists.
+        Alerts are sent once per ${cooldownLabel} window while the issue persists.
       </p>`
     : '';
 
@@ -256,7 +273,7 @@ async function sendAdminAlert(result: AgentCardHealthResult, isReminder: boolean
       <hr style="margin: 24px 0; border: none; border-top: 1px solid #e5e7eb;" />
       <p style="font-size: 12px; color: #6b7280;">
         This is an automated alert from the Constellation platform scheduler.
-        Alerts are sent once per failure event and then at most once every 24 hours while the issue persists.
+        Alerts are sent once per failure event and then at most once every ${cooldownLabel} while the issue persists.
         Once the issue is resolved and the next hourly check passes, the alert state will be cleared automatically.
       </p>
     </div>
@@ -306,7 +323,11 @@ export async function startAgentCardHealthScheduler(): Promise<void> {
     }
   });
 
+<<<<<<< HEAD
   console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour`);
+=======
+  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour (cooldown configured via AGENT_CARD_ALERT_COOLDOWN_HOURS system setting, default 24h, persisted across restarts)`);
+>>>>>>> 099e6680 (feat: make agent card alert cooldown period configurable by admins)
 
   setTimeout(async () => {
     console.log(`${SCHEDULER_TAG} Running immediate startup health check...`);
