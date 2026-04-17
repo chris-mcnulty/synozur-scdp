@@ -54,7 +54,7 @@ const requireMcpTenant = (req: Request, res: Response, next: NextFunction) => {
 };
 
 /** Normalize a name for near-match comparison: lower, collapse whitespace, strip punctuation. */
-function normalizeName(input: string): string {
+export function normalizeName(input: string): string {
   return input
     .toLowerCase()
     .normalize("NFKD")
@@ -89,7 +89,7 @@ function levenshtein(a: string, b: string): number {
 }
 
 /** Returns true when candidate is "close enough" to target that we should refuse creation. */
-function isNearMatch(candidate: string, target: string): boolean {
+export function isNearMatch(candidate: string, target: string): boolean {
   const a = normalizeName(candidate);
   const b = normalizeName(target);
   if (!a || !b) return false;
@@ -1325,7 +1325,7 @@ export function registerMcpWriteRoutes(
  * service itself uses a structured system prompt and JSON response format,
  * so even a successful injection attempt would fail JSON parsing.
  */
-function sanitizeNarrative(input: string): string {
+export function sanitizeNarrative(input: string): string {
   return (
     // NFC normalization first to catch Unicode look-alike injection variants.
     input
@@ -1353,7 +1353,7 @@ function sanitizeNarrative(input: string): string {
  * collapsing stages into a single summary line item per epic when the total
  * would exceed the cap.
  */
-function capEstimateLineItems(
+export function capEstimateLineItems(
   structure: import("../services/ai-service.js").GeneratedEstimateStructure,
   maxItems: number
 ): import("../services/ai-service.js").GeneratedEstimateStructure {
@@ -1415,7 +1415,7 @@ function capEstimateLineItems(
  * Returns the persisted estimate row (without full line items — callers should
  * fetch details via the standard /api/estimates/:id endpoint if needed).
  */
-async function createEstimateCore(
+export async function createEstimateCore(
   tenantId: string,
   userId: string,
   opts: {
@@ -1530,7 +1530,7 @@ async function createEstimateCore(
  * Builds a single-epic, single-stage, single-line-item GeneratedEstimateStructure
  * for block-hours estimates.
  */
-function buildBlockHoursStructure(opts: {
+export function buildBlockHoursStructure(opts: {
   roleName: string;
   roleId?: string;
   hours: number;
@@ -1585,7 +1585,7 @@ function buildBlockHoursStructure(opts: {
  * Each phase becomes one epic with one stage and one fixed-fee line item
  * (rate = price, hours = 1 so totalAmount == price).
  */
-function buildFixedPriceStructure(
+export function buildFixedPriceStructure(
   phases: Array<{ name: string; price: number; description?: string }>
 ): import("../services/ai-service.js").GeneratedEstimateStructure {
   let totalFees = 0;
@@ -1634,7 +1634,7 @@ function buildFixedPriceStructure(
  * Resolves the billing and cost rate for a named role in a tenant.
  * Returns the rate catalog values or sensible defaults if the role is not found.
  */
-async function resolveRoleRate(
+export async function resolveRoleRate(
   tenantId: string,
   roleName: string
 ): Promise<{ billingRate: number; costRate: number; roleId?: string }> {

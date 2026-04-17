@@ -25,6 +25,7 @@ import { registerHubSpotRoutes } from "./routes/hubspot.js";
 import { registerTenantStorageRoutes } from "./routes/tenant-storage.js";
 import { registerMcpRoutes } from "./routes/mcp.js";
 import { registerMcpWriteRoutes } from "./routes/mcp-write.js";
+import { registerA2ARoutes } from "./routes/a2a.js";
 import { registerTeamsAppRoutes } from "./routes/teams-app.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
 import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider } from "./services/ai-provider.js";
@@ -336,6 +337,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     requireAuth,
     requireRole,
   });
+
+  // A2A task lifecycle endpoints — full agent-to-agent protocol support.
+  // POST /a2a/tasks/send  — accept A2A Message, dispatch tool, return Task
+  // GET  /a2a/tasks/get   — retrieve stored task by id
+  // Auth: Bearer (Azure AD JWT) via mcpBearerAuth (same as MCP endpoints).
+  registerA2ARoutes(app);
 
   registerTeamsAppRoutes(app, {
     requireAuth,

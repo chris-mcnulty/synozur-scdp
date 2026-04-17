@@ -133,7 +133,7 @@ export const AGENT_CARD_STATIC = {
 export function buildAgentCard(baseUrl: string) {
   return {
     ...AGENT_CARD_STATIC,
-    url: `${baseUrl}/mcp`,
+    url: `${baseUrl}/a2a/tasks/send`,
     documentationUrl: `${baseUrl}/docs/MCP_CONNECTOR_SETUP.md`,
   };
 }
