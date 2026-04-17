@@ -540,6 +540,29 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });
   
 
+  // Agent card health check (admin only)
+  app.get("/api/admin/agent-card-health", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { getLastHealthCheckResult } = await import('./services/agent-card-health-scheduler.js');
+      const result = getLastHealthCheckResult();
+      res.json({ result });
+    } catch (error) {
+      console.error("[ADMIN] Error fetching agent card health result:", error);
+      res.status(500).json({ message: "Failed to fetch agent card health status" });
+    }
+  });
+
+  app.post("/api/admin/agent-card-health/run", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { runAgentCardHealthCheck } = await import('./services/agent-card-health-scheduler.js');
+      const result = await runAgentCardHealthCheck('manual');
+      res.json({ result });
+    } catch (error) {
+      console.error("[ADMIN] Error running agent card health check:", error);
+      res.status(500).json({ message: "Failed to run agent card health check" });
+    }
+  });
+
   // System Settings (read: admin, write: platform admin only)
   app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {

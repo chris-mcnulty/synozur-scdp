@@ -31,6 +31,7 @@ const ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 let failingSince: string | null = null;
 let lastAlertSentAt: string | null = null;
 let stateLoaded = false;
+let lastResult: AgentCardHealthResult | null = null;
 
 export interface AgentCardHealthResult {
   status: 'ok' | 'invalid' | 'error';
@@ -38,6 +39,10 @@ export interface AgentCardHealthResult {
   skillCount?: number;
   errors?: string[];
   message?: string;
+}
+
+export function getLastHealthCheckResult(): AgentCardHealthResult | null {
+  return lastResult;
 }
 
 async function loadPersistedState(): Promise<void> {
@@ -76,12 +81,6 @@ async function persistState(): Promise<void> {
   }
 }
 
-let _lastResult: AgentCardHealthResult | null = null;
-
-export function getLastAgentCardHealthResult(): AgentCardHealthResult | null {
-  return _lastResult;
-}
-
 export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Promise<AgentCardHealthResult> {
   console.log(`${SCHEDULER_TAG} Running agent card health check (trigger: ${trigger}) via ${HEALTH_ENDPOINT}...`);
 
@@ -112,7 +111,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
         lastAlertSentAt = null;
         await persistState();
       }
-      _lastResult = normalised;
+      lastResult = normalised;
       return normalised;
     }
 
@@ -131,7 +130,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
     };
   }
 
-  _lastResult = result;
+  lastResult = result;
 
   const now = new Date().toISOString();
 
@@ -278,7 +277,7 @@ export async function startAgentCardHealthScheduler(): Promise<void> {
     }
   });
 
-  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour`);
+  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour (24h cooldown between repeat alerts, persisted across restarts)`);
 
   setTimeout(async () => {
     console.log(`${SCHEDULER_TAG} Running immediate startup health check...`);

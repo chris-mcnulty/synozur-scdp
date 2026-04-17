@@ -33,6 +33,7 @@ import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
 import OrganizationSettings from "@/pages/organization-settings";
 import ScheduledJobs from "@/pages/scheduled-jobs";
+import AgentCardHealth from "@/pages/agent-card-health";
 import { AdminSharePoint } from "@/pages/admin-sharepoint";
 import PlatformTenants from "@/pages/platform-tenants";
 import PlatformServicePlans from "@/pages/platform-service-plans";
@@ -335,6 +336,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={["admin"]}>
             <ScheduledJobs />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/admin/agent-card-health">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin"]}>
+            <AgentCardHealth />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
