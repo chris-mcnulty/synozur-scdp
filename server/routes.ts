@@ -563,6 +563,17 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/admin/agent-card-health/history", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+      const history = await storage.getAgentCardHealthHistory(limit);
+      res.json({ history });
+    } catch (error) {
+      console.error("[ADMIN] Error fetching agent card health history:", error);
+      res.status(500).json({ message: "Failed to fetch agent card health history" });
+    }
+  });
+
   // System Settings (read: admin, write: platform admin only)
   app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {

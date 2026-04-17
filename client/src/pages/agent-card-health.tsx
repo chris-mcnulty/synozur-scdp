@@ -6,8 +6,8 @@ import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle, AlertCircle, Loader2, RefreshCw, Clock, Activity } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { CheckCircle, XCircle, AlertCircle, Loader2, RefreshCw, Clock, Activity, ChevronDown, ChevronRight, History } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
 
 interface AgentCardHealthResult {
   status: "ok" | "invalid" | "error";
@@ -15,6 +15,16 @@ interface AgentCardHealthResult {
   skillCount?: number;
   errors?: string[];
   message?: string;
+}
+
+interface AgentCardHealthCheck {
+  id: string;
+  status: "ok" | "invalid" | "error";
+  checkedAt: string;
+  skillCount?: number | null;
+  errors?: string[] | null;
+  message?: string | null;
+  trigger: string;
 }
 
 function ensureUtcDate(dateStr: string): Date {
@@ -52,6 +62,110 @@ function StatusBadge({ status }: { status: AgentCardHealthResult["status"] }) {
   }
 }
 
+function StatusBadgeCompact({ status }: { status: "ok" | "invalid" | "error" }) {
+  switch (status) {
+    case "ok":
+      return (
+        <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-400">
+          <CheckCircle className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium">Valid</span>
+        </span>
+      );
+    case "invalid":
+      return (
+        <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-400">
+          <XCircle className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium">Invalid</span>
+        </span>
+      );
+    case "error":
+      return (
+        <span className="inline-flex items-center gap-1 text-orange-700 dark:text-orange-400">
+          <AlertCircle className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium">Error</span>
+        </span>
+      );
+  }
+}
+
+function TriggerBadge({ trigger }: { trigger: string }) {
+  const labels: Record<string, string> = {
+    manual: "Manual",
+    cron: "Scheduled",
+    scheduled: "Scheduled",
+    startup: "Startup",
+  };
+  return (
+    <span className="text-xs text-muted-foreground capitalize">
+      {labels[trigger] ?? trigger}
+    </span>
+  );
+}
+
+function HistoryRow({ check }: { check: AgentCardHealthCheck }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDetails =
+    (check.errors && check.errors.length > 0) || !!check.message;
+
+  return (
+    <>
+      <tr
+        className={`border-b transition-colors hover:bg-muted/40 ${hasDetails ? "cursor-pointer" : ""}`}
+        onClick={() => hasDetails && setExpanded(!expanded)}
+      >
+        <td className="py-2.5 px-3 w-6">
+          {hasDetails ? (
+            expanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            )
+          ) : null}
+        </td>
+        <td className="py-2.5 px-3">
+          <StatusBadgeCompact status={check.status} />
+        </td>
+        <td className="py-2.5 px-3 text-xs text-muted-foreground whitespace-nowrap">
+          {format(ensureUtcDate(check.checkedAt), "MMM d, yyyy HH:mm:ss")}
+        </td>
+        <td className="py-2.5 px-3 text-xs text-muted-foreground">
+          {formatDistanceToNow(ensureUtcDate(check.checkedAt), { addSuffix: true })}
+        </td>
+        <td className="py-2.5 px-3">
+          <TriggerBadge trigger={check.trigger} />
+        </td>
+        <td className="py-2.5 px-3 text-xs text-muted-foreground">
+          {check.skillCount != null ? `${check.skillCount} skill${check.skillCount !== 1 ? "s" : ""}` : "—"}
+        </td>
+      </tr>
+      {expanded && hasDetails && (
+        <tr className="bg-muted/30 border-b">
+          <td colSpan={6} className="px-4 py-3">
+            {check.errors && check.errors.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-red-700 dark:text-red-400 mb-1.5">
+                  Validation errors ({check.errors.length})
+                </p>
+                <ul className="space-y-1">
+                  {check.errors.map((err, i) => (
+                    <li key={i} className="text-xs text-red-600 dark:text-red-300 flex gap-2">
+                      <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-red-500" />
+                      {err}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {check.message && (
+              <p className="text-xs text-orange-700 dark:text-orange-300">{check.message}</p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 export default function AgentCardHealth() {
   const { toast } = useToast();
 
@@ -59,10 +173,15 @@ export default function AgentCardHealth() {
     queryKey: ["/api/admin/agent-card-health"],
   });
 
+  const { data: historyData, isLoading: historyLoading } = useQuery<{ history: AgentCardHealthCheck[] }>({
+    queryKey: ["/api/admin/agent-card-health/history"],
+  });
+
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/agent-card-health/run"),
+    mutationFn: () => apiRequest("/api/admin/agent-card-health/run", { method: "POST" }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health/history"] });
       toast({ title: "Health check complete", description: "The agent card health check has finished." });
     },
     onError: () => {
@@ -71,10 +190,11 @@ export default function AgentCardHealth() {
   });
 
   const result = data?.result ?? null;
+  const history = historyData?.history ?? [];
 
   return (
     <Layout>
-      <div className="p-6 max-w-3xl mx-auto space-y-6">
+      <div className="p-6 max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Agent Card Health</h1>
           <p className="text-muted-foreground mt-1">
@@ -173,6 +293,52 @@ export default function AgentCardHealth() {
                   Last checked at: {new Date(ensureUtcDate(result.checkedAt)).toLocaleString()}
                 </p>
               </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <History className="h-4 w-4" />
+              Check History
+            </CardTitle>
+            <CardDescription>
+              Past health checks from manual triggers and the scheduled hourly run. Click a row with errors to expand details.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {historyLoading ? (
+              <div className="flex items-center gap-2 text-muted-foreground p-6">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading history…
+              </div>
+            ) : history.length === 0 ? (
+              <div className="rounded-b-lg border-t border-dashed p-6 text-center text-muted-foreground">
+                <History className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                <p className="text-sm font-medium">No history yet.</p>
+                <p className="text-xs mt-1">Run a health check to start recording history.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="py-2 px-3 w-6" />
+                      <th className="py-2 px-3 text-left text-xs font-medium text-muted-foreground">Status</th>
+                      <th className="py-2 px-3 text-left text-xs font-medium text-muted-foreground">Checked At</th>
+                      <th className="py-2 px-3 text-left text-xs font-medium text-muted-foreground">Relative</th>
+                      <th className="py-2 px-3 text-left text-xs font-medium text-muted-foreground">Trigger</th>
+                      <th className="py-2 px-3 text-left text-xs font-medium text-muted-foreground">Skills</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((check) => (
+                      <HistoryRow key={check.id} check={check} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>

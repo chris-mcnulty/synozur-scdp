@@ -54,7 +54,10 @@ import {
   type InsertAiUsageLog,
   aiUsageAlerts,
   type AiUsageAlert,
-  type InsertAiUsageAlert
+  type InsertAiUsageAlert,
+  agentCardHealthChecks,
+  type AgentCardHealthCheck,
+  type InsertAgentCardHealthCheck,
 } from "@shared/schema";
 import { db } from "../db";
 import type { IStorage } from "./index";
@@ -1217,5 +1220,16 @@ export const adminMethods: ThisType<IStorage & {
     return db.select().from(aiUsageAlerts)
       .orderBy(desc(aiUsageAlerts.alertedAt))
       .limit(50);
-  }
+  },
+
+  async addAgentCardHealthCheck(data: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck> {
+    const [result] = await db.insert(agentCardHealthChecks).values(data).returning();
+    return result;
+  },
+
+  async getAgentCardHealthHistory(limit = 50): Promise<AgentCardHealthCheck[]> {
+    return db.select().from(agentCardHealthChecks)
+      .orderBy(desc(agentCardHealthChecks.checkedAt))
+      .limit(limit);
+  },
 };

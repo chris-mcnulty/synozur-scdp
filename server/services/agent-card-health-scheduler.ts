@@ -18,6 +18,7 @@
 import * as cron from 'node-cron';
 import { getUncachableSendGridClient } from './sendgrid-client.js';
 import { storage } from '../storage.js';
+import type { InsertAgentCardHealthCheck } from '../../shared/schema.js';
 
 const SCHEDULER_TAG = '[AGENT-CARD-HEALTH]';
 const PORT = process.env.PORT || '5000';
@@ -154,6 +155,21 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
       }
       lastResult = normalised;
       appendToHistory(normalised);
+
+      // Persist successful result to the database for history
+      try {
+        await storage.addAgentCardHealthCheck({
+          status: normalised.status,
+          checkedAt: new Date(normalised.checkedAt),
+          skillCount: normalised.skillCount ?? null,
+          errors: null,
+          message: null,
+          trigger,
+        } as InsertAgentCardHealthCheck);
+      } catch (persistErr) {
+        console.error(`${SCHEDULER_TAG} Failed to persist health check result:`, persistErr);
+      }
+
       return normalised;
     }
 
@@ -174,6 +190,20 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
 
   lastResult = result;
   appendToHistory(result);
+
+  // Persist every result to the database for history
+  try {
+    await storage.addAgentCardHealthCheck({
+      status: result.status,
+      checkedAt: new Date(result.checkedAt),
+      skillCount: result.skillCount ?? null,
+      errors: result.errors ?? null,
+      message: result.message ?? null,
+      trigger,
+    } as InsertAgentCardHealthCheck);
+  } catch (persistErr) {
+    console.error(`${SCHEDULER_TAG} Failed to persist health check result:`, persistErr);
+  }
 
   const now = new Date().toISOString();
 
@@ -323,11 +353,7 @@ export async function startAgentCardHealthScheduler(): Promise<void> {
     }
   });
 
-<<<<<<< HEAD
-  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour`);
-=======
   console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour (cooldown configured via AGENT_CARD_ALERT_COOLDOWN_HOURS system setting, default 24h, persisted across restarts)`);
->>>>>>> 099e6680 (feat: make agent card alert cooldown period configurable by admins)
 
   setTimeout(async () => {
     console.log(`${SCHEDULER_TAG} Running immediate startup health check...`);

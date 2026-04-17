@@ -75,6 +75,7 @@ import {
   guestInvitations, type GuestInvitation, type InsertGuestInvitation,
   teamsMemberSyncState, type TeamsMemberSyncState, type InsertTeamsMemberSyncState,
   type ProjectStatusReport, type InsertProjectStatusReport,
+  agentCardHealthChecks, type AgentCardHealthCheck, type InsertAgentCardHealthCheck,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1019,6 +1020,10 @@ export interface IStorage {
   createProjectStatusReport(data: InsertProjectStatusReport): Promise<ProjectStatusReport>;
   getProjectStatusReports(projectId: string): Promise<ProjectStatusReport[]>;
   getProjectStatusReport(id: string): Promise<ProjectStatusReport | undefined>;
+
+  // Agent Card Health Check History
+  addAgentCardHealthCheck(data: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck>;
+  getAgentCardHealthHistory(limit?: number): Promise<AgentCardHealthCheck[]>;
 }
 
 export class DatabaseStorage {
