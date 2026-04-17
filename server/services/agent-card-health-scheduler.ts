@@ -25,13 +25,22 @@ const HEALTH_ENDPOINT = `http://localhost:${PORT}/mcp/agent-card-health`;
 
 const SETTING_FAILING_SINCE = 'AGENT_CARD_FAILING_SINCE';
 const SETTING_LAST_ALERT_SENT_AT = 'AGENT_CARD_LAST_ALERT_SENT_AT';
-const ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+export const ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+export const REMINDER_INTERVAL_MS = ALERT_COOLDOWN_MS; // alias for external consumers
 
 // Module-level cache — loaded from DB on first check, kept in sync after that.
 let failingSince: string | null = null;
 let lastAlertSentAt: string | null = null;
 let stateLoaded = false;
 let lastResult: AgentCardHealthResult | null = null;
+
+export function getFailingSince(): string | null {
+  return failingSince;
+}
+
+export function getLastAlertSentAt(): string | null {
+  return lastAlertSentAt;
+}
 
 export interface AgentCardHealthResult {
   status: 'ok' | 'invalid' | 'error';

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { AGENT_CARD_STATIC } from "../a2a/agent-card-data.js";
 import { invalidateKnownClientCache } from "../auth/mcp-bearer-auth.js";
+import { getFailingSince, getLastAlertSentAt, REMINDER_INTERVAL_MS } from "../services/agent-card-health-scheduler.js";
 import { z } from "zod";
 
 const KNOWN_CLIENTS_KEY = "COPILOT_KNOWN_CLIENT_IDS";
@@ -81,11 +82,20 @@ export function registerCopilotStudioRoutes(
 
         const knownClientIds = await getKnownClientIds();
 
+        const failingSince = getFailingSince();
+        const lastAlertSentAt = getLastAlertSentAt();
+        const nextAlertEligibleAt =
+          lastAlertSentAt
+            ? new Date(new Date(lastAlertSentAt).getTime() + REMINDER_INTERVAL_MS).toISOString()
+            : null;
+
         res.json({
           agentCardUrl,
           agentCardReachable,
           agentCardValid,
           agentCardError,
+          failingSince,
+          nextAlertEligibleAt,
           oauth: {
             audience: runtimeAudience,
             scope: runtimeScope,

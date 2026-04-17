@@ -676,6 +676,8 @@ interface CopilotStudioStatus {
   agentCardReachable: boolean;
   agentCardValid: boolean;
   agentCardError: string | null;
+  failingSince: string | null;
+  nextAlertEligibleAt: string | null;
   oauth: {
     audience: string;
     scope: string;
@@ -920,6 +922,22 @@ function CopilotStudioPanel() {
               <p className="text-xs text-muted-foreground font-mono break-all">{status?.agentCardUrl}</p>
               {status?.agentCardError && (
                 <p className="text-xs text-destructive">{status.agentCardError}</p>
+              )}
+              {(!status?.agentCardReachable || !status?.agentCardValid) && status?.failingSince && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Failing since:</span>{" "}
+                    {new Date(status.failingSince).toLocaleString()}
+                  </p>
+                  {status.nextAlertEligibleAt && (
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Next alert:</span>{" "}
+                      {new Date(status.nextAlertEligibleAt) > new Date()
+                        ? `in ${Math.ceil((new Date(status.nextAlertEligibleAt).getTime() - Date.now()) / 60_000)} min (${new Date(status.nextAlertEligibleAt).toLocaleTimeString()})`
+                        : "eligible now"}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
             <Button variant="ghost" size="sm" onClick={() => refetch()} className="ml-auto shrink-0">
