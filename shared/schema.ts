@@ -154,6 +154,20 @@ export const tenants = pgTable("tenants", {
   expenseRemindersEnabled: boolean("expense_reminders_enabled").default(false),
   expenseReminderTime: varchar("expense_reminder_time", { length: 5 }).default("08:00"),
   expenseReminderDay: integer("expense_reminder_day").default(1),
+
+  // Teams Proactive Alert Settings
+  teamsAlertsEnabled: boolean("teams_alerts_enabled").default(false),
+  teamsWebhookUrl: text("teams_webhook_url"),
+  teamsAlertOnHealthChange: boolean("teams_alert_on_health_change").default(true),
+  teamsAlertOnRaiddOverdue: boolean("teams_alert_on_raidd_overdue").default(true),
+  teamsAlertOnStatusReportDue: boolean("teams_alert_on_status_report_due").default(true),
+  // Structured channel routing: { default?: {teamId, channelId}, health?: {...}, raidd?: {...}, statusReport?: {...} }
+  teamsNotificationChannels: jsonb("teams_notification_channels").$type<{
+    default?: { teamId: string; channelId: string };
+    health?: { teamId: string; channelId: string };
+    raidd?: { teamId: string; channelId: string };
+    statusReport?: { teamId: string; channelId: string };
+  }>(),
   
   // Support Ticket Integrations
   supportPlannerEnabled: boolean("support_planner_enabled").default(false),
@@ -3741,3 +3755,30 @@ export const insertAgentCardHealthCheckSchema = createInsertSchema(agentCardHeal
 });
 export type InsertAgentCardHealthCheck = z.infer<typeof insertAgentCardHealthCheckSchema>;
 export type AgentCardHealthCheck = typeof agentCardHealthChecks.$inferSelect;
+
+// ============================================================================
+// TEAMS PROACTIVE ALERT LOG — deduplication and audit trail for Teams alerts
+// ============================================================================
+
+export const teamsAlertLog = pgTable("teams_alert_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  triggerType: varchar("trigger_type", { length: 50 }).notNull(), // 'health', 'raidd', 'status_report'
+  projectId: varchar("project_id"),
+  entryId: varchar("entry_id"),
+  targetTeamId: varchar("target_team_id"),
+  targetChannelId: varchar("target_channel_id"),
+  alertedAt: timestamp("alerted_at").notNull().default(sql`now()`),
+  details: jsonb("details"),
+}, (table) => ({
+  tenantIdx: index("idx_teams_alert_log_tenant").on(table.tenantId),
+  tenantTriggerIdx: index("idx_teams_alert_log_tenant_trigger").on(table.tenantId, table.triggerType),
+  alertedAtIdx: index("idx_teams_alert_log_alerted_at").on(table.alertedAt),
+}));
+
+export const insertTeamsAlertLogSchema = createInsertSchema(teamsAlertLog).omit({
+  id: true,
+  alertedAt: true,
+});
+export type InsertTeamsAlertLog = z.infer<typeof insertTeamsAlertLogSchema>;
+export type TeamsAlertLog = typeof teamsAlertLog.$inferSelect;

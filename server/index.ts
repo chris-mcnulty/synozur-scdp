@@ -293,6 +293,18 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import agent card health scheduler: ${importError.message}`);
       });
 
+      // Start the Teams alert scheduler
+      log('🔄 Starting Teams alert scheduler...');
+      import('./services/teams-alert-scheduler.js').then(({ startTeamsAlertScheduler }) => {
+        startTeamsAlertScheduler().then(() => {
+          log('✅ Teams alert scheduler started');
+        }).catch((schedulerError: any) => {
+          log(`⚠️ Teams alert scheduler failed to start: ${schedulerError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import Teams alert scheduler: ${importError.message}`);
+      });
+
       // Check for missed jobs after a short delay to allow schedulers to initialize
       setTimeout(async () => {
         log('🔄 Checking for missed scheduled jobs...');

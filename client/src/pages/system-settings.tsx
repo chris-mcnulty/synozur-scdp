@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload, LifeBuoy, BarChart2, Users, Eye, RefreshCw } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload, LifeBuoy, BarChart2, Users, Eye, RefreshCw, MessageSquare, CheckCircle, XCircle } from "lucide-react";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -712,6 +712,10 @@ export default function SystemSettings() {
             <TabsTrigger value="analytics" className="flex items-center space-x-2">
               <BarChart2 className="w-4 h-4" />
               <span>Page Analytics</span>
+            </TabsTrigger>
+            <TabsTrigger value="teams-alerts" className="flex items-center space-x-2">
+              <Bell className="w-4 h-4" />
+              <span>Teams Alerts</span>
             </TabsTrigger>
           </TabsList>
 
@@ -2062,6 +2066,8 @@ export default function SystemSettings() {
           <TabsContent value="analytics" className="space-y-6">
             <PageAnalyticsTab />
           </TabsContent>
+
+          <TeamsAlertsTab />
         </Tabs>
       </div>
     </Layout>
@@ -2382,6 +2388,344 @@ function TimeRemindersTab({ settings, toast }: { settings: SystemSetting[]; toas
           </div>
           <p className="text-xs text-muted-foreground">
             Default: 24 hours. Minimum: 1 hour. Maximum: 168 hours (7 days).
+          </p>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  );
+}
+
+interface ChannelConfig { teamId: string; channelId: string; }
+interface TeamsNotificationChannels {
+  default?: ChannelConfig | null;
+  health?: ChannelConfig | null;
+  raidd?: ChannelConfig | null;
+  statusReport?: ChannelConfig | null;
+}
+
+function ChannelInput({
+  label,
+  description,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  description: string;
+  value: ChannelConfig | null | undefined;
+  onChange: (v: ChannelConfig | null) => void;
+  disabled?: boolean;
+}) {
+  const [teamId, setTeamId] = useState(value?.teamId ?? "");
+  const [channelId, setChannelId] = useState(value?.channelId ?? "");
+
+  useEffect(() => {
+    setTeamId(value?.teamId ?? "");
+    setChannelId(value?.channelId ?? "");
+  }, [value?.teamId, value?.channelId]);
+
+  function handleSave() {
+    if (teamId.trim() && channelId.trim()) {
+      onChange({ teamId: teamId.trim(), channelId: channelId.trim() });
+    } else {
+      onChange(null);
+    }
+  }
+
+  const isConfigured = !!(value?.teamId && value?.channelId);
+
+  return (
+    <div className="space-y-2 p-4 border rounded-lg">
+      <div className="flex items-center justify-between">
+        <Label>{label}</Label>
+        {isConfigured && (
+          <Badge variant="outline" className="text-xs text-green-700 dark:text-green-400 border-green-300 dark:border-green-700">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Configured
+          </Badge>
+        )}
+      </div>
+      <p className="text-sm text-muted-foreground">{description}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <Input
+          placeholder="Team ID (e.g. 19:abc123...)"
+          value={teamId}
+          onChange={(e) => setTeamId(e.target.value)}
+          disabled={disabled}
+          className="font-mono text-xs"
+        />
+        <Input
+          placeholder="Channel ID (e.g. 19:xyz456...@thread.tacv2)"
+          value={channelId}
+          onChange={(e) => setChannelId(e.target.value)}
+          disabled={disabled}
+          className="font-mono text-xs"
+        />
+      </div>
+      <Button size="sm" variant="outline" onClick={handleSave} disabled={disabled}>
+        <Save className="w-3 h-3 mr-1" />
+        Save Channel
+      </Button>
+    </div>
+  );
+}
+
+function TeamsAlertsTab() {
+  const { toast } = useToast();
+  const [isTesting, setIsTesting] = useState(false);
+
+  const { data: settings, isLoading } = useQuery<{
+    teamsAlertsEnabled: boolean;
+    teamsAlertOnHealthChange: boolean;
+    teamsAlertOnRaiddOverdue: boolean;
+    teamsAlertOnStatusReportDue: boolean;
+    teamsNotificationChannels: TeamsNotificationChannels | null;
+  }>({
+    queryKey: ["/api/admin/teams-alerts/settings"],
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (updates: Record<string, any>) => {
+      return await apiRequest("/api/admin/teams-alerts/settings", {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/teams-alerts/settings"] });
+      toast({ title: "Settings saved", description: "Teams alert settings have been updated." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save Teams alert settings.", variant: "destructive" });
+    },
+  });
+
+  const runMutation = useMutation({
+    mutationFn: async () => {
+      setIsTesting(true);
+      return await apiRequest("/api/admin/teams-alerts/run", { method: "POST" });
+    },
+    onSuccess: (data: any) => {
+      setIsTesting(false);
+      const sent = data?.sent ?? 0;
+      const failed = data?.failed ?? 0;
+      const errors: string[] = data?.errors ?? [];
+      if (failed > 0) {
+        toast({
+          title: "Alerts sent with errors",
+          description: `${sent} card(s) delivered, ${failed} failed. ${errors[0] ?? "Check server logs."}`,
+          variant: "destructive",
+        });
+      } else if (sent === 0) {
+        const skipMsg = errors.length > 0 ? errors[0] : "No conditions currently met — no alerts needed.";
+        toast({ title: "No alerts sent", description: skipMsg });
+      } else {
+        toast({ title: "Alerts sent", description: `${sent} Adaptive Card(s) delivered to Teams.` });
+      }
+    },
+    onError: () => {
+      setIsTesting(false);
+      toast({ title: "Error", description: "Failed to run Teams alerts. Verify your Microsoft Graph credentials and channel configuration.", variant: "destructive" });
+    },
+  });
+
+  function saveChannel(key: keyof TeamsNotificationChannels, value: ChannelConfig | null) {
+    const current = settings?.teamsNotificationChannels ?? {};
+    updateMutation.mutate({
+      teamsNotificationChannels: { ...current, [key]: value },
+    });
+  }
+
+  if (isLoading) {
+    return (
+      <TabsContent value="teams-alerts" className="space-y-6">
+        <div className="space-y-2">
+          <div className="h-32 rounded-lg bg-muted animate-pulse" />
+          <div className="h-32 rounded-lg bg-muted animate-pulse" />
+        </div>
+      </TabsContent>
+    );
+  }
+
+  const enabled = settings?.teamsAlertsEnabled ?? false;
+  const channels = settings?.teamsNotificationChannels;
+  const hasDefaultChannel = !!(channels?.default?.teamId && channels?.default?.channelId);
+
+  return (
+    <TabsContent value="teams-alerts" className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Teams Proactive Alerts
+          </CardTitle>
+          <CardDescription>
+            Constellation posts Adaptive Card notifications directly to Microsoft Teams channels via the Microsoft Graph API — the same channel where the Constellation Copilot agent is active. Requires <code className="text-xs bg-muted px-1 rounded">ChannelMessage.Send</code> application permission in your Azure AD app registration.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div className="space-y-0.5">
+              <Label>Enable Teams Alerts</Label>
+              <p className="text-sm text-muted-foreground">
+                Enable proactive Adaptive Card notifications to your configured Teams channels
+              </p>
+            </div>
+            <Switch
+              checked={enabled}
+              disabled={updateMutation.isPending}
+              onCheckedChange={(checked) => updateMutation.mutate({ teamsAlertsEnabled: checked })}
+            />
+          </div>
+
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              To find your Team ID and Channel ID: In Microsoft Teams, right-click a channel → <strong>Get link to channel</strong>. The URL contains both IDs. Alternatively, use Graph Explorer with <code className="text-xs bg-muted px-1 rounded">GET /teams</code> and <code className="text-xs bg-muted px-1 rounded">GET /teams/{"{teamId}"}/channels</code>.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Channel Routing
+          </CardTitle>
+          <CardDescription>
+            Configure which Teams channel receives each alert type. The default channel is used when no specific override is set for a trigger.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ChannelInput
+            label="Default Channel (required)"
+            description="All alerts go here unless a specific override is configured below."
+            value={channels?.default}
+            onChange={(v) => saveChannel("default", v)}
+            disabled={updateMutation.isPending}
+          />
+
+          <ChannelInput
+            label="Project Health Alerts (optional override)"
+            description="AtRisk and OverBudget alerts. Leave blank to use the default channel."
+            value={channels?.health}
+            onChange={(v) => saveChannel("health", v)}
+            disabled={updateMutation.isPending}
+          />
+
+          <ChannelInput
+            label="RAIDD Overdue Alerts (optional override)"
+            description="Overdue RAIDD item alerts. Leave blank to use the default channel."
+            value={channels?.raidd}
+            onChange={(v) => saveChannel("raidd", v)}
+            disabled={updateMutation.isPending}
+          />
+
+          <ChannelInput
+            label="Status Report Alerts (optional override)"
+            description="Projects missing a status report for 14+ days. Leave blank to use the default channel."
+            value={channels?.statusReport}
+            onChange={(v) => saveChannel("statusReport", v)}
+            disabled={updateMutation.isPending}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            Alert Triggers
+          </CardTitle>
+          <CardDescription>
+            Choose which events trigger an Adaptive Card. Each trigger is deduplicated: a 24-hour cooldown applies to health alerts per project, and a 72-hour cooldown applies to RAIDD and status-report alerts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div className="space-y-0.5">
+              <Label>Project Health Change</Label>
+              <p className="text-sm text-muted-foreground">
+                Alert when a project's budget utilization enters AtRisk (&gt;80%) or OverBudget (&gt;100%). Re-alerts after 24 h if the project remains in that state.
+              </p>
+            </div>
+            <Switch
+              checked={settings?.teamsAlertOnHealthChange ?? true}
+              disabled={updateMutation.isPending || !enabled}
+              onCheckedChange={(checked) => updateMutation.mutate({ teamsAlertOnHealthChange: checked })}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div className="space-y-0.5">
+              <Label>RAIDD Items Overdue</Label>
+              <p className="text-sm text-muted-foreground">
+                Alert for open RAIDD items (risks, issues, actions, dependencies, decisions) that have passed their due date. Each item re-alerts every 72 h while unresolved.
+              </p>
+            </div>
+            <Switch
+              checked={settings?.teamsAlertOnRaiddOverdue ?? true}
+              disabled={updateMutation.isPending || !enabled}
+              onCheckedChange={(checked) => updateMutation.mutate({ teamsAlertOnRaiddOverdue: checked })}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div className="space-y-0.5">
+              <Label>Status Report Due</Label>
+              <p className="text-sm text-muted-foreground">
+                Alert when an active project has not had a status report published within the past 14 days. Re-alerts every 72 h until a new report is published.
+              </p>
+            </div>
+            <Switch
+              checked={settings?.teamsAlertOnStatusReportDue ?? true}
+              disabled={updateMutation.isPending || !enabled}
+              onCheckedChange={(checked) => updateMutation.mutate({ teamsAlertOnStatusReportDue: checked })}
+            />
+          </div>
+
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Alerts are evaluated daily at 9:00 AM ET. Each trigger type posts a separate Adaptive Card to its designated channel. All cards include a direct link back into Constellation.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Play className="h-5 w-5" />
+            Manual Trigger
+          </CardTitle>
+          <CardDescription>
+            Run the Teams alert check immediately to validate your channel configuration and Microsoft Graph permissions
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button
+            onClick={() => runMutation.mutate()}
+            disabled={!enabled || !hasDefaultChannel || isTesting || runMutation.isPending}
+          >
+            {isTesting || runMutation.isPending ? (
+              <>
+                <Clock className="w-4 h-4 mr-2 animate-spin" />
+                Checking conditions...
+              </>
+            ) : (
+              <>
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Run Alerts Now
+              </>
+            )}
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Evaluates all enabled alert conditions and posts Adaptive Cards to Teams for any conditions currently met. Deduplication still applies — already-sent alerts within the cooldown window will be skipped.
+            {!hasDefaultChannel && (
+              <span className="text-destructive"> Configure a default channel first.</span>
+            )}
           </p>
         </CardContent>
       </Card>
