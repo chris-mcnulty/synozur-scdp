@@ -1,3 +1,19 @@
+/**
+ * Agent Card Health Scheduler
+ *
+ * Runs an hourly check of the A2A agent card by polling the live
+ * /mcp/agent-card-health endpoint. Sends an email alert to platform
+ * admins when the card is invalid.
+ *
+ * Deduplication / cooldown rules:
+ *   - An initial alert is sent as soon as the card first fails.
+ *   - Subsequent alerts are suppressed for 24 hours (REMINDER_INTERVAL_MS).
+ *   - After 24 hours of continued failure a "still failing" reminder is sent
+ *     and the 24-hour window resets.
+ *   - When the card recovers the state is cleared so the next failure triggers
+ *     a fresh initial alert.
+ */
+
 import * as cron from 'node-cron';
 import { getUncachableSendGridClient } from './sendgrid-client.js';
 import { storage } from '../storage.js';
@@ -5,6 +21,16 @@ import { storage } from '../storage.js';
 const SCHEDULER_TAG = '[AGENT-CARD-HEALTH]';
 const PORT = process.env.PORT || '5000';
 const HEALTH_ENDPOINT = `http://localhost:${PORT}/mcp/agent-card-health`;
+
+const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+let failingSince: Date | null = null;
+let lastAlertSentAt: Date | null = null;
+
+function resetAlertState() {
+  failingSince = null;
+  lastAlertSentAt = null;
+}
 
 export interface AgentCardHealthResult {
   status: 'ok' | 'invalid' | 'error';
@@ -24,7 +50,6 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
     const response = await fetch(HEALTH_ENDPOINT);
     const body = await response.json() as Partial<AgentCardHealthResult>;
 
-    // Normalise: always ensure checkedAt and status are present regardless of endpoint error path
     const normalised: AgentCardHealthResult = {
       status: (body.status as AgentCardHealthResult['status']) || 'error',
       checkedAt: body.checkedAt || fallbackTimestamp,
@@ -34,7 +59,12 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
     };
 
     if (response.ok && normalised.status === 'ok') {
-      console.log(`${SCHEDULER_TAG} Agent card is valid (${normalised.skillCount ?? 0} skills).`);
+      if (failingSince !== null) {
+        console.log(`${SCHEDULER_TAG} Agent card has recovered. Clearing alert state.`);
+        resetAlertState();
+      } else {
+        console.log(`${SCHEDULER_TAG} Agent card is valid (${normalised.skillCount ?? 0} skills).`);
+      }
       return normalised;
     }
 
@@ -50,15 +80,38 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
     };
   }
 
+  const now = new Date();
+
+  if (lastAlertSentAt === null) {
+    failingSince = now;
+    lastAlertSentAt = now;
+    try {
+      await sendAdminAlert(result, false);
+    } catch (alertError: unknown) {
+      console.error(`${SCHEDULER_TAG} sendAdminAlert threw unexpectedly:`, alertError);
+    }
+    return result;
+  }
+
+  const msSinceLastAlert = now.getTime() - lastAlertSentAt.getTime();
+
+  if (msSinceLastAlert < REMINDER_INTERVAL_MS) {
+    console.log(
+      `${SCHEDULER_TAG} Alert suppressed (cooldown). Last alert was ${Math.round(msSinceLastAlert / 60_000)} min ago. Errors: ${(result.errors ?? [result.message ?? 'unknown']).join('; ')}`
+    );
+    return result;
+  }
+
+  lastAlertSentAt = now;
   try {
-    await sendAdminAlert(result);
+    await sendAdminAlert(result, true);
   } catch (alertError: unknown) {
     console.error(`${SCHEDULER_TAG} sendAdminAlert threw unexpectedly:`, alertError);
   }
   return result;
 }
 
-async function sendAdminAlert(result: AgentCardHealthResult): Promise<void> {
+async function sendAdminAlert(result: AgentCardHealthResult, isReminder: boolean): Promise<void> {
   let adminEmails: string[] = [];
 
   try {
@@ -72,10 +125,11 @@ async function sendAdminAlert(result: AgentCardHealthResult): Promise<void> {
     return;
   }
 
+  const reminderPrefix = isReminder ? ' (Reminder — Still Failing)' : '';
   const subject =
     result.status === 'invalid'
-      ? '[Constellation] Agent Card Health Check Failed — Validation Errors Detected'
-      : '[Constellation] Agent Card Health Check Error — Endpoint Unreachable or Failed';
+      ? `[Constellation] Agent Card Health Check Failed${reminderPrefix} — Validation Errors Detected`
+      : `[Constellation] Agent Card Health Check Error${reminderPrefix} — Endpoint Unreachable or Failed`;
 
   const safeCheckedAt = result.checkedAt || new Date().toISOString();
   const safeMessage = result.message || 'Unknown error';
@@ -85,11 +139,20 @@ async function sendAdminAlert(result: AgentCardHealthResult): Promise<void> {
       ? `<ul style="margin:12px 0; padding-left:20px;">${result.errors.map(e => `<li style="margin:4px 0;">${escapeHtml(e)}</li>`).join('')}</ul>`
       : '';
 
+  const reminderBanner = isReminder
+    ? `<p style="background:#fef3c7;padding:10px 14px;border-left:4px solid #f59e0b;margin:0 0 16px 0;">
+        <strong>This is a reminder.</strong> The agent card has been in a failed state since
+        <strong>${escapeHtml(failingSince?.toUTCString() ?? 'unknown')}</strong>.
+        Alerts are sent once per 24-hour window while the issue persists.
+      </p>`
+    : '';
+
   const body = `
     <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #1a1a1a;">
       <h2 style="color: #b91c1c; border-bottom: 2px solid #fca5a5; padding-bottom: 8px;">
         ⚠️ Agent Card Health Check ${result.status === 'invalid' ? 'Failed' : 'Error'}
       </h2>
+      ${reminderBanner}
       <p>The scheduled agent card health check detected a problem at <strong>${escapeHtml(safeCheckedAt)}</strong>.</p>
       ${result.status === 'invalid' ? `
         <p><strong>Status:</strong> <span style="color:#b91c1c;">Invalid</span></p>
@@ -104,7 +167,7 @@ async function sendAdminAlert(result: AgentCardHealthResult): Promise<void> {
       <hr style="margin: 24px 0; border: none; border-top: 1px solid #e5e7eb;" />
       <p style="font-size: 12px; color: #6b7280;">
         This is an automated alert from the Constellation platform scheduler.
-        To stop future alerts, resolve the issue and wait for the next hourly check.
+        Alerts are sent once per failure event and then at most once every 24 hours while the issue persists.
       </p>
     </div>
   `;
@@ -123,7 +186,7 @@ async function sendAdminAlert(result: AgentCardHealthResult): Promise<void> {
       )
     );
 
-    console.log(`${SCHEDULER_TAG} Alert email sent to ${adminEmails.length} admin(s): ${adminEmails.join(', ')}`);
+    console.log(`${SCHEDULER_TAG} ${isReminder ? 'Reminder' : 'Initial'} alert email sent to ${adminEmails.length} admin(s): ${adminEmails.join(', ')}`);
   } catch (err) {
     console.error(`${SCHEDULER_TAG} Failed to send alert email via SendGrid:`, err);
   }
@@ -153,10 +216,8 @@ export async function startAgentCardHealthScheduler(): Promise<void> {
     }
   });
 
-  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour`);
+  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour (24h cooldown between repeat alerts)`);
 
-  // Run an immediate check on startup to catch issues introduced by the latest deploy.
-  // Use a short delay to allow the HTTP server to be fully ready to accept requests.
   setTimeout(async () => {
     console.log(`${SCHEDULER_TAG} Running immediate startup health check...`);
     try {
