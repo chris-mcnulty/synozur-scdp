@@ -3,7 +3,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import { z } from "zod";
 import { storage, db } from "../storage";
-import { runAgentCardHealthCheck, getLastHealthCheckResult } from "../services/agent-card-health-scheduler.js";
+import { runAgentCardHealthCheck, getLastHealthCheckResult, getLastAgentCardHealthResult, getAgentCardHealthHistory, getSchedulerIntervalHours } from "../services/agent-card-health-scheduler.js";
 import { insertSystemSettingSchema, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertAiConfigurationSchema, users, projects, clients, tenants, tenantUsers, airportCodes, timeEntries, pageViews, supportTickets, supportTicketReplies, supportTicketPlannerSync, groundingDocuments, aiConfiguration, aiUsageLogs, aiUsageSummaries, aiUsageAlerts } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, desc, or } from "drizzle-orm";
 import { emailService } from "../services/email-notification.js";
@@ -2239,13 +2239,12 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
     }
   });
 
-  // GET /api/admin/agent-card-health — returns the last cached health check result and history
+  // GET /api/admin/agent-card-health — returns the last cached health check result, history, and scheduler config
   app.get("/api/admin/agent-card-health", requireAuth, requirePlatformAdmin, (_req, res) => {
-    const last = getLastHealthCheckResult();
-    if (!last) {
-      return res.json({ result: null });
-    }
-    return res.json({ result: last });
+    const last = getLastAgentCardHealthResult();
+    const history = getAgentCardHealthHistory();
+    const intervalHours = getSchedulerIntervalHours();
+    return res.json({ result: last ?? null, history, intervalHours });
   });
 
   // POST /api/admin/agent-card-health/check — triggers a fresh health check on demand

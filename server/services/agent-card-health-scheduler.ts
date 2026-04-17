@@ -1,9 +1,11 @@
 /**
  * Agent Card Health Scheduler
  *
- * Runs an hourly check of the A2A agent card by polling the live
- * /mcp/agent-card-health endpoint. Sends an email alert to platform
- * admins when the card is invalid.
+ * Runs a periodic check of the A2A agent card by polling the live
+ * /mcp/agent-card-health endpoint. The check interval defaults to 1 hour
+ * and is configurable via the AGENT_CARD_HEALTH_CHECK_INTERVAL_HOURS
+ * environment variable. Sends an email alert to platform admins when the
+ * card is invalid.
  *
  * Deduplication / cooldown rules:
  *   - An initial alert is sent as soon as the card first fails.
@@ -86,6 +88,7 @@ function appendToHistory(result: AgentCardHealthResult): void {
     history = history.slice(history.length - HISTORY_MAX);
   }
 }
+
 
 async function loadPersistedState(): Promise<void> {
   if (stateLoaded) return;
@@ -341,19 +344,48 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"'\/]/g, c => map[c] || c);
 }
 
-export async function startAgentCardHealthScheduler(): Promise<void> {
-  console.log(`${SCHEDULER_TAG} Starting agent card health scheduler...`);
+/**
+ * Returns the configured check interval in whole hours.
+ * Reads AGENT_CARD_HEALTH_CHECK_INTERVAL_HOURS (default 1, clamped 1–168).
+ * Exposed so the admin API / UI can surface the active interval.
+ */
+export function getSchedulerIntervalHours(): number {
+  const raw = parseInt(process.env.AGENT_CARD_HEALTH_CHECK_INTERVAL_HOURS ?? '1', 10);
+  if (isNaN(raw) || raw < 1) return 1;
+  if (raw > 168) return 168; // cap at one week
+  return raw;
+}
 
-  cron.schedule('0 * * * *', async () => {
-    console.log(`${SCHEDULER_TAG} Hourly check triggered`);
+// Builds a cron expression that fires every N hours (on the hour).
+// e.g. intervalHours=1  -> "0 * * * *"
+//      intervalHours=6  -> "0 */6 * * *"
+//      intervalHours=24 -> "0 0 * * *"
+function buildCronExpression(intervalHours: number): string {
+  if (intervalHours === 1) return '0 * * * *';
+  if (intervalHours === 24) return '0 0 * * *';
+  return `0 */${intervalHours} * * *`;
+}
+
+export async function startAgentCardHealthScheduler(): Promise<void> {
+  const intervalHours = getSchedulerIntervalHours();
+  const cronExpr = buildCronExpression(intervalHours);
+
+  console.log(`${SCHEDULER_TAG} Starting agent card health scheduler (interval: every ${intervalHours}h, cron: "${cronExpr}")...`);
+
+  cron.schedule(cronExpr, async () => {
+    console.log(`${SCHEDULER_TAG} Scheduled check triggered (every ${intervalHours}h)`);
     try {
       await runAgentCardHealthCheck('cron');
     } catch (err) {
-      console.error(`${SCHEDULER_TAG} Unhandled error in hourly cron run:`, err);
+      console.error(`${SCHEDULER_TAG} Unhandled error in scheduled cron run:`, err);
     }
   });
 
-  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour (cooldown configured via AGENT_CARD_ALERT_COOLDOWN_HOURS system setting, default 24h, persisted across restarts)`);
+  console.log(
+    `${SCHEDULER_TAG} Scheduler started — runs every ${intervalHours} hour(s) ` +
+    `(cron: "${cronExpr}", alert cooldown configurable via AGENT_CARD_ALERT_COOLDOWN_HOURS system setting, state persisted across restarts). ` +
+    `Set AGENT_CARD_HEALTH_CHECK_INTERVAL_HOURS to change the check interval.`
+  );
 
   setTimeout(async () => {
     console.log(`${SCHEDULER_TAG} Running immediate startup health check...`);

@@ -169,7 +169,7 @@ function HistoryRow({ check }: { check: AgentCardHealthCheck }) {
 export default function AgentCardHealth() {
   const { toast } = useToast();
 
-  const { data, isLoading } = useQuery<{ result: AgentCardHealthResult | null }>({
+  const { data, isLoading } = useQuery<{ result: AgentCardHealthResult | null; intervalHours: number }>({
     queryKey: ["/api/admin/agent-card-health"],
   });
 
@@ -178,7 +178,7 @@ export default function AgentCardHealth() {
   });
 
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("/api/admin/agent-card-health/run", { method: "POST" }),
+    mutationFn: () => apiRequest("/api/admin/agent-card-health/check", { method: "POST" }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health/history"] });
@@ -191,6 +191,8 @@ export default function AgentCardHealth() {
 
   const result = data?.result ?? null;
   const history = historyData?.history ?? [];
+  const intervalHours = data?.intervalHours ?? 1;
+  const intervalLabel = intervalHours === 1 ? "every hour" : `every ${intervalHours} hours`;
 
   return (
     <Layout>
@@ -211,7 +213,7 @@ export default function AgentCardHealth() {
                   Current Status
                 </CardTitle>
                 <CardDescription>
-                  Last check result for the server&apos;s A2A agent card.
+                  Last check result for the server&apos;s A2A agent card. Runs automatically {intervalLabel}.
                 </CardDescription>
               </div>
               <Button
@@ -238,7 +240,7 @@ export default function AgentCardHealth() {
               <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
                 <Activity className="h-8 w-8 mx-auto mb-2 opacity-40" />
                 <p className="text-sm font-medium">No health check has been run yet.</p>
-                <p className="text-xs mt-1">Click &quot;Run Health Check Now&quot; to validate the agent card.</p>
+                <p className="text-xs mt-1">An automatic check runs shortly after startup and then {intervalLabel}. Click &quot;Run Health Check Now&quot; to validate immediately.</p>
               </div>
             ) : (
               <>
