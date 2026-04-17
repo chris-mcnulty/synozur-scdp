@@ -67,6 +67,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Deliverable Tracking**: Management of project deliverables with status workflows and AI narrative extraction.
 - **Persistent Status Reports**: AI-generated status reports (text + PPTX) saved and managed via CRUD API.
 - **MCP Server (v0 — Read-Only)**: Read-only API surface under `/mcp` for Microsoft 365 Copilot / Copilot Studio integration, with session and OAuth bearer token authentication.
+- **A2A Agent Card**: Agent discovery endpoint at `/.well-known/agent.json`. Skills and static metadata live in `server/a2a/agent-card-data.ts` (single source of truth). The static snapshot at `client/public/.well-known/agent.json` must be kept in sync by running `npx tsx scripts/gen-agent-card.ts [--base-url https://your-domain.com]` after any skill or metadata changes. Defaults to `https://constellation.synozur.com`.
 - **Copilot Studio Agent**: Conversational AI agent for Teams and M365 Copilot, using Power Platform Custom Connector to access MCP endpoints.
 - **Teams Custom Tab**: Embeddable, chromeless project detail pages for Microsoft Teams Custom Tab integration, with SSO authentication.
 - **Teams App Package Self-Service**: Organization Settings feature to download or publish the Teams app manifest package dynamically.
