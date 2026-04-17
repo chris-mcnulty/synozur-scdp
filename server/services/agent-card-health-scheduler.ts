@@ -50,8 +50,26 @@ export interface AgentCardHealthResult {
   message?: string;
 }
 
+const HISTORY_MAX = 10;
+let history: AgentCardHealthResult[] = [];
+
 export function getLastHealthCheckResult(): AgentCardHealthResult | null {
   return lastResult;
+}
+
+export function getLastAgentCardHealthResult(): AgentCardHealthResult | null {
+  return lastResult;
+}
+
+export function getAgentCardHealthHistory(): AgentCardHealthResult[] {
+  return history;
+}
+
+function appendToHistory(result: AgentCardHealthResult): void {
+  history.push(result);
+  if (history.length > HISTORY_MAX) {
+    history = history.slice(history.length - HISTORY_MAX);
+  }
 }
 
 async function loadPersistedState(): Promise<void> {
@@ -121,6 +139,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
         await persistState();
       }
       lastResult = normalised;
+      appendToHistory(normalised);
       return normalised;
     }
 
@@ -140,6 +159,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
   }
 
   lastResult = result;
+  appendToHistory(result);
 
   const now = new Date().toISOString();
 
@@ -286,7 +306,7 @@ export async function startAgentCardHealthScheduler(): Promise<void> {
     }
   });
 
-  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour (24h cooldown between repeat alerts, persisted across restarts)`);
+  console.log(`${SCHEDULER_TAG} Scheduler started — runs every hour on the hour`);
 
   setTimeout(async () => {
     console.log(`${SCHEDULER_TAG} Running immediate startup health check...`);

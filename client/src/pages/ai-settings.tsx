@@ -697,14 +697,17 @@ interface TestResult {
   detail: any;
 }
 
+interface AgentCardHealthEntry {
+  status: 'ok' | 'invalid' | 'error';
+  checkedAt: string;
+  skillCount?: number;
+  errors?: string[];
+  message?: string;
+}
+
 interface AgentCardHealthResponse {
-  result: {
-    status: 'ok' | 'invalid' | 'error';
-    checkedAt: string;
-    skillCount?: number;
-    errors?: string[];
-    message?: string;
-  } | null;
+  result: AgentCardHealthEntry | null;
+  history: AgentCardHealthEntry[];
 }
 
 function AgentCardHealthCard() {
@@ -728,6 +731,7 @@ function AgentCardHealthCard() {
   });
 
   const result = data?.result ?? null;
+  const history = data?.history ?? [];
 
   const statusColor = result?.status === 'ok'
     ? 'text-green-600 dark:text-green-400'
@@ -814,6 +818,39 @@ function AgentCardHealthCard() {
                 ))}
               </ul>
             )}
+          </div>
+        )}
+        {history.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Recent check history</p>
+            <div className="border rounded-md overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted/50 border-b">
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Checked at</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Skills</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...history].reverse().map((entry, i) => (
+                    <tr key={i} className={`border-b last:border-0 ${i % 2 === 0 ? '' : 'bg-muted/20'}`}>
+                      <td className="px-3 py-2">
+                        <span className={`font-medium ${entry.status === 'ok' ? 'text-green-600 dark:text-green-400' : entry.status === 'invalid' ? 'text-yellow-500' : 'text-destructive'}`}>
+                          {entry.status === 'ok' ? 'Healthy' : entry.status === 'invalid' ? 'Invalid' : 'Error'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {new Date(entry.checkedAt).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">
+                        {entry.skillCount !== undefined ? entry.skillCount : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </CardContent>
