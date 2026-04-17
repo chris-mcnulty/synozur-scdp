@@ -281,6 +281,18 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import plan expiration scheduler: ${importError.message}`);
       });
 
+      // Start the agent card health scheduler
+      log('🔄 Starting agent card health scheduler...');
+      import('./services/agent-card-health-scheduler.js').then(({ startAgentCardHealthScheduler }) => {
+        startAgentCardHealthScheduler().then(() => {
+          log('✅ Agent card health scheduler started');
+        }).catch((schedulerError: any) => {
+          log(`⚠️ Agent card health scheduler failed to start: ${schedulerError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import agent card health scheduler: ${importError.message}`);
+      });
+
       // Check for missed jobs after a short delay to allow schedulers to initialize
       setTimeout(async () => {
         log('🔄 Checking for missed scheduled jobs...');
