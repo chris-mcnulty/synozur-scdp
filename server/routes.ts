@@ -41,6 +41,7 @@ import { registerAiRoutes } from "./routes/ai.js";
 import { registerRaiddRoutes } from "./routes/raidd.js";
 import { registerResourcePlanningRoutes } from "./routes/resource-planning.js";
 import { registerSupportRoutes } from "./routes/support.js";
+import { registerCopilotStudioRoutes } from "./routes/copilot-studio.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -327,6 +328,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   registerMcpRoutes(app, {
+    requireAuth,
+    requireRole,
+  });
+
+  registerCopilotStudioRoutes(app, {
     requireAuth,
     requireRole,
   });

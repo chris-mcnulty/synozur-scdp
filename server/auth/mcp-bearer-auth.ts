@@ -2,10 +2,11 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 import { db } from "../db.js";
-import { users, tenants } from "../../shared/schema.js";
+import { users, tenants, systemSettings } from "../../shared/schema.js";
 import { sql, eq } from "drizzle-orm";
 
 const CONSTELLATION_CLIENT_ID = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+const KNOWN_CLIENTS_KEY = "COPILOT_KNOWN_CLIENT_IDS";
 
 const jwksClient = jwksRsa({
   jwksUri: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
@@ -14,6 +15,34 @@ const jwksClient = jwksRsa({
   rateLimit: true,
   jwksRequestsPerMinute: 10,
 });
+
+let _knownClientCache: { ids: string[]; expiresAt: number } | null = null;
+const KNOWN_CLIENT_CACHE_TTL_MS = 60_000;
+
+async function getKnownClientIds(): Promise<string[]> {
+  const now = Date.now();
+  if (_knownClientCache && now < _knownClientCache.expiresAt) {
+    return _knownClientCache.ids;
+  }
+  try {
+    const [row] = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.settingKey, KNOWN_CLIENTS_KEY))
+      .limit(1);
+    const ids: string[] = row?.settingValue
+      ? JSON.parse(row.settingValue)
+      : [];
+    _knownClientCache = { ids, expiresAt: now + KNOWN_CLIENT_CACHE_TTL_MS };
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+export function invalidateKnownClientCache(): void {
+  _knownClientCache = null;
+}
 
 function getSigningKey(header: jwt.JwtHeader): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -68,6 +97,20 @@ export const mcpBearerAuth = async (req: Request, res: Response, next: NextFunct
 
   try {
     const claims = await verifyToken(token);
+
+    const knownClientIds = await getKnownClientIds();
+
+    if (knownClientIds.length > 0) {
+      const azp = claims.azp as string | undefined;
+      if (!azp || !knownClientIds.includes(azp)) {
+        console.warn("[MCP-BEARER] Rejected token: azp not in known client list:", azp);
+        return res.status(403).json({
+          error: "Client application not authorized",
+          code: "mcp_client_not_authorized",
+          hint: "Add this application's client ID to the Copilot Studio pre-authorized clients list in AI Settings.",
+        });
+      }
+    }
 
     const userEmail = claims.preferred_username || claims.upn || claims.email;
     if (!userEmail) {
