@@ -336,11 +336,188 @@ To allow the agent to post and respond in Teams chats and channels:
 
 ---
 
-## Part 4: Write Activities (`/mcp/v1/*`)
+## Part 4: Register as a Verified Connected Agent in Copilot Studio
+
+This part covers importing Constellation directly as a **connected agent** in Copilot Studio using the published `/.well-known/agent.json` agent card. This is the preferred path for native A2A integration — Copilot Studio calls Constellation as a peer agent rather than through a custom connector.
+
+> **Prerequisite:** Complete Part 1 (Azure AD app registrations) before this part. Parts 2 and 3 (Custom Connector and manual agent creation) are an alternative path; this part supersedes them for teams on Copilot Studio GA with connected-agent support.
+
+---
+
+### 4.1 Verify the agent card is reachable
+
+Before importing, confirm the card is served correctly from the production URL:
+
+```
+GET https://constellation.synozur.com/.well-known/agent.json
+```
+
+Expected response:
+- HTTP 200
+- `Content-Type: application/json`
+- Body contains `"protocolVersion": "1.0"` and `"url": "https://constellation.synozur.com/mcp"`
+
+If the card is not reachable or returns incorrect content, resolve the deployment issue before continuing.
+
+---
+
+### 4.2 Update the Constellation Azure AD app — knownClientApplications
+
+When Copilot Studio is registered as a connected agent it receives its own Entra app registration (the "Constellation Copilot Agent" app created in step 3.x above, or one provided by your Copilot Studio administrator). That app's client ID must be listed as a **known client application** on the Constellation API registration so Entra will issue tokens for it without requiring explicit user consent on each call.
+
+On the **Constellation app registration** (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`):
+
+1. Go to **Azure Portal → Entra ID → App registrations**
+2. Open **Constellation (SCDP-Content)** (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`)
+3. Go to **Expose an API → Authorized client applications**
+4. Click **Add a client application**
+5. Enter the **Copilot Studio agent app's Client ID** (the app registered in your Copilot Studio environment — your Copilot Studio admin can provide this from the agent's **Settings → Security** page)
+6. Check the `access_as_user` scope
+7. Click **Add application**
+
+Alternatively, if your organization uses an **app manifest** to manage the registration:
+
+```json
+"knownClientApplications": [
+  "<copilot-studio-agent-client-id>"
+]
+```
+
+Add the Copilot Studio agent's client ID to this array in the app manifest JSON and save.
+
+**Why this matters:** Without pre-authorization, every user will see an Entra consent prompt the first time they query Constellation through Copilot. Adding `knownClientApplications` suppresses that prompt because Entra trusts the Copilot agent app to act on the user's behalf.
+
+---
+
+### 4.3 Import Constellation as a connected agent in Copilot Studio
+
+1. Go to **copilotstudio.microsoft.com** → your environment
+2. Open an existing agent or create a new one (**Create → New agent**)
+3. In the agent editor, go to **Tools** → **Add a tool** → **Agent**
+4. Select **Import from agent card URL**
+5. Enter the agent card URL:
+   ```
+   https://constellation.synozur.com/.well-known/agent.json
+   ```
+6. Copilot Studio fetches the card, reads the `skills` array, and presents each skill as an importable action. You should see:
+   - Project Delivery
+   - Portfolio View
+   - RAIDD Tracking
+   - Status Reporting
+   - Time & Expenses
+   - Financial Reporting
+   - Estimates
+   - Clients & CRM
+7. Select all skills (or the subset your agent needs) and click **Add**
+
+> **Authentication note:** Copilot Studio reads the `authentication.oauth2` block in the agent card to configure the OAuth flow automatically. It uses the `tokenUrl`, `authorizationUrl`, and `audience` fields to acquire tokens scoped to `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user`. No manual OAuth configuration is required unless the auto-detected values need to be overridden.
+
+---
+
+### 4.4 Configure the connected agent's authentication
+
+1. In agent settings → **Security** → **Authentication**
+2. Select **Authenticate with Microsoft**
+3. Ensure **Allow users from any organization** (multi-tenant) is enabled — Constellation's Entra authority is set to `common`
+4. Confirm the **OAuth scope** field shows: `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user`
+5. Save
+
+---
+
+### 4.5 End-to-end walkthrough — project-delivery skill
+
+Use the Copilot Studio test pane (or a Teams chat with the published agent) to verify the `project-delivery` skill works end-to-end.
+
+**Step 1 — Identity check**
+
+> Prompt: *"Who am I in Constellation?"*
+
+Expected: Copilot calls `GET /mcp/me`, acquires a token for the signed-in user, and returns their name, role (e.g. `pm`), and tenant. This confirms the OAuth flow completed successfully.
+
+**Step 2 — Project list**
+
+> Prompt: *"Show me all active projects"*
+
+Expected: Copilot calls `GET /mcp/projects` and returns a formatted list of active projects with their names, clients, and health status.
+
+**Step 3 — Project detail**
+
+> Prompt: *"What is the budget status for project PROJ-007?"*
+
+Expected: Copilot calls `GET /mcp/projects/PROJ-007`, returns the project detail including budget vs actual hours and spend. Values should be formatted as currency.
+
+**Step 4 — At-risk deliverables**
+
+> Prompt: *"Which deliverables on project PROJ-007 are at risk?"*
+
+Expected: Copilot calls `GET /mcp/projects/PROJ-007/deliverables?status=AtRisk` and lists any at-risk deliverables with their due dates and owners.
+
+**Step 5 — M365 context**
+
+> Prompt: *"What Teams channel is linked to project PROJ-007?"*
+
+Expected: Copilot calls `GET /mcp/projects/PROJ-007/m365-context` and returns the linked Teams team and channel name.
+
+---
+
+### 4.6 End-to-end walkthrough — status-reporting skill
+
+**Step 1 — Status report data**
+
+> Prompt: *"Give me a status report summary for project PROJ-007 for the last two weeks"*
+
+Expected: Copilot calls `GET /mcp/projects/PROJ-007/status-report-data` with a 14-day date window. The response should include:
+- Hours logged vs budgeted
+- Expense spend
+- Team breakdown (who logged time and how much)
+- Open RAIDD items count by type
+- Milestone and deliverable summary
+
+**Step 2 — Published report list**
+
+> Prompt: *"List the published status reports for the Contoso engagement"*
+
+Expected: Copilot first searches for the Contoso project using `GET /mcp/projects?search=Contoso`, then calls `GET /mcp/projects/{projectId}/status-reports` and lists the report titles, periods, and SharePoint links.
+
+**Step 3 — Cross-project health check (portfolio)**
+
+> Prompt: *"Which projects are currently at risk or over budget?"*
+
+Expected: Copilot calls `GET /mcp/projects?health=AtRisk` and `GET /mcp/projects?health=OverBudget`, then presents a consolidated list grouped by health status.
+
+---
+
+### 4.7 Publish the connected agent to Teams
+
+Once the end-to-end tests pass:
+
+1. In Copilot Studio, click **Publish** to push the latest configuration live
+2. Go to **Channels → Microsoft Teams → Turn on Teams**
+3. Under **Availability**, configure which users or groups can access the agent
+4. Optionally go to **Channels → Microsoft 365 Copilot** to also surface the agent in M365 Chat (Copilot in Teams, Outlook, and other M365 surfaces)
+5. Users can then @mention the agent in a Teams chat or find it in the Copilot sidebar
+
+---
+
+### 4.8 Troubleshooting connected agent issues
+
+| Issue | Fix |
+|-------|-----|
+| Agent card import fails | Confirm `https://constellation.synozur.com/.well-known/agent.json` returns HTTP 200 with valid JSON and `"protocolVersion": "1.0"` |
+| OAuth consent prompt appears for every user | Ensure the Copilot Studio agent's Client ID is listed in `knownClientApplications` on the Constellation app registration (step 5.2) |
+| 401 after import — "audience invalid" | Confirm the `audience` field in the agent card (`api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`) matches the Application ID URI set in **Expose an API** on the Constellation app registration |
+| Skills not appearing after import | Verify the `skills` array in `agent.json` is valid JSON — use `GET /.well-known/agent.json` and validate against the A2A 1.0 schema |
+| "Tenant context could not be resolved" (403) | The signed-in user's Entra OID isn't mapped to a Constellation user. Ask them to log into Constellation directly at least once via SSO to create the mapping |
+| Teams channel shows agent but it doesn't respond | Confirm the agent is **Published** in Copilot Studio (draft agents do not respond in Teams) |
+| Multi-tenant users get 401 | Confirm **Allow users from any organization** is enabled in the agent's Security → Authentication settings |
+
+---
+
+## Part 5: Write Activities (`/mcp/v1/*`)
 
 The Phase 0 write surface is intentionally minimal — a diagnostic ping plus client creation. Later phases will add estimate creation, HubSpot linkage, and Teams channel provisioning. The conversational contract is identical across all write endpoints.
 
-### 4.1 Enable writes on the server
+### 5.1 Enable writes on the server
 
 Writes are off by default in every deployment. To enable:
 
@@ -350,17 +527,17 @@ MCP_WRITES_ENABLED=true
 
 …and redeploy. Leaving this off (or unset) causes every `/mcp/v1/*` POST to return `403 mcp_writes_disabled`. The read surface under `/mcp/*` is unaffected.
 
-### 4.2 Idempotency keys
+### 5.2 Idempotency keys
 
 Every write endpoint requires an `X-Idempotency-Key` header. Generate a fresh UUID per logical operation. If the Copilot agent retries after a transient network error, **reuse the same key**: the server will return the original response instead of creating a duplicate. Reusing a key with a different body is a 409.
 
 Keys are scoped to `(tenantId, userId, key)` and persisted to the `mcp_write_audit` table.
 
-### 4.3 Dry-run previews
+### 5.3 Dry-run previews
 
 Append `?dryRun=true` to any write endpoint. The server validates input, runs duplicate-detection logic, and returns a `wouldCreate` payload without writing to the database or the audit log. The response envelope carries `dryRun: true`. Use this to drive conversational confirmation before the real call.
 
-### 4.4 Response envelope
+### 5.4 Response envelope
 
 All write endpoints return an envelope of the form:
 
@@ -380,11 +557,11 @@ All write endpoints return an envelope of the form:
 - `auditId` — the row ID in `mcp_write_audit`; useful for support.
 - `correlationId` — use to correlate across logs.
 
-### 4.5 Role policy
+### 5.5 Role policy
 
 Writes require a stricter role than reads. Phase 0 allows only `admin`, `pm`, and `portfolio-manager`. `executive` and `billing-admin` — who can *read* estimates — are intentionally excluded from client creation.
 
-### 4.6 Canonical agent flow
+### 5.6 Canonical agent flow
 
 The client-creation conversation is:
 

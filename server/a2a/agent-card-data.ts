@@ -10,7 +10,11 @@
  * Spec: https://google.github.io/A2A/specification/#agent-card
  */
 
+const CONSTELLATION_APP_ID = "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+const ENTRA_BASE = "https://login.microsoftonline.com/common/oauth2/v2.0";
+
 export const AGENT_CARD_STATIC = {
+  protocolVersion: "1.0",
   name: "Constellation Copilot",
   description:
     "AI agent for Synozur's Constellation consulting delivery platform. Provides read and write access to projects, portfolio, estimates, time tracking, expenses, RAIDD logs, status reports, financials, clients, and M365/Teams context.",
@@ -25,7 +29,17 @@ export const AGENT_CARD_STATIC = {
     stateTransitionHistory: false,
   },
   authentication: {
-    schemes: ["Bearer"],
+    schemes: ["Bearer", "oauth2"],
+    oauth2: {
+      authorizationUrl: `${ENTRA_BASE}/authorize`,
+      tokenUrl: `${ENTRA_BASE}/token`,
+      scopes: {
+        [`api://${CONSTELLATION_APP_ID}/access_as_user`]:
+          "Access Constellation MCP as the signed-in user",
+      },
+      audience: `api://${CONSTELLATION_APP_ID}`,
+      issuerPattern: `https://login.microsoftonline.com/{tenantId}/v2.0`,
+    },
     credentials: null,
   },
   defaultInputModes: ["text"],
