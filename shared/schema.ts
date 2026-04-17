@@ -3737,21 +3737,26 @@ export const insertMcpWriteAuditSchema = createInsertSchema(mcpWriteAudit).omit(
 export type InsertMcpWriteAudit = z.infer<typeof insertMcpWriteAuditSchema>;
 export type McpWriteAudit = typeof mcpWriteAudit.$inferSelect;
 
-// Agent Card Health Check History
+// ============================================================================
+// AGENT CARD HEALTH CHECKS
+// ============================================================================
+
 export const agentCardHealthChecks = pgTable("agent_card_health_checks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   status: varchar("status", { length: 20 }).notNull(), // 'ok' | 'invalid' | 'error'
   checkedAt: timestamp("checked_at").notNull(),
   skillCount: integer("skill_count"),
-  errors: jsonb("errors").$type<string[]>(),
+  errors: text("errors").array(),
   message: text("message"),
-  trigger: varchar("trigger", { length: 50 }).notNull().default("scheduled"), // 'manual' | 'scheduled' | 'cron' | 'startup'
+  trigger: varchar("trigger", { length: 50 }).notNull().default("scheduled"), // 'scheduled' | 'startup' | 'admin-manual' | 'cron'
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
-  checkedAtIdx: index("idx_agent_card_health_checked_at").on(table.checkedAt),
+  checkedAtIdx: index("idx_agent_card_health_checks_checked_at").on(table.checkedAt),
 }));
 
 export const insertAgentCardHealthCheckSchema = createInsertSchema(agentCardHealthChecks).omit({
   id: true,
+  createdAt: true,
 });
 export type InsertAgentCardHealthCheck = z.infer<typeof insertAgentCardHealthCheckSchema>;
 export type AgentCardHealthCheck = typeof agentCardHealthChecks.$inferSelect;

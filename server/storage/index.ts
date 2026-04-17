@@ -1021,9 +1021,10 @@ export interface IStorage {
   getProjectStatusReports(projectId: string): Promise<ProjectStatusReport[]>;
   getProjectStatusReport(id: string): Promise<ProjectStatusReport | undefined>;
 
-  // Agent Card Health Check History
-  addAgentCardHealthCheck(data: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck>;
-  getAgentCardHealthHistory(limit?: number): Promise<AgentCardHealthCheck[]>;
+  // Agent Card Health Checks
+  saveAgentCardHealthCheck(result: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck>;
+  getAgentCardHealthChecks(limit?: number): Promise<AgentCardHealthCheck[]>;
+  pruneAgentCardHealthHistory(olderThanDays: number): Promise<number>;
 }
 
 export class DatabaseStorage {

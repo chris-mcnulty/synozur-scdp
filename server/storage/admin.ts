@@ -1222,14 +1222,23 @@ export const adminMethods: ThisType<IStorage & {
       .limit(50);
   },
 
-  async addAgentCardHealthCheck(data: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck> {
-    const [result] = await db.insert(agentCardHealthChecks).values(data).returning();
-    return result;
+  async saveAgentCardHealthCheck(result: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck> {
+    const [created] = await db.insert(agentCardHealthChecks).values(result).returning();
+    return created;
   },
 
-  async getAgentCardHealthHistory(limit = 50): Promise<AgentCardHealthCheck[]> {
-    return db.select().from(agentCardHealthChecks)
+  async getAgentCardHealthChecks(limit: number = 50): Promise<AgentCardHealthCheck[]> {
+    return db.select()
+      .from(agentCardHealthChecks)
       .orderBy(desc(agentCardHealthChecks.checkedAt))
       .limit(limit);
+  },
+
+  async pruneAgentCardHealthHistory(olderThanDays: number): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+    const result = await db.delete(agentCardHealthChecks)
+      .where(lte(agentCardHealthChecks.checkedAt, cutoff))
+      .returning({ id: agentCardHealthChecks.id });
+    return result.length;
   },
 };

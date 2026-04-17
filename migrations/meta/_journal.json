@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1776466104351,
+      "tag": "0000_agent_card_health_checks",
+      "breakpoints": true
+    }
+  ]
+}

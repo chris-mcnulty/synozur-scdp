@@ -2240,11 +2240,20 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
   });
 
   // GET /api/admin/agent-card-health — returns the last cached health check result, history, and scheduler config
-  app.get("/api/admin/agent-card-health", requireAuth, requirePlatformAdmin, (_req, res) => {
+  app.get("/api/admin/agent-card-health", requireAuth, requirePlatformAdmin, async (_req, res) => {
     const last = getLastAgentCardHealthResult();
-    const history = getAgentCardHealthHistory();
     const intervalHours = getSchedulerIntervalHours();
-    return res.json({ result: last ?? null, history, intervalHours });
+    const retentionDays = parseInt(
+      await storage.getSystemSettingValue('AGENT_CARD_HEALTH_RETENTION_DAYS', '90'),
+      10
+    ) || 90;
+    let dbHistory: any[] = [];
+    try {
+      dbHistory = await storage.getAgentCardHealthChecks(200);
+    } catch (err) {
+      console.error("[AGENT-CARD-HEALTH] Failed to load history from DB:", err);
+    }
+    return res.json({ result: last ?? null, history: dbHistory, intervalHours, retentionDays });
   });
 
   // POST /api/admin/agent-card-health/check — triggers a fresh health check on demand

@@ -15,6 +15,11 @@
  *   - When the card recovers the state is cleared so the next failure triggers
  *     a fresh initial alert.
  *   - State is persisted in system_settings so cooldowns survive server restarts.
+ *
+ * History retention:
+ *   - Each check result is persisted to the agent_card_health_checks table.
+ *   - Old records are automatically pruned by the scheduled job using the
+ *     AGENT_CARD_HEALTH_RETENTION_DAYS system setting (default 90 days).
  */
 
 import * as cron from 'node-cron';
@@ -29,6 +34,7 @@ const HEALTH_ENDPOINT = `http://localhost:${PORT}/mcp/agent-card-health`;
 const SETTING_FAILING_SINCE = 'AGENT_CARD_FAILING_SINCE';
 const SETTING_LAST_ALERT_SENT_AT = 'AGENT_CARD_LAST_ALERT_SENT_AT';
 const DEFAULT_ALERT_COOLDOWN_HOURS = 24;
+const DEFAULT_RETENTION_DAYS = 90;
 export const ALERT_COOLDOWN_MS = DEFAULT_ALERT_COOLDOWN_HOURS * 60 * 60 * 1000;
 export const REMINDER_INTERVAL_MS = ALERT_COOLDOWN_MS; // alias for external consumers
 
@@ -57,6 +63,19 @@ async function getAlertCooldownMs(): Promise<number> {
     console.warn(`${SCHEDULER_TAG} Failed to read AGENT_CARD_ALERT_COOLDOWN_HOURS from settings, using default:`, err);
   }
   return DEFAULT_ALERT_COOLDOWN_HOURS * 60 * 60 * 1000;
+}
+
+async function getRetentionDays(): Promise<number> {
+  try {
+    const value = await storage.getSystemSettingValue('AGENT_CARD_HEALTH_RETENTION_DAYS', String(DEFAULT_RETENTION_DAYS));
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  } catch (err) {
+    console.warn(`${SCHEDULER_TAG} Failed to read AGENT_CARD_HEALTH_RETENTION_DAYS from settings, using default:`, err);
+  }
+  return DEFAULT_RETENTION_DAYS;
 }
 
 export interface AgentCardHealthResult {
@@ -89,6 +108,32 @@ function appendToHistory(result: AgentCardHealthResult): void {
   }
 }
 
+async function persistHealthCheckResult(result: AgentCardHealthResult, trigger: string): Promise<void> {
+  try {
+    await storage.saveAgentCardHealthCheck({
+      status: result.status,
+      checkedAt: new Date(result.checkedAt),
+      skillCount: result.skillCount ?? null,
+      errors: result.errors ?? null,
+      message: result.message ?? null,
+      trigger,
+    });
+  } catch (err) {
+    console.error(`${SCHEDULER_TAG} Failed to persist health check result to DB:`, err);
+  }
+}
+
+async function pruneOldRecords(): Promise<void> {
+  try {
+    const days = await getRetentionDays();
+    const deleted = await storage.pruneAgentCardHealthHistory(days);
+    if (deleted > 0) {
+      console.log(`${SCHEDULER_TAG} Pruned ${deleted} health check record(s) older than ${days} days.`);
+    }
+  } catch (err) {
+    console.error(`${SCHEDULER_TAG} Failed to prune old health check records:`, err);
+  }
+}
 
 async function loadPersistedState(): Promise<void> {
   if (stateLoaded) return;
@@ -158,21 +203,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
       }
       lastResult = normalised;
       appendToHistory(normalised);
-
-      // Persist successful result to the database for history
-      try {
-        await storage.addAgentCardHealthCheck({
-          status: normalised.status,
-          checkedAt: new Date(normalised.checkedAt),
-          skillCount: normalised.skillCount ?? null,
-          errors: null,
-          message: null,
-          trigger,
-        } as InsertAgentCardHealthCheck);
-      } catch (persistErr) {
-        console.error(`${SCHEDULER_TAG} Failed to persist health check result:`, persistErr);
-      }
-
+      await persistHealthCheckResult(normalised, trigger);
       return normalised;
     }
 
@@ -193,6 +224,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
 
   lastResult = result;
   appendToHistory(result);
+  await persistHealthCheckResult(result, trigger);
 
   // Persist every result to the database for history
   try {
@@ -376,6 +408,7 @@ export async function startAgentCardHealthScheduler(): Promise<void> {
     console.log(`${SCHEDULER_TAG} Scheduled check triggered (every ${intervalHours}h)`);
     try {
       await runAgentCardHealthCheck('cron');
+      await pruneOldRecords();
     } catch (err) {
       console.error(`${SCHEDULER_TAG} Unhandled error in scheduled cron run:`, err);
     }

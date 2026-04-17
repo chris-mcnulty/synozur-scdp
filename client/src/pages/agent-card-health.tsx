@@ -6,7 +6,7 @@ import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle, AlertCircle, Loader2, RefreshCw, Clock, Activity, ChevronDown, ChevronRight, History } from "lucide-react";
+import { CheckCircle, XCircle, AlertCircle, Loader2, RefreshCw, Clock, Activity, ChevronDown, ChevronRight, History, Info } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
 interface AgentCardHealthResult {
@@ -25,6 +25,14 @@ interface AgentCardHealthCheck {
   errors?: string[] | null;
   message?: string | null;
   trigger: string;
+  createdAt: string;
+}
+
+interface HealthData {
+  result: AgentCardHealthResult | null;
+  history: AgentCardHealthCheck[];
+  intervalHours: number;
+  retentionDays: number;
 }
 
 function ensureUtcDate(dateStr: string): Date {
@@ -91,6 +99,7 @@ function StatusBadgeCompact({ status }: { status: "ok" | "invalid" | "error" }) 
 function TriggerBadge({ trigger }: { trigger: string }) {
   const labels: Record<string, string> = {
     manual: "Manual",
+    "admin-manual": "Manual",
     cron: "Scheduled",
     scheduled: "Scheduled",
     startup: "Startup",
@@ -169,19 +178,14 @@ function HistoryRow({ check }: { check: AgentCardHealthCheck }) {
 export default function AgentCardHealth() {
   const { toast } = useToast();
 
-  const { data, isLoading } = useQuery<{ result: AgentCardHealthResult | null; intervalHours: number }>({
+  const { data, isLoading } = useQuery<HealthData>({
     queryKey: ["/api/admin/agent-card-health"],
   });
 
-  const { data: historyData, isLoading: historyLoading } = useQuery<{ history: AgentCardHealthCheck[] }>({
-    queryKey: ["/api/admin/agent-card-health/history"],
-  });
-
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("/api/admin/agent-card-health/check", { method: "POST" }),
+    mutationFn: () => apiRequest("POST", "/api/admin/agent-card-health/check"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health/history"] });
       toast({ title: "Health check complete", description: "The agent card health check has finished." });
     },
     onError: () => {
@@ -190,8 +194,9 @@ export default function AgentCardHealth() {
   });
 
   const result = data?.result ?? null;
-  const history = historyData?.history ?? [];
+  const history = data?.history ?? [];
   const intervalHours = data?.intervalHours ?? 1;
+  const retentionDays = data?.retentionDays ?? 90;
   const intervalLabel = intervalHours === 1 ? "every hour" : `every ${intervalHours} hours`;
 
   return (
@@ -299,18 +304,25 @@ export default function AgentCardHealth() {
           </CardContent>
         </Card>
 
+        {/* History */}
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <History className="h-4 w-4" />
               Check History
             </CardTitle>
-            <CardDescription>
-              Past health checks from manual triggers and the scheduled hourly run. Click a row with errors to expand details.
-            </CardDescription>
+            <div className="space-y-1">
+              <CardDescription>
+                Past health checks from manual triggers and the scheduled run. Click a row with errors to expand details.
+              </CardDescription>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                History is kept for {retentionDays} days. Records older than {retentionDays} days are automatically removed.
+              </p>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            {historyLoading ? (
+            {isLoading ? (
               <div className="flex items-center gap-2 text-muted-foreground p-6">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading history…
@@ -355,6 +367,9 @@ export default function AgentCardHealth() {
             </p>
             <p>
               This health check validates the card against the A2A 1.0 specification, including required fields, OAuth2 configuration, and skill definitions.
+            </p>
+            <p>
+              Health checks run automatically {intervalLabel}. History is retained for {retentionDays} days; the window can be adjusted via the <strong>AGENT_CARD_HEALTH_RETENTION_DAYS</strong> system setting.
             </p>
           </CardContent>
         </Card>
