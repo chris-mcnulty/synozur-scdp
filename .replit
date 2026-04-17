@@ -8,8 +8,8 @@ packages = ["alsa-lib", "at-spi2-atk", "at-spi2-core", "atk", "cairo", "chromium
 
 [deployment]
 run = ["sh", "-c", "npm start"]
-deploymentTarget = "cloudrun"
-build = ["sh", "-c", "npm run build"]
+deploymentTarget = "autoscale"
+build = ["sh", "-c", "npm run build && npx tsx scripts/validate-agent-card.ts"]
 publicDir = "dist/public"
 
 [[ports]]
@@ -141,7 +141,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npx tsx scripts/gen-agent-card.ts --check"
+args = "npx tsx scripts/gen-agent-card.ts --check && npx tsx scripts/validate-agent-card.ts"
 
 [workflows.workflow.metadata]
 isValidation = true

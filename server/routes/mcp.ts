@@ -14,6 +14,8 @@ import {
 } from "../services/hubspot-client.js";
 import { mcpBearerAuth } from "../auth/mcp-bearer-auth.js";
 import { searchClientsWithLinkage } from "./mcp-write.js";
+import { AGENT_CARD_STATIC } from "../a2a/agent-card-data.js";
+import { validateAgentCard } from "../a2a/validate-agent-card.js";
 
 interface McpRouteDeps {
   requireAuth: any;
@@ -70,6 +72,34 @@ function verifyProjectTenant(project: any, tenantId: string): boolean {
 }
 
 export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: McpRouteDeps) {
+
+  // ─── /mcp/agent-card-health (public — no auth required) ───
+  app.get("/mcp/agent-card-health", (req: Request, res: Response) => {
+    try {
+      const card = {
+        ...AGENT_CARD_STATIC,
+        url: `${req.protocol}://${req.get("host")}/a2a/tasks/send`,
+      };
+      const errors = validateAgentCard(card);
+      if (errors.length === 0) {
+        return res.json({
+          status: "ok",
+          checkedAt: new Date().toISOString(),
+          skillCount: Array.isArray(card.skills) ? card.skills.length : 0,
+        });
+      } else {
+        return res.status(422).json({
+          status: "invalid",
+          checkedAt: new Date().toISOString(),
+          errors,
+        });
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("[MCP] /mcp/agent-card-health error:", error);
+      return res.status(500).json({ status: "error", message: msg });
+    }
+  });
 
   app.use("/mcp", mcpBearerAuth);
 
