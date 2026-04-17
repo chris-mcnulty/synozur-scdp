@@ -140,6 +140,7 @@ expertMode = true
 [userenv.production]
 AZURE_CERTIFICATE_THUMBPRINT = "C9C587A1C4FC823872007C45EE6A001DCF1AFE68"
 AZURE_REDIRECT_URI = "https://constellation.synozur.com/api/auth/callback"
+BASE_URL = "https://constellation.synozur.com"
 
 [userenv.development]
 AZURE_REDIRECT_URI = "https://fe536eef-aa4a-4f38-9444-a53b449002d7-00-2w4rayqj9t1dp.spock.replit.dev/api/auth/callback"
