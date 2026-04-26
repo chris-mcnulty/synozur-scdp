@@ -5,6 +5,18 @@ const BRAND_SECONDARY = "#E60CB3";
 
 const SYNOZUR_APPS = [
   {
+    id: "synozur",
+    name: "Synozur",
+    tagline: "Home",
+    description: "Explore Synozur's AI-powered platform, insights, and resources.",
+    url: "https://www.synozur.com",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
+        <path d="M3 10.5L12 3L21 10.5V20A1 1 0 0120 21H15V16H9V21H4A1 1 0 013 20V10.5Z" stroke="currentColor" strokeWidth="1.5" fill="currentColor" fillOpacity="0.15" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     id: "vega",
     name: "Vega",
     tagline: "Company Operating System",
