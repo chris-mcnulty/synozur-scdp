@@ -8,7 +8,7 @@ const SYNOZUR_APPS = [
     id: "synozur",
     name: "Synozur",
     tagline: "Home",
-    description: "Explore Synozur's AI-powered platform, insights, and resources.",
+    description: "Explore Synozur's services, people, and updates.",
     url: "https://www.synozur.com",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
