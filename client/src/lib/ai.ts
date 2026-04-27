@@ -124,3 +124,30 @@ export function useGenerateEstimateNarrative() {
     },
   });
 }
+
+export interface TimeEntryRewriteParams {
+  description: string;
+  projectId?: string;
+  hours?: string | number;
+  date?: string;
+  billable?: boolean;
+  milestoneId?: string;
+  workstreamId?: string;
+  phase?: string;
+}
+
+export interface TimeEntryRewriteResponse {
+  rewritten: string;
+  original: string;
+}
+
+export function useRewriteTimeEntryDescription() {
+  return useMutation({
+    mutationFn: async (params: TimeEntryRewriteParams): Promise<TimeEntryRewriteResponse> => {
+      return apiRequest("/api/ai/time-entry-rewrite", {
+        method: "POST",
+        body: JSON.stringify(params),
+      });
+    },
+  });
+}

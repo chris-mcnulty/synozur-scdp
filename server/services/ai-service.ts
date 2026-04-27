@@ -361,6 +361,18 @@ Use markdown formatting with clear section headers. Target 600–1200 words depe
 
 Be helpful, accurate, and concise. If you're unsure about something, say so.`,
 
+    timeEntryRewrite: `You are a professional consultant editing your own time entry description before it is shown on a client invoice.
+
+Rewrite the description so it:
+- Reads as polished, professional prose suitable for an external client
+- Preserves the actual work performed — never invent activities, deliverables, or hours
+- Removes filler, internal jargon, profanity, and personal commentary
+- Uses past tense, active voice, and crisp business language
+- Stays concise: typically 1-3 sentences, no longer than the original unless clarity requires it
+- Keeps any concrete artifacts (deliverable names, system names, meeting names) the user mentioned
+
+Return ONLY the rewritten description text. Do not include quotes, prefixes like "Rewritten:", explanations, markdown, or alternative versions.`,
+
     subSOWNarrative: `You are an expert consulting proposal writer specializing in subcontractor scope of work documents. Your task is to generate a professional Sub-Statement of Work (Sub-SOW) narrative that can be included in a subcontractor agreement.
 
 The narrative should:
@@ -619,6 +631,64 @@ Write a professional narrative suitable for the invoice.`;
       return result.content;
     } catch (error: any) {
       logAiUsage(usageCtx || { feature: AI_FEATURES.INVOICE_NARRATIVE }, provider, null, Date.now() - startTime, error);
+      throw error;
+    }
+  }
+
+  async generateTimeEntryRewrite(
+    input: {
+      description: string;
+      projectName?: string;
+      clientName?: string;
+      hours?: number | string;
+      date?: string;
+      billable?: boolean;
+      milestoneName?: string;
+      workstreamName?: string;
+      phase?: string;
+    },
+    groundingContext?: string,
+    usageCtx?: AiUsageContext,
+  ): Promise<string> {
+    const provider = await getAIProviderAsync();
+
+    const contextLines: string[] = [];
+    if (input.clientName) contextLines.push(`Client: ${input.clientName}`);
+    if (input.projectName) contextLines.push(`Project: ${input.projectName}`);
+    if (input.date) contextLines.push(`Date: ${input.date}`);
+    if (input.hours !== undefined && input.hours !== null && input.hours !== '') {
+      contextLines.push(`Hours: ${input.hours}`);
+    }
+    if (typeof input.billable === 'boolean') {
+      contextLines.push(`Billable: ${input.billable ? 'Yes' : 'No'}`);
+    }
+    if (input.milestoneName) contextLines.push(`Milestone: ${input.milestoneName}`);
+    if (input.workstreamName) contextLines.push(`Workstream: ${input.workstreamName}`);
+    if (input.phase) contextLines.push(`Phase: ${input.phase}`);
+
+    const contextBlock = contextLines.length > 0
+      ? `Context (do not invent details beyond these facts):\n${contextLines.join('\n')}\n\n`
+      : '';
+
+    const userMessage = `${contextBlock}Original description:\n"""\n${input.description}\n"""\n\nRewrite the description per the rules in your instructions. Return only the rewritten text.`;
+
+    const systemContent = this.systemPrompts.timeEntryRewrite + (groundingContext || '');
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userMessage },
+    ];
+
+    const startTime = Date.now();
+    try {
+      const result = await provider.chatCompletion({
+        messages,
+        temperature: 0.4,
+        maxTokens: 400,
+      });
+      logAiUsage(usageCtx || { feature: AI_FEATURES.TIME_ENTRY_REWRITE }, provider, result, Date.now() - startTime);
+      return result.content.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+    } catch (error: any) {
+      logAiUsage(usageCtx || { feature: AI_FEATURES.TIME_ENTRY_REWRITE }, provider, null, Date.now() - startTime, error);
       throw error;
     }
   }

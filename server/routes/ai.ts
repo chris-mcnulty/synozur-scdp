@@ -514,6 +514,82 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     }
   });
 
+  app.post("/api/ai/time-entry-rewrite", requireAuth, aiRateLimiter, async (req, res) => {
+    try {
+      const schema = z.object({
+        description: z.string().min(1).max(5000),
+        projectId: z.string().optional(),
+        hours: z.union([z.string(), z.number()]).optional(),
+        date: z.string().optional(),
+        billable: z.boolean().optional(),
+        milestoneId: z.string().optional(),
+        workstreamId: z.string().optional(),
+        phase: z.string().optional(),
+      });
+
+      const validated = schema.parse(req.body);
+
+      let projectName: string | undefined;
+      let clientName: string | undefined;
+      if (validated.projectId) {
+        const project = await storage.getProject(validated.projectId);
+        if (project) {
+          projectName = project.name;
+          clientName = project.client?.name;
+        }
+      }
+
+      let milestoneName: string | undefined;
+      if (validated.milestoneId && validated.projectId) {
+        try {
+          const milestones = await storage.getProjectMilestones(validated.projectId);
+          milestoneName = milestones.find((m) => m.id === validated.milestoneId)?.name;
+        } catch {}
+      }
+
+      let workstreamName: string | undefined;
+      if (validated.workstreamId && validated.projectId) {
+        try {
+          const workstreams = await storage.getProjectWorkStreams(validated.projectId);
+          workstreamName = workstreams.find((w) => w.id === validated.workstreamId)?.name;
+        } catch {}
+      }
+
+      const { buildGroundingContext } = await import('../services/ai-service.js');
+      const tenantId = (req.user as any)?.tenantId;
+      const groundingDocs = tenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
+        : await storage.getActiveGroundingDocuments();
+      const groundingCtx = buildGroundingContext(groundingDocs, 'invoice_narrative');
+
+      const rewritten = await aiService.generateTimeEntryRewrite(
+        {
+          description: validated.description,
+          projectName,
+          clientName,
+          hours: validated.hours,
+          date: validated.date,
+          billable: validated.billable,
+          milestoneName,
+          workstreamName,
+          phase: validated.phase,
+        },
+        groundingCtx,
+        { tenantId, userId: req.user!.id, feature: AI_FEATURES.TIME_ENTRY_REWRITE },
+      );
+
+      console.log(`[AI] Rewrote time entry description for user ${req.user!.id} (${validated.description.length} chars -> ${rewritten.length} chars)`);
+
+      res.json({ rewritten, original: validated.description });
+    } catch (error: any) {
+      console.error("[AI] Time entry rewrite failed:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message || "Failed to rewrite time entry description" });
+    }
+  });
+
   app.post("/api/ai/report-query", requireAuth, aiRateLimiter, async (req, res) => {
     try {
       const schema = z.object({

@@ -3361,6 +3361,7 @@ export const AI_FEATURES = {
   RAIDD_ANALYSIS: 'raidd_analysis',
   SUB_SOW_NARRATIVE: 'sub_sow_narrative',
   EXECUTIVE_NARRATIVE: 'executive_narrative',
+  TIME_ENTRY_REWRITE: 'time_entry_rewrite',
   CUSTOM: 'custom',
   OTHER: 'other',
 } as const;
