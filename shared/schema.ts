@@ -3747,7 +3747,7 @@ export const agentCardHealthChecks = pgTable("agent_card_health_checks", {
   status: varchar("status", { length: 20 }).notNull(), // 'ok' | 'invalid' | 'error'
   checkedAt: timestamp("checked_at").notNull(),
   skillCount: integer("skill_count"),
-  errors: text("errors").array(),
+  errors: jsonb("errors").$type<string[]>(),
   message: text("message"),
   trigger: varchar("trigger", { length: 50 }).notNull().default("scheduled"), // 'scheduled' | 'startup' | 'admin-manual' | 'cron'
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
