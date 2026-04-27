@@ -4,7 +4,6 @@ import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
@@ -24,6 +23,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 import { formatProjectLabel } from "@/lib/project-utils";
+import { TimeEntryDescriptionField } from "@/components/time-entry-description-field";
 
 const timeEntryFormSchema = insertTimeEntrySchema.omit({
   personId: true,
@@ -1193,11 +1193,30 @@ export default function TimeTracking() {
                       <FormItem>
                         <FormLabel>Description</FormLabel>
                         <FormControl>
-                          <Textarea
-                            placeholder="Brief description of work performed..."
-                            {...field}
+                          <TimeEntryDescriptionField
+                            name={field.name}
+                            ref={field.ref}
                             value={field.value ?? ""}
-                            data-testid="textarea-description"
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            getRewriteContext={() => {
+                              const values = form.getValues();
+                              return {
+                                projectId: values.projectId || selectedProjectId || undefined,
+                                hours: values.hours,
+                                date: values.date,
+                                billable: values.billable,
+                                milestoneId:
+                                  values.milestoneId && values.milestoneId !== "__none__"
+                                    ? values.milestoneId
+                                    : undefined,
+                                workstreamId:
+                                  values.workstreamId && values.workstreamId !== "__none__"
+                                    ? values.workstreamId
+                                    : undefined,
+                                phase: values.phase || undefined,
+                              };
+                            }}
                           />
                         </FormControl>
                         <FormMessage />
@@ -1612,11 +1631,31 @@ export default function TimeTracking() {
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Textarea
-                          placeholder="Brief description of work performed..."
-                          {...field}
+                        <TimeEntryDescriptionField
+                          name={field.name}
+                          ref={field.ref}
                           value={field.value ?? ""}
-                          data-testid="textarea-edit-description"
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          testIdPrefix="edit-description"
+                          getRewriteContext={() => {
+                            const values = editForm.getValues();
+                            return {
+                              projectId: values.projectId || editProjectId || undefined,
+                              hours: values.hours,
+                              date: values.date,
+                              billable: values.billable,
+                              milestoneId:
+                                values.milestoneId && values.milestoneId !== "__none__"
+                                  ? values.milestoneId
+                                  : undefined,
+                              workstreamId:
+                                values.workstreamId && values.workstreamId !== "__none__"
+                                  ? values.workstreamId
+                                  : undefined,
+                              phase: values.phase || undefined,
+                            };
+                          }}
                         />
                       </FormControl>
                       <FormMessage />

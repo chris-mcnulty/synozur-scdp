@@ -22,8 +22,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { TimeEntryDescriptionField } from "@/components/time-entry-description-field";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -311,10 +311,31 @@ export function TimeEntryManagementDialog({
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Textarea
-                      placeholder="Brief description of work performed..."
-                      {...field}
-                      data-testid="textarea-description"
+                    <TimeEntryDescriptionField
+                      name={field.name}
+                      ref={field.ref}
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      getRewriteContext={() => {
+                        const values = form.getValues();
+                        return {
+                          projectId,
+                          hours: values.hours,
+                          date: values.date,
+                          billable: values.billable,
+                          milestoneId:
+                            values.milestoneId && values.milestoneId !== "none"
+                              ? values.milestoneId
+                              : undefined,
+                          workstreamId:
+                            values.workstreamId && values.workstreamId !== "none"
+                              ? values.workstreamId
+                              : undefined,
+                          phase:
+                            values.phase && values.phase !== "none" ? values.phase : undefined,
+                        };
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
