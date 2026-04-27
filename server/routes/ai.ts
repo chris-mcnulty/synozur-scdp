@@ -518,45 +518,53 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     try {
       const schema = z.object({
         description: z.string().min(1).max(5000),
-        projectId: z.string().optional(),
-        hours: z.union([z.string(), z.number()]).optional(),
-        date: z.string().optional(),
+        projectId: z.string().uuid().optional(),
+        hours: z.union([
+          z.string().trim().max(32),
+          z.number().finite().min(0).max(24),
+        ]).optional(),
+        date: z.string().trim().max(32).optional(),
         billable: z.boolean().optional(),
-        milestoneId: z.string().optional(),
-        workstreamId: z.string().optional(),
-        phase: z.string().optional(),
+        milestoneId: z.string().uuid().optional(),
+        workstreamId: z.string().uuid().optional(),
+        phase: z.string().trim().max(100).optional(),
       });
 
       const validated = schema.parse(req.body);
+      const tenantId = (req.user as any)?.tenantId;
 
       let projectName: string | undefined;
       let clientName: string | undefined;
+      let authorizedProjectId: string | undefined;
       if (validated.projectId) {
         const project = await storage.getProject(validated.projectId);
-        if (project) {
+        // Only enrich the prompt with project context when the project is in
+        // the caller's tenant. On mismatch we silently skip enrichment rather
+        // than 403, so we don't leak the existence of cross-tenant projects.
+        if (project && tenantId && project.tenantId === tenantId) {
+          authorizedProjectId = project.id;
           projectName = project.name;
           clientName = project.client?.name;
         }
       }
 
       let milestoneName: string | undefined;
-      if (validated.milestoneId && validated.projectId) {
+      if (validated.milestoneId && authorizedProjectId) {
         try {
-          const milestones = await storage.getProjectMilestones(validated.projectId);
+          const milestones = await storage.getProjectMilestones(authorizedProjectId);
           milestoneName = milestones.find((m) => m.id === validated.milestoneId)?.name;
         } catch {}
       }
 
       let workstreamName: string | undefined;
-      if (validated.workstreamId && validated.projectId) {
+      if (validated.workstreamId && authorizedProjectId) {
         try {
-          const workstreams = await storage.getProjectWorkStreams(validated.projectId);
+          const workstreams = await storage.getProjectWorkStreams(authorizedProjectId);
           workstreamName = workstreams.find((w) => w.id === validated.workstreamId)?.name;
         } catch {}
       }
 
       const { buildGroundingContext } = await import('../services/ai-service.js');
-      const tenantId = (req.user as any)?.tenantId;
       const groundingDocs = tenantId
         ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
         : await storage.getActiveGroundingDocuments();

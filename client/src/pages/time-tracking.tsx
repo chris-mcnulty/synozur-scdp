@@ -1194,8 +1194,11 @@ export default function TimeTracking() {
                         <FormLabel>Description</FormLabel>
                         <FormControl>
                           <TimeEntryDescriptionField
+                            name={field.name}
+                            ref={field.ref}
                             value={field.value ?? ""}
                             onChange={field.onChange}
+                            onBlur={field.onBlur}
                             getRewriteContext={() => {
                               const values = form.getValues();
                               return {
@@ -1629,8 +1632,11 @@ export default function TimeTracking() {
                       <FormLabel>Description</FormLabel>
                       <FormControl>
                         <TimeEntryDescriptionField
+                          name={field.name}
+                          ref={field.ref}
                           value={field.value ?? ""}
                           onChange={field.onChange}
+                          onBlur={field.onBlur}
                           testIdPrefix="edit-description"
                           getRewriteContext={() => {
                             const values = editForm.getValues();

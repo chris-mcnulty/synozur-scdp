@@ -312,8 +312,11 @@ export function TimeEntryManagementDialog({
                   <FormLabel>Description</FormLabel>
                   <FormControl>
                     <TimeEntryDescriptionField
+                      name={field.name}
+                      ref={field.ref}
                       value={field.value ?? ""}
                       onChange={field.onChange}
+                      onBlur={field.onBlur}
                       getRewriteContext={() => {
                         const values = form.getValues();
                         return {

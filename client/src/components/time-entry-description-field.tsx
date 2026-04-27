@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Loader2, Check, Undo2 } from "lucide-react";
@@ -12,6 +12,8 @@ type RewriteContext = Omit<TimeEntryRewriteParams, "description">;
 interface TimeEntryDescriptionFieldProps {
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
+  name?: string;
   placeholder?: string;
   disabled?: boolean;
   testIdPrefix?: string;
@@ -20,26 +22,52 @@ interface TimeEntryDescriptionFieldProps {
   textareaClassName?: string;
 }
 
-export function TimeEntryDescriptionField({
-  value,
-  onChange,
-  placeholder = "Brief description of work performed...",
-  disabled,
-  testIdPrefix = "description",
-  getRewriteContext,
-  className,
-  textareaClassName,
-}: TimeEntryDescriptionFieldProps) {
+export const TimeEntryDescriptionField = forwardRef<
+  HTMLTextAreaElement,
+  TimeEntryDescriptionFieldProps
+>(function TimeEntryDescriptionField(
+  {
+    value,
+    onChange,
+    onBlur,
+    name,
+    placeholder = "Brief description of work performed...",
+    disabled,
+    testIdPrefix = "description",
+    getRewriteContext,
+    className,
+    textareaClassName,
+  },
+  ref,
+) {
   const { toast } = useToast();
   const { data: aiStatus } = useAIStatus();
   const rewriteMutation = useRewriteTimeEntryDescription();
   const [previousValue, setPreviousValue] = useState<string | null>(null);
   const [justRewrote, setJustRewrote] = useState(false);
 
+  // Track the latest value the component itself produced (via typing,
+  // rewrite, undo, or keep). When `value` arrives from outside and differs
+  // from this — e.g. an RHF form.reset() after submit — we treat it as an
+  // external reset and clear the rewrite state.
+  const internalValueRef = useRef<string>(value ?? "");
+  useEffect(() => {
+    if ((value ?? "") !== internalValueRef.current) {
+      internalValueRef.current = value ?? "";
+      setPreviousValue(null);
+      setJustRewrote(false);
+    }
+  }, [value]);
+
   const aiAvailable = aiStatus?.configured ?? false;
   const isRewriting = rewriteMutation.isPending;
   const trimmedValue = (value || "").trim();
   const canRewrite = aiAvailable && !disabled && !isRewriting && trimmedValue.length > 0;
+
+  const emitChange = (next: string) => {
+    internalValueRef.current = next;
+    onChange(next);
+  };
 
   const handleRewrite = async () => {
     if (!canRewrite) return;
@@ -59,7 +87,7 @@ export function TimeEntryDescriptionField({
         return;
       }
       setPreviousValue(value);
-      onChange(next);
+      emitChange(next);
       setJustRewrote(true);
     } catch (error: any) {
       toast({
@@ -72,7 +100,7 @@ export function TimeEntryDescriptionField({
 
   const handleUndo = () => {
     if (previousValue === null) return;
-    onChange(previousValue);
+    emitChange(previousValue);
     setPreviousValue(null);
     setJustRewrote(false);
   };
@@ -83,7 +111,7 @@ export function TimeEntryDescriptionField({
   };
 
   const handleManualChange = (next: string) => {
-    onChange(next);
+    emitChange(next);
     if (justRewrote) {
       setJustRewrote(false);
       setPreviousValue(null);
@@ -93,9 +121,12 @@ export function TimeEntryDescriptionField({
   return (
     <div className={cn("space-y-2", className)}>
       <Textarea
+        ref={ref}
+        name={name}
         placeholder={placeholder}
         value={value ?? ""}
         onChange={(e) => handleManualChange(e.target.value)}
+        onBlur={onBlur}
         disabled={disabled}
         data-testid={`textarea-${testIdPrefix}`}
         className={textareaClassName}
@@ -171,4 +202,4 @@ export function TimeEntryDescriptionField({
       </div>
     </div>
   );
-}
+});
