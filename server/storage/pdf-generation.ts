@@ -15,6 +15,18 @@ import { normalizeAmount, round2, calculateEffectiveTaxAmount } from "./helpers"
 import { receiptStorage } from "../services/receipt-storage";
 import { normalizeReceiptBatch, type NormalizedReceipt } from "../services/receipt-normalizer";
 
+const __pdfGenFilename = fileURLToPath(import.meta.url);
+const __pdfGenDirname = path.dirname(__pdfGenFilename);
+const _pdfGenProjectRoot = path.resolve(__pdfGenDirname, '..');
+let _synozurLogoDataUri: string | undefined;
+try {
+  const _logoPath = path.join(_pdfGenProjectRoot, 'client', 'src', 'assets', 'logos', 'SA-Logo-Horizontal-color.png');
+  const _logoBuffer = fs.readFileSync(_logoPath);
+  _synozurLogoDataUri = `data:image/png;base64,${_logoBuffer.toString('base64')}`;
+} catch {
+  // logo file not available — footer will degrade gracefully
+}
+
 function formatDateInTimezone(date: Date, timezone: string): string {
   try {
     return date.toLocaleDateString('en-US', { timeZone: timezone });
@@ -473,6 +485,7 @@ export async function generateInvoicePDF(params: {
     paymentTerms: batch.paymentTerms || companySettings.paymentTerms,
     // Show Constellation footer (tenant-level setting, defaults to true)
     showConstellationFooter: companySettings.showConstellationFooter ?? true,
+    synozurLogoDataUri: _synozurLogoDataUri,
     
     // Batch info
     batchId: batch.batchId,

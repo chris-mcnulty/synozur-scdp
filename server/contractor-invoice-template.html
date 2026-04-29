@@ -375,6 +375,11 @@
 
     <!-- Footer -->
     <div class="footer">
+      {{#if synozurLogoDataUri}}
+      <div style="margin-bottom: 10px;">
+        <img src="{{synozurLogoDataUri}}" alt="Synozur" style="height: 26px; opacity: 0.8;">
+      </div>
+      {{/if}}
       <p>Thank you for your business.</p>
       <p style="margin-top: 10px;">{{paymentTerms}}</p>
     </div>

@@ -1658,6 +1658,16 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       const template = Handlebars.compile(templateSource);
 
       const effectiveInvoiceNumber = invoiceNumber || `EXP-${report.reportNumber}`;
+
+      let synozurLogoDataUri: string | undefined;
+      try {
+        const logoPath = path.join(projectRoot, 'client', 'src', 'assets', 'logos', 'SA-Logo-Horizontal-color.png');
+        const logoBuffer = fs.readFileSync(logoPath);
+        synozurLogoDataUri = `data:image/png;base64,${logoBuffer.toString('base64')}`;
+      } catch {
+        // logo not available — footer degrades gracefully
+      }
+
       const templateData = {
         contractorBusinessName,
         contractorBusinessAddress,
@@ -1676,7 +1686,8 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         expenseReportNumber: report.reportNumber,
         reportPeriod,
         expenses: formattedExpenses,
-        total: total.toFixed(2)
+        total: total.toFixed(2),
+        synozurLogoDataUri,
       };
 
       const html = template(templateData);
