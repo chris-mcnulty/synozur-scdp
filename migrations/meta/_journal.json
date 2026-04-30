@@ -8,6 +8,13 @@
       "when": 1776466104351,
       "tag": "0000_agent_card_health_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777588860270,
+      "tag": "0001_add_cascade_audit_fields",
+      "breakpoints": true
     }
   ]
 }

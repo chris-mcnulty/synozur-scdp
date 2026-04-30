@@ -1021,6 +1021,30 @@ export default function ProjectDetail() {
     roleInstanceLabel?: string;
     matchingCount: number;
   } | null>(null);
+  const [showCascadeDialog, setShowCascadeDialog] = useState(false);
+  const [cascadePreviewData, setCascadePreviewData] = useState<{
+    deltaDays: number;
+    affectedCount: number;
+    allocations: {
+      id: string;
+      personName: string | null;
+      roleName: string | null;
+      roleInstanceLabel: string | null;
+      plannedStartDate: string | null;
+      plannedEndDate: string | null;
+      newPlannedStartDate: string | null;
+      newPlannedEndDate: string | null;
+    }[];
+  } | null>(null);
+  const [pendingMilestoneUpdate, setPendingMilestoneUpdate] = useState<{
+    milestoneId: string;
+    data: MilestoneFormData;
+    processedData: Record<string, unknown>;
+    newEndDate: string;
+    newStartDate?: string;
+  } | null>(null);
+  const [showBulkAssignRolesDialog, setShowBulkAssignRolesDialog] = useState(false);
+  const [bulkAssignSelections, setBulkAssignSelections] = useState<Record<string, string>>({});
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [suggestionsAllocationId, setSuggestionsAllocationId] = useState<string | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -1759,6 +1783,56 @@ export default function ProjectDetail() {
         description: error.message || "Failed to update milestone",
         variant: "destructive"
       });
+    }
+  });
+
+  const cascadePreviewMutation = useMutation({
+    mutationFn: async ({ milestoneId, newEndDate, newStartDate }: { milestoneId: string; newEndDate?: string; newStartDate?: string }) => {
+      return apiRequest(`/api/projects/${id}/milestones/${milestoneId}/cascade-dates?preview=true`, {
+        method: "POST",
+        body: JSON.stringify({ newEndDate, newStartDate, confirm: false })
+      }) as Promise<{ deltaDays: number; affectedCount: number; allocations: any[]; message?: string }>;
+    },
+  });
+
+  const cascadeConfirmMutation = useMutation({
+    mutationFn: async ({ milestoneId, newEndDate, newStartDate, milestoneUpdateData }: {
+      milestoneId: string;
+      newEndDate?: string;
+      newStartDate?: string;
+      milestoneUpdateData: Record<string, unknown>;
+    }) => {
+      return apiRequest(`/api/projects/${id}/milestones/${milestoneId}/cascade-dates`, {
+        method: "POST",
+        body: JSON.stringify({ newEndDate, newStartDate, milestoneUpdateData, confirm: true })
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Dates cascaded", description: "Milestone and allocation dates have been shifted successfully." });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/milestones`] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to cascade dates", variant: "destructive" });
+    }
+  });
+
+  const bulkAssignRolesMutation = useMutation({
+    mutationFn: async (assignments: { allocationId: string; personId: string }[]) => {
+      return apiRequest(`/api/projects/${id}/allocations/bulk-assign-roles`, {
+        method: "POST",
+        body: JSON.stringify({ assignments })
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Roles assigned", description: "All selected role slots have been assigned." });
+      setShowBulkAssignRolesDialog(false);
+      setBulkAssignSelections({});
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to bulk assign roles", variant: "destructive" });
     }
   });
 
@@ -2507,8 +2581,46 @@ export default function ProjectDetail() {
     setShowEpicDialog(true);
   };
 
-  const handleSubmitMilestone = (data: MilestoneFormData) => {
+  const handleSubmitMilestone = async (data: MilestoneFormData) => {
     if (editingMilestone) {
+      const processedData: Record<string, unknown> = {
+        ...data,
+        budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
+        projectEpicId: data.projectEpicId || null,
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        description: data.description || null,
+      };
+
+      const dateChanged = (data.endDate && data.endDate !== (editingMilestone.endDate || "")) ||
+                          (data.startDate && data.startDate !== (editingMilestone.startDate || ""));
+      const hasOldDates = !!(editingMilestone.startDate || editingMilestone.endDate);
+
+      if (dateChanged && hasOldDates) {
+        const newEndDate = data.endDate || undefined;
+        const newStartDate = data.startDate || undefined;
+        try {
+          const preview = await cascadePreviewMutation.mutateAsync({
+            milestoneId: editingMilestone.id,
+            newEndDate,
+            newStartDate,
+          });
+          if (preview.affectedCount > 0) {
+            setCascadePreviewData(preview);
+            setPendingMilestoneUpdate({
+              milestoneId: editingMilestone.id,
+              data,
+              processedData,
+              newEndDate: newEndDate || "",
+              newStartDate,
+            });
+            setShowCascadeDialog(true);
+            return;
+          }
+        } catch {
+          // If preview fails, proceed with normal update
+        }
+      }
       updateMilestoneMutation.mutate({ id: editingMilestone.id, data });
     } else {
       createMilestoneMutation.mutate(data);
@@ -3886,6 +3998,19 @@ export default function ProjectDetail() {
                     <Bookmark className="h-4 w-4 mr-2" />
                     Save Baseline
                   </Button>
+                  {allocations.some((a: any) => a.roleId && !a.personId && !a.isBaseline) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setBulkAssignSelections({});
+                        setShowBulkAssignRolesDialog(true);
+                      }}
+                      data-testid="button-bulk-assign-roles"
+                    >
+                      <Users className="w-4 h-4 mr-2" />
+                      Assign Multiple
+                    </Button>
+                  )}
                   <Button 
                     onClick={() => setShowAssignmentDialog(true)}
                     data-testid="button-add-assignment"
@@ -6099,6 +6224,227 @@ export default function ProjectDetail() {
                 </DialogFooter>
               </form>
             </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cascade Date Shift Confirmation Dialog */}
+        <Dialog open={showCascadeDialog} onOpenChange={(open) => {
+          if (!open && !cascadeConfirmMutation.isPending) {
+            // Closing the dialog without choosing = treat as "Skip" (milestone-only update)
+            setShowCascadeDialog(false);
+            if (pendingMilestoneUpdate) {
+              updateMilestoneMutation.mutate({ id: pendingMilestoneUpdate.milestoneId, data: pendingMilestoneUpdate.data });
+              setPendingMilestoneUpdate(null);
+              setCascadePreviewData(null);
+              setShowMilestoneDialog(false);
+            }
+          }
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-primary" />
+                Cascade Date Shift to Allocations
+              </DialogTitle>
+              <DialogDescription>
+                {cascadePreviewData && (
+                  <>
+                    The milestone date is shifting by{" "}
+                    <strong>{cascadePreviewData.deltaDays > 0 ? "+" : ""}{cascadePreviewData.deltaDays} days</strong>.{" "}
+                    {cascadePreviewData.affectedCount} allocation{cascadePreviewData.affectedCount !== 1 ? "s" : ""} fall within the current milestone window. Would you like to shift their planned dates by the same amount?
+                  </>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            {cascadePreviewData && cascadePreviewData.allocations.length > 0 && (
+              <div className="max-h-64 overflow-y-auto border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Resource</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Current Start</TableHead>
+                      <TableHead>New Start</TableHead>
+                      <TableHead>Current End</TableHead>
+                      <TableHead>New End</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cascadePreviewData.allocations.map((a) => (
+                      <TableRow key={a.id}>
+                        <TableCell className="text-sm">{a.personName || <span className="text-muted-foreground">Unassigned</span>}</TableCell>
+                        <TableCell className="text-sm">
+                          {a.roleName || "—"}
+                          {a.roleInstanceLabel && (
+                            <Badge variant="outline" className="ml-1 text-xs">{a.roleInstanceLabel}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{a.plannedStartDate || "—"}</TableCell>
+                        <TableCell className="text-sm font-medium text-primary">{a.newPlannedStartDate || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{a.plannedEndDate || "—"}</TableCell>
+                        <TableCell className="text-sm font-medium text-primary">{a.newPlannedEndDate || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            <DialogFooter className="flex gap-2">
+              <Button
+                variant="outline"
+                disabled={cascadeConfirmMutation.isPending || updateMilestoneMutation.isPending}
+                onClick={() => {
+                  // Skip cascade — just update the milestone, no allocation shifts
+                  if (!pendingMilestoneUpdate) return;
+                  updateMilestoneMutation.mutate({ id: pendingMilestoneUpdate.milestoneId, data: pendingMilestoneUpdate.data });
+                  setShowCascadeDialog(false);
+                  setPendingMilestoneUpdate(null);
+                  setCascadePreviewData(null);
+                  setShowMilestoneDialog(false);
+                }}
+              >
+                Skip &amp; Update Milestone Only
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!pendingMilestoneUpdate) return;
+                  // Single call: update milestone + cascade allocations atomically on the server
+                  await cascadeConfirmMutation.mutateAsync({
+                    milestoneId: pendingMilestoneUpdate.milestoneId,
+                    newEndDate: pendingMilestoneUpdate.newEndDate || undefined,
+                    newStartDate: pendingMilestoneUpdate.newStartDate,
+                    milestoneUpdateData: pendingMilestoneUpdate.processedData,
+                  });
+                  // Clear pending state BEFORE closing dialog so onOpenChange's
+                  // "skip" guard cannot fire after a successful cascade
+                  setPendingMilestoneUpdate(null);
+                  setCascadePreviewData(null);
+                  setShowMilestoneDialog(false);
+                  setShowCascadeDialog(false);
+                }}
+                disabled={cascadeConfirmMutation.isPending || updateMilestoneMutation.isPending}
+              >
+                {cascadeConfirmMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Applying...</>
+                ) : (
+                  <>Cascade Date Shift</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Role Assignment Dialog */}
+        <Dialog open={showBulkAssignRolesDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowBulkAssignRolesDialog(false);
+            setBulkAssignSelections({});
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary" />
+                Assign Multiple Role Slots
+              </DialogTitle>
+              <DialogDescription>
+                Assign each unassigned role slot to a person. Select a person for each row and submit all at once.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto">
+              {(() => {
+                const placeholders = allocations.filter((a: any) => a.roleId && !a.personId && !a.isBaseline);
+                if (placeholders.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>No unassigned role slots found</p>
+                    </div>
+                  );
+                }
+                return (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Task</TableHead>
+                        <TableHead>Hours</TableHead>
+                        <TableHead>Dates</TableHead>
+                        <TableHead className="w-64">Assign To</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {placeholders.map((allocation: any) => (
+                        <TableRow key={allocation.id}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium text-sm">{allocation.role?.name || "—"}</div>
+                              {allocation.roleInstanceLabel && (
+                                <Badge variant="outline" className="mt-0.5 text-xs">{allocation.roleInstanceLabel}</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
+                            {allocation.taskDescription || "—"}
+                          </TableCell>
+                          <TableCell className="text-sm">{parseFloat(allocation.hours || "0").toFixed(1)}h</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {allocation.plannedStartDate ? allocation.plannedStartDate : "—"}
+                            {allocation.plannedStartDate && allocation.plannedEndDate ? " → " : ""}
+                            {allocation.plannedEndDate ? allocation.plannedEndDate : ""}
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={bulkAssignSelections[allocation.id] || ""}
+                              onValueChange={(value) => setBulkAssignSelections(prev => ({
+                                ...prev,
+                                [allocation.id]: value === "_none" ? "" : value
+                              }))}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="Select person..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="_none">— Not assigned —</SelectItem>
+                                {(users as any[]).filter((u: any) => u.isAssignable !== false && u.isActive !== false).map((u: any) => (
+                                  <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                );
+              })()}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setShowBulkAssignRolesDialog(false); setBulkAssignSelections({}); }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const assignments = Object.entries(bulkAssignSelections)
+                    .filter(([, personId]) => !!personId)
+                    .map(([allocationId, personId]) => ({ allocationId, personId }));
+                  if (assignments.length === 0) {
+                    toast({ title: "No assignments selected", description: "Please select at least one person to assign.", variant: "destructive" });
+                    return;
+                  }
+                  bulkAssignRolesMutation.mutate(assignments);
+                }}
+                disabled={bulkAssignRolesMutation.isPending}
+              >
+                {bulkAssignRolesMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Assigning...</>
+                ) : (
+                  <>Assign {Object.values(bulkAssignSelections).filter(Boolean).length > 0
+                    ? `${Object.values(bulkAssignSelections).filter(Boolean).length} Slot${Object.values(bulkAssignSelections).filter(Boolean).length !== 1 ? "s" : ""}`
+                    : "Selected Slots"}</>
+                )}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 

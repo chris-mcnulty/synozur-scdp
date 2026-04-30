@@ -961,6 +961,10 @@ export const projectAllocations = pgTable("project_allocations", {
   roleInstanceLabel: text("role_instance_label"),
   isBaseline: boolean("is_baseline").notNull().default(false),
   baselineId: varchar("baseline_id"),
+  // Cascade date shift audit fields
+  priorPlannedStartDate: date("prior_planned_start_date"), // Preserved before a cascade shift
+  priorPlannedEndDate: date("prior_planned_end_date"),     // Preserved before a cascade shift
+  cascadeSourceMilestoneId: varchar("cascade_source_milestone_id"), // FK to the milestone that triggered the cascade
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_project_allocations_tenant").on(table.tenantId),
