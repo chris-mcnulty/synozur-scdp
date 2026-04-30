@@ -779,12 +779,12 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
       const activeMilestones = milestones
         .filter(m => m.status !== "completed")
-        .map(m => `- ${m.name} (${m.status})${m.dueDate ? ` — Due: ${m.dueDate}` : ""}`)
+        .map(m => `- [${m.isPaymentMilestone ? 'Payment Milestone' : 'Delivery Gate'}] ${m.name} (${m.status})${m.invoiceStatus ? ` — Invoice: ${m.invoiceStatus}` : ''}${m.targetDate ? ` — Due: ${m.targetDate}` : ""}`)
         .join("\n") || "No active milestones.";
 
       const completedMilestones = milestones
         .filter(m => m.status === "completed")
-        .map(m => `- ${m.name} (completed)`)
+        .map(m => `- [${m.isPaymentMilestone ? 'Payment Milestone' : 'Delivery Gate'}] ${m.name} (completed)${m.invoiceStatus ? ` — Invoice: ${m.invoiceStatus}` : ''}`)
         .join("\n") || "None completed in this period.";
 
       const activeTeamCount = allocations.filter((a: any) => a.status === "open" || a.status === "in_progress").length;
@@ -4645,11 +4645,11 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
       const activeMilestones = milestones
         .filter(m => m.status !== "completed")
-        .map(m => `- ${m.name} (${m.status})`)
+        .map(m => `- [${m.isPaymentMilestone ? 'Payment Milestone' : 'Delivery Gate'}] ${m.name} (${m.status})${m.invoiceStatus ? ` — Invoice: ${m.invoiceStatus}` : ''}`)
         .join("\n") || "No active milestones.";
 
       const completedMilestonesSummary = completedMilestones
-        .map(m => `- ${m.name} (completed)`)
+        .map(m => `- [${m.isPaymentMilestone ? 'Payment Milestone' : 'Delivery Gate'}] ${m.name} (completed)${m.invoiceStatus ? ` — Invoice: ${m.invoiceStatus}` : ''}`)
         .join("\n") || "None completed in this period.";
 
       const activeTeamCount = allocations.filter((a: any) => a.status === "open" || a.status === "in_progress").length;
@@ -5760,6 +5760,21 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         order: req.body.order ?? 0
       };
       const milestone = await storage.createProjectMilestone(milestoneData);
+
+      // Audit log when a payment milestone is created
+      if (milestone.isPaymentMilestone) {
+        console.info('[AUDIT] milestone.payment.created', JSON.stringify({
+          timestamp: new Date().toISOString(),
+          tenantId: req.user?.tenantId || null,
+          userId: req.user?.id || null,
+          milestoneId: milestone.id,
+          milestoneName: milestone.name,
+          projectId: milestone.projectId,
+          amount: milestone.amount,
+          invoiceStatus: milestone.invoiceStatus,
+        }));
+      }
+
       res.json(milestone);
     } catch (error) {
       console.error("Error creating milestone:", error);
@@ -5768,9 +5783,63 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Update milestone
-  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
+      const userRole = req.user?.role;
+      const INVOICE_STATUS_VALUES = ['planned', 'invoiced', 'paid'] as const;
+
+      // billing-admin may only update invoiceStatus — reject any other fields
+      if (userRole === 'billing-admin') {
+        const allowedFields = new Set(['invoiceStatus']);
+        const disallowedFields = Object.keys(req.body).filter(k => !allowedFields.has(k));
+        if (disallowedFields.length > 0) {
+          return res.status(403).json({ message: "Billing administrators may only update invoice status" });
+        }
+      }
+
+      // Field-level authorization: only admin or billing-admin may change invoiceStatus
+      if (req.body.invoiceStatus !== undefined) {
+        if (userRole !== 'admin' && userRole !== 'billing-admin') {
+          return res.status(403).json({ message: "Only billing administrators can update invoice status" });
+        }
+        // Enum validation for invoiceStatus
+        if (!INVOICE_STATUS_VALUES.includes(req.body.invoiceStatus)) {
+          return res.status(400).json({ message: `invoiceStatus must be one of: ${INVOICE_STATUS_VALUES.join(', ')}` });
+        }
+      }
+
+      const prevMilestone = await storage.getProjectMilestoneById(req.params.id);
+
+      // Enforce forward-only invoice status transitions (planned → invoiced → paid)
+      if (req.body.invoiceStatus !== undefined && prevMilestone?.invoiceStatus) {
+        const statusOrder: Record<string, number> = { planned: 0, invoiced: 1, paid: 2 };
+        const prevRank = statusOrder[prevMilestone.invoiceStatus] ?? -1;
+        const newRank = statusOrder[req.body.invoiceStatus] ?? -1;
+        if (newRank < prevRank) {
+          return res.status(400).json({ message: `Invoice status cannot be moved backward from '${prevMilestone.invoiceStatus}' to '${req.body.invoiceStatus}'` });
+        }
+      }
       const milestone = await storage.updateProjectMilestone(req.params.id, req.body);
+
+      // Audit log when invoiceStatus advances on a payment milestone
+      if (
+        milestone.isPaymentMilestone &&
+        req.body.invoiceStatus !== undefined &&
+        prevMilestone &&
+        prevMilestone.invoiceStatus !== req.body.invoiceStatus
+      ) {
+        console.info('[AUDIT] milestone.invoiceStatus.changed', JSON.stringify({
+          timestamp: new Date().toISOString(),
+          tenantId: req.user?.tenantId || null,
+          userId: req.user?.id || null,
+          milestoneId: milestone.id,
+          milestoneName: milestone.name,
+          projectId: milestone.projectId,
+          previousStatus: prevMilestone.invoiceStatus,
+          newStatus: req.body.invoiceStatus,
+        }));
+      }
+
       res.json(milestone);
     } catch (error) {
       res.status(500).json({ message: "Failed to update milestone" });

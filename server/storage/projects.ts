@@ -360,6 +360,14 @@ export const projectsMethods: ThisType<IStorage> = {
       .orderBy(projectMilestones.sortOrder);
   },
 
+  async getProjectMilestoneById(id: string): Promise<ProjectMilestone | undefined> {
+    const [milestone] = await db.select()
+      .from(projectMilestones)
+      .where(eq(projectMilestones.id, id))
+      .limit(1);
+    return milestone;
+  },
+
   async getProjectMilestonesByProjectIds(projectIds: string[]): Promise<Map<string, ProjectMilestone[]>> {
     if (projectIds.length === 0) return new Map();
     

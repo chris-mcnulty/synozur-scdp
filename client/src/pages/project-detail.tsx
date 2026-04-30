@@ -202,8 +202,10 @@ const milestoneFormSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   budgetHours: z.string().optional(),
+  amount: z.string().optional(),
   status: z.enum(["not-started", "in-progress", "completed"]),
   projectEpicId: z.string().optional(),
+  isPaymentMilestone: z.boolean().default(false),
   order: z.number().int().default(0)
 });
 
@@ -1693,11 +1695,13 @@ export default function ProjectDetail() {
     mutationFn: async (data: MilestoneFormData) => {
       const processedData = {
         ...data,
-        budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
+        budgetHours: !data.isPaymentMilestone && data.budgetHours ? parseFloat(data.budgetHours) : null,
+        amount: data.isPaymentMilestone && data.amount ? data.amount : null,
         projectEpicId: data.projectEpicId || null,
         startDate: data.startDate || null,
         endDate: data.endDate || null,
-        description: data.description || null
+        description: data.description || null,
+        isPaymentMilestone: data.isPaymentMilestone ?? false,
       };
       return apiRequest(`/api/projects/${id}/milestones`, {
         method: "POST",
@@ -1726,11 +1730,13 @@ export default function ProjectDetail() {
     mutationFn: async ({ id: milestoneId, data }: { id: string; data: MilestoneFormData }) => {
       const processedData = {
         ...data,
-        budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
+        budgetHours: !data.isPaymentMilestone && data.budgetHours ? parseFloat(data.budgetHours) : null,
+        amount: data.isPaymentMilestone && data.amount ? data.amount : null,
         projectEpicId: data.projectEpicId || null,
         startDate: data.startDate || null,
         endDate: data.endDate || null,
-        description: data.description || null
+        description: data.description || null,
+        isPaymentMilestone: data.isPaymentMilestone ?? false,
       };
       return apiRequest(`/api/milestones/${milestoneId}`, {
         method: "PATCH",
@@ -1776,6 +1782,22 @@ export default function ProjectDetail() {
         description: error.message || "Failed to delete milestone",
         variant: "destructive"
       });
+    }
+  });
+
+  const updateMilestoneInvoiceStatusMutation = useMutation({
+    mutationFn: async ({ milestoneId, invoiceStatus }: { milestoneId: string; invoiceStatus: string }) => {
+      return apiRequest(`/api/milestones/${milestoneId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ invoiceStatus })
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Billing status updated" });
+      refetchMilestones();
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update billing status", variant: "destructive" });
     }
   });
 
@@ -2441,13 +2463,15 @@ export default function ProjectDetail() {
         startDate: milestone.startDate || "",
         endDate: milestone.endDate || "",
         budgetHours: milestone.budgetHours?.toString() || "",
+        amount: milestone.amount?.toString() || "",
         status: milestone.status || "not-started",
         projectEpicId: milestone.projectEpicId || "",
+        isPaymentMilestone: milestone.isPaymentMilestone ?? false,
         order: milestone.order || 0
       });
     } else {
       setEditingMilestone(null);
-      milestoneForm.reset();
+      milestoneForm.reset({ isPaymentMilestone: false, status: "not-started", order: 0 });
     }
     setShowMilestoneDialog(true);
   };
@@ -4722,19 +4746,20 @@ export default function ProjectDetail() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>Epic</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Billing Status</TableHead>
                       <TableHead>Start Date</TableHead>
                       <TableHead>End Date</TableHead>
-                      <TableHead>Budget Hours</TableHead>
-                      <TableHead>Actual Hours</TableHead>
+                      <TableHead>Hours / Amount</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {milestones.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground">
+                        <TableCell colSpan={9} className="text-center text-muted-foreground">
                           No milestones found. Click "Add Milestone" to create one.
                         </TableCell>
                       </TableRow>
@@ -4742,6 +4767,19 @@ export default function ProjectDetail() {
                       milestones.map((milestone: any) => (
                         <TableRow key={milestone.id} data-testid={`milestone-row-${milestone.id}`}>
                           <TableCell className="font-medium">{milestone.name}</TableCell>
+                          <TableCell>
+                            {milestone.isPaymentMilestone ? (
+                              <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200">
+                                <DollarSign className="w-3 h-3 mr-1" />
+                                Payment
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Delivery
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell>{milestone.epic?.name || '-'}</TableCell>
                           <TableCell>
                             <Badge variant={
@@ -4751,13 +4789,55 @@ export default function ProjectDetail() {
                               {milestone.status}
                             </Badge>
                           </TableCell>
+                          <TableCell>
+                            {milestone.isPaymentMilestone ? (
+                              !embedReadonly && ['admin', 'billing-admin'].includes(user?.role || '') ? (
+                                <Select
+                                  value={milestone.invoiceStatus || 'planned'}
+                                  onValueChange={(value) => updateMilestoneInvoiceStatusMutation.mutate({ milestoneId: milestone.id, invoiceStatus: value })}
+                                >
+                                  <SelectTrigger className="h-7 text-xs w-28">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="planned">Planned</SelectItem>
+                                    <SelectItem value="invoiced">Invoiced</SelectItem>
+                                    <SelectItem value="paid">Paid</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Badge variant={milestone.invoiceStatus === 'paid' ? 'default' : milestone.invoiceStatus === 'invoiced' ? 'secondary' : 'outline'}>
+                                  {milestone.invoiceStatus === 'paid' ? 'Paid' : milestone.invoiceStatus === 'invoiced' ? 'Invoiced' : 'Planned'}
+                                </Badge>
+                              )
+                            ) : (
+                              <span className="text-muted-foreground text-sm">—</span>
+                            )}
+                          </TableCell>
                           <TableCell>{milestone.startDate ? format(new Date(milestone.startDate), "MMM d, yyyy") : '-'}</TableCell>
                           <TableCell>{milestone.endDate ? format(new Date(milestone.endDate), "MMM d, yyyy") : '-'}</TableCell>
-                          <TableCell>{milestone.budgetHours || '-'}</TableCell>
-                          <TableCell>{milestone.actualHours || '0'}</TableCell>
+                          <TableCell>
+                            {milestone.isPaymentMilestone
+                              ? milestone.amount ? `$${Number(milestone.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'
+                              : milestone.budgetHours ? `${milestone.budgetHours} hrs` : '-'
+                            }
+                          </TableCell>
                           {!embedReadonly && (
                           <TableCell>
                             <div className="flex items-center justify-end gap-2">
+                              {milestone.isPaymentMilestone && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  asChild
+                                  title="View in Billing"
+                                  data-testid={`button-billing-link-${milestone.id}`}
+                                >
+                                  <Link to={`/billing?milestoneId=${milestone.id}`}>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </Link>
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -5840,6 +5920,37 @@ export default function ProjectDetail() {
               <form name="project-milestone-form" onSubmit={milestoneForm.handleSubmit(handleSubmitMilestone)} className="space-y-4">
                 <FormField
                   control={milestoneForm.control}
+                  name="isPaymentMilestone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Milestone Type</FormLabel>
+                      <FormControl>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => field.onChange(false)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium transition-colors ${!field.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-background text-muted-foreground border-border hover:bg-muted/50'}`}
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            Delivery Gate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => field.onChange(true)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium transition-colors ${field.value ? 'bg-green-600 text-white border-green-600' : 'bg-background text-muted-foreground border-border hover:bg-muted/50'}`}
+                          >
+                            <DollarSign className="w-4 h-4" />
+                            Payment Trigger
+                          </button>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={milestoneForm.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem>
@@ -5925,19 +6036,35 @@ export default function ProjectDetail() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={milestoneForm.control}
-                    name="budgetHours"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Budget Hours</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="number" step="0.5" placeholder="0" data-testid="input-milestone-budget-hours" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {milestoneForm.watch('isPaymentMilestone') ? (
+                    <FormField
+                      control={milestoneForm.control}
+                      name="amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Amount ($)</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="number" step="0.01" placeholder="0.00" data-testid="input-milestone-amount" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <FormField
+                      control={milestoneForm.control}
+                      name="budgetHours"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Budget Hours</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="number" step="0.5" placeholder="0" data-testid="input-milestone-budget-hours" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                   <FormField
                     control={milestoneForm.control}
                     name="status"

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -113,6 +113,18 @@ export default function Billing() {
   
   const { canViewPricing, user } = useAuth();
   const { toast } = useToast();
+  const search = useSearch();
+
+  // Deep-link: if ?milestoneId= is in the URL, pre-open the create batch dialog for that milestone
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const milestoneId = params.get('milestoneId');
+    if (milestoneId) {
+      setBatchType('milestone');
+      setSelectedMilestone(milestoneId);
+      setNewBatchOpen(true);
+    }
+  }, [search]);
 
   const { data: projects = [] } = useQuery({
     queryKey: ["/api/projects"],

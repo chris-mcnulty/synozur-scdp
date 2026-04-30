@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   DropdownMenu,
@@ -44,6 +44,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
 import { format } from "date-fns";
 import {
   Milestone,
@@ -56,8 +58,7 @@ import {
   Edit,
   Trash,
   Plus,
-  Target,
-  TrendingUp
+  ExternalLink,
 } from "lucide-react";
 
 interface ProjectMilestone {
@@ -74,6 +75,9 @@ interface ProjectMilestone {
   order: number;
   targetAmount?: string;
   billedAmount?: string;
+  isPaymentMilestone?: boolean;
+  invoiceStatus?: 'planned' | 'invoiced' | 'paid' | null;
+  amount?: string;
   createdAt: string;
 }
 
@@ -96,6 +100,8 @@ export function ProjectMilestonesDialog({
 }: ProjectMilestonesDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<ProjectMilestone | null>(null);
   const [formData, setFormData] = useState({
@@ -105,18 +111,20 @@ export function ProjectMilestonesDialog({
     startDate: "",
     endDate: "",
     budgetHours: "",
-    targetAmount: ""
+    targetAmount: "",
+    isPaymentMilestone: false,
+    amount: "",
   });
 
-  // Fetch milestones for the project
+  const isBillingAdmin = ['admin', 'billing-admin'].includes(user?.role || '');
+
   const { data: milestones = [], isLoading } = useQuery<ProjectMilestone[]>({
     queryKey: [`/api/projects/${projectId}/milestones`],
     enabled: !!projectId && open
   });
 
-  // Create milestone mutation
   const createMilestoneMutation = useMutation({
-    mutationFn: async (data: Partial<ProjectMilestone>) => {
+    mutationFn: async (data: Partial<ProjectMilestone> & { isPaymentMilestone: boolean; amount?: string }) => {
       return await apiRequest(`/api/projects/${projectId}/milestones`, {
         method: 'POST',
         body: JSON.stringify(data)
@@ -124,23 +132,15 @@ export function ProjectMilestonesDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/milestones`] });
-      toast({ 
-        title: "Success",
-        description: "Milestone created successfully" 
-      });
+      toast({ title: "Success", description: "Milestone created successfully" });
       setShowCreateDialog(false);
       resetForm();
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Error",
-        description: error.message || "Failed to create milestone",
-        variant: "destructive" 
-      });
+      toast({ title: "Error", description: error.message || "Failed to create milestone", variant: "destructive" });
     }
   });
 
-  // Update milestone mutation
   const updateMilestoneMutation = useMutation({
     mutationFn: async ({ id, ...data }: Partial<ProjectMilestone> & { id: string }) => {
       return await apiRequest(`/api/milestones/${id}`, {
@@ -150,42 +150,41 @@ export function ProjectMilestonesDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/milestones`] });
-      toast({ 
-        title: "Success",
-        description: "Milestone updated successfully" 
-      });
+      toast({ title: "Success", description: "Milestone updated successfully" });
       setEditingMilestone(null);
       resetForm();
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Error",
-        description: error.message || "Failed to update milestone",
-        variant: "destructive" 
-      });
+      toast({ title: "Error", description: error.message || "Failed to update milestone", variant: "destructive" });
     }
   });
 
-  // Delete milestone mutation
-  const deleteMilestoneMutation = useMutation({
-    mutationFn: async (id: string) => {
+  const updateInvoiceStatusMutation = useMutation({
+    mutationFn: async ({ id, invoiceStatus }: { id: string; invoiceStatus: string }) => {
       return await apiRequest(`/api/milestones/${id}`, {
-        method: 'DELETE'
+        method: 'PATCH',
+        body: JSON.stringify({ invoiceStatus })
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/milestones`] });
-      toast({ 
-        title: "Success",
-        description: "Milestone deleted successfully" 
-      });
+      toast({ title: "Billing status updated" });
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Error",
-        description: error.message || "Failed to delete milestone",
-        variant: "destructive" 
-      });
+      toast({ title: "Error", description: error.message || "Failed to update billing status", variant: "destructive" });
+    }
+  });
+
+  const deleteMilestoneMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/milestones/${id}`, { method: 'DELETE' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/milestones`] });
+      toast({ title: "Success", description: "Milestone deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to delete milestone", variant: "destructive" });
     }
   });
 
@@ -193,12 +192,15 @@ export function ProjectMilestonesDialog({
     setFormData({
       name: "",
       description: "",
-      status: "not-started" as 'not-started' | 'in-progress' | 'completed',
+      status: "not-started",
       startDate: "",
       endDate: "",
       budgetHours: "",
-      targetAmount: ""
+      targetAmount: "",
+      isPaymentMilestone: false,
+      amount: "",
     });
+    setShowCreateDialog(false);
   };
 
   const handleEdit = (milestone: ProjectMilestone) => {
@@ -210,27 +212,26 @@ export function ProjectMilestonesDialog({
       startDate: milestone.startDate || "",
       endDate: milestone.endDate || "",
       budgetHours: milestone.budgetHours || "",
-      targetAmount: milestone.targetAmount || ""
+      targetAmount: milestone.targetAmount || "",
+      isPaymentMilestone: milestone.isPaymentMilestone ?? false,
+      amount: milestone.amount || "",
     });
     setShowCreateDialog(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Milestone name is required",
-        variant: "destructive"
-      });
+      toast({ title: "Validation Error", description: "Milestone name is required", variant: "destructive" });
       return;
     }
 
     const data = {
       ...formData,
-      budgetHours: formData.budgetHours || undefined,
-      targetAmount: formData.targetAmount || undefined
+      budgetHours: !formData.isPaymentMilestone ? (formData.budgetHours || undefined) : undefined,
+      amount: formData.isPaymentMilestone ? (formData.amount || undefined) : undefined,
+      targetAmount: formData.targetAmount || undefined,
     };
 
     if (editingMilestone) {
@@ -244,19 +245,42 @@ export function ProjectMilestonesDialog({
     switch (status) {
       case 'completed':
         return <Badge className="bg-green-100 text-green-800" data-testid={`badge-status-${status}`}>
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Completed
+          <CheckCircle className="w-3 h-3 mr-1" />Completed
         </Badge>;
       case 'in-progress':
         return <Badge className="bg-blue-100 text-blue-800" data-testid={`badge-status-${status}`}>
-          <Clock className="w-3 h-3 mr-1" />
-          In Progress
+          <Clock className="w-3 h-3 mr-1" />In Progress
         </Badge>;
       default:
         return <Badge className="bg-gray-100 text-gray-800" data-testid={`badge-status-${status}`}>
-          <AlertCircle className="w-3 h-3 mr-1" />
-          Not Started
+          <AlertCircle className="w-3 h-3 mr-1" />Not Started
         </Badge>;
+    }
+  };
+
+  const getTypeBadge = (milestone: ProjectMilestone) => {
+    if (milestone.isPaymentMilestone) {
+      return (
+        <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200">
+          <DollarSign className="w-3 h-3 mr-1" />Payment
+        </Badge>
+      );
+    }
+    return (
+      <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200">
+        <CheckCircle className="w-3 h-3 mr-1" />Delivery
+      </Badge>
+    );
+  };
+
+  const getInvoiceStatusBadge = (invoiceStatus?: string | null) => {
+    switch (invoiceStatus) {
+      case 'paid':
+        return <Badge variant="default">Paid</Badge>;
+      case 'invoiced':
+        return <Badge variant="secondary">Invoiced</Badge>;
+      default:
+        return <Badge variant="outline">Planned</Badge>;
     }
   };
 
@@ -270,7 +294,7 @@ export function ProjectMilestonesDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Milestone className="w-5 h-5" />
@@ -278,7 +302,7 @@ export function ProjectMilestonesDialog({
               {projectName && <span className="text-muted-foreground">- {projectName}</span>}
             </DialogTitle>
             <DialogDescription>
-              {selectionMode 
+              {selectionMode
                 ? "Select a milestone to map invoice lines to"
                 : "Manage project milestones and track their progress"
               }
@@ -292,11 +316,7 @@ export function ProjectMilestonesDialog({
                   <div className="text-sm text-muted-foreground">
                     {milestones.length} milestone{milestones.length !== 1 ? 's' : ''} found
                   </div>
-                  <Button
-                    onClick={() => setShowCreateDialog(true)}
-                    size="sm"
-                    data-testid="button-create-milestone"
-                  >
+                  <Button onClick={() => setShowCreateDialog(true)} size="sm" data-testid="button-create-milestone">
                     <Plus className="w-4 h-4 mr-2" />
                     Add Milestone
                   </Button>
@@ -304,20 +324,14 @@ export function ProjectMilestonesDialog({
               )}
 
               {isLoading ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  Loading milestones...
-                </div>
+                <div className="text-center py-8 text-muted-foreground">Loading milestones...</div>
               ) : milestones.length === 0 ? (
                 <Card>
                   <CardContent className="text-center py-8">
                     <Milestone className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                     <p className="text-muted-foreground mb-4">No milestones found for this project</p>
                     {!selectionMode && (
-                      <Button
-                        onClick={() => setShowCreateDialog(true)}
-                        variant="outline"
-                        data-testid="button-create-first-milestone"
-                      >
+                      <Button onClick={() => setShowCreateDialog(true)} variant="outline" data-testid="button-create-first-milestone">
                         <Plus className="w-4 h-4 mr-2" />
                         Create First Milestone
                       </Button>
@@ -329,7 +343,9 @@ export function ProjectMilestonesDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Milestone</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Billing Status</TableHead>
                       <TableHead>Dates</TableHead>
                       <TableHead>Target</TableHead>
                       <TableHead>Progress</TableHead>
@@ -339,9 +355,9 @@ export function ProjectMilestonesDialog({
                   <TableBody>
                     {milestones.map((milestone) => {
                       const progress = calculateProgress(milestone);
-                      
+
                       return (
-                        <TableRow 
+                        <TableRow
                           key={milestone.id}
                           className={selectionMode ? "cursor-pointer hover:bg-muted/50" : ""}
                           onClick={selectionMode ? () => onMilestoneSelect?.(milestone) : undefined}
@@ -355,14 +371,35 @@ export function ProjectMilestonesDialog({
                               )}
                             </div>
                           </TableCell>
+                          <TableCell>{getTypeBadge(milestone)}</TableCell>
                           <TableCell>{getStatusBadge(milestone.status)}</TableCell>
+                          <TableCell>
+                            {milestone.isPaymentMilestone ? (
+                              isBillingAdmin && !selectionMode ? (
+                                <Select
+                                  value={milestone.invoiceStatus || 'planned'}
+                                  onValueChange={(value) => updateInvoiceStatusMutation.mutate({ id: milestone.id, invoiceStatus: value })}
+                                >
+                                  <SelectTrigger className="h-7 text-xs w-28" onClick={(e) => e.stopPropagation()}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="planned">Planned</SelectItem>
+                                    <SelectItem value="invoiced">Invoiced</SelectItem>
+                                    <SelectItem value="paid">Paid</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                getInvoiceStatusBadge(milestone.invoiceStatus)
+                              )
+                            ) : (
+                              <span className="text-muted-foreground text-sm">—</span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <div className="text-sm">
                               {milestone.startDate && milestone.endDate ? (
-                                <>
-                                  {format(new Date(milestone.startDate), 'MMM d')} - 
-                                  {format(new Date(milestone.endDate), 'MMM d, yyyy')}
-                                </>
+                                <>{format(new Date(milestone.startDate), 'MMM d')} - {format(new Date(milestone.endDate), 'MMM d, yyyy')}</>
                               ) : milestone.endDate ? (
                                 <>Due: {format(new Date(milestone.endDate), 'MMM d, yyyy')}</>
                               ) : (
@@ -371,7 +408,12 @@ export function ProjectMilestonesDialog({
                             </div>
                           </TableCell>
                           <TableCell>
-                            {milestone.targetAmount ? (
+                            {milestone.isPaymentMilestone && milestone.amount ? (
+                              <div className="flex items-center gap-1">
+                                <DollarSign className="w-3 h-3" />
+                                {parseFloat(milestone.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                            ) : milestone.targetAmount ? (
                               <div className="flex items-center gap-1">
                                 <DollarSign className="w-3 h-3" />
                                 {parseFloat(milestone.targetAmount).toLocaleString()}
@@ -392,9 +434,7 @@ export function ProjectMilestonesDialog({
                                   <TooltipTrigger>
                                     <div className="w-24">
                                       <Progress value={progress} className="h-2" />
-                                      <p className="text-xs text-muted-foreground mt-1">
-                                        {progress.toFixed(0)}%
-                                      </p>
+                                      <p className="text-xs text-muted-foreground mt-1">{progress.toFixed(0)}%</p>
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent>
@@ -409,50 +449,53 @@ export function ProjectMilestonesDialog({
                           </TableCell>
                           <TableCell className="text-right">
                             {selectionMode ? (
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 variant="outline"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onMilestoneSelect?.(milestone);
-                                }}
+                                onClick={(e) => { e.stopPropagation(); onMilestoneSelect?.(milestone); }}
                                 data-testid={`button-select-${milestone.id}`}
                               >
                                 Select
                               </Button>
                             ) : (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button 
-                                    variant="ghost" 
+                              <div className="flex items-center justify-end gap-1">
+                                {milestone.isPaymentMilestone && (
+                                  <Button
                                     size="sm"
-                                    data-testid={`button-menu-${milestone.id}`}
+                                    variant="ghost"
+                                    onClick={() => { onOpenChange(false); setLocation(`/billing?milestoneId=${milestone.id}`); }}
+                                    title="View in Billing"
+                                    data-testid={`button-billing-link-${milestone.id}`}
                                   >
-                                    <MoreVertical className="w-4 h-4" />
+                                    <ExternalLink className="w-3 h-3" />
                                   </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem 
-                                    onClick={() => handleEdit(milestone)}
-                                    data-testid={`menu-edit-${milestone.id}`}
-                                  >
-                                    <Edit className="w-4 h-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      if (confirm(`Delete milestone "${milestone.name}"?`)) {
-                                        deleteMilestoneMutation.mutate(milestone.id);
-                                      }
-                                    }}
-                                    className="text-red-600"
-                                    data-testid={`menu-delete-${milestone.id}`}
-                                  >
-                                    <Trash className="w-4 h-4 mr-2" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                                )}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" data-testid={`button-menu-${milestone.id}`}>
+                                      <MoreVertical className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleEdit(milestone)} data-testid={`menu-edit-${milestone.id}`}>
+                                      <Edit className="w-4 h-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        if (confirm(`Delete milestone "${milestone.name}"?`)) {
+                                          deleteMilestoneMutation.mutate(milestone.id);
+                                        }
+                                      }}
+                                      className="text-red-600"
+                                      data-testid={`menu-delete-${milestone.id}`}
+                                    >
+                                      <Trash className="w-4 h-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
@@ -464,6 +507,28 @@ export function ProjectMilestonesDialog({
             </div>
           ) : (
             <form name="project-milestone-manage-form" onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Milestone Type</Label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, isPaymentMilestone: false })}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium transition-colors ${!formData.isPaymentMilestone ? 'bg-blue-600 text-white border-blue-600' : 'bg-background text-muted-foreground border-border hover:bg-muted/50'}`}
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    Delivery Gate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, isPaymentMilestone: true })}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium transition-colors ${formData.isPaymentMilestone ? 'bg-green-600 text-white border-green-600' : 'bg-background text-muted-foreground border-border hover:bg-muted/50'}`}
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    Payment Trigger
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="name">Name *</Label>
                 <Input
@@ -505,18 +570,33 @@ export function ProjectMilestonesDialog({
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="targetAmount">Target Amount</Label>
-                  <Input
-                    id="targetAmount"
-                    type="number"
-                    value={formData.targetAmount}
-                    onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
-                    placeholder="0.00"
-                    step="0.01"
-                    data-testid="input-target-amount"
-                  />
-                </div>
+                {formData.isPaymentMilestone ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="amount">Amount ($)</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                      placeholder="0.00"
+                      step="0.01"
+                      data-testid="input-amount"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="budgetHours">Budget Hours</Label>
+                    <Input
+                      id="budgetHours"
+                      type="number"
+                      value={formData.budgetHours}
+                      onChange={(e) => setFormData({ ...formData, budgetHours: e.target.value })}
+                      placeholder="0"
+                      step="0.5"
+                      data-testid="input-budget-hours"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -541,19 +621,6 @@ export function ProjectMilestonesDialog({
                     data-testid="input-end-date"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="budgetHours">Budget Hours</Label>
-                <Input
-                  id="budgetHours"
-                  type="number"
-                  value={formData.budgetHours}
-                  onChange={(e) => setFormData({ ...formData, budgetHours: e.target.value })}
-                  placeholder="0"
-                  step="0.5"
-                  data-testid="input-budget-hours"
-                />
               </div>
 
               <DialogFooter>
