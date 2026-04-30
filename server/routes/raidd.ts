@@ -32,7 +32,7 @@ export function registerRaiddRoutes(app: Express, deps: RaiddRouteDeps) {
     }
   });
 
-  app.post("/api/projects/:id/raidd", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+  app.post("/api/projects/:id/raidd", requireAuth, requireRole(["admin", "pm", "employee", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ message: "Project not found" });
@@ -164,7 +164,7 @@ export function registerRaiddRoutes(app: Express, deps: RaiddRouteDeps) {
     }
   });
 
-  app.get("/api/projects/:id/raidd/export", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+  app.get("/api/projects/:id/raidd/export", requireAuth, requireRole(["admin", "pm", "employee", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const project = await storage.getProject(req.params.id);
       if (!project) return res.status(404).json({ message: "Project not found" });

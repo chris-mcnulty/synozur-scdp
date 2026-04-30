@@ -1002,12 +1002,57 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         detailed_update: 8192,
         client_facing: 4096,
       };
-      const result = await aiService.customPrompt(systemPrompt, userMessage, {
-        temperature: 0.6,
-        maxTokens: maxTokensByStyle[reportStyle] || 4096,
-        groundingContext: srGroundingCtx,
-        usageCtx: { tenantId: srTenantId, userId: (req.user as any)?.id, feature: 'status_report' as any },
-      });
+      const targetMaxTokens = maxTokensByStyle[reportStyle] || 4096;
+
+      // Classify AI errors into actionable categories for clear user messaging
+      function classifyAiError(err: any): { userMessage: string; retryable: boolean } {
+        const msg: string = (err?.message || '').toLowerCase();
+        if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('etimedout') || msg.includes('request took')) {
+          return { userMessage: "The AI model timed out generating this report. The request was too large or the model is under load — try a shorter date range or the Executive Brief style.", retryable: false };
+        }
+        if (msg.includes('rate limit') || msg.includes('rate_limit') || msg.includes('429') || msg.includes('too many requests')) {
+          return { userMessage: "The AI model is currently rate-limited. Please wait 30–60 seconds and try again.", retryable: true };
+        }
+        if (msg.includes('overloaded') || msg.includes('capacity') || msg.includes('503') || msg.includes('529')) {
+          return { userMessage: "The AI model is temporarily overloaded. Please try again in a moment.", retryable: true };
+        }
+        if (msg.includes('token') || msg.includes('context') || msg.includes('length') || msg.includes('too large') || msg.includes('maximum')) {
+          return { userMessage: "The report data is too large for the AI to process in one request. Try a shorter date range or the Executive Brief style.", retryable: false };
+        }
+        if (msg.includes('empty response') || msg.includes('finish_reason')) {
+          return { userMessage: "The AI returned an incomplete response. Try a shorter date range or a different report style.", retryable: true };
+        }
+        return { userMessage: "The AI model failed to generate the report. Please try again — if the problem persists, contact your platform administrator.", retryable: true };
+      }
+
+      // Attempt AI generation with one automatic retry for transient errors
+      let result: Awaited<ReturnType<typeof aiService.customPrompt>>;
+      let lastAiError: any = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          result = await aiService.customPrompt(systemPrompt, userMessage, {
+            temperature: 0.6,
+            maxTokens: targetMaxTokens,
+            groundingContext: srGroundingCtx,
+            usageCtx: { tenantId: srTenantId, userId: (req.user as any)?.id, feature: 'status_report' as any },
+          });
+          lastAiError = null;
+          break;
+        } catch (aiErr: any) {
+          lastAiError = aiErr;
+          const classified = classifyAiError(aiErr);
+          console.error(`[STATUS-REPORT] AI attempt ${attempt}/2 failed — provider: ${(aiErr?.provider || 'unknown')}, model: ${(aiErr?.model || 'unknown')}, error: ${aiErr?.message}`);
+          if (!classified.retryable || attempt === 2) break;
+          console.warn(`[STATUS-REPORT] Transient error on attempt ${attempt}, retrying once...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      if (lastAiError) {
+        const { userMessage: aiUserMsg } = classifyAiError(lastAiError);
+        console.error("[STATUS-REPORT] All AI attempts failed:", lastAiError?.message);
+        return res.status(502).json({ message: aiUserMsg, errorCode: "AI_GENERATION_FAILED" });
+      }
 
       const reportMetadata = {
         projectName: project.name,
@@ -1032,20 +1077,20 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         reportStyle,
         periodStart: startDate,
         periodEnd: endDate,
-        reportContent: result.content,
+        reportContent: result!.content,
         status: "draft",
         metadata: reportMetadata,
         generatedBy: user.id,
       });
 
       res.json({
-        report: result.content,
+        report: result!.content,
         savedReportId: savedReport.id,
         metadata: reportMetadata,
       });
     } catch (error: any) {
-      console.error("[STATUS-REPORT] Failed to generate status report:", error);
-      res.status(500).json({ message: "Failed to generate status report: " + error.message });
+      console.error("[STATUS-REPORT] Unexpected error generating status report:", error);
+      res.status(500).json({ message: "An unexpected error occurred generating the status report. Please try again or contact your platform administrator." });
     }
   });
 
