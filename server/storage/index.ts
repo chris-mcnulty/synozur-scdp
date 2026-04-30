@@ -976,6 +976,11 @@ export interface IStorage {
   createStatusReport(data: InsertStatusReport): Promise<StatusReport>;
   updateStatusReport(id: string, updates: Partial<InsertStatusReport>): Promise<StatusReport>;
   deleteStatusReport(id: string): Promise<void>;
+  checkStatusReportDataQuality(projectId: string, startDate: string, endDate: string, tenantId?: string | null): Promise<{
+    categories: Array<{ key: string; label: string; status: "good" | "warning" | "missing"; message: string; detail?: string; count?: number }>;
+    warnings: string[];
+    overallStatus: "good" | "warning" | "missing";
+  }>;
 
   // AI Configuration & Usage
   getAiConfiguration(): Promise<AiConfiguration | undefined>;

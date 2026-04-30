@@ -13,7 +13,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
   FileText, Copy, Download, Mail, Sparkles, Calendar, 
-  Edit, Eye, Loader2, Check, Send, X, Presentation
+  Edit, Eye, Loader2, Check, Send, X, Presentation,
+  CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronRight
 } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
 
@@ -76,12 +77,46 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [emailName, setEmailName] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [isDownloadingPptx, setIsDownloadingPptx] = useState(false);
+  const [expandedQualityKey, setExpandedQualityKey] = useState<string | null>(null);
   const [includeProjectPlan, setIncludeProjectPlan] = useState(false);
   const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
   const [templateSlots, setTemplateSlots] = useState({ title: true, section: true, closing: true });
 
   const { data: tenantSettings } = useQuery<any>({
     queryKey: ['/api/tenant/settings'],
+  });
+
+  const { start: preflightStart, end: preflightEnd } = (() => {
+    switch (periodPreset) {
+      case "this_week":
+        return { start: format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd"), end: format(endOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd") };
+      case "last_week": {
+        const lastWeekStart = startOfWeek(subDays(today, 7), { weekStartsOn: 1 });
+        return { start: format(lastWeekStart, "yyyy-MM-dd"), end: format(endOfWeek(lastWeekStart, { weekStartsOn: 1 }), "yyyy-MM-dd") };
+      }
+      case "this_month":
+        return { start: format(startOfMonth(today), "yyyy-MM-dd"), end: format(endOfMonth(today), "yyyy-MM-dd") };
+      case "last_month": {
+        const lastMonth = subMonths(today, 1);
+        return { start: format(startOfMonth(lastMonth), "yyyy-MM-dd"), end: format(endOfMonth(lastMonth), "yyyy-MM-dd") };
+      }
+      default:
+        return { start: customStartDate, end: customEndDate };
+    }
+  })();
+
+  const { data: qualityReport, isLoading: isQualityLoading } = useQuery<{
+    categories: Array<{ key: string; label: string; status: "good" | "warning" | "missing"; message: string; detail?: string; count?: number }>;
+    warnings: string[];
+    overallStatus: "good" | "warning" | "missing";
+  }>({
+    queryKey: ["/api/projects", projectId, "status-report-preflight", preflightStart, preflightEnd],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/status-report/preflight`, {
+      method: "POST",
+      body: JSON.stringify({ startDate: preflightStart, endDate: preflightEnd }),
+    }),
+    enabled: open && !reportContent,
+    staleTime: 30000,
   });
 
   const templateSlotConfig = [
@@ -414,6 +449,14 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                 )}
               </div>
 
+              <DataReadinessPanel
+                qualityReport={qualityReport}
+                isLoading={isQualityLoading}
+                projectId={projectId}
+                expandedKey={expandedQualityKey}
+                onToggleExpand={(key) => setExpandedQualityKey(k => k === key ? null : key)}
+              />
+
               <div className="grid grid-cols-2 gap-3">
                 <Button 
                   className="w-full" 
@@ -563,6 +606,116 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface DataReadinessPanelProps {
+  qualityReport?: {
+    categories: Array<{ key: string; label: string; status: "good" | "warning" | "missing"; message: string; detail?: string; count?: number }>;
+    warnings: string[];
+    overallStatus: "good" | "warning" | "missing";
+  };
+  isLoading: boolean;
+  projectId: string;
+  expandedKey: string | null;
+  onToggleExpand: (key: string) => void;
+}
+
+const STATUS_ICON = {
+  good: <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />,
+  warning: <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />,
+  missing: <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />,
+};
+
+const STATUS_LABEL_COLOR = {
+  good: "text-green-700 dark:text-green-400",
+  warning: "text-amber-700 dark:text-amber-400",
+  missing: "text-red-700 dark:text-red-400",
+};
+
+const PANEL_BORDER_COLOR = {
+  good: "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20",
+  warning: "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20",
+  missing: "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20",
+};
+
+const OVERALL_ICON = {
+  good: <CheckCircle2 className="h-4 w-4 text-green-500" />,
+  warning: <AlertTriangle className="h-4 w-4 text-amber-500" />,
+  missing: <XCircle className="h-4 w-4 text-red-500" />,
+};
+
+const OVERALL_LABEL = {
+  good: "Data looks good",
+  warning: "Some data gaps detected",
+  missing: "Critical data missing",
+};
+
+function DataReadinessPanel({ qualityReport, isLoading, projectId, expandedKey, onToggleExpand }: DataReadinessPanelProps) {
+  if (isLoading) {
+    return (
+      <div className="rounded-lg border border-border px-3 py-2.5 flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Checking data readiness…
+      </div>
+    );
+  }
+
+  if (!qualityReport) return null;
+
+  const { categories, overallStatus } = qualityReport;
+  const hasIssues = overallStatus !== "good";
+
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 space-y-2 ${PANEL_BORDER_COLOR[overallStatus]}`}>
+      <div className="flex items-center gap-2">
+        {OVERALL_ICON[overallStatus]}
+        <span className={`text-sm font-medium ${STATUS_LABEL_COLOR[overallStatus]}`}>
+          Data Readiness — {OVERALL_LABEL[overallStatus]}
+        </span>
+      </div>
+      <div className="space-y-1">
+        {categories.map(cat => (
+          <div key={cat.key} className="text-xs">
+            <button
+              type="button"
+              className="w-full flex items-start gap-1.5 text-left hover:opacity-80 transition-opacity"
+              onClick={() => cat.detail ? onToggleExpand(cat.key) : undefined}
+            >
+              {STATUS_ICON[cat.status]}
+              <span className={`flex-1 ${STATUS_LABEL_COLOR[cat.status]}`}>
+                <span className="font-medium">{cat.label}:</span> {cat.message}
+              </span>
+              {cat.detail && (
+                <span className="text-muted-foreground mt-0.5 shrink-0">
+                  {expandedKey === cat.key ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                </span>
+              )}
+            </button>
+            {expandedKey === cat.key && cat.detail && (
+              <div className="ml-5 mt-1 text-muted-foreground leading-snug">
+                {cat.detail}
+                {cat.key === "time_entries" && (
+                  <a href={`/projects/${projectId}?tab=time`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to Time Entries →</a>
+                )}
+                {cat.key === "allocations" && (
+                  <a href={`/projects/${projectId}?tab=allocations`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to Allocations →</a>
+                )}
+                {cat.key === "milestones" && (
+                  <a href={`/projects/${projectId}?tab=milestones`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to Milestones →</a>
+                )}
+                {cat.key === "raidd" && (
+                  <a href={`/projects/${projectId}?tab=raidd`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to RAIDD Log →</a>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {!hasIssues && (
+        <p className="text-xs text-muted-foreground">All data categories look complete for this period.</p>
+      )}
+    </div>
   );
 }
 

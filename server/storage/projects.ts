@@ -59,7 +59,8 @@ import {
   type InsertDeliverableStatusHistory,
   statusReports,
   type StatusReport,
-  type InsertStatusReport
+  type InsertStatusReport,
+  raiddEntries
 } from "@shared/schema";
 import { db } from "../db";
 import type { IStorage } from "./index";
@@ -2981,6 +2982,198 @@ export const projectsMethods: ThisType<IStorage> = {
       .where(eq(statusReports.id, id));
     if (results.length === 0) return undefined;
     return { ...results[0].report, generatorName: results[0].generatorName || undefined };
+  },
+
+  async checkStatusReportDataQuality(projectId: string, startDate: string, endDate: string, tenantId?: string | null): Promise<{
+    categories: Array<{
+      key: string;
+      label: string;
+      status: "good" | "warning" | "missing";
+      message: string;
+      detail?: string;
+      count?: number;
+    }>;
+    warnings: string[];
+    overallStatus: "good" | "warning" | "missing";
+  }> {
+    const [timeEntryData, allocationData, milestoneData, raiddData] = await Promise.all([
+      db.select().from(timeEntries).where(
+        and(
+          eq(timeEntries.projectId, projectId),
+          gte(timeEntries.date, startDate),
+          lte(timeEntries.date, endDate)
+        )
+      ),
+      db.select().from(projectAllocations).where(eq(projectAllocations.projectId, projectId)),
+      db.select().from(projectMilestones).where(eq(projectMilestones.projectId, projectId)),
+      db.select().from(raiddEntries).where(eq(raiddEntries.projectId, projectId)),
+    ]);
+
+    const categories: Array<{
+      key: string;
+      label: string;
+      status: "good" | "warning" | "missing";
+      message: string;
+      detail?: string;
+      count?: number;
+    }> = [];
+    const warnings: string[] = [];
+
+    // ── Time Entries ──────────────────────────────────────────────────────────
+    const totalEntries = timeEntryData.length;
+    const undescribed = timeEntryData.filter(te => !te.description || te.description.trim() === "").length;
+    if (totalEntries === 0) {
+      categories.push({ key: "time_entries", label: "Time Entries", status: "missing", message: "No time entries logged for this period", detail: "The report will show no team activity. Add time entries to populate the Team Activity section.", count: 0 });
+      warnings.push("No time entries recorded — the report will say 'No team activity' for this period.");
+    } else if (undescribed === totalEntries) {
+      categories.push({ key: "time_entries", label: "Time Entries", status: "warning", message: `${totalEntries} time entries have no descriptions`, detail: `All ${totalEntries} entries lack descriptions — the report will say 'No descriptions logged' for all team members.`, count: undescribed });
+      warnings.push(`${totalEntries} time entries have no description — the report will say 'No descriptions logged' for all team members.`);
+    } else if (undescribed > 0) {
+      categories.push({ key: "time_entries", label: "Time Entries", status: "warning", message: `${undescribed} of ${totalEntries} time entries have no description`, detail: `${undescribed} time entr${undescribed === 1 ? "y lacks a" : "ies lack"} descriptions — those team members will show 'No descriptions logged'.`, count: undescribed });
+      warnings.push(`${undescribed} time entr${undescribed === 1 ? "y has" : "ies have"} no description — the report will say 'No descriptions logged' for those team members.`);
+    } else {
+      categories.push({ key: "time_entries", label: "Time Entries", status: "good", message: `${totalEntries} time entries with descriptions`, count: totalEntries });
+    }
+
+    // ── Allocations ───────────────────────────────────────────────────────────
+    const totalAllocations = allocationData.length;
+    const allocsNoDates = allocationData.filter(a => !a.plannedStartDate).length;
+    const allocsNoStatus = allocationData.filter(a => !a.status || a.status === "").length;
+    if (totalAllocations === 0) {
+      categories.push({ key: "allocations", label: "Team Allocations", status: "missing", message: "No team allocations defined", detail: "Without allocations the report cannot list completed, in-progress, or upcoming tasks.", count: 0 });
+      warnings.push("No team allocations defined — the report cannot categorize work into completed, in-progress, or upcoming tasks.");
+    } else {
+      const allocIssues: string[] = [];
+      const allocDetailParts: string[] = [];
+      if (allocsNoDates > 0) {
+        allocIssues.push(`${allocsNoDates} of ${totalAllocations} allocations missing planned dates`);
+        allocDetailParts.push(`${allocsNoDates} allocation${allocsNoDates === 1 ? "" : "s"} without planned start dates won't appear in the task timeline.`);
+        warnings.push(`${allocsNoDates} allocation${allocsNoDates === 1 ? "" : "s"} missing planned dates — those assignments won't appear in the task timeline.`);
+      }
+      if (allocsNoStatus > 0) {
+        allocIssues.push(`${allocsNoStatus} of ${totalAllocations} allocations have no status`);
+        allocDetailParts.push(`${allocsNoStatus} allocation${allocsNoStatus === 1 ? "" : "s"} without a status cannot be classified as completed, in-progress, or upcoming.`);
+        warnings.push(`${allocsNoStatus} allocation${allocsNoStatus === 1 ? "" : "s"} have no status — they cannot be placed in completed/in-progress/upcoming buckets.`);
+      }
+      if (allocIssues.length > 0) {
+        categories.push({ key: "allocations", label: "Team Allocations", status: "warning", message: allocIssues.join("; "), detail: allocDetailParts.join(" "), count: allocsNoDates + allocsNoStatus });
+      } else {
+        categories.push({ key: "allocations", label: "Team Allocations", status: "good", message: `${totalAllocations} allocations with planned dates and statuses`, count: totalAllocations });
+      }
+    }
+
+    // ── Milestones ────────────────────────────────────────────────────────────
+    const totalMilestones = milestoneData.length;
+    const today = new Date();
+    const staleStatuses = ["planned", "in_progress", "at_risk"];
+    const overdueMilestones = milestoneData.filter(m =>
+      staleStatuses.includes(m.status) &&
+      m.targetDate &&
+      new Date(m.targetDate) < today
+    ).length;
+    const noDateMilestones = milestoneData.filter(m => !m.targetDate).length;
+    const completedMilestones = milestoneData.filter(m => m.status === "completed").length;
+    if (totalMilestones === 0) {
+      categories.push({ key: "milestones", label: "Milestones", status: "missing", message: "No milestones defined for this project", detail: "Milestone sections of the report will be empty.", count: 0 });
+      warnings.push("No milestones defined — the report will not include milestone tracking.");
+    } else if (overdueMilestones > 0) {
+      categories.push({ key: "milestones", label: "Milestones", status: "warning", message: `${overdueMilestones} milestone${overdueMilestones === 1 ? "" : "s"} overdue without status update`, detail: `${overdueMilestones} milestone${overdueMilestones === 1 ? " is" : "s are"} past their target date but still show as '${staleStatuses.join("/")}'. Update their status to reflect current reality.`, count: overdueMilestones });
+      warnings.push(`${overdueMilestones} milestone${overdueMilestones === 1 ? " is" : "s are"} past their due date but not marked complete or at-risk — the report may misrepresent project delivery status.`);
+    } else if (noDateMilestones > 0) {
+      categories.push({ key: "milestones", label: "Milestones", status: "warning", message: `${noDateMilestones} milestone${noDateMilestones === 1 ? "" : "s"} without target dates`, detail: "Milestones without dates cannot be evaluated for timeline health.", count: noDateMilestones });
+      warnings.push(`${noDateMilestones} milestone${noDateMilestones === 1 ? " has" : "s have"} no target date — the report cannot assess delivery timeline risk.`);
+    } else {
+      categories.push({ key: "milestones", label: "Milestones", status: "good", message: `${totalMilestones} milestones with dates and statuses`, count: totalMilestones });
+    }
+
+    // ── RAIDD Log ─────────────────────────────────────────────────────────────
+    const openStatuses = ["open", "in_progress"];
+    const openRaiddEntries = raiddData.filter(r => openStatuses.includes(r.status));
+    const raiddNoStatus = raiddData.filter(r => !r.status || r.status === "").length;
+    const actionItemsNoDueDate = raiddData
+      .filter(r => r.type === "action_item" && openStatuses.includes(r.status) && !r.dueDate)
+      .length;
+    const risksNoMitigation = raiddData
+      .filter(r => r.type === "risk" && openStatuses.includes(r.status) && (!r.mitigationPlan || r.mitigationPlan.trim() === ""))
+      .length;
+
+    if (raiddData.length === 0) {
+      categories.push({ key: "raidd", label: "RAIDD Log", status: "missing", message: "No RAIDD entries for this project", detail: "The Risks, Actions, Issues, Decisions, and Dependencies section will be empty.", count: 0 });
+      warnings.push("No RAIDD entries — the risks/issues/actions section of the report will be empty.");
+    } else {
+      const raiddIssues: string[] = [];
+      if (raiddNoStatus > 0) raiddIssues.push(`${raiddNoStatus} entr${raiddNoStatus === 1 ? "y has" : "ies have"} no status`);
+      if (actionItemsNoDueDate > 0) raiddIssues.push(`${actionItemsNoDueDate} open action item${actionItemsNoDueDate === 1 ? "" : "s"} missing due dates`);
+      if (risksNoMitigation > 0) raiddIssues.push(`${risksNoMitigation} open risk${risksNoMitigation === 1 ? "" : "s"} without mitigation plans`);
+
+      if (raiddIssues.length > 0) {
+        const detailParts: string[] = [];
+        if (actionItemsNoDueDate > 0) detailParts.push(`${actionItemsNoDueDate} open action item${actionItemsNoDueDate === 1 ? "" : "s"} ${actionItemsNoDueDate === 1 ? "has" : "have"} no due date — they won't appear in overdue tracking.`);
+        if (risksNoMitigation > 0) detailParts.push(`${risksNoMitigation} open risk${risksNoMitigation === 1 ? "" : "s"} ${risksNoMitigation === 1 ? "has" : "have"} no mitigation plan — the report's risk section will be incomplete.`);
+        if (raiddNoStatus > 0) detailParts.push(`${raiddNoStatus} entr${raiddNoStatus === 1 ? "y has" : "ies have"} no status set.`);
+        categories.push({ key: "raidd", label: "RAIDD Log", status: "warning", message: raiddIssues.join("; "), detail: detailParts.join(" "), count: raiddIssues.length });
+        for (const issue of raiddIssues) {
+          warnings.push(`RAIDD: ${issue}.`);
+        }
+      } else {
+        categories.push({ key: "raidd", label: "RAIDD Log", status: "good", message: `${openRaiddEntries.length} open entr${openRaiddEntries.length === 1 ? "y" : "ies"} with complete fields`, count: openRaiddEntries.length });
+      }
+    }
+
+    // ── Grounding-document / data-pattern mismatch ────────────────────────────
+    try {
+      const groundingDocs = tenantId
+        ? await this.getActiveGroundingDocumentsForTenant(tenantId)
+        : await this.getActiveGroundingDocuments();
+
+      if (groundingDocs.length > 0) {
+        const groundingMismatches: string[] = [];
+
+        // Flag: methodology guides are available but no milestones are marked complete
+        const hasMethodologyDoc = groundingDocs.some(d =>
+          d.category === "status_report" || d.title.toLowerCase().includes("methodolog") || d.title.toLowerCase().includes("delivery")
+        );
+        if (hasMethodologyDoc && totalMilestones > 0 && completedMilestones === 0) {
+          groundingMismatches.push(`Methodology/delivery guide is available but 0 of ${totalMilestones} milestone${totalMilestones === 1 ? "" : "s"} are marked complete — the guide's completion criteria can't be applied without milestone progress data.`);
+          warnings.push(`Grounding: methodology guide available but 0 milestones are marked complete — the AI cannot apply delivery-methodology context.`);
+        }
+
+        // Flag: grounding docs exist but no time entries → AI gets rich context with no activity data to work with
+        if (totalEntries === 0) {
+          groundingMismatches.push(`${groundingDocs.length} grounding document${groundingDocs.length === 1 ? "" : "s"} are available to enrich the report, but there is no activity data (time entries) for this period — the documents cannot improve an empty report.`);
+          warnings.push(`Grounding: ${groundingDocs.length} grounding document${groundingDocs.length === 1 ? "" : "s"} available but no time entries logged — document context won't help an empty report.`);
+        }
+
+        if (groundingMismatches.length > 0) {
+          categories.push({
+            key: "grounding",
+            label: "Grounding Documents",
+            status: "warning",
+            message: `${groundingDocs.length} grounding document${groundingDocs.length === 1 ? "" : "s"} active but data gaps prevent full use`,
+            detail: groundingMismatches.join(" "),
+            count: groundingDocs.length,
+          });
+        } else {
+          categories.push({
+            key: "grounding",
+            label: "Grounding Documents",
+            status: "good",
+            message: `${groundingDocs.length} grounding document${groundingDocs.length === 1 ? "" : "s"} available and data is sufficient`,
+            count: groundingDocs.length,
+          });
+        }
+      }
+    } catch {
+      // Grounding doc check is best-effort — don't fail the whole preflight
+    }
+
+    const statusCounts = { good: 0, warning: 0, missing: 0 };
+    for (const cat of categories) statusCounts[cat.status]++;
+    const overallStatus: "good" | "warning" | "missing" =
+      statusCounts.missing > 0 ? "missing" :
+      statusCounts.warning > 0 ? "warning" : "good";
+
+    return { categories, warnings, overallStatus };
   },
 
   async createStatusReport(data: InsertStatusReport): Promise<StatusReport> {

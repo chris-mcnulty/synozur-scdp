@@ -1210,6 +1210,8 @@ function RaiddFormDialog({
   }, [open, entry?.id]);
 
   const watchType = form.watch("type");
+  const watchDueDate = form.watch("dueDate");
+  const watchStatus = form.watch("status");
 
   function handleFormSubmit(values: RaiddFormData) {
     const payload: any = { ...values };
@@ -1436,6 +1438,12 @@ function RaiddFormDialog({
                     <FormControl>
                       <Input type="date" {...field} disabled={isDecisionReadOnly} />
                     </FormControl>
+                    {watchType === "action_item" && (!watchStatus || watchStatus === "open" || watchStatus === "in_progress") && !watchDueDate && !isDecisionReadOnly && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-1">
+                        <AlertTriangle className="h-3 w-3 shrink-0" />
+                        Due date is recommended — it will appear in status reports and overdue tracking
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

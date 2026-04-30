@@ -704,6 +704,25 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     }
   });
 
+  // Pre-flight data quality check for status report generation
+  app.post("/api/projects/:projectId/status-report/preflight", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { startDate, endDate } = req.body;
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "startDate and endDate are required" });
+      }
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = (req.user as any)?.tenantId;
+      const qualityReport = await storage.checkStatusReportDataQuality(projectId, startDate, endDate, tenantId);
+      res.json(qualityReport);
+    } catch (error: any) {
+      console.error("[STATUS-REPORT-PREFLIGHT] Error:", error);
+      res.status(500).json({ message: "Failed to run pre-flight check" });
+    }
+  });
+
   // Generate AI-powered status report for a project
   app.post("/api/projects/:projectId/status-report", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     req.setTimeout(180000);
@@ -1004,6 +1023,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       };
       const targetMaxTokens = maxTokensByStyle[reportStyle] || 4096;
 
+      // Pre-flight data quality check — runs before AI generation so warnings are available even if generation fails
+      let dataQualityReport: Awaited<ReturnType<typeof storage.checkStatusReportDataQuality>> | null = null;
+      try {
+        dataQualityReport = await storage.checkStatusReportDataQuality(projectId, startDate, endDate, user.tenantId);
+      } catch (qErr) {
+        console.warn("[STATUS-REPORT] Could not run data quality pre-flight:", qErr);
+      }
+
       // Classify AI errors into actionable categories for clear user messaging
       function classifyAiError(err: any): { userMessage: string; retryable: boolean } {
         const msg: string = (err?.message || '').toLowerCase();
@@ -1067,6 +1094,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         generatedAt: new Date().toISOString(),
         generatedBy: user.name || user.email,
         raidd: raiddCounts,
+        dataQualityWarnings: dataQualityReport?.warnings || [],
+        dataQualityOverallStatus: dataQualityReport?.overallStatus || null,
       };
 
       const savedReport = await storage.createStatusReport({
