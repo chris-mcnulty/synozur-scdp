@@ -71,6 +71,7 @@ import { ProjectRetainerManagement } from "@/components/ProjectRetainerManagemen
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tooltip as UITooltip, TooltipContent as UITooltipContent, TooltipProvider as UITooltipProvider, TooltipTrigger as UITooltipTrigger } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -108,7 +109,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2, Search, Loader2, Globe
+  Link2, Search, Loader2, Globe, Info
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -1120,6 +1121,19 @@ export default function ProjectDetail() {
     retry: false,
   });
   const hasLinkedChannel = !!projectChannel;
+
+  // Hours summary — authoritative budgeted vs actual vs remaining from estimateLineItems + timeEntries
+  const { data: hoursSummary } = useQuery<{
+    budgetedHours: number;
+    actualHours: number;
+    remainingHours: number;
+    hoursVariance: number;
+    hoursConsumedPct: number;
+  }>({
+    queryKey: ['/api/projects', id, 'hours-summary'],
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
 
   // Auto-open edit dialog when ?edit=true is in the URL
   useEffect(() => {
@@ -2757,7 +2771,8 @@ export default function ProjectDetail() {
         </div>
 
         {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <UITooltipProvider>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -2790,37 +2805,131 @@ export default function ProjectDetail() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Hours Used</p>
-                  <p className="text-2xl font-bold" data-testid="hours-used">
-                    {burnRate.actualHours.toFixed(0)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    of {burnRate.estimatedHours.toFixed(0)}
-                  </p>
+                <div className="flex items-center gap-1">
+                  <div>
+                    <p className="text-sm text-muted-foreground flex items-center gap-1">
+                      Hours Used
+                      <UITooltip>
+                        <UITooltipTrigger asChild>
+                          <Info className="w-3 h-3 text-muted-foreground cursor-help" />
+                        </UITooltipTrigger>
+                        <UITooltipContent side="top" className="max-w-xs">
+                          Budget from approved estimate; Actual from logged time entries
+                        </UITooltipContent>
+                      </UITooltip>
+                    </p>
+                    <p className="text-2xl font-bold" data-testid="hours-used">
+                      {(hoursSummary?.actualHours ?? burnRate.actualHours).toFixed(0)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      of {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours).toFixed(0)} budgeted hrs
+                    </p>
+                  </div>
                 </div>
                 <Clock className="w-8 h-8 text-muted-foreground opacity-50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Hours Variance</p>
-                  <p className={`text-2xl font-bold ${burnRate.hoursVariance > 0 ? 'text-red-600' : 'text-green-600'}`} data-testid="hours-variance">
-                    {burnRate.hoursVariance > 0 ? '+' : ''}{burnRate.hoursVariance.toFixed(0)}
-                  </p>
-                </div>
-                {burnRate.hoursVariance > 0 ? (
-                  <TrendingUp className="w-8 h-8 text-red-600 opacity-50" />
-                ) : (
-                  <TrendingDown className="w-8 h-8 text-green-600 opacity-50" />
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Remaining Hours card with green/amber/red indicator — sourced from /hours-summary */}
+          {(() => {
+            const remainingHrs = hoursSummary?.remainingHours ?? Math.max(0, burnRate.estimatedHours - burnRate.actualHours);
+            const consumedPct = hoursSummary?.hoursConsumedPct ?? (
+              burnRate.estimatedHours > 0
+                ? (burnRate.actualHours / burnRate.estimatedHours) * 100
+                : 0
+            );
+            const remainingColor =
+              consumedPct > 90
+                ? "text-red-600"
+                : consumedPct > 75
+                ? "text-amber-600"
+                : "text-green-600";
+            const remainingBg =
+              consumedPct > 90
+                ? "bg-red-100"
+                : consumedPct > 75
+                ? "bg-amber-100"
+                : "bg-green-100";
+            return (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+                        Remaining Hours
+                        <UITooltip>
+                          <UITooltipTrigger asChild>
+                            <Info className="w-3 h-3 text-muted-foreground cursor-help" />
+                          </UITooltipTrigger>
+                          <UITooltipContent side="top" className="max-w-xs">
+                            Budget from approved estimate; Actual from logged time entries
+                          </UITooltipContent>
+                        </UITooltip>
+                      </p>
+                      <p className={`text-2xl font-bold ${remainingColor}`} data-testid="remaining-hours">
+                        {remainingHrs.toFixed(0)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        hrs left of budget
+                      </p>
+                    </div>
+                    <div className={`w-8 h-8 ${remainingBg} rounded-full flex items-center justify-center`}>
+                      <Activity className={`w-4 h-4 ${remainingColor}`} />
+                    </div>
+                  </div>
+                  <Progress
+                    value={Math.min(consumedPct, 100)}
+                    className="mt-3"
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()}
+
+          {/* Hours Variance with sign-aware language — sourced from /hours-summary */}
+          {(() => {
+            const variance = hoursSummary?.hoursVariance ?? burnRate.hoursVariance;
+            return (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+                        Hours Variance
+                        <UITooltip>
+                          <UITooltipTrigger asChild>
+                            <Info className="w-3 h-3 text-muted-foreground cursor-help" />
+                          </UITooltipTrigger>
+                          <UITooltipContent side="top" className="max-w-xs">
+                            Positive = over plan (more hours burned than budgeted). Negative = ahead of plan (hours still available). Budget from approved estimate; Actual from logged time entries.
+                          </UITooltipContent>
+                        </UITooltip>
+                      </p>
+                      <p
+                        className={`text-2xl font-bold ${variance > 0 ? "text-red-600" : variance < 0 ? "text-green-600" : "text-muted-foreground"}`}
+                        data-testid="hours-variance"
+                      >
+                        {variance === 0 ? "0" : (variance > 0 ? "+" : "−") + Math.abs(variance).toFixed(0)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {variance > 0
+                          ? "hrs over plan"
+                          : variance < 0
+                          ? "hrs ahead of plan"
+                          : "on plan"}
+                      </p>
+                    </div>
+                    {variance > 0 ? (
+                      <TrendingUp className="w-8 h-8 text-red-600 opacity-50" />
+                    ) : (
+                      <TrendingDown className="w-8 h-8 text-green-600 opacity-50" />
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           <Card>
             <CardContent className="p-6">
@@ -2835,6 +2944,7 @@ export default function ProjectDetail() {
             </CardContent>
           </Card>
         </div>
+        </UITooltipProvider>
 
         {/* Alerts */}
         {burnRate.burnRatePercentage > 80 && (

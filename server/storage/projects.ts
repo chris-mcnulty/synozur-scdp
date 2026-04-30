@@ -795,6 +795,10 @@ export const projectsMethods: ThisType<IStorage> = {
     utilizationRate: number;
     monthlyRevenue: number;
     unbilledHours: number;
+    remainingHours: number;
+    budgetedHours: number;
+    actualHoursAllProjects: number;
+    budgetHealthPct: number;
   }> {
     const tenantFilter = tenantId ? eq(projects.tenantId, tenantId) : undefined;
     const timeEntryTenantFilter = tenantId ? eq(timeEntries.tenantId, tenantId) : undefined;
@@ -873,11 +877,57 @@ export const projectsMethods: ThisType<IStorage> = {
       .from(timeEntries)
       .where(and(...unbilledConditions));
 
+    // Budget health: sum approved estimate hours vs actual hours across active projects
+    const activeProjectIds = activeProjects.map(p => p.projectId);
+    let totalBudgetedHours = 0;
+    let totalActualHoursAllProjects = 0;
+
+    if (activeProjectIds.length > 0) {
+      // Use ONE approved estimate per project (DISTINCT ON projectId ordered by id to
+      // pick a deterministic first estimate) to prevent double-counting when multiple
+      // approved revisions exist for the same project.
+      const [budgetedHoursData] = await db
+        .select({
+          totalHours: sql<string>`COALESCE(SUM(CAST(eli.adjusted_hours AS DECIMAL)), 0)`,
+        })
+        .from(sql`estimate_line_items eli`)
+        .where(
+          sql`eli.estimate_id IN (
+            SELECT DISTINCT ON (e.project_id) e.id
+            FROM estimates e
+            WHERE e.project_id = ANY(${activeProjectIds})
+              AND e.status = 'approved'
+            ORDER BY e.project_id, e.id
+          )`
+        );
+      totalBudgetedHours = parseFloat(budgetedHoursData?.totalHours ?? "0");
+
+      const actualHoursConditions: any[] = [inArray(timeEntries.projectId, activeProjectIds)];
+      if (timeEntryTenantFilter) actualHoursConditions.push(timeEntryTenantFilter);
+      const [actualHoursData] = await db
+        .select({
+          total: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)`,
+        })
+        .from(timeEntries)
+        .where(and(...actualHoursConditions));
+      totalActualHoursAllProjects = Number(actualHoursData?.total || 0);
+    }
+
+    const remainingHours = Math.max(0, totalBudgetedHours - totalActualHoursAllProjects);
+    const budgetHealthPct =
+      totalBudgetedHours > 0
+        ? Math.round((remainingHours / totalBudgetedHours) * 100)
+        : 100;
+
     return {
       activeProjects: Number(projectCount.count) || 0,
       utilizationRate: Number(utilizationRate) || 0,
       monthlyRevenue: Math.round(monthlyRevenue) || 0,
-      unbilledHours: Math.round(Number(unbilledHours.total)) || 0
+      unbilledHours: Math.round(Number(unbilledHours.total)) || 0,
+      remainingHours: Math.round(remainingHours),
+      budgetedHours: Math.round(totalBudgetedHours),
+      actualHoursAllProjects: Math.round(totalActualHoursAllProjects),
+      budgetHealthPct,
     };
   },
 

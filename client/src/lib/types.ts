@@ -3,6 +3,10 @@ export interface DashboardMetrics {
   utilizationRate: number;
   monthlyRevenue: number;
   unbilledHours: number;
+  remainingHours: number;
+  budgetedHours: number;
+  actualHoursAllProjects: number;
+  budgetHealthPct: number;
 }
 
 export interface ProjectWithClient {

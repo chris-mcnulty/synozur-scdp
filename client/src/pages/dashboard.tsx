@@ -21,6 +21,7 @@ import {
   Building2,
   AlertTriangle,
   TrendingDown,
+  Activity,
 } from "lucide-react";
 import type { DashboardMetrics, ProjectWithClient, PortfolioSlippageSummary } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth";
@@ -142,6 +143,31 @@ export default function Dashboard() {
             staggerIndex={3}
           />
         </div>
+
+        {/* Budget Health card — only shown when we have budgeted hours data */}
+        {metrics && metrics.budgetedHours > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-1 gap-6">
+            <button
+              className="text-left"
+              onClick={() => navigate("/portfolio/schedule-health")}
+            >
+              <KPICard
+                title="Budget Health (Active Projects)"
+                value={`${metrics.budgetHealthPct ?? 100}% remaining`}
+                icon={<Activity />}
+                iconColor={
+                  (metrics.budgetHealthPct ?? 100) > 25
+                    ? "bg-green-100 text-green-600"
+                    : (metrics.budgetHealthPct ?? 100) > 10
+                    ? "bg-amber-100 text-amber-600"
+                    : "bg-red-100 text-red-600"
+                }
+                subtitle={`${(metrics.remainingHours ?? 0).toLocaleString()} of ${(metrics.budgetedHours ?? 0).toLocaleString()} budgeted hrs remaining across ${metrics.activeProjects} active projects`}
+                staggerIndex={4}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Schedule Health KPIs */}
         {slippageData && (

@@ -1050,6 +1050,56 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Hours summary — budgeted vs actual vs remaining for a single project
+  app.get("/api/projects/:id/hours-summary", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const projectId = req.params.id;
+      const tenantId = req.user?.tenantId;
+
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const projectEstimates = await storage.getEstimatesByProject(projectId);
+      let budgetedHours = 0;
+
+      if (projectEstimates.length > 0) {
+        const approvedEstimate = projectEstimates.find(e => e.status === "approved");
+        const targetEstimate = approvedEstimate || projectEstimates[0];
+        if (targetEstimate) {
+          const lineItems = await storage.getEstimateLineItems(targetEstimate.id);
+          budgetedHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours ?? "0"), 0);
+        }
+      }
+
+      const projectTimeEntries = await storage.getTimeEntries({ projectId });
+      const actualHours = projectTimeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours ?? "0"), 0);
+
+      const remainingHours = Math.max(0, budgetedHours - actualHours);
+      const hoursVariance = actualHours - budgetedHours;
+      const hoursConsumedPct = budgetedHours > 0 ? Math.round((actualHours / budgetedHours) * 100) : 0;
+
+      console.log(`[hours-summary] project=${projectId} tenant=${tenantId} budgeted=${budgetedHours.toFixed(1)} actual=${actualHours.toFixed(1)} remaining=${remainingHours.toFixed(1)} consumedPct=${hoursConsumedPct}`);
+      if (budgetedHours > 0 && remainingHours / budgetedHours < 0.10) {
+        console.warn(`[hours-summary][alert] project=${projectId} is below 10% remaining hours (${hoursConsumedPct}% consumed) — consider alerting PM`);
+      }
+
+      res.json({
+        budgetedHours: Math.round(budgetedHours * 10) / 10,
+        actualHours: Math.round(actualHours * 10) / 10,
+        remainingHours: Math.round(remainingHours * 10) / 10,
+        hoursVariance: Math.round(hoursVariance * 10) / 10,
+        hoursConsumedPct,
+      });
+    } catch (error) {
+      console.error("Error getting project hours summary:", error);
+      res.status(500).json({ message: "Failed to get project hours summary" });
+    }
+  });
+
   // User-scoped slippage alerts (role-aware: team members see own alerts; PMs/portfolio see more)
   app.get("/api/dashboard/slippage-alerts", requireAuth, async (req, res) => {
     try {
