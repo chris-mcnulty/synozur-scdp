@@ -1073,6 +1073,13 @@ export default function ProjectDetail() {
   const [allocationStatusFilter, setAllocationStatusFilter] = useState<string>('all');
   const [allocationResourceFilter, setAllocationResourceFilter] = useState<string>('all');
   const [allocationStageFilter, setAllocationStageFilter] = useState<string>('all');
+  const [allocationAssignedFilter, setAllocationAssignedFilter] = useState<string>('all');
+  const [allocationSearchQuery, setAllocationSearchQuery] = useState<string>('');
+  // Fill Role Slots dialog state
+  const [showFillRoleSlotsDialog, setShowFillRoleSlotsDialog] = useState(false);
+  const [fillRoleSlotsRoleId, setFillRoleSlotsRoleId] = useState<string | null>(null);
+  const [fillRoleSlotSelections, setFillRoleSlotSelections] = useState<Record<string, { personId: string; label: string }>>({});
+  const [fillRoleSlotsReassignPersonId, setFillRoleSlotsReassignPersonId] = useState<string>('');
   const [selectedTimeEntry, setSelectedTimeEntry] = useState<any>(null);
   const [timeEntryDialogOpen, setTimeEntryDialogOpen] = useState(false);
   const [timeEntryToDelete, setTimeEntryToDelete] = useState<any>(null);
@@ -1833,6 +1840,26 @@ export default function ProjectDetail() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to bulk assign roles", variant: "destructive" });
+    }
+  });
+
+  const fillRoleSlotsMutation = useMutation({
+    mutationFn: async (assignments: { allocationId: string; personId: string; roleInstanceLabel?: string }[]) => {
+      return apiRequest(`/api/projects/${id}/allocations/bulk-assign-roles`, {
+        method: "POST",
+        body: JSON.stringify({ assignments })
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Role slots filled", description: "All selected slots have been assigned successfully." });
+      setShowFillRoleSlotsDialog(false);
+      setFillRoleSlotsRoleId(null);
+      setFillRoleSlotSelections({});
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to fill role slots", variant: "destructive" });
     }
   });
 
@@ -3639,7 +3666,21 @@ export default function ProjectDetail() {
           <TabsContent value="delivery" className="space-y-6">
             <Tabs defaultValue="allocations" className="w-full">
               <TabsList className="mb-4">
-                <TabsTrigger value="allocations" data-testid="tab-delivery-allocations">Team & Assignments</TabsTrigger>
+                <TabsTrigger value="allocations" data-testid="tab-delivery-allocations" className="flex items-center gap-2">
+                  Team &amp; Assignments
+                  {allocations.filter((a: any) => a.roleId && !a.personId && !a.isBaseline).length > 0 && (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs px-1.5 py-0 h-4 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-800/60"
+                      onClick={() => {
+                        setAllocationAssignedFilter('unassigned');
+                      }}
+                      title="Click to filter to unassigned slots"
+                    >
+                      {allocations.filter((a: any) => a.roleId && !a.personId && !a.isBaseline).length} open
+                    </Badge>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="structure" data-testid="tab-delivery-structure">Project Structure</TabsTrigger>
               </TabsList>
               
@@ -3998,19 +4039,47 @@ export default function ProjectDetail() {
                     <Bookmark className="h-4 w-4 mr-2" />
                     Save Baseline
                   </Button>
-                  {allocations.some((a: any) => a.roleId && !a.personId && !a.isBaseline) && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setBulkAssignSelections({});
-                        setShowBulkAssignRolesDialog(true);
-                      }}
-                      data-testid="button-bulk-assign-roles"
-                    >
-                      <Users className="w-4 h-4 mr-2" />
-                      Assign Multiple
-                    </Button>
-                  )}
+                  {(() => {
+                    const unassignedSlots = allocations.filter((a: any) => a.roleId && !a.personId && !a.isBaseline);
+                    const roleGroups = unassignedSlots.reduce((acc: Record<string, any[]>, a: any) => {
+                      const key = a.roleId;
+                      if (!acc[key]) acc[key] = [];
+                      acc[key].push(a);
+                      return acc;
+                    }, {});
+                    const multiSlotRoles = Object.entries(roleGroups).filter(([, slots]) => (slots as any[]).length >= 1);
+                    return multiSlotRoles.length > 0 ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            const firstRoleId = multiSlotRoles[0][0];
+                            setFillRoleSlotsRoleId(firstRoleId);
+                            setFillRoleSlotSelections({});
+                            setShowFillRoleSlotsDialog(true);
+                          }}
+                          data-testid="button-fill-role-slots"
+                        >
+                          <UserPlus className="w-4 h-4 mr-2" />
+                          Fill Role Slots
+                          <Badge variant="secondary" className="ml-2 text-xs px-1.5 py-0 h-4 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                            {unassignedSlots.length}
+                          </Badge>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setBulkAssignSelections({});
+                            setShowBulkAssignRolesDialog(true);
+                          }}
+                          data-testid="button-bulk-assign-roles"
+                        >
+                          <Users className="w-4 h-4 mr-2" />
+                          Assign All Open Slots
+                        </Button>
+                      </>
+                    ) : null;
+                  })()}
                   <Button 
                     onClick={() => setShowAssignmentDialog(true)}
                     data-testid="button-add-assignment"
@@ -4059,10 +4128,34 @@ export default function ProjectDetail() {
               <CardContent>
                 {/* Filters */}
                 <div className="flex flex-wrap gap-3 mb-4 pb-4 border-b">
+                  <div className="relative flex-1 min-w-[180px] max-w-xs">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name, role, epic..."
+                      value={allocationSearchQuery}
+                      onChange={(e) => setAllocationSearchQuery(e.target.value)}
+                      className="h-8 pl-8 text-sm"
+                      data-testid="search-allocations"
+                    />
+                  </div>
                   <div className="flex items-center gap-2">
                     <Filter className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Filters:</span>
                   </div>
+                  <Select
+                    value={allocationAssignedFilter}
+                    onValueChange={(v) => {
+                      setAllocationAssignedFilter(v);
+                    }}
+                  >
+                    <SelectTrigger className="w-[160px] h-8" data-testid="filter-allocation-assigned">
+                      <SelectValue placeholder="Assignment" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Slots</SelectItem>
+                      <SelectItem value="assigned">Assigned</SelectItem>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={allocationStatusFilter}
                     onValueChange={setAllocationStatusFilter}
@@ -4122,7 +4215,7 @@ export default function ProjectDetail() {
                         })}
                     </SelectContent>
                   </Select>
-                  {(allocationStatusFilter !== 'all' || allocationResourceFilter !== 'all' || allocationStageFilter !== 'all') && (
+                  {(allocationStatusFilter !== 'all' || allocationResourceFilter !== 'all' || allocationStageFilter !== 'all' || allocationAssignedFilter !== 'all' || allocationSearchQuery) && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -4131,6 +4224,8 @@ export default function ProjectDetail() {
                         setAllocationStatusFilter('all');
                         setAllocationResourceFilter('all');
                         setAllocationStageFilter('all');
+                        setAllocationAssignedFilter('all');
+                        setAllocationSearchQuery('');
                       }}
                     >
                       <X className="w-3 h-3 mr-1" />
@@ -4159,6 +4254,7 @@ export default function ProjectDetail() {
                         <TableHead>Resource</TableHead>
                         <TableHead>Task/Activity</TableHead>
                         <TableHead>Role</TableHead>
+                        <TableHead>Role Instance</TableHead>
                         <TableHead>Workstream</TableHead>
                         <TableHead>Epic/Stage</TableHead>
                         <TableHead className="text-right">Hours</TableHead>
@@ -4178,6 +4274,18 @@ export default function ProjectDetail() {
                             if (resourceId !== allocationResourceFilter) return false;
                           }
                           if (allocationStageFilter !== 'all' && allocation.stage?.id !== allocationStageFilter) return false;
+                          if (allocationAssignedFilter === 'assigned' && !allocation.personId) return false;
+                          if (allocationAssignedFilter === 'unassigned' && allocation.personId) return false;
+                          if (allocationSearchQuery) {
+                            const q = allocationSearchQuery.toLowerCase();
+                            const personName = (allocation.person?.name || allocation.resourceName || '').toLowerCase();
+                            const roleName = (allocation.role?.name || '').toLowerCase();
+                            const roleInstance = (allocation.roleInstanceLabel || '').toLowerCase();
+                            const epicName = (allocation.epic?.name || '').toLowerCase();
+                            const stageName = (allocation.stage?.name || '').toLowerCase();
+                            const taskDesc = (allocation.taskDescription || '').toLowerCase();
+                            if (!personName.includes(q) && !roleName.includes(q) && !roleInstance.includes(q) && !epicName.includes(q) && !stageName.includes(q) && !taskDesc.includes(q)) return false;
+                          }
                           return true;
                         })
                         .map((allocation: any) => (
@@ -4224,8 +4332,12 @@ export default function ProjectDetail() {
                           </TableCell>
                           <TableCell>
                             {allocation.role?.name || '—'}
-                            {allocation.roleInstanceLabel && (
-                              <Badge variant="outline" className="ml-1 text-xs">{allocation.roleInstanceLabel}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {allocation.roleInstanceLabel ? (
+                              <Badge variant="outline" className="text-xs font-normal">{allocation.roleInstanceLabel}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
                             )}
                           </TableCell>
                           <TableCell>{allocation.workstream?.name || '—'}</TableCell>
@@ -6442,6 +6554,248 @@ export default function ProjectDetail() {
                   <>Assign {Object.values(bulkAssignSelections).filter(Boolean).length > 0
                     ? `${Object.values(bulkAssignSelections).filter(Boolean).length} Slot${Object.values(bulkAssignSelections).filter(Boolean).length !== 1 ? "s" : ""}`
                     : "Selected Slots"}</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Fill Role Slots Dialog — assign different people to slots of a specific role */}
+        <Dialog open={showFillRoleSlotsDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowFillRoleSlotsDialog(false);
+            setFillRoleSlotsRoleId(null);
+            setFillRoleSlotSelections({});
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-primary" />
+                Fill Role Slots
+              </DialogTitle>
+              <DialogDescription>
+                Select a role to view its open slots, then assign a different person to each slot in one submission.
+              </DialogDescription>
+            </DialogHeader>
+            {(() => {
+              const unassignedSlots = allocations.filter((a: any) => a.roleId && !a.personId && !a.isBaseline);
+              const roleGroups = unassignedSlots.reduce((acc: Record<string, any[]>, a: any) => {
+                const key = a.roleId;
+                if (!acc[key]) acc[key] = [];
+                acc[key].push(a);
+                return acc;
+              }, {});
+              const roleIds = Object.keys(roleGroups);
+              const activeRoleId = fillRoleSlotsRoleId || roleIds[0] || null;
+              const activeSlots = activeRoleId ? (roleGroups[activeRoleId] || []) : [];
+              const activeRoleName = activeSlots[0]?.role?.name || 'Unknown Role';
+              const assignableUsers = (users as any[]).filter((u: any) => u.isAssignable !== false && u.isActive !== false);
+              const initSlotLabel = (slot: any, idx: number) => {
+                const roleName = slot.role?.name || 'Resource';
+                return slot.roleInstanceLabel || `${roleName} ${idx + 1}`;
+              };
+
+              return (
+                <>
+                  {roleIds.length > 1 && (
+                    <div className="flex gap-2 pb-2 border-b overflow-x-auto">
+                      {roleIds.map((roleId) => {
+                        const sample = roleGroups[roleId][0];
+                        return (
+                          <button
+                            key={roleId}
+                            onClick={() => {
+                              setFillRoleSlotsRoleId(roleId);
+                              setFillRoleSlotSelections({});
+                            }}
+                            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm transition-colors ${
+                              activeRoleId === roleId
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'bg-background hover:bg-muted/50 border-border'
+                            }`}
+                          >
+                            {sample?.role?.name || 'Unknown'}
+                            <Badge variant={activeRoleId === roleId ? 'secondary' : 'outline'} className="text-xs px-1.5 py-0 h-4">
+                              {roleGroups[roleId].length}
+                            </Badge>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="flex-1 overflow-y-auto">
+                    {activeSlots.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                        <p>No open slots for this role</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12">#</TableHead>
+                            <TableHead>Role Instance Label</TableHead>
+                            <TableHead>Task</TableHead>
+                            <TableHead>Hours</TableHead>
+                            <TableHead className="w-56">Assign To</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {activeSlots.map((slot: any, idx: number) => {
+                            const sel = fillRoleSlotSelections[slot.id] || { personId: '', label: initSlotLabel(slot, idx) };
+                            return (
+                              <TableRow key={slot.id}>
+                                <TableCell className="text-muted-foreground text-sm font-mono">{idx + 1}</TableCell>
+                                <TableCell>
+                                  <Input
+                                    value={sel.label}
+                                    onChange={(e) => setFillRoleSlotSelections(prev => ({
+                                      ...prev,
+                                      [slot.id]: { ...sel, label: e.target.value }
+                                    }))}
+                                    placeholder={`${activeRoleName} ${idx + 1}`}
+                                    className="h-8 text-sm w-40"
+                                  />
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
+                                  {slot.taskDescription || '—'}
+                                </TableCell>
+                                <TableCell className="text-sm">{parseFloat(slot.hours || '0').toFixed(1)}h</TableCell>
+                                <TableCell>
+                                  <Select
+                                    value={sel.personId || ''}
+                                    onValueChange={(value) => setFillRoleSlotSelections(prev => ({
+                                      ...prev,
+                                      [slot.id]: { ...sel, personId: value === '_none' ? '' : value }
+                                    }))}
+                                  >
+                                    <SelectTrigger className="h-8 text-sm">
+                                      <SelectValue placeholder="Select person..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="_none">— Not assigned —</SelectItem>
+                                      {assignableUsers.map((u: any) => (
+                                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+            {/* Separator + "Assign all to one person" alternative action */}
+            {(() => {
+              const unassignedSlots = allocations.filter((a: any) => a.roleId && !a.personId && !a.isBaseline);
+              const roleGroups = unassignedSlots.reduce((acc: Record<string, any[]>, a: any) => {
+                const key = a.roleId;
+                if (!acc[key]) acc[key] = [];
+                acc[key].push(a);
+                return acc;
+              }, {});
+              const roleIds = Object.keys(roleGroups);
+              const activeRoleId = fillRoleSlotsRoleId || roleIds[0] || null;
+              const activeSlots = activeRoleId ? (roleGroups[activeRoleId] || []) : [];
+              const activeRoleName = activeSlots[0]?.role?.name || 'Role';
+              const assignableUsers = (users as any[]).filter((u: any) => u.isAssignable !== false && u.isActive !== false);
+              if (activeSlots.length === 0) return null;
+              return (
+                <div className="border-t pt-3 px-1">
+                  <p className="text-xs text-muted-foreground mb-2 font-medium">
+                    Or: assign all <span className="font-semibold text-foreground">{activeRoleName}</span> slots to one person
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={fillRoleSlotsReassignPersonId}
+                      onValueChange={setFillRoleSlotsReassignPersonId}
+                    >
+                      <SelectTrigger className="h-8 text-sm flex-1">
+                        <SelectValue placeholder="Select person..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {assignableUsers.map((u: any) => (
+                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!fillRoleSlotsReassignPersonId || bulkReassignRoleMutation.isPending}
+                      onClick={() => {
+                        if (!activeRoleId || !fillRoleSlotsReassignPersonId) return;
+                        bulkReassignRoleMutation.mutate({ roleId: activeRoleId, personId: fillRoleSlotsReassignPersonId });
+                        setShowFillRoleSlotsDialog(false);
+                        setFillRoleSlotsRoleId(null);
+                        setFillRoleSlotSelections({});
+                        setFillRoleSlotsReassignPersonId('');
+                      }}
+                    >
+                      {bulkReassignRoleMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      ) : (
+                        <Users className="w-3 h-3 mr-1" />
+                      )}
+                      Assign all {activeRoleName} slots to one person
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+            <DialogFooter className="border-t pt-4">
+              <Button variant="outline" onClick={() => { setShowFillRoleSlotsDialog(false); setFillRoleSlotsRoleId(null); setFillRoleSlotSelections({}); setFillRoleSlotsReassignPersonId(''); }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const unassignedSlots = allocations.filter((a: any) => a.roleId && !a.personId && !a.isBaseline);
+                  const roleGroups = unassignedSlots.reduce((acc: Record<string, any[]>, a: any) => {
+                    const key = a.roleId;
+                    if (!acc[key]) acc[key] = [];
+                    acc[key].push(a);
+                    return acc;
+                  }, {});
+                  const roleIds = Object.keys(roleGroups);
+                  const activeRoleId = fillRoleSlotsRoleId || roleIds[0] || null;
+                  const activeSlots = activeRoleId ? (roleGroups[activeRoleId] || []) : [];
+
+                  const assignments = activeSlots
+                    .map((slot: any, idx: number) => {
+                      const sel = fillRoleSlotSelections[slot.id] || { personId: '', label: (slot.role?.name ? `${slot.role.name} ${idx + 1}` : `Resource ${idx + 1}`) };
+                      if (!sel.personId) return null;
+                      return {
+                        allocationId: slot.id,
+                        personId: sel.personId,
+                        roleInstanceLabel: sel.label || undefined
+                      };
+                    })
+                    .filter(Boolean) as { allocationId: string; personId: string; roleInstanceLabel?: string }[];
+
+                  if (assignments.length === 0) {
+                    toast({ title: "No assignments selected", description: "Please assign at least one person.", variant: "destructive" });
+                    return;
+                  }
+                  fillRoleSlotsMutation.mutate(assignments);
+                }}
+                disabled={fillRoleSlotsMutation.isPending}
+              >
+                {fillRoleSlotsMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    {(() => {
+                      const count = Object.values(fillRoleSlotSelections).filter(s => s.personId).length;
+                      return count > 0 ? `Assign ${count} Slot${count !== 1 ? 's' : ''}` : 'Assign Selected Slots';
+                    })()}
+                  </>
                 )}
               </Button>
             </DialogFooter>

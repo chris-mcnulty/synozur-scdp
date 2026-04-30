@@ -685,11 +685,11 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     }
   });
 
-  // Bulk assign roles: accept [{allocationId, personId}] and execute atomically with full validation
+  // Bulk assign roles: accept [{allocationId, personId, roleInstanceLabel?}] and execute atomically with full validation
   app.post("/api/projects/:projectId/allocations/bulk-assign-roles", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { projectId } = req.params;
-      const { assignments } = req.body as { assignments: { allocationId: string; personId: string }[] };
+      const { assignments } = req.body as { assignments: { allocationId: string; personId: string; roleInstanceLabel?: string }[] };
 
       if (!Array.isArray(assignments) || assignments.length === 0) {
         return res.status(400).json({ message: "assignments array is required and must not be empty" });
@@ -725,9 +725,13 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       // All IDs are valid — apply atomically
       await db.transaction(async (tx) => {
         for (const item of assignments) {
+          const updateFields: Record<string, any> = { personId: item.personId, pricingMode: "person" };
+          if (item.roleInstanceLabel !== undefined) {
+            updateFields.roleInstanceLabel = item.roleInstanceLabel || null;
+          }
           await tx
             .update(projectAllocations)
-            .set({ personId: item.personId, pricingMode: "person" })
+            .set(updateFields)
             .where(and(eq(projectAllocations.id, item.allocationId), eq(projectAllocations.projectId, projectId), eq(projectAllocations.isBaseline, false)));
         }
       });
