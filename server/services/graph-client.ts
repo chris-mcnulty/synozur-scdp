@@ -1913,6 +1913,61 @@ export class GraphClient {
     
     return await this.listDocumentsWithMetadata(containerId, '/', options);
   }
+
+  // ============ AZURE AD APPLICATION MANIFEST OPERATIONS ============
+
+  /**
+   * Get an Entra ID application registration by its client (app) ID.
+   * Returns the object id and the current knownClientApplications list.
+   * Requires Application.Read.All or Application.ReadWrite.OwnedBy/All.
+   */
+  async getApplicationByAppId(appId: string): Promise<{
+    id: string;
+    appId: string;
+    displayName?: string;
+    knownClientApplications: string[];
+  }> {
+    return this.withRetry(async () => {
+      const resp = await this.makeGraphRequest<GraphResponse<{
+        id: string;
+        appId: string;
+        displayName?: string;
+        api?: { knownClientApplications?: string[] };
+      }>>(
+        'GET',
+        `/applications?$filter=${encodeURIComponent(`appId eq '${appId}'`)}&$select=id,appId,displayName,api`
+      );
+      const app = resp.value && resp.value[0];
+      if (!app) {
+        const err = new Error(`Application with appId ${appId} not found in directory`) as any;
+        err.status = 404;
+        throw err;
+      }
+      return {
+        id: app.id,
+        appId: app.appId,
+        displayName: app.displayName,
+        knownClientApplications: app.api?.knownClientApplications || [],
+      };
+    }, `getApplicationByAppId(${appId})`);
+  }
+
+  /**
+   * Update the api.knownClientApplications property on the Entra ID app manifest.
+   * Requires Application.ReadWrite.OwnedBy or Application.ReadWrite.All.
+   */
+  async updateApplicationKnownClients(
+    appObjectId: string,
+    knownClientApplications: string[]
+  ): Promise<void> {
+    await this.withRetry(async () => {
+      await this.makeGraphRequest<void>(
+        'PATCH',
+        `/applications/${appObjectId}`,
+        { api: { knownClientApplications } }
+      );
+    }, `updateApplicationKnownClients(${appObjectId})`);
+  }
 }
 
 /**

@@ -3,7 +3,50 @@ import { storage } from "../storage";
 import { AGENT_CARD_STATIC } from "../a2a/agent-card-data.js";
 import { getEffectiveKnownClientIds } from "../auth/mcp-bearer-auth.js";
 import { getFailingSince, getLastAlertSentAt, REMINDER_INTERVAL_MS } from "../services/agent-card-health-scheduler.js";
+import { graphClient } from "../services/graph-client.js";
 import { z } from "zod";
+
+interface AzureSyncSnapshot {
+  available: boolean;
+  appId: string | null;
+  appObjectId: string | null;
+  azureKnownClientIds: string[] | null;
+  inSync: boolean | null;
+  missingFromAzure: string[];
+  extraInAzure: string[];
+  error: string | null;
+}
+
+async function readAzureKnownClients(
+  runtimeClientId: string,
+  storedIds: string[]
+): Promise<AzureSyncSnapshot> {
+  const snapshot: AzureSyncSnapshot = {
+    available: false,
+    appId: runtimeClientId,
+    appObjectId: null,
+    azureKnownClientIds: null,
+    inSync: null,
+    missingFromAzure: [],
+    extraInAzure: [],
+    error: null,
+  };
+  try {
+    const app = await graphClient.getApplicationByAppId(runtimeClientId);
+    snapshot.available = true;
+    snapshot.appObjectId = app.id;
+    snapshot.azureKnownClientIds = app.knownClientApplications;
+    const azureSet = new Set(app.knownClientApplications);
+    const storedSet = new Set(storedIds);
+    snapshot.missingFromAzure = storedIds.filter((id) => !azureSet.has(id));
+    snapshot.extraInAzure = app.knownClientApplications.filter((id) => !storedSet.has(id));
+    snapshot.inSync =
+      snapshot.missingFromAzure.length === 0 && snapshot.extraInAzure.length === 0;
+  } catch (err: any) {
+    snapshot.error = err?.message || "Failed to read Azure app registration";
+  }
+  return snapshot;
+}
 
 const KNOWN_CLIENTS_KEY = "COPILOT_KNOWN_CLIENT_IDS";
 const KNOWN_CLIENTS_DESCRIPTION =
@@ -118,6 +161,9 @@ export function registerCopilotStudioRoutes(
         const tenantContext = req.tenantContext;
         const { effective, source, globalIds, tenantIds } =
           await getEffectiveKnownClientIds(tenantId);
+        // Azure app manifest is platform-wide, so it always reflects the
+        // global list — tenant overrides are a Constellation-only construct.
+        const azureSync = await readAzureKnownClients(runtimeClientId, globalIds);
 
         const failingSince = getFailingSince();
         const lastAlertSentAt = getLastAlertSentAt();
@@ -157,6 +203,7 @@ export function registerCopilotStudioRoutes(
           hasTenantOverride: tenantIds !== null,
           effectiveSource: source,
           canEditGlobal: isPlatformAdmin(req),
+          azureSync,
         });
       } catch (err: any) {
         console.error("[CopilotStudio] status error:", err);
@@ -320,6 +367,59 @@ export function registerCopilotStudioRoutes(
         // A tenant override is always enforced (an empty list = deny-all).
         azpEnforcementActive: true,
       });
+    }
+  );
+
+  app.post(
+    "/api/admin/copilot-studio/sync-azure",
+    requireAuth,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        // Sync only the global list — Azure app manifest is platform-wide.
+        if (!isPlatformAdmin(req)) {
+          return res.status(403).json({
+            ok: false,
+            message: "Only platform admins can sync the Azure app manifest.",
+          });
+        }
+        const runtimeClientId =
+          process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+        const storedIds = await getGlobalKnownClientIds();
+
+        let app;
+        try {
+          app = await graphClient.getApplicationByAppId(runtimeClientId);
+        } catch (err: any) {
+          return res.status(502).json({
+            ok: false,
+            message:
+              err?.message ||
+              "Failed to read the Azure app registration. Verify Application.ReadWrite.OwnedBy (or .All) is granted to Constellation.",
+          });
+        }
+
+        try {
+          await graphClient.updateApplicationKnownClients(app.id, storedIds);
+        } catch (err: any) {
+          return res.status(502).json({
+            ok: false,
+            message:
+              err?.message ||
+              "Failed to update the Azure app manifest. Verify Application.ReadWrite.OwnedBy (or .All) is granted.",
+          });
+        }
+
+        const azureSync = await readAzureKnownClients(runtimeClientId, storedIds);
+        res.json({
+          ok: true,
+          message: `Synced ${storedIds.length} client ID${storedIds.length === 1 ? "" : "s"} to Azure app manifest.`,
+          azureSync,
+        });
+      } catch (err: any) {
+        console.error("[CopilotStudio] sync-azure error:", err);
+        res.status(500).json({ ok: false, message: err?.message || "Sync failed" });
+      }
     }
   );
 

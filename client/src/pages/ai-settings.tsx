@@ -36,6 +36,8 @@ import {
   AlertCircle,
   Link,
   FlaskConical,
+  Cloud,
+  CloudUpload,
 } from "lucide-react";
 import type { AI_MODELS, AI_MODEL_INFO } from "@shared/schema";
 
@@ -694,6 +696,16 @@ interface CopilotStudioStatus {
   hasTenantOverride: boolean;
   effectiveSource: "tenant" | "global" | "none";
   canEditGlobal: boolean;
+  azureSync: {
+    available: boolean;
+    appId: string | null;
+    appObjectId: string | null;
+    azureKnownClientIds: string[] | null;
+    inSync: boolean | null;
+    missingFromAzure: string[];
+    extraInAzure: string[];
+    error: string | null;
+  };
 }
 
 interface TestResult {
@@ -938,6 +950,22 @@ function CopilotStudioPanel() {
     },
     onError: (err: Error) => {
       toast({ title: "Test failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const syncAzureMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest("/api/admin/copilot-studio/sync-azure", { method: "POST" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/copilot-studio/status"] });
+      if (data?.ok) {
+        toast({ title: "Azure manifest updated", description: data.message || "Synced successfully." });
+      } else {
+        toast({ title: "Sync failed", description: data?.message || "Unable to sync to Azure.", variant: "destructive" });
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1244,6 +1272,108 @@ function CopilotStudioPanel() {
               )}
             </TabsContent>
           </Tabs>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Cloud className="w-4 h-4" />
+                Azure App Manifest Sync
+                {status?.azureSync?.available ? (
+                  status.azureSync.inSync ? (
+                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800 ml-auto">
+                      In sync
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800 ml-auto">
+                      Out of sync
+                    </Badge>
+                  )
+                ) : (
+                  <Badge variant="outline" className="text-xs text-muted-foreground ml-auto">
+                    Unavailable
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Pushes the <strong>global</strong> pre-authorized client ID list to the Entra app registration's <code className="text-xs bg-muted px-1 rounded">api.knownClientApplications</code> manifest property via Microsoft Graph. The Azure app registration is platform-wide, so tenant overrides are <em>not</em> synced — they apply only inside Constellation. <strong>This is an authoritative replacement</strong> — any client IDs currently on the Azure manifest that are not in the global list will be removed. Requires the <code className="text-xs bg-muted px-1 rounded">Application.ReadWrite.OwnedBy</code> (or <code className="text-xs bg-muted px-1 rounded">.All</code>) Graph permission to be granted to Constellation's service principal, and only platform admins can trigger a sync.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncAzureMutation.mutate()}
+              disabled={syncAzureMutation.isPending || !status?.azureSync?.available || !status?.canEditGlobal}
+              className="shrink-0"
+            >
+              {syncAzureMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <CloudUpload className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              Sync to Azure
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!status?.azureSync?.available && status?.azureSync?.error && (
+            <div className="flex items-start gap-2 p-3 rounded-md border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/10 text-sm text-red-800 dark:text-red-400">
+              <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="font-medium">Could not read the Azure app registration</p>
+                <p className="text-xs">{status.azureSync.error}</p>
+              </div>
+            </div>
+          )}
+          {status?.azureSync?.available && status.azureSync.inSync && (
+            <div className="flex items-start gap-2 p-3 rounded-md border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/10 text-sm text-green-800 dark:text-green-400">
+              <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>The Azure app manifest matches the global list ({status.globalKnownClientIds.length} client ID{status.globalKnownClientIds.length === 1 ? "" : "s"}).</span>
+            </div>
+          )}
+          {status?.azureSync?.available && status.azureSync.inSync === false && (
+            <div className="space-y-2">
+              <div className="flex items-start gap-2 p-3 rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/10 text-sm text-yellow-800 dark:text-yellow-400">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>The Azure app manifest is out of sync. Click <strong>Sync to Azure</strong> to push the in-app list.</span>
+              </div>
+              {status.azureSync.missingFromAzure.length > 0 && (
+                <div className="text-xs">
+                  <p className="font-medium text-muted-foreground mb-1">Missing in Azure (will be added):</p>
+                  <ul className="space-y-1">
+                    {status.azureSync.missingFromAzure.map((id) => (
+                      <li key={id} className="font-mono break-all p-1.5 rounded bg-muted/40 border">{id}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {status.azureSync.extraInAzure.length > 0 && (
+                <div className="text-xs">
+                  <p className="font-medium text-muted-foreground mb-1">Extra in Azure (will be removed):</p>
+                  <ul className="space-y-1">
+                    {status.azureSync.extraInAzure.map((id) => (
+                      <li key={id} className="font-mono break-all p-1.5 rounded bg-muted/40 border">{id}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {status?.azureSync?.appId && (
+            <div className="grid grid-cols-[140px_1fr] gap-2 items-start text-xs pt-1">
+              <span className="text-muted-foreground font-medium">App (client) ID</span>
+              <span className="font-mono break-all">{status.azureSync.appId}</span>
+            </div>
+          )}
+          {status?.azureSync?.azureKnownClientIds && (
+            <div className="grid grid-cols-[140px_1fr] gap-2 items-start text-xs">
+              <span className="text-muted-foreground font-medium">Azure has</span>
+              <span>{status.azureSync.azureKnownClientIds.length} known client application{status.azureSync.azureKnownClientIds.length === 1 ? "" : "s"} on the manifest</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
