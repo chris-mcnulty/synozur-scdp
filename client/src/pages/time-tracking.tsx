@@ -1337,11 +1337,44 @@ export default function TimeTracking() {
                   </Button>
                 )}
               </div>
-              {requireTimeApproval && timeEntries && timeEntries.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Select draft entries and click "Submit for Approval" to send them to your manager.
-                </p>
-              )}
+              {requireTimeApproval && timeEntries && timeEntries.length > 0 && (() => {
+                const eligibleEntries = timeEntries.filter((entry) => {
+                  const isDraft = !entry.submissionStatus || entry.submissionStatus === 'draft' || entry.submissionStatus === 'rejected';
+                  const isOwnerEntry = entry.personId === currentUser?.id;
+                  return isDraft && isOwnerEntry && !entry.locked;
+                });
+                if (eligibleEntries.length === 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Select draft entries and click "Submit for Approval" to send them to your manager.
+                    </p>
+                  );
+                }
+                const allSelected = eligibleEntries.every((e) => selectedForSubmit.has(e.id));
+                const someSelected = eligibleEntries.some((e) => selectedForSubmit.has(e.id));
+                return (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Checkbox
+                      checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                      onCheckedChange={(checked) => {
+                        setSelectedForSubmit((prev) => {
+                          const next = new Set(prev);
+                          if (checked) {
+                            eligibleEntries.forEach((e) => next.add(e.id));
+                          } else {
+                            eligibleEntries.forEach((e) => next.delete(e.id));
+                          }
+                          return next;
+                        });
+                      }}
+                      data-testid="checkbox-select-all-drafts"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Select all {eligibleEntries.length} draft {eligibleEntries.length === 1 ? 'entry' : 'entries'} to submit for approval.
+                    </span>
+                  </div>
+                );
+              })()}
             </CardHeader>
             <CardContent>
               {isLoading ? (
