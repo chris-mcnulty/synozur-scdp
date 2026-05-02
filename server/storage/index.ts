@@ -110,6 +110,7 @@ export interface IStorage {
   deleteUser(id: string): Promise<void>;
   getUserRates(userId: string): Promise<{ billingRate: number | null; costRate: number | null; }>;  
   setUserRates(userId: string, billingRate: number | null, costRate: number | null): Promise<void>;
+  getUsersPaginated(tenantId: string | undefined, options: { includeInactive?: boolean; includeStakeholders?: boolean; search?: string; role?: string; limit: number; offset: number }): Promise<{ items: User[]; total: number; hasMore: boolean }>;
   
   // Clients
   getClients(tenantId?: string | null): Promise<Client[]>;
@@ -119,6 +120,7 @@ export interface IStorage {
   
   // Projects
   getProjects(tenantId?: string | null): Promise<(Project & { client: Client })[]>;
+  getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]; total: number; hasMore: boolean }>;
   getProject(id: string): Promise<(Project & { client: Client }) | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
@@ -224,7 +226,8 @@ export interface IStorage {
   copyEstimateRateOverrides(sourceEstimateId: string, targetEstimateId: string): Promise<void>;
   
   // Time entries
-  getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
+  getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; limit?: number; offset?: number }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
+  getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }>;
   getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined>;
   createTimeEntry(timeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry>;
   updateTimeEntry(id: string, timeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry>;
@@ -944,6 +947,7 @@ export interface IStorage {
   supersedeDecision(decisionId: string, newEntry: InsertRaiddEntry): Promise<RaiddEntry>;
   getNextRaiddRefNumber(projectId: string, type: string): Promise<string>;
   getPortfolioRaiddEntries(tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]>;
+  getPortfolioRaiddEntriesPaginated(tenantId: string, filters: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean; limit: number; offset: number }): Promise<{ items: (RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]; total: number; hasMore: boolean; limit: number; offset: number; summary: { totalEntries: number; openRisks: number; openIssues: number; openActionItems: number; openDependencies: number; recentDecisions: number; criticalItems: number; highPriorityItems: number; overdueActionItems: number; closedThisMonth: number; projectsWithEntries: number }; projectList: { id: string; name: string }[] }>;
   getMyRaiddEntries(userId: string, tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]>;
 
   // Grounding Documents

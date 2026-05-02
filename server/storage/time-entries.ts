@@ -72,6 +72,55 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     });
   },
 
+  async getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }> {
+    const defaultPerson = (personId: string) => ({
+      id: personId, email: 'unknown@example.com', name: 'Unknown User',
+      firstName: null, lastName: null, initials: null, title: null, role: 'employee',
+      canLogin: false, isAssignable: false, roleId: null, customRole: null,
+      defaultBillingRate: null, defaultCostRate: null, isSalaried: false, isActive: false,
+      receiveTimeReminders: true, primaryTenantId: null, platformRole: null, createdAt: new Date()
+    });
+
+    const conditions: any[] = [];
+    if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
+    if (filters.personId) conditions.push(eq(timeEntries.personId, filters.personId));
+    if (filters.projectId) conditions.push(eq(timeEntries.projectId, filters.projectId));
+    if (filters.clientId) conditions.push(eq(projects.clientId, filters.clientId));
+    if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
+    if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
+    if (filters.billable !== undefined) conditions.push(eq(timeEntries.billable, filters.billable));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const countResult = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(timeEntries)
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .where(whereClause);
+    const total = Number(countResult[0]?.count || 0);
+
+    const rows = await db.select().from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .where(whereClause)
+      .orderBy(desc(timeEntries.date))
+      .limit(filters.limit)
+      .offset(filters.offset);
+
+    const items = rows.map(row => {
+      const person = row.users || defaultPerson(row.time_entries.personId);
+      return {
+        ...row.time_entries,
+        person,
+        personName: person.name,
+        project: { ...row.projects!, client: row.clients! }
+      };
+    });
+
+    return { items, total, hasMore: filters.offset + filters.limit < total };
+  },
+
   async getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined> {
     const rows = await db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))

@@ -31,6 +31,73 @@ import type { IStorage } from "./index";
 import { eq, desc, and, or, gte, lte, sql, isNotNull, isNull, inArray } from "drizzle-orm";
 
 export const usersMethods: ThisType<IStorage> = {
+  async getUsersPaginated(tenantId: string | undefined, options: { includeInactive?: boolean; includeStakeholders?: boolean; search?: string; role?: string; limit: number; offset: number }): Promise<{ items: User[]; total: number; hasMore: boolean }> {
+    const { includeInactive = false, includeStakeholders = false, search, role, limit, offset } = options;
+    const conditions: any[] = [];
+
+    if (tenantId) {
+      conditions.push(eq(tenantUsers.tenantId, tenantId));
+      if (!includeInactive) {
+        conditions.push(eq(tenantUsers.status, 'active'));
+        conditions.push(eq(users.isActive, true));
+      }
+      if (!includeStakeholders) {
+        conditions.push(sql`${tenantUsers.role} != 'client'`);
+      }
+      if (search) {
+        const term = `%${search}%`;
+        conditions.push(or(
+          sql`${users.name} ILIKE ${term}`,
+          sql`${users.email} ILIKE ${term}`
+        ));
+      }
+      if (role) conditions.push(eq(users.role, role));
+
+      const whereClause = and(...conditions);
+
+      const countResult = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(users)
+        .innerJoin(tenantUsers, eq(users.id, tenantUsers.userId))
+        .where(whereClause);
+      const total = Number(countResult[0]?.count || 0);
+
+      const pageRows = await db.select({ user: users })
+        .from(users)
+        .innerJoin(tenantUsers, eq(users.id, tenantUsers.userId))
+        .where(whereClause)
+        .orderBy(users.name)
+        .limit(limit)
+        .offset(offset);
+
+      const items = pageRows.map(r => r.user);
+      return { items, total, hasMore: offset + limit < total };
+    }
+
+    const whereParts: any[] = [];
+    if (!includeInactive) whereParts.push(eq(users.isActive, true));
+    if (search) {
+      const term = `%${search}%`;
+      whereParts.push(or(sql`${users.name} ILIKE ${term}`, sql`${users.email} ILIKE ${term}`));
+    }
+    if (role) whereParts.push(eq(users.role, role));
+
+    const whereClause = whereParts.length > 0 ? and(...whereParts) : undefined;
+
+    const countResult = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(users)
+      .where(whereClause);
+    const total = Number(countResult[0]?.count || 0);
+
+    const items = await db.select()
+      .from(users)
+      .where(whereClause)
+      .orderBy(users.name)
+      .limit(limit)
+      .offset(offset);
+
+    return { items, total, hasMore: offset + limit < total };
+  },
+
   async getUsers(tenantId?: string, options?: { includeInactive?: boolean; includeStakeholders?: boolean }): Promise<User[]> {
     const includeInactive = options?.includeInactive ?? false;
     const includeStakeholders = options?.includeStakeholders ?? false;

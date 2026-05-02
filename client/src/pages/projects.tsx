@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive } from "lucide-react";
+import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -37,6 +38,7 @@ export default function Projects() {
   const [searchTerm, setSearchTerm] = useState(() => {
     return localStorage.getItem("projects_search") || "";
   });
+  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
   const [statusFilter, setStatusFilter] = useState(() => {
     return localStorage.getItem("projects_status_filter") || "active";
   });
@@ -50,6 +52,7 @@ export default function Projects() {
     const saved = localStorage.getItem("projects_collapsed_clients");
     return saved ? new Set(JSON.parse(saved)) : new Set();
   });
+  const [pagination, setPagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -58,6 +61,15 @@ export default function Projects() {
   const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
   const { toast } = useToast();
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setPagination(p => ({ ...p, page: 0 }));
+  }, [debouncedSearch, statusFilter, sortBy]);
 
   useEffect(() => {
     localStorage.setItem("projects_search", searchTerm);
@@ -91,9 +103,37 @@ export default function Projects() {
     });
   };
 
-  const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
-    queryKey: ["/api/projects"],
+  const serverSortBy = sortBy === "date" ? "startDate" : sortBy === "client" ? "clientName" : sortBy;
+  // date sort: newest first (desc); everything else: A→Z (asc)
+  const serverSortDir = sortBy === "date" ? "desc" : "asc";
+  const paginatedQueryParams = new URLSearchParams({
+    limit: String(pagination.pageSize),
+    offset: String(pagination.page * pagination.pageSize),
+    sortBy: serverSortBy,
+    sortDir: serverSortDir,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(statusFilter !== "all" ? { status: statusFilter } : {}),
   });
+
+  const { data: paginatedData, isLoading } = useQuery<{ items: ProjectWithBillableInfo[]; total: number; hasMore: boolean }>({
+    queryKey: ["/api/projects", pagination.page, pagination.pageSize, debouncedSearch, statusFilter, sortBy],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects?${paginatedQueryParams}`, {
+        credentials: 'include',
+        headers: localStorage.getItem('sessionId') ? { 'X-Session-Id': localStorage.getItem('sessionId')! } : {},
+      });
+      if (!res.ok) throw new Error('Failed to fetch projects');
+      return res.json();
+    },
+  });
+
+  const projects = paginatedData?.items ?? [];
+  const paginationMeta: PaginationMeta | null = paginatedData ? {
+    total: paginatedData.total,
+    hasMore: paginatedData.hasMore,
+    limit: pagination.pageSize,
+    offset: pagination.page * pagination.pageSize,
+  } : null;
 
   // Check for URL parameters and auto-open dialogs
   useEffect(() => {
@@ -225,40 +265,10 @@ export default function Projects() {
     },
   });
 
-  const filteredAndSortedProjects = useMemo(() => {
-    let result = projects?.filter(project => {
-      const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           project.client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           project.code.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === "all" || project.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    }) || [];
-
-    result = [...result].sort((a, b) => {
-      switch (sortBy) {
-        case "client":
-          const clientCompare = a.client.name.localeCompare(b.client.name);
-          return clientCompare !== 0 ? clientCompare : a.name.localeCompare(b.name);
-        case "name":
-          return a.name.localeCompare(b.name);
-        case "date":
-          const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
-          const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
-          return dateB - dateA;
-        case "status":
-          return a.status.localeCompare(b.status);
-        default:
-          return 0;
-      }
-    });
-
-    return result;
-  }, [projects, searchTerm, statusFilter, sortBy]);
-
   const projectsByClient = useMemo(() => {
     const grouped = new Map<string, { client: any; projects: ProjectWithBillableInfo[]; totalBudget: number }>();
-    
-    for (const project of filteredAndSortedProjects) {
+
+    for (const project of projects) {
       const clientId = project.client.id;
       if (!grouped.has(clientId)) {
         grouped.set(clientId, {
@@ -275,9 +285,9 @@ export default function Projects() {
     return Array.from(grouped.values()).sort((a, b) => 
       a.client.name.localeCompare(b.client.name)
     );
-  }, [filteredAndSortedProjects]);
+  }, [projects]);
 
-  const filteredProjects = filteredAndSortedProjects;
+  const filteredProjects = projects;
 
   const handleEditProject = (project: ProjectWithBillableInfo) => {
     // Navigate to project detail page with edit dialog open
@@ -400,7 +410,7 @@ export default function Projects() {
               {(statusFilter !== "active" || searchTerm) && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">
-                    {filteredProjects.length} project{filteredProjects.length !== 1 ? "s" : ""} found
+                    {paginationMeta ? `${paginationMeta.total} project${paginationMeta.total !== 1 ? "s" : ""} found` : `${filteredProjects.length} project${filteredProjects.length !== 1 ? "s" : ""} found`}
                   </span>
                   <Button
                     variant="ghost"
@@ -830,6 +840,17 @@ export default function Projects() {
                 </Card>
               ))}
             </div>
+          )}
+          {paginationMeta && paginationMeta.total > pagination.pageSize && (
+            <Card>
+              <PaginationControls
+                pagination={pagination}
+                meta={paginationMeta}
+                onPageChange={(page) => setPagination(p => ({ ...p, page }))}
+                onPageSizeChange={(pageSize) => setPagination({ page: 0, pageSize })}
+                isLoading={isLoading}
+              />
+            </Card>
           )}
         </div>
 

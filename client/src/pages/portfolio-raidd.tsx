@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, Fragment, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
   Download, AlertCircle, Clock, CheckCircle, TrendingUp,
   FolderOpen, Filter, X
 } from "lucide-react";
+import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 import { formatBusinessDate } from "@/lib/date-utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
@@ -50,7 +51,11 @@ interface RaiddEntry {
 }
 
 interface PortfolioRaiddData {
-  entries: RaiddEntry[];
+  items: RaiddEntry[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
   summary: {
     totalEntries: number;
     openRisks: number;
@@ -117,25 +122,28 @@ export default function PortfolioRaidd() {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
+  const [pagination, setPagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
 
-  const params = new URLSearchParams();
-  if (statusFilter !== "all") params.set("status", statusFilter);
+  // Reset page when any filter changes
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, page: 0 }));
+  }, [typeFilter, statusFilter, priorityFilter, projectFilter]);
 
   const { data, isLoading } = useQuery<PortfolioRaiddData>({
-    queryKey: ["/api/reports/raidd", statusFilter],
+    queryKey: ["/api/reports/raidd", typeFilter, statusFilter, priorityFilter, projectFilter, pagination.page, pagination.pageSize],
     queryFn: async () => {
-      const url = `/api/reports/raidd${params.toString() ? `?${params}` : ""}`;
-      return apiRequest(url);
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (typeFilter !== "all") params.set("type", typeFilter);
+      if (priorityFilter !== "all") params.set("priority", priorityFilter);
+      if (projectFilter !== "all") params.set("projectId", projectFilter);
+      params.set("limit", String(pagination.pageSize));
+      params.set("offset", String(pagination.page * pagination.pageSize));
+      return apiRequest(`/api/reports/raidd?${params}`);
     },
   });
 
-  const filteredEntries = useMemo(() => {
-    let entries = data?.entries || [];
-    if (typeFilter !== "all") entries = entries.filter(e => e.type === typeFilter);
-    if (priorityFilter !== "all") entries = entries.filter(e => e.priority === priorityFilter);
-    if (projectFilter !== "all") entries = entries.filter(e => e.projectId === projectFilter);
-    return entries;
-  }, [data, typeFilter, priorityFilter, projectFilter]);
+  const filteredEntries = data?.items || [];
 
   const grouped = useMemo(() => {
     if (groupBy === "none") return null;
@@ -157,6 +165,13 @@ export default function PortfolioRaidd() {
 
   const summary = data?.summary;
   const projectList = data?.projectList || [];
+
+  const paginationMeta: PaginationMeta | null = data ? {
+    total: data.total,
+    hasMore: data.hasMore,
+    limit: pagination.pageSize,
+    offset: pagination.page * pagination.pageSize,
+  } : null;
 
   const hasFilters = typeFilter !== "all" || priorityFilter !== "all" || projectFilter !== "all";
 
@@ -433,9 +448,18 @@ export default function PortfolioRaidd() {
           </CardContent>
         </Card>
 
+        {paginationMeta && paginationMeta.total > pagination.pageSize && (
+          <PaginationControls
+            pagination={pagination}
+            meta={paginationMeta}
+            onPageChange={(page) => setPagination(prev => ({ ...prev, page }))}
+            onPageSizeChange={(pageSize) => setPagination({ page: 0, pageSize })}
+            isLoading={isLoading}
+          />
+        )}
         {filteredEntries.length > 0 && (
           <p className="text-xs text-muted-foreground text-right">
-            Showing {filteredEntries.length} of {data?.summary.totalEntries || 0} entries
+            Showing {filteredEntries.length} of {data?.total || 0} entries
           </p>
         )}
       </div>

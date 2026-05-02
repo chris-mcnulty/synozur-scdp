@@ -729,6 +729,131 @@ export const adminMethods: ThisType<IStorage & {
     }));
   },
 
+  async getPortfolioRaiddEntriesPaginated(tenantId: string, filters: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean; limit: number; offset: number }): Promise<{ items: (RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]; total: number; hasMore: boolean; limit: number; offset: number; summary: { totalEntries: number; openRisks: number; openIssues: number; openActionItems: number; openDependencies: number; recentDecisions: number; criticalItems: number; highPriorityItems: number; overdueActionItems: number; closedThisMonth: number; projectsWithEntries: number }; projectList: { id: string; name: string }[] }> {
+    const activeOnly = filters.activeProjectsOnly !== false;
+
+    // Build base conditions (for the paged query AND summary queries)
+    const makeConditions = () => {
+      const conds: SQL[] = [eq(raiddEntries.tenantId, tenantId)];
+      if (filters.type) conds.push(eq(raiddEntries.type, filters.type));
+      if (filters.status) conds.push(eq(raiddEntries.status, filters.status));
+      if (filters.priority) conds.push(eq(raiddEntries.priority, filters.priority));
+      if (filters.projectId) conds.push(eq(raiddEntries.projectId, filters.projectId));
+      return conds;
+    };
+
+    // Base subquery builder (joins projects for activeOnly filter)
+    const baseQuery = () => {
+      const conds = makeConditions();
+      if (activeOnly) conds.push(eq(projects.status, 'active'));
+      const whereClause = and(...conds);
+      return { whereClause, activeOnly };
+    };
+
+    const { whereClause } = baseQuery();
+
+    // 1. Count query (SQL COUNT — no row fetching)
+    const countRows = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(raiddEntries)
+      .innerJoin(projects, eq(raiddEntries.projectId, projects.id))
+      .where(whereClause);
+    const total = Number(countRows[0]?.count || 0);
+
+    // 2. Paged row query (limit + offset in SQL)
+    const pageRows = await db.select({
+      entry: raiddEntries,
+      ownerName: raiddOwnerAlias.name,
+      assigneeName: raiddAssigneeAlias.name,
+      createdByName: raiddCreatedByAlias.name,
+      projectName: projects.name,
+      clientName: clients.name,
+    })
+    .from(raiddEntries)
+    .innerJoin(projects, eq(raiddEntries.projectId, projects.id))
+    .innerJoin(clients, eq(projects.clientId, clients.id))
+    .leftJoin(raiddOwnerAlias, eq(raiddEntries.ownerId, raiddOwnerAlias.id))
+    .leftJoin(raiddAssigneeAlias, eq(raiddEntries.assigneeId, raiddAssigneeAlias.id))
+    .leftJoin(raiddCreatedByAlias, eq(raiddEntries.createdBy, raiddCreatedByAlias.id))
+    .where(whereClause)
+    .orderBy(desc(raiddEntries.createdAt))
+    .limit(filters.limit)
+    .offset(filters.offset);
+
+    const items = pageRows.map(r => ({
+      ...r.entry,
+      ownerName: r.ownerName ?? undefined,
+      assigneeName: r.assigneeName ?? undefined,
+      createdByName: r.createdByName ?? undefined,
+      projectName: r.projectName ?? undefined,
+      clientName: r.clientName ?? undefined,
+    }));
+
+    // 3. Summary via SQL aggregate queries (no full scan in JS)
+    // Build summary conditions WITHOUT type/status/priority filter (summary is over all entries matching tenant+project)
+    const summaryConds: SQL[] = [eq(raiddEntries.tenantId, tenantId)];
+    if (filters.projectId) summaryConds.push(eq(raiddEntries.projectId, filters.projectId));
+    if (activeOnly) summaryConds.push(eq(projects.status, 'active'));
+    const summaryWhere = and(...summaryConds);
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const nowIso = now.toISOString();
+
+    const summaryRows = await db.select({
+      total: sql<number>`COUNT(*)`,
+      openRisks: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.type} = 'risk' AND ${raiddEntries.status} IN ('open','in_progress'))`,
+      openIssues: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.type} = 'issue' AND ${raiddEntries.status} IN ('open','in_progress'))`,
+      openActionItems: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.type} = 'action_item' AND ${raiddEntries.status} IN ('open','in_progress'))`,
+      openDependencies: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.type} = 'dependency' AND ${raiddEntries.status} IN ('open','in_progress'))`,
+      recentDecisions: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.type} = 'decision' AND ${raiddEntries.status} != 'superseded')`,
+      criticalItems: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.priority} = 'critical' AND ${raiddEntries.status} IN ('open','in_progress'))`,
+      highPriorityItems: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.priority} = 'high' AND ${raiddEntries.status} IN ('open','in_progress'))`,
+      overdueActionItems: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.type} = 'action_item' AND ${raiddEntries.dueDate} < ${nowIso} AND ${raiddEntries.status} IN ('open','in_progress'))`,
+      closedThisMonth: sql<number>`COUNT(*) FILTER (WHERE ${raiddEntries.closedAt} >= ${monthStart} AND ${raiddEntries.closedAt} < ${nowIso})`,
+      projectCount: sql<number>`COUNT(DISTINCT ${raiddEntries.projectId})`,
+    })
+    .from(raiddEntries)
+    .innerJoin(projects, eq(raiddEntries.projectId, projects.id))
+    .where(summaryWhere);
+
+    const sr = summaryRows[0];
+    const summary = {
+      totalEntries: Number(sr?.total || 0),
+      openRisks: Number(sr?.openRisks || 0),
+      openIssues: Number(sr?.openIssues || 0),
+      openActionItems: Number(sr?.openActionItems || 0),
+      openDependencies: Number(sr?.openDependencies || 0),
+      recentDecisions: Number(sr?.recentDecisions || 0),
+      criticalItems: Number(sr?.criticalItems || 0),
+      highPriorityItems: Number(sr?.highPriorityItems || 0),
+      overdueActionItems: Number(sr?.overdueActionItems || 0),
+      closedThisMonth: Number(sr?.closedThisMonth || 0),
+      projectsWithEntries: Number(sr?.projectCount || 0),
+    };
+
+    // 4. Project list via bounded DISTINCT query
+    const projectRows = await db.selectDistinct({
+      id: raiddEntries.projectId,
+      name: projects.name,
+    })
+    .from(raiddEntries)
+    .innerJoin(projects, eq(raiddEntries.projectId, projects.id))
+    .where(summaryWhere)
+    .orderBy(projects.name);
+
+    const projectList = projectRows.map(r => ({ id: r.id, name: r.name || '' }));
+
+    return {
+      items,
+      total,
+      hasMore: filters.offset + filters.limit < total,
+      limit: filters.limit,
+      offset: filters.offset,
+      summary,
+      projectList,
+    };
+  },
+
   async getMyRaiddEntries(userId: string, tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]> {
     const conditions: SQL[] = [
       eq(raiddEntries.tenantId, tenantId),

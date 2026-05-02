@@ -157,6 +157,103 @@ export const projectsMethods: ThisType<IStorage> = {
     return projectsWithBillableInfo;
   },
 
+  async getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]; total: number; hasMore: boolean }> {
+    const pmAlias = alias(users, 'pm_user');
+    const conditions: any[] = [];
+    if (params.tenantId) conditions.push(eq(projects.tenantId, params.tenantId));
+    if (params.status) conditions.push(eq(projects.status, params.status));
+    if (params.clientId) conditions.push(eq(projects.clientId, params.clientId));
+    if (params.pmId) conditions.push(eq(projects.pm, params.pmId));
+    if (params.search) {
+      const term = `%${params.search}%`;
+      conditions.push(or(
+        sql`${projects.name} ILIKE ${term}`,
+        sql`${projects.code} ILIKE ${term}`,
+        sql`${clients.name} ILIKE ${term}`
+      ));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const countResult = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(projects)
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .where(whereClause);
+    const total = Number(countResult[0]?.count || 0);
+
+    const dir = params.sortDir === 'asc' ? 'asc' : 'desc';
+    let orderDir: any;
+    switch (params.sortBy) {
+      case 'name': orderDir = dir === 'asc' ? projects.name : desc(projects.name); break;
+      case 'status': orderDir = dir === 'asc' ? projects.status : desc(projects.status); break;
+      case 'startDate': orderDir = dir === 'asc' ? projects.startDate : desc(projects.startDate); break;
+      case 'endDate': orderDir = dir === 'asc' ? projects.endDate : desc(projects.endDate); break;
+      case 'clientName': orderDir = dir === 'asc' ? clients.name : desc(clients.name); break;
+      default: orderDir = dir === 'asc' ? projects.createdAt : desc(projects.createdAt);
+    }
+
+    const projectRows = await db.select().from(projects)
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(pmAlias, eq(projects.pm, pmAlias.id))
+      .where(whereClause)
+      .orderBy(orderDir)
+      .limit(params.limit)
+      .offset(params.offset);
+
+    const defaultClient = {
+      id: 'unknown', name: 'No Client Assigned', status: 'inactive', currency: 'USD',
+      tenantId: null, shortName: null, billingContact: null, contactName: null,
+      contactAddress: null, vocabularyOverrides: null, epicTermId: null, stageTermId: null,
+      workstreamTermId: null, milestoneTermId: null, activityTermId: null, msaDate: null,
+      msaDocument: null, hasMsa: false, sinceDate: null, ndaDate: null, ndaDocument: null,
+      hasNda: false, microsoftTeamId: null, microsoftTeamName: null, createdAt: new Date()
+    };
+
+    const projectIds = projectRows.map(r => r.projects.id);
+
+    let budgetMap = new Map<string, number>();
+    let burnedMap = new Map<string, number>();
+
+    if (projectIds.length > 0) {
+      const sowBudgets = await db.select({
+        projectId: sows.projectId,
+        total: sql<number>`COALESCE(SUM(CAST(${sows.contractValue} AS NUMERIC)), 0)`
+      })
+      .from(sows)
+      .where(and(
+        inArray(sows.projectId, projectIds),
+        eq(sows.status, 'approved')
+      ))
+      .groupBy(sows.projectId);
+      for (const r of sowBudgets) budgetMap.set(r.projectId, Number(r.total));
+
+      const burnedData = await db.select({
+        projectId: timeEntries.projectId,
+        totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
+      })
+      .from(timeEntries)
+      .where(and(
+        inArray(timeEntries.projectId, projectIds),
+        eq(timeEntries.billable, true)
+      ))
+      .groupBy(timeEntries.projectId);
+      for (const r of burnedData) burnedMap.set(r.projectId, Math.round(Number(r.totalBurned)));
+    }
+
+    const items = projectRows.map(row => {
+      const project = row.projects;
+      const client = row.clients || defaultClient;
+      const pmUser = (row as any).pm_user;
+      const pmName = pmUser ? `${pmUser.firstName || ''} ${pmUser.lastName || ''}`.trim() || pmUser.email : null;
+      const totalBudget = budgetMap.get(project.id) || 0;
+      const burnedAmount = burnedMap.get(project.id) || 0;
+      const utilizationRate = totalBudget > 0 ? Math.round((burnedAmount / totalBudget) * 100) : 0;
+      return { ...project, client, pmName, totalBudget, burnedAmount, utilizationRate };
+    });
+
+    return { items, total, hasMore: params.offset + params.limit < total };
+  },
+
   async getProject(id: string): Promise<(Project & { client: Client }) | undefined> {
     const rows = await db.select().from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))

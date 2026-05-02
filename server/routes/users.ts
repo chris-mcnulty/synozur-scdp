@@ -15,16 +15,88 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
     try {
       const currentUser = (req as any).user;
       const tenantId = currentUser?.tenantId || undefined;
-      const includeInactive = req.query.includeInactive === 'true';
-      const includeStakeholders = req.query.includeStakeholders === 'true';
-      const usersList = await storage.getUsers(tenantId, { includeInactive, includeStakeholders });
-      
-      let enrichedUsers = usersList.map((u: any) => ({ ...u }));
-      {
-        const membershipConditions: any[] = [eq(tenantUsers.status, 'active')];
-        if (tenantId) {
-          membershipConditions.push(eq(tenantUsers.tenantId, tenantId));
+
+      // Backward-compat: only paginate when caller explicitly passes limit or offset
+      if (req.query.limit === undefined && req.query.offset === undefined) {
+        const includeInactive = req.query.includeInactive === 'true';
+        const includeStakeholders = req.query.includeStakeholders === 'true';
+        const usersList = await storage.getUsers(tenantId, { includeInactive, includeStakeholders });
+        // Enrich with client memberships (full set — legacy behaviour)
+        let enrichedUsers: any[] = usersList.map((u: any) => ({ ...u }));
+        const userIds = usersList.map((u: any) => u.id);
+        if (userIds.length > 0) {
+          const membershipConditions: any[] = [
+            eq(tenantUsers.status, 'active'),
+            inArray(tenantUsers.userId, userIds),
+          ];
+          if (tenantId) membershipConditions.push(eq(tenantUsers.tenantId, tenantId));
+          const memberships = await db.select({ userId: tenantUsers.userId, clientId: tenantUsers.clientId })
+            .from(tenantUsers).where(and(...membershipConditions));
+          const userClientMap = new Map<string, string[]>();
+          for (const m of memberships) {
+            if (m.clientId) {
+              const arr = userClientMap.get(m.userId) || [];
+              if (!arr.includes(m.clientId)) arr.push(m.clientId);
+              userClientMap.set(m.userId, arr);
+            }
+          }
+          const allClientIds = Array.from(new Set(memberships.filter(m => m.clientId).map(m => m.clientId!)));
+          const clientNameMap = new Map<string, string>();
+          if (allClientIds.length > 0) {
+            const clientRows = await db.select({ id: clients.id, name: clients.name }).from(clients).where(inArray(clients.id, allClientIds));
+            for (const c of clientRows) clientNameMap.set(c.id, c.name);
+          }
+          const capConditions: any[] = [inArray(userRoleCapabilities.userId, userIds)];
+          if (tenantId) capConditions.push(eq(userRoleCapabilities.tenantId, tenantId));
+          const allCapabilities = await db
+            .select({ userId: userRoleCapabilities.userId, proficiencyLevel: userRoleCapabilities.proficiencyLevel, roleName: roles.name })
+            .from(userRoleCapabilities).leftJoin(roles, eq(userRoleCapabilities.roleId, roles.id))
+            .where(and(...capConditions));
+          const userCapMap = new Map<string, any[]>();
+          for (const cap of allCapabilities) {
+            const arr = userCapMap.get(cap.userId) || [];
+            arr.push({ roleName: cap.roleName || 'Unknown', proficiencyLevel: cap.proficiencyLevel });
+            userCapMap.set(cap.userId, arr);
+          }
+          enrichedUsers = enrichedUsers.map((u: any) => {
+            const clientIds = userClientMap.get(u.id) || [];
+            return {
+              ...u,
+              clientIds,
+              clientNames: clientIds.map(id => clientNameMap.get(id)).filter(Boolean),
+              roleCapabilities: userCapMap.get(u.id) || [],
+            };
+          });
         }
+        if (currentUser?.role === 'portfolio-manager') {
+          enrichedUsers = enrichedUsers.map((u: any) => u.isSalaried ? u : { ...u, defaultCostRate: null });
+        }
+        return res.json(enrichedUsers);
+      }
+
+      const { userFiltersSchema } = await import("@shared/pagination");
+      const parsed = userFiltersSchema.parse(req.query);
+
+      const pagedResult = await storage.getUsersPaginated(tenantId, {
+        includeInactive: parsed.includeInactive,
+        includeStakeholders: parsed.includeStakeholders,
+        search: parsed.search,
+        role: parsed.role,
+        limit: parsed.limit,
+        offset: parsed.offset,
+      });
+
+      const userIds = pagedResult.items.map((u: any) => u.id);
+
+      // Enrich only the page of users with client memberships
+      let enrichedUsers: any[] = pagedResult.items.map((u: any) => ({ ...u }));
+      if (userIds.length > 0) {
+        const membershipConditions: any[] = [
+          eq(tenantUsers.status, 'active'),
+          inArray(tenantUsers.userId, userIds),
+        ];
+        if (tenantId) membershipConditions.push(eq(tenantUsers.tenantId, tenantId));
+
         const memberships = await db.select({
           userId: tenantUsers.userId,
           clientId: tenantUsers.clientId,
@@ -32,7 +104,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         })
         .from(tenantUsers)
         .where(and(...membershipConditions));
-        
+
         const userClientMap = new Map<string, string[]>();
         for (const m of memberships) {
           if (m.clientId) {
@@ -41,35 +113,25 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
             userClientMap.set(m.userId, arr);
           }
         }
-        
+
         const allClientIds = Array.from(new Set(memberships.filter(m => m.clientId).map(m => m.clientId!)));
         const clientNameMap = new Map<string, string>();
         if (allClientIds.length > 0) {
           const clientRows = await db.select({ id: clients.id, name: clients.name })
             .from(clients)
             .where(inArray(clients.id, allClientIds));
-          for (const c of clientRows) {
-            clientNameMap.set(c.id, c.name);
-          }
+          for (const c of clientRows) clientNameMap.set(c.id, c.name);
         }
-        
+
         enrichedUsers = enrichedUsers.map((u: any) => {
           const clientIds = userClientMap.get(u.id) || [];
           const clientNames = clientIds.map(id => clientNameMap.get(id)).filter(Boolean);
-          return {
-            ...u,
-            clientIds,
-            clientNames,
-          };
+          return { ...u, clientIds, clientNames };
         });
-      }
-      
-      // Enrich with role capabilities
-      {
-        const capConditions: any[] = [];
-        if (tenantId) {
-          capConditions.push(eq(userRoleCapabilities.tenantId, tenantId));
-        }
+
+        // Enrich with role capabilities
+        const capConditions: any[] = [inArray(userRoleCapabilities.userId, userIds)];
+        if (tenantId) capConditions.push(eq(userRoleCapabilities.tenantId, tenantId));
         const allCapabilities = await db
           .select({
             userId: userRoleCapabilities.userId,
@@ -79,7 +141,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
           })
           .from(userRoleCapabilities)
           .leftJoin(roles, eq(userRoleCapabilities.roleId, roles.id))
-          .where(capConditions.length > 0 ? and(...capConditions) : undefined);
+          .where(and(...capConditions));
 
         const userCapMap = new Map<string, { roleName: string; proficiencyLevel: string }[]>();
         for (const cap of allCapabilities) {
@@ -87,7 +149,6 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
           arr.push({ roleName: cap.roleName || 'Unknown', proficiencyLevel: cap.proficiencyLevel });
           userCapMap.set(cap.userId, arr);
         }
-
         enrichedUsers = enrichedUsers.map((u: any) => ({
           ...u,
           roleCapabilities: userCapMap.get(u.id) || [],
@@ -95,15 +156,16 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
       }
 
       if (currentUser?.role === 'portfolio-manager') {
-        enrichedUsers = enrichedUsers.map((u: any) => {
-          if (!u.isSalaried) {
-            return { ...u, defaultCostRate: null };
-          }
-          return u;
-        });
+        enrichedUsers = enrichedUsers.map((u: any) => u.isSalaried ? u : { ...u, defaultCostRate: null });
       }
 
-      res.json(enrichedUsers);
+      res.json({
+        items: enrichedUsers,
+        total: pagedResult.total,
+        hasMore: pagedResult.hasMore,
+        limit: parsed.limit,
+        offset: parsed.offset,
+      });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });
     }

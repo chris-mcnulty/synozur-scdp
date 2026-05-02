@@ -14,25 +14,36 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
 
   app.get("/api/time-entries", deps.requireAuth, async (req, res) => {
     try {
-      const { personId, projectId, clientId, startDate, endDate } = req.query as Record<string, string>;
-
-      const filters: any = {};
-
-      if (req.user?.tenantId) {
-        filters.tenantId = req.user.tenantId;
+      // Backward-compat: only paginate when caller explicitly passes limit or offset
+      if (req.query.limit === undefined && req.query.offset === undefined) {
+        const allEntries = await storage.getTimeEntries({
+          tenantId: req.user?.tenantId,
+          personId: req.user!.role === "employee" ? req.user!.id : (req.query.personId as string | undefined),
+          projectId: req.query.projectId as string | undefined,
+          clientId: req.query.clientId as string | undefined,
+          startDate: req.query.startDate as string | undefined,
+          endDate: req.query.endDate as string | undefined,
+        });
+        return res.json(allEntries);
       }
+
+      const { timeEntryFiltersSchema } = await import("@shared/pagination");
+      const parsed = timeEntryFiltersSchema.parse(req.query);
+
+      const filters: { tenantId?: string; personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; billable?: boolean; limit: number; offset: number } = {
+        limit: parsed.limit,
+        offset: parsed.offset,
+      };
+
+      if (req.user?.tenantId) filters.tenantId = req.user.tenantId;
+
+      const { personId, projectId, clientId, startDate, endDate, billable } = parsed;
 
       if (projectId && ['admin', 'billing-admin', 'pm', 'executive'].includes(req.user!.role)) {
         filters.projectId = projectId;
-        if (personId) {
-          filters.personId = personId;
-        }
+        if (personId) filters.personId = personId;
       } else if (personId) {
-        if (req.user?.role === "employee") {
-          filters.personId = req.user.id;
-        } else {
-          filters.personId = personId;
-        }
+        filters.personId = req.user?.role === "employee" ? req.user.id : personId;
         if (projectId) filters.projectId = projectId;
       } else {
         filters.personId = req.user!.id;
@@ -42,9 +53,10 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       if (clientId) filters.clientId = clientId;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
+      if (billable !== undefined) filters.billable = billable === "true";
 
-      const timeEntries = await storage.getTimeEntries(filters);
-      res.json(timeEntries);
+      const result = await storage.getTimeEntriesPaginated(filters);
+      return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch time entries" });
     }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHea
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Plus, Search, UserPlus, Edit, Shield, Trash2, Building2, Filter, Clock, Briefcase, X } from "lucide-react";
+import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -50,7 +51,7 @@ function RoleCapabilitiesSection({ userId }: { userId: string }) {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/role-capabilities`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setAddingRole(false);
       setNewRoleId("");
       setNewProficiency("secondary");
@@ -69,7 +70,7 @@ function RoleCapabilitiesSection({ userId }: { userId: string }) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/role-capabilities`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
     },
   });
 
@@ -78,7 +79,7 @@ function RoleCapabilitiesSection({ userId }: { userId: string }) {
       apiRequest(`/api/users/${userId}/role-capabilities/${capId}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/role-capabilities`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       toast({ title: "Success", description: "Role capability removed" });
     },
   });
@@ -200,8 +201,11 @@ function RoleCapabilitiesSection({ userId }: { userId: string }) {
   );
 }
 
+const USERS_QUERY_KEY = "/api/users";
+
 export default function Users() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [tenantFilter, setTenantFilter] = useState("all");
   const [orgFilter, setOrgFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -209,12 +213,51 @@ export default function Users() {
   const [editingUser, setEditingUser] = useState<any>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [userPagination, setUserPagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
   const { toast } = useToast();
   const { isPlatformAdmin } = useAuth();
 
-  const { data: users = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"],
+  // Debounce search — 300ms
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // Reset page when server-side filters change
+  useEffect(() => {
+    setUserPagination(prev => ({ ...prev, page: 0 }));
+  }, [debouncedSearch, roleFilter]);
+
+  const queryParams = new URLSearchParams({
+    includeInactive: "true",
+    includeStakeholders: "true",
+    limit: String(userPagination.pageSize),
+    offset: String(userPagination.page * userPagination.pageSize),
   });
+  if (debouncedSearch) queryParams.set("search", debouncedSearch);
+  if (roleFilter !== "all") queryParams.set("role", roleFilter);
+
+  const { data: usersData, isLoading } = useQuery<{ items: any[]; total: number; hasMore: boolean; limit: number; offset: number }>({
+    queryKey: [USERS_QUERY_KEY, userPagination.page, userPagination.pageSize, debouncedSearch, roleFilter],
+    queryFn: async () => {
+      const res = await fetch(`/api/users?${queryParams}`, {
+        credentials: 'include',
+        headers: localStorage.getItem('sessionId') ? { 'X-Session-Id': localStorage.getItem('sessionId')! } : {},
+      });
+      if (!res.ok) throw new Error('Failed to fetch users');
+      return res.json();
+    },
+  });
+
+  const users = usersData?.items || [];
+  const userPaginationMeta: PaginationMeta = {
+    total: usersData?.total ?? 0,
+    hasMore: usersData?.hasMore ?? false,
+    limit: userPagination.pageSize,
+    offset: userPagination.page * userPagination.pageSize,
+  };
+
+  const invalidateUsers = () => queryClient.invalidateQueries({ queryKey: [USERS_QUERY_KEY] });
 
   const createUser = useMutation({
     mutationFn: (data: any) => apiRequest("/api/users", {
@@ -222,19 +265,12 @@ export default function Users() {
       body: JSON.stringify(data),
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      invalidateUsers();
       setCreateDialogOpen(false);
-      toast({
-        title: "Success",
-        description: "User created successfully",
-      });
+      toast({ title: "Success", description: "User created successfully" });
     },
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to create user",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to create user", variant: "destructive" });
     },
   });
 
@@ -244,34 +280,22 @@ export default function Users() {
       body: JSON.stringify(data),
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      invalidateUsers();
       setEditingUser(null);
-      toast({
-        title: "Success",
-        description: "User updated successfully",
-      });
+      toast({ title: "Success", description: "User updated successfully" });
     },
     onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update user",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to update user", variant: "destructive" });
     },
   });
 
   const deleteUser = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/users/${id}`, {
-      method: "DELETE",
-    }),
+    mutationFn: (id: string) => apiRequest(`/api/users/${id}`, { method: "DELETE" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
+      invalidateUsers();
       setDeleteDialogOpen(false);
       setUserToDelete(null);
-      toast({
-        title: "Success",
-        description: "User has been deleted successfully",
-      });
+      toast({ title: "Success", description: "User has been deleted successfully" });
     },
     onError: (error: any) => {
       toast({
@@ -282,30 +306,29 @@ export default function Users() {
     },
   });
 
+  // tenantFilter and orgFilter are client-side refinements on the already-paged result
   const tenantNames = isPlatformAdmin
     ? Array.from(new Set(users.map((u: any) => u.primaryTenantName).filter(Boolean)))
     : [];
 
-  // Extract unique organization/client names from users' clientNames arrays
   const orgNames = Array.from(new Set(
     users.flatMap((u: any) => u.clientNames || []).filter(Boolean)
   )).sort() as string[];
 
-  // Extract unique roles for the role filter
   const availableRoles = Array.from(new Set(
     users.map((u: any) => u.role).filter(Boolean)
   )).sort() as string[];
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+  // Secondary client-side filter for tenant/org (enriched fields not directly DB-filterable)
+  const filteredUsers = useMemo(() => users.filter((user: any) => {
     const matchesTenant = !isPlatformAdmin || tenantFilter === "all" ||
       (tenantFilter === "unassigned" ? !user.primaryTenantName : user.primaryTenantName === tenantFilter);
     const matchesOrg = orgFilter === "all" ||
       (orgFilter === "internal" ? !(user.clientNames?.length > 0) : (user.clientNames || []).includes(orgFilter));
-    const matchesRole = roleFilter === "all" || user.role === roleFilter;
-    return matchesSearch && matchesTenant && matchesOrg && matchesRole;
-  });
+    return matchesTenant && matchesOrg;
+  }), [users, tenantFilter, orgFilter, isPlatformAdmin]);
+
+  const pagedUsers = filteredUsers;
 
   const getRoleBadgeColor = (role: string) => {
     switch(role) {
@@ -416,7 +439,7 @@ export default function Users() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((user) => (
+                  {pagedUsers.map((user) => (
                     <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email || <span className="text-muted-foreground">-</span>}</TableCell>
@@ -532,6 +555,15 @@ export default function Users() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+            {userPaginationMeta.total > userPagination.pageSize && (
+              <PaginationControls
+                pagination={userPagination}
+                meta={userPaginationMeta}
+                onPageChange={(page) => setUserPagination(p => ({ ...p, page }))}
+                onPageSizeChange={(pageSize) => setUserPagination({ page: 0, pageSize })}
+                isLoading={isLoading}
+              />
             )}
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry, type Project, type Client, type User, type ProjectMilestone, type ProjectWorkstream } from "@shared/schema";
 import { format } from "date-fns";
 import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown, Sparkles, Send, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -398,14 +399,22 @@ export default function TimeTracking() {
     return [...editAllocations].sort((a: any, b: any) => (a.taskDescription || '').localeCompare(b.taskDescription || ''));
   }, [editAllocations]);
 
-  const { data: timeEntries, isLoading } = useQuery<TimeEntryWithRelations[]>({
-    queryKey: ["/api/time-entries", filters],
+  const [tePagination, setTePagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
+
+  useEffect(() => {
+    setTePagination(p => ({ ...p, page: 0 }));
+  }, [filters]);
+
+  const { data: tePagedData, isLoading } = useQuery<{ items: TimeEntryWithRelations[]; total: number; hasMore: boolean }>({
+    queryKey: ["/api/time-entries", filters, tePagination.page, tePagination.pageSize],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filters.projectId) params.append('projectId', filters.projectId);
       if (filters.clientId) params.append('clientId', filters.clientId);
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
+      params.append('limit', String(tePagination.pageSize));
+      params.append('offset', String(tePagination.page * tePagination.pageSize));
       const response = await fetch(`/api/time-entries?${params.toString()}`, {
         credentials: 'include',
         headers: localStorage.getItem('sessionId') ? { 'X-Session-Id': localStorage.getItem('sessionId')! } : {},
@@ -414,6 +423,14 @@ export default function TimeTracking() {
       return response.json();
     }
   });
+
+  const timeEntries = tePagedData?.items ?? [];
+  const tePaginationMeta: PaginationMeta | null = tePagedData ? {
+    total: tePagedData.total,
+    hasMore: tePagedData.hasMore,
+    limit: tePagination.pageSize,
+    offset: tePagination.page * tePagination.pageSize,
+  } : null;
 
   const createTimeEntryMutation = useMutation({
     mutationFn: async (data: TimeEntryFormData) => {
@@ -1504,6 +1521,15 @@ export default function TimeTracking() {
                   );
                   })}
                 </div>
+              )}
+              {tePaginationMeta && tePaginationMeta.total > tePagination.pageSize && (
+                <PaginationControls
+                  pagination={tePagination}
+                  meta={tePaginationMeta}
+                  onPageChange={(page) => setTePagination(p => ({ ...p, page }))}
+                  onPageSizeChange={(pageSize) => setTePagination({ page: 0, pageSize })}
+                  isLoading={isLoading}
+                />
               )}
             </CardContent>
           </Card>

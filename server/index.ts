@@ -232,6 +232,10 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       return db.execute(`SELECT 1 as test`);
     }).then(() => {
       log('✅ Database connection successful');
+      // Ensure pagination indexes exist (idempotent)
+      import('./scripts/add-pagination-indexes').then(({ addPaginationIndexes }) => {
+        addPaginationIndexes();
+      }).catch(() => {});
       
       // Start the time reminder scheduler after database is confirmed working
       log('🔄 Starting time reminder scheduler...');
