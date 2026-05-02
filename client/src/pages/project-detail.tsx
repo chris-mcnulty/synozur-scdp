@@ -3163,6 +3163,40 @@ export default function ProjectDetail() {
 
         {/* Key Metrics */}
         <UITooltipProvider>
+        {(() => {
+          const effectiveBudgetedHours = hoursSummary?.budgetedHours ?? burnRate.estimatedHours ?? 0;
+          if (effectiveBudgetedHours > 0) return null;
+          return (
+            <div
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 p-4"
+              data-testid="hours-budget-empty-state"
+            >
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                    No approved estimate — hours budget unavailable
+                  </p>
+                  <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
+                    Approve an estimate to track Remaining Hours and Hours Variance against a budget.
+                  </p>
+                </div>
+              </div>
+              <Link href="/estimates">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-amber-300 dark:border-amber-800 bg-white dark:bg-transparent hover:bg-amber-100 dark:hover:bg-amber-900/40 shrink-0"
+                  data-testid="button-go-to-estimates"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Go to Estimates
+                  <ExternalLink className="w-3 h-3 ml-2" />
+                </Button>
+              </Link>
+            </div>
+          );
+        })()}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-6">
@@ -3213,7 +3247,9 @@ export default function ProjectDetail() {
                       {(hoursSummary?.actualHours ?? burnRate.actualHours).toFixed(0)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      of {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours).toFixed(0)} budgeted hrs
+                      {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0
+                        ? `of ${(hoursSummary?.budgetedHours ?? burnRate.estimatedHours).toFixed(0)} budgeted hrs`
+                        : "No approved estimate"}
                     </p>
                   </div>
                 </div>
@@ -3224,20 +3260,23 @@ export default function ProjectDetail() {
 
           {/* Remaining Hours card with green/amber/red indicator — sourced from /hours-summary */}
           {(() => {
+            const hasBudget = (hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0;
             const remainingHrs = hoursSummary?.remainingHours ?? Math.max(0, burnRate.estimatedHours - burnRate.actualHours);
             const consumedPct = hoursSummary?.hoursConsumedPct ?? (
               burnRate.estimatedHours > 0
                 ? (burnRate.actualHours / burnRate.estimatedHours) * 100
                 : 0
             );
-            const remainingColor =
-              consumedPct > 90
+            const remainingColor = !hasBudget
+              ? "text-muted-foreground"
+              : consumedPct > 90
                 ? "text-red-600"
                 : consumedPct > 75
                 ? "text-amber-600"
                 : "text-green-600";
-            const remainingBg =
-              consumedPct > 90
+            const remainingBg = !hasBudget
+              ? "bg-muted"
+              : consumedPct > 90
                 ? "bg-red-100"
                 : consumedPct > 75
                 ? "bg-amber-100"
@@ -3259,20 +3298,22 @@ export default function ProjectDetail() {
                         </UITooltip>
                       </p>
                       <p className={`text-2xl font-bold ${remainingColor}`} data-testid="remaining-hours">
-                        {remainingHrs.toFixed(0)}
+                        {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0 ? remainingHrs.toFixed(0) : "—"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        hrs left of budget
+                        {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0 ? "hrs left of budget" : "No approved estimate"}
                       </p>
                     </div>
                     <div className={`w-8 h-8 ${remainingBg} rounded-full flex items-center justify-center`}>
-                      <Activity className={`w-4 h-4 ${remainingColor}`} />
+                      <Activity className={`w-4 h-4 ${remainingColor} ${!hasBudget ? "opacity-50" : ""}`} />
                     </div>
                   </div>
-                  <Progress
-                    value={Math.min(consumedPct, 100)}
-                    className="mt-3"
-                  />
+                  {hasBudget && (
+                    <Progress
+                      value={Math.min(consumedPct, 100)}
+                      className="mt-3"
+                    />
+                  )}
                 </CardContent>
               </Card>
             );
@@ -3281,6 +3322,7 @@ export default function ProjectDetail() {
           {/* Hours Variance with sign-aware language — sourced from /hours-summary */}
           {(() => {
             const variance = hoursSummary?.hoursVariance ?? burnRate.hoursVariance;
+            const hasBudget = (hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0;
             return (
               <Card>
                 <CardContent className="p-6">
@@ -3298,20 +3340,24 @@ export default function ProjectDetail() {
                         </UITooltip>
                       </p>
                       <p
-                        className={`text-2xl font-bold ${variance > 0 ? "text-red-600" : variance < 0 ? "text-green-600" : "text-muted-foreground"}`}
+                        className={`text-2xl font-bold ${hasBudget ? (variance > 0 ? "text-red-600" : variance < 0 ? "text-green-600" : "text-muted-foreground") : "text-muted-foreground"}`}
                         data-testid="hours-variance"
                       >
-                        {variance === 0 ? "0" : (variance > 0 ? "+" : "−") + Math.abs(variance).toFixed(0)}
+                        {!hasBudget ? "—" : variance === 0 ? "0" : (variance > 0 ? "+" : "−") + Math.abs(variance).toFixed(0)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {variance > 0
+                        {!hasBudget
+                          ? "No approved estimate"
+                          : variance > 0
                           ? "hrs over plan"
                           : variance < 0
                           ? "hrs ahead of plan"
                           : "on plan"}
                       </p>
                     </div>
-                    {variance > 0 ? (
+                    {!hasBudget ? (
+                      <Activity className="w-8 h-8 text-muted-foreground opacity-30" />
+                    ) : variance > 0 ? (
                       <TrendingUp className="w-8 h-8 text-red-600 opacity-50" />
                     ) : (
                       <TrendingDown className="w-8 h-8 text-green-600 opacity-50" />
