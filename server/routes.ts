@@ -43,6 +43,7 @@ import { registerResourcePlanningRoutes } from "./routes/resource-planning.js";
 import { registerSupportRoutes } from "./routes/support.js";
 import { registerCopilotStudioRoutes } from "./routes/copilot-studio.js";
 import { registerCalendarSuggestionsRoutes } from "./routes/calendar-suggestions.js";
+import { registerJobRoutes } from "./routes/jobs.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -541,7 +542,8 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerRaiddRoutes(app, { requireAuth, requireRole });
     registerSupportRoutes(app, { requireAuth, requireRole });
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });
-  
+    registerJobRoutes(app, { requireAuth, requireRole });
+
 
   // Agent card health check (admin only)
   app.get("/api/admin/agent-card-health", requireAuth, requireRole(["admin"]), async (req, res) => {

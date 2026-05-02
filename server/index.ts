@@ -305,6 +305,15 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import Teams alert scheduler: ${importError.message}`);
       });
 
+      // Start the background job worker
+      log('🔄 Starting background job worker...');
+      import('./services/job-worker.js').then(({ startJobWorker }) => {
+        startJobWorker();
+        log('✅ Background job worker started');
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import background job worker: ${importError.message}`);
+      });
+
       // Check for missed jobs after a short delay to allow schedulers to initialize
       setTimeout(async () => {
         log('🔄 Checking for missed scheduled jobs...');

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -171,32 +171,52 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     }
   }, [periodPreset, customStartDate, customEndDate, today]);
 
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [pendingJobMetadata, setPendingJobMetadata] = useState<ReportMetadata | null>(null);
+
+  const jobPollQuery = useQuery<{ status: string; result?: any; lastError?: string }>({
+    queryKey: ['/api/jobs', pendingJobId],
+    enabled: !!pendingJobId,
+    refetchInterval: 2000,
+    staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (!pendingJobId || !jobPollQuery.data) return;
+    const job = jobPollQuery.data;
+    if (job.status === 'succeeded' && job.result) {
+      setReportContent(job.result.reportContent);
+      setMetadata(pendingJobMetadata);
+      setIsEditing(false);
+      setPendingJobId(null);
+      setPendingJobMetadata(null);
+      toast({ title: "Report generated", description: "Your status report is ready to review." });
+    } else if (job.status === 'failed' || job.status === 'permanently_failed') {
+      setPendingJobId(null);
+      setPendingJobMetadata(null);
+      toast({ title: "Generation failed", description: job.lastError || "Report generation failed.", variant: "destructive" });
+    }
+  }, [jobPollQuery.data, pendingJobId]);
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const { start, end } = getDateRange();
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000);
-      try {
-        const res = await apiRequest(`/api/projects/${projectId}/status-report`, {
-          method: "POST",
-          body: JSON.stringify({ startDate: start, endDate: end, style }),
-          signal: controller.signal,
-        });
-        return res;
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const res = await apiRequest(`/api/projects/${projectId}/status-report`, {
+        method: "POST",
+        body: JSON.stringify({ startDate: start, endDate: end, style }),
+      });
+      return res;
     },
-    onSuccess: (data: { report: string; metadata: ReportMetadata }) => {
-      setReportContent(data.report);
-      setMetadata(data.metadata);
-      setIsEditing(false);
-      toast({ title: "Report generated", description: "Your status report is ready to review." });
+    onSuccess: (data: { jobId: string; reportMetadata: ReportMetadata; dataQualityWarnings?: string[]; dataQualityOverallStatus?: string }) => {
+      setPendingJobId(data.jobId);
+      setPendingJobMetadata(data.reportMetadata);
     },
     onError: (error: Error) => {
       toast({ title: "Generation failed", description: error.message, variant: "destructive" });
     },
   });
+
+  const isGenerating = generateMutation.isPending || !!pendingJobId;
 
   const emailMutation = useMutation({
     mutationFn: async () => {
@@ -461,9 +481,9 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                 <Button 
                   className="w-full" 
                   onClick={() => generateMutation.mutate()} 
-                  disabled={generateMutation.isPending || isDownloadingPptx}
+                  disabled={isGenerating || isDownloadingPptx}
                 >
-                  {generateMutation.isPending ? (
+                  {isGenerating ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Generating...
@@ -479,7 +499,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                   variant="outline"
                   className="w-full" 
                   onClick={handleDownloadPptx} 
-                  disabled={isDownloadingPptx || generateMutation.isPending}
+                  disabled={isDownloadingPptx || isGenerating}
                 >
                   {isDownloadingPptx ? (
                     <>

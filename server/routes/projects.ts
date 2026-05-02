@@ -373,12 +373,15 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       // Auto-create or reactivate engagement when a person is assigned
       if (validatedData.personId) {
         await storage.ensureProjectEngagement(req.params.projectId, validatedData.personId);
-        // Fire-and-forget: auto-add member to Teams if sync is enabled
-        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
-          teamsAutomationService.onUserAssignedToProject(
-            req.params.projectId, validatedData.personId!,
-            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
-          ).catch(() => {});
+        // Submit Teams provisioning as a tracked background job (replaces fire-and-forget)
+        import('../services/job-queue-service.js').then(({ jobQueueService }) => {
+          jobQueueService.submit('teams.provision', {
+            operation: 'addMember',
+            projectId: req.params.projectId,
+            personId: validatedData.personId!,
+            tenantId: req.user?.tenantId,
+            triggeredBy: req.user?.id,
+          }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
         }).catch(() => {});
       }
 
@@ -429,22 +432,28 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       // Auto-create or reactivate engagement when a person is assigned
       if (req.body.personId) {
         await storage.ensureProjectEngagement(req.params.projectId, req.body.personId);
-        // Fire-and-forget: auto-add member to Teams if sync is enabled
-        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
-          teamsAutomationService.onUserAssignedToProject(
-            req.params.projectId, req.body.personId,
-            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
-          ).catch(() => {});
+        // Submit Teams provisioning as a tracked background job
+        import('../services/job-queue-service.js').then(({ jobQueueService }) => {
+          jobQueueService.submit('teams.provision', {
+            operation: 'addMember',
+            projectId: req.params.projectId,
+            personId: req.body.personId,
+            tenantId: req.user?.tenantId,
+            triggeredBy: req.user?.id,
+          }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
         }).catch(() => {});
       }
 
-      // Fire-and-forget: if personId changed, remove the previous assignee from Teams
+      // If personId changed, remove the previous assignee from Teams via tracked job
       if (req.body.personId && allocation && allocation.personId && allocation.personId !== req.body.personId) {
-        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
-          teamsAutomationService.onUserUnassignedFromProject(
-            req.params.projectId, allocation.personId!,
-            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
-          ).catch(() => {});
+        import('../services/job-queue-service.js').then(({ jobQueueService }) => {
+          jobQueueService.submit('teams.provision', {
+            operation: 'removeMember',
+            projectId: req.params.projectId,
+            personId: allocation.personId!,
+            tenantId: req.user?.tenantId,
+            triggeredBy: req.user?.id,
+          }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
         }).catch(() => {});
       }
 
@@ -465,13 +474,16 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
       await storage.deleteProjectAllocation(req.params.id);
 
-      // Fire-and-forget: auto-remove member from Teams if sync is enabled
+      // Submit Teams removal as a tracked background job (replaces fire-and-forget)
       if (allocation.personId) {
-        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
-          teamsAutomationService.onUserUnassignedFromProject(
-            req.params.projectId, allocation.personId!,
-            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
-          ).catch(() => {});
+        import('../services/job-queue-service.js').then(({ jobQueueService }) => {
+          jobQueueService.submit('teams.provision', {
+            operation: 'removeMember',
+            projectId: req.params.projectId,
+            personId: allocation.personId!,
+            tenantId: req.user?.tenantId,
+            triggeredBy: req.user?.id,
+          }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
         }).catch(() => {});
       }
 
@@ -497,14 +509,17 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         await storage.ensureProjectEngagement(req.params.projectId, personId);
       }
 
-      // Fire-and-forget: auto-add all assigned members to Teams if sync is enabled
+      // Submit Teams provisioning as tracked background jobs for each assigned member
       if (personIds.size > 0) {
-        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
+        import('../services/job-queue-service.js').then(({ jobQueueService }) => {
           for (const personId of Array.from(personIds)) {
-            teamsAutomationService.onUserAssignedToProject(
-              req.params.projectId, personId,
-              { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
-            ).catch(() => {});
+            jobQueueService.submit('teams.provision', {
+              operation: 'addMember',
+              projectId: req.params.projectId,
+              personId,
+              tenantId: req.user?.tenantId,
+              triggeredBy: req.user?.id,
+            }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
           }
         }).catch(() => {});
       }
@@ -549,12 +564,15 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
       await storage.ensureProjectEngagement(projectId, personId);
 
-      // Fire-and-forget: auto-add reassigned member to Teams if sync is enabled
-      import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
-        teamsAutomationService.onUserAssignedToProject(
-          projectId, personId,
-          { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
-        ).catch(() => {});
+      // Submit Teams provisioning as a tracked background job
+      import('../services/job-queue-service.js').then(({ jobQueueService }) => {
+        jobQueueService.submit('teams.provision', {
+          operation: 'addMember',
+          projectId,
+          personId,
+          tenantId: req.user?.tenantId,
+          triggeredBy: req.user?.id,
+        }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
       }).catch(() => {});
 
       res.json({ updatedCount: matchingAllocations.length });
@@ -736,15 +754,18 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         }
       });
 
-      // Ensure engagements and fire Teams hooks for each unique person
+      // Ensure engagements and submit Teams jobs for each unique person
       const uniquePersonIds = [...new Set(assignments.map(a => a.personId))];
       for (const personId of uniquePersonIds) {
         await storage.ensureProjectEngagement(projectId, personId);
-        import('../services/teams-automation-service').then(({ teamsAutomationService }) => {
-          teamsAutomationService.onUserAssignedToProject(
-            projectId, personId,
-            { tenantId: req.user?.tenantId, triggeredBy: req.user?.id }
-          ).catch(() => {});
+        import('../services/job-queue-service.js').then(({ jobQueueService }) => {
+          jobQueueService.submit('teams.provision', {
+            operation: 'addMember',
+            projectId,
+            personId,
+            tenantId: req.user?.tenantId,
+            triggeredBy: req.user?.id,
+          }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
         }).catch(() => {});
       }
 
@@ -1222,6 +1243,51 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         dataQualityReport = await storage.checkStatusReportDataQuality(projectId, startDate, endDate, user.tenantId);
       } catch (qErr) {
         console.warn("[STATUS-REPORT] Could not run data quality pre-flight:", qErr);
+      }
+
+      // Async job mode: submit job and return immediately (default behavior)
+      // Pass ?wait=true for synchronous mode (backwards compatibility)
+      const useAsync = req.query.wait !== 'true';
+      if (useAsync) {
+        const { jobQueueService } = await import("../services/job-queue-service.js");
+        const job = await jobQueueService.submit('ai.statusReport.generate', {
+          projectId,
+          startDate,
+          endDate,
+          style: reportStyle,
+          userId: user.id,
+          tenantId: srTenantId,
+          systemPrompt,
+          userMessage,
+          maxTokens: targetMaxTokens,
+        }, {
+          tenantId: srTenantId,
+          createdBy: user.id,
+          maxAttempts: 2,
+        });
+        return res.status(202).json({
+          jobId: job.id,
+          message: 'Status report generation queued',
+          projectId,
+          dataQualityWarnings: dataQualityReport?.warnings || [],
+          dataQualityOverallStatus: dataQualityReport?.overallStatus || null,
+          reportMetadata: {
+            projectName: project.name,
+            clientName: (project as any).client?.name || 'Unknown',
+            startDate,
+            endDate,
+            style: reportStyle,
+            totalHours,
+            totalBillableHours,
+            totalExpenses,
+            teamMemberCount: teamMembers.size,
+            generatedAt: new Date().toISOString(),
+            generatedBy: user.name || user.email,
+            raidd: raiddCounts,
+            dataQualityWarnings: dataQualityReport?.warnings || [],
+            dataQualityOverallStatus: dataQualityReport?.overallStatus || null,
+          },
+        });
       }
 
       // Classify AI errors into actionable categories for clear user messaging

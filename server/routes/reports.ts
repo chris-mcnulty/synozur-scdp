@@ -1297,6 +1297,54 @@ ${raiddSummary}`;
         : await storage.getActiveGroundingDocuments();
       const groundingCtx = buildGroundingContext(groundingDocs, 'executive_narrative');
 
+      const stats = {
+        totalHours: Math.round(totalHours * 10) / 10,
+        billableHours: Math.round(billableHours * 10) / 10,
+        totalRevenue: Math.round(totalRevenue),
+        totalExpenses: Math.round(totalExpenseAmount),
+        activeProjects: activeProjects.length,
+        estimatesCreated: activity.estimates.length,
+        milestonesCompleted: completedMilestones.length,
+        openRisks: raiddCounts.openRisks,
+        openIssues: raiddCounts.openIssues,
+        openActions: raiddCounts.openActions,
+        statusReportsPublished: activity.statusReports.length,
+        activeAssignments: activity.assignments.length,
+        raiddHighPriority: highPriorityRaidd.map((r: any) => ({
+          type: r.type,
+          refNumber: r.refNumber,
+          title: r.title,
+          priority: r.priority,
+          impact: r.impact || r.description || '',
+          projectName: r.projectName || '',
+        })),
+      };
+
+      // Async job mode: submit job and return immediately (default behavior)
+      // Pass ?wait=true for synchronous mode (backwards compatibility)
+      const useAsync = req.query.wait !== 'true';
+      if (useAsync) {
+        const { jobQueueService } = await import('../services/job-queue-service.js');
+        const job = await jobQueueService.submit('ai.executiveNarrative.generate', {
+          tenantId,
+          userId: user?.id,
+          startDate,
+          endDate,
+          dataPayload,
+          groundingCtx,
+        }, {
+          tenantId,
+          createdBy: user?.id,
+          maxAttempts: 2,
+        });
+        return res.status(202).json({
+          jobId: job.id,
+          message: 'Executive narrative generation queued',
+          period: { startDate, endDate },
+          stats,
+        });
+      }
+
       const narrative = await aiService.generateExecutiveNarrative(
         dataPayload,
         groundingCtx,
@@ -1307,28 +1355,7 @@ ${raiddSummary}`;
       res.json({
         narrative,
         period: { startDate, endDate },
-        stats: {
-          totalHours: Math.round(totalHours * 10) / 10,
-          billableHours: Math.round(billableHours * 10) / 10,
-          totalRevenue: Math.round(totalRevenue),
-          totalExpenses: Math.round(totalExpenseAmount),
-          activeProjects: activeProjects.length,
-          estimatesCreated: activity.estimates.length,
-          milestonesCompleted: completedMilestones.length,
-          openRisks: raiddCounts.openRisks,
-          openIssues: raiddCounts.openIssues,
-          openActions: raiddCounts.openActions,
-          statusReportsPublished: activity.statusReports.length,
-          activeAssignments: activity.assignments.length,
-          raiddHighPriority: highPriorityRaidd.map(r => ({
-            type: r.type,
-            refNumber: r.refNumber,
-            title: r.title,
-            priority: r.priority,
-            impact: r.impact || r.description || '',
-            projectName: r.projectName || '',
-          })),
-        },
+        stats,
       });
     } catch (error: any) {
       console.error("[AI] Executive narrative generation failed:", error);

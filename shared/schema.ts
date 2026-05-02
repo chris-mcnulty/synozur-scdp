@@ -3842,3 +3842,36 @@ export const insertUserCalendarMappingSchema = createInsertSchema(userCalendarMa
 });
 export type InsertUserCalendarMapping = z.infer<typeof insertUserCalendarMappingSchema>;
 export type UserCalendarMapping = typeof userCalendarMappings.$inferSelect;
+
+// ============================================================================
+// BACKGROUND JOBS — persistent async job queue for PDF, AI, and Graph ops
+// ============================================================================
+
+export const backgroundJobs = pgTable("background_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: varchar("type", { length: 100 }).notNull(),
+  payload: jsonb("payload").$type<Record<string, any>>().notNull().default({}),
+  status: varchar("status", { length: 20 }).notNull().default("queued"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  lastError: text("last_error"),
+  runAfter: timestamp("run_after"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  startedAt: timestamp("started_at"),
+  finishedAt: timestamp("finished_at"),
+  result: jsonb("result").$type<Record<string, any>>(),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: 'set null' }),
+}, (table) => ({
+  statusIdx: index("idx_background_jobs_status").on(table.status),
+  createdAtIdx: index("idx_background_jobs_created_at").on(table.createdAt),
+  tenantIdx: index("idx_background_jobs_tenant").on(table.tenantId),
+  typeIdx: index("idx_background_jobs_type").on(table.type),
+}));
+
+export const insertBackgroundJobSchema = createInsertSchema(backgroundJobs).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertBackgroundJob = z.infer<typeof insertBackgroundJobSchema>;
+export type BackgroundJob = typeof backgroundJobs.$inferSelect;

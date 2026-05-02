@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Helmet } from "react-helmet-async";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Layout } from "@/components/layout/layout";
@@ -85,18 +85,39 @@ export default function ExecutiveNarrative() {
   const [saved, setSaved] = useState(false);
   const [templateSlots, setTemplateSlots] = useState({ title: true, section: true, closing: true });
 
+  const [pendingJob, setPendingJob] = useState<{ jobId: string; period: NarrativeResponse['period']; stats: NarrativeStats } | null>(null);
+
+  const jobPollQuery = useQuery<{ status: string; result?: any; lastError?: string }>({
+    queryKey: ['/api/jobs', pendingJob?.jobId],
+    enabled: !!pendingJob,
+    refetchInterval: 2000,
+    staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (!pendingJob || !jobPollQuery.data) return;
+    const job = jobPollQuery.data;
+    if (job.status === 'succeeded' && job.result) {
+      setResult({ narrative: job.result.narrative, period: pendingJob.period, stats: pendingJob.stats });
+      setSaved(false);
+      setPendingJob(null);
+      toast({ title: "Narrative Generated", description: "Your executive summary is ready." });
+    } else if (job.status === 'failed' || job.status === 'permanently_failed') {
+      setPendingJob(null);
+      toast({ title: "Generation Failed", description: job.lastError || "Could not generate the executive narrative.", variant: "destructive" });
+    }
+  }, [jobPollQuery.data, pendingJob]);
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("/api/reports/executive-narrative", {
         method: "POST",
         body: JSON.stringify({ startDate, endDate }),
       });
-      return res as NarrativeResponse;
+      return res as { jobId: string; period: NarrativeResponse['period']; stats: NarrativeStats };
     },
     onSuccess: (data) => {
-      setResult(data);
-      setSaved(false);
-      toast({ title: "Narrative Generated", description: "Your executive summary is ready." });
+      setPendingJob({ jobId: data.jobId, period: data.period, stats: data.stats });
     },
     onError: (error: any) => {
       toast({
@@ -106,6 +127,8 @@ export default function ExecutiveNarrative() {
       });
     },
   });
+
+  const isGenerating = generateMutation.isPending || !!pendingJob;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -248,13 +271,13 @@ export default function ExecutiveNarrative() {
               </div>
               <Button
                 onClick={() => generateMutation.mutate()}
-                disabled={generateMutation.isPending || !startDate || !endDate}
+                disabled={isGenerating || !startDate || !endDate}
                 className="min-w-[160px]"
               >
-                {generateMutation.isPending ? (
+                {isGenerating ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Generating...
+                    {pendingJob ? "Writing narrative..." : "Preparing..."}
                   </>
                 ) : (
                   <>
@@ -264,9 +287,9 @@ export default function ExecutiveNarrative() {
                 )}
               </Button>
             </div>
-            {generateMutation.isPending && (
+            {isGenerating && (
               <p className="text-sm text-muted-foreground mt-3">
-                Aggregating data and generating narrative. This may take 30–60 seconds...
+                {pendingJob ? "AI is writing your narrative. This may take 30–60 seconds..." : "Aggregating data..."}
               </p>
             )}
           </CardContent>

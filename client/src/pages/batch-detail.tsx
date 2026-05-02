@@ -778,12 +778,6 @@ export default function BatchDetail() {
     try {
       setIsPDFGenerating(true);
       
-      // Show loading message
-      toast({
-        title: "Generating PDF",
-        description: "Please wait, this may take a few seconds...",
-      });
-      
       // Get session ID from localStorage for authenticated request
       const sessionId = localStorage.getItem('sessionId');
       
@@ -797,26 +791,52 @@ export default function BatchDetail() {
         return;
       }
 
-      // Make authenticated request to PDF endpoint
-      const response = await fetch(`/api/invoice-batches/${batchId}/pdf`, {
+      // Submit async PDF generation job
+      toast({ title: "Generating PDF", description: "Starting PDF generation..." });
+      const jobResponse = await fetch(`/api/invoice-batches/${batchId}/pdf`, {
         method: 'GET',
-        headers: {
-          'X-Session-Id': sessionId,
-        },
-        credentials: 'include'
+        headers: { 'X-Session-Id': sessionId },
+        credentials: 'include',
       });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          toast({
-            title: "Authentication failed",
-            description: "Session expired. Please log in again.",
-            variant: "destructive"
-          });
+      if (!jobResponse.ok) {
+        if (jobResponse.status === 401) {
+          toast({ title: "Authentication failed", description: "Session expired. Please log in again.", variant: "destructive" });
           setIsPDFGenerating(false);
           return;
         }
-        
+        const errorData = await jobResponse.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP ${jobResponse.status}`);
+      }
+
+      const { jobId } = await jobResponse.json();
+
+      // Poll job until succeeded or failed (max 2 min)
+      toast({ title: "Generating PDF", description: "PDF is being generated, please wait..." });
+      let succeeded = false;
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const pollRes = await fetch(`/api/jobs/${jobId}`, {
+          headers: { 'X-Session-Id': sessionId },
+          credentials: 'include',
+        });
+        if (!pollRes.ok) continue;
+        const job = await pollRes.json();
+        if (job.status === 'succeeded') { succeeded = true; break; }
+        if (job.status === 'failed' || job.status === 'permanently_failed') {
+          throw new Error(job.lastError || 'PDF generation failed');
+        }
+      }
+      if (!succeeded) throw new Error('PDF generation timed out. Please try again.');
+
+      // Download the cached PDF (now stored by the completed job)
+      const response = await fetch(`/api/invoice-batches/${batchId}/pdf?wait=true`, {
+        method: 'GET',
+        headers: { 'X-Session-Id': sessionId },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
         throw new Error(errorData.message || `HTTP ${response.status}`);
       }

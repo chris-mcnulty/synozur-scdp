@@ -905,9 +905,72 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
       const { batchId } = req.params;
 
+      // Async mode: submit a background job and return immediately with { jobId }
+      // Pass ?wait=true for synchronous (legacy) behavior
+      const useAsync = req.query.wait !== 'true';
+      if (useAsync) {
+        // Gather the company settings needed for PDF generation
+        const tenantId = (await storage.getInvoiceBatchDetails(batchId))?.tenantId || (req.user as any)?.primaryTenantId;
+        let companySettings: Record<string, any> = {};
+        let invoiceTimezone = 'America/New_York';
+
+        if (tenantId) {
+          const tenant = await storage.getTenant(tenantId);
+          if (tenant) {
+            companySettings.companyName = tenant.name || undefined;
+            companySettings.companyLogo = tenant.logoUrl || undefined;
+            companySettings.companyAddress = tenant.companyAddress || undefined;
+            companySettings.companyPhone = tenant.companyPhone || undefined;
+            companySettings.companyEmail = tenant.companyEmail || undefined;
+            companySettings.companyWebsite = tenant.companyWebsite || undefined;
+            companySettings.paymentTerms = tenant.paymentTerms || undefined;
+            companySettings.showConstellationFooter = tenant.showConstellationFooter ?? true;
+            if (tenant.defaultTimezone) invoiceTimezone = tenant.defaultTimezone;
+          }
+        }
+
+        if (!companySettings.companyName) companySettings.companyName = await storage.getSystemSettingValue('COMPANY_NAME', 'Your Company Name');
+        if (!companySettings.companyLogo) companySettings.companyLogo = await storage.getSystemSettingValue('COMPANY_LOGO_URL');
+        if (!companySettings.companyAddress) companySettings.companyAddress = await storage.getSystemSettingValue('COMPANY_ADDRESS');
+        if (!companySettings.companyPhone) companySettings.companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
+        if (!companySettings.companyEmail) companySettings.companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
+        if (!companySettings.companyWebsite) companySettings.companyWebsite = await storage.getSystemSettingValue('COMPANY_WEBSITE');
+        if (!companySettings.paymentTerms) companySettings.paymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Net 30');
+
+        const { jobQueueService } = await import('../services/job-queue-service.js');
+        const job = await jobQueueService.submit('pdf.invoice.generate', {
+          batchId,
+          companySettings,
+          timezone: invoiceTimezone,
+          tenantId,
+        }, {
+          tenantId,
+          createdBy: (req.user as any)?.id,
+          maxAttempts: 2,
+        });
+
+        return res.status(202).json({ jobId: job.id, message: 'PDF generation queued', batchId });
+      }
+
       const batch = await storage.getInvoiceBatchDetails(batchId);
       if (!batch) {
         return res.status(404).json({ message: "Invoice batch not found" });
+      }
+
+      // If an async job already generated and stored the PDF, serve it without regenerating
+      if (batch.pdfFileId) {
+        try {
+          const cachedBuffer = await invoicePDFStorage.getInvoicePDF(batch.pdfFileId);
+          if (cachedBuffer) {
+            const cachedLines = await storage.getInvoiceLinesForBatch(batchId);
+            const cachedFileName = buildInvoicePDFFilename(batchId, batch.glInvoiceNumber, cachedLines);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename="' + cachedFileName + '"');
+            return res.send(cachedBuffer);
+          }
+        } catch {
+          // Fall through to regeneration if cached PDF is unavailable
+        }
       }
 
       const lines = await storage.getInvoiceLinesForBatch(batchId);
