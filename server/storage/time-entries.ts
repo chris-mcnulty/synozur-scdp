@@ -440,6 +440,26 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     return updated;
   },
 
+  async recallTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]> {
+    if (entryIds.length === 0) return [];
+    const updated = await db.update(timeEntries)
+      .set({
+        submissionStatus: 'draft',
+        submittedAt: null,
+        submittedBy: null,
+        approvedBy: null,
+        approvedAt: null,
+        rejectionNote: null,
+      })
+      .where(and(
+        inArray(timeEntries.id, entryIds),
+        eq(timeEntries.submissionStatus, 'submitted'),
+        eq(timeEntries.personId, userId)
+      ))
+      .returning();
+    return updated;
+  },
+
   async rejectTimeEntries(entryIds: string[], approverId: string, note: string): Promise<TimeEntry[]> {
     if (entryIds.length === 0) return [];
     const updated = await db.update(timeEntries)

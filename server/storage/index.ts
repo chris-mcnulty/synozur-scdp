@@ -240,6 +240,7 @@ export interface IStorage {
   submitTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]>;
   approveTimeEntries(entryIds: string[], approverId: string): Promise<TimeEntry[]>;
   rejectTimeEntries(entryIds: string[], approverId: string, note: string): Promise<TimeEntry[]>;
+  recallTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]>;
   getTimeApprovalsInbox(filters: { tenantId?: string; submitterId?: string; projectId?: string; startDate?: string; endDate?: string; status?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
   
   // Expenses with Project Resource Support

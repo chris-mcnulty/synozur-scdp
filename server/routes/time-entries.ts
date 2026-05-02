@@ -919,6 +919,41 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
     }
   });
 
+  app.post("/api/time-entries/recall", deps.requireAuth, async (req, res) => {
+    try {
+      const { entryIds } = req.body;
+      if (!Array.isArray(entryIds) || entryIds.length === 0) {
+        return res.status(400).json({ message: "entryIds must be a non-empty array" });
+      }
+
+      const userId = req.user!.id;
+      const tenantId = req.user?.tenantId || req.user?.primaryTenantId;
+
+      for (const id of entryIds) {
+        const entry = await storage.getTimeEntry(id);
+        if (!entry) return res.status(404).json({ message: `Entry ${id} not found` });
+        if (tenantId && entry.tenantId !== tenantId) {
+          return res.status(403).json({ message: "Access denied: entry does not belong to your tenant" });
+        }
+        if (entry.personId !== userId) {
+          return res.status(403).json({ message: "You can only recall your own time entries" });
+        }
+        if (entry.locked) {
+          return res.status(400).json({ message: "Cannot recall locked time entries" });
+        }
+        if (entry.submissionStatus !== 'submitted') {
+          return res.status(400).json({ message: `Entry ${id} is not in submitted state (current: ${entry.submissionStatus})` });
+        }
+      }
+
+      const updated = await storage.recallTimeEntries(entryIds, userId);
+      res.json({ recalled: updated.length, entries: updated });
+    } catch (error: any) {
+      console.error("[TIME_APPROVAL] Recall error:", error);
+      res.status(500).json({ message: "Failed to recall time entries" });
+    }
+  });
+
   app.post("/api/time-entries/approve", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const { entryIds } = req.body;

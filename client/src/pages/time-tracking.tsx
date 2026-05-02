@@ -17,7 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry, type Project, type Client, type User, type ProjectMilestone, type ProjectWorkstream } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown, Sparkles, Send, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown, Sparkles, Send, CheckCircle, XCircle, AlertCircle, Undo2 } from "lucide-react";
 import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
@@ -148,6 +148,29 @@ export default function TimeTracking() {
     queryKey: ["/api/tenant/settings"],
   });
   const requireTimeApproval = tenantSettings?.requireTimeApproval ?? false;
+
+  const recallMutation = useMutation({
+    mutationFn: async (entryIds: string[]) => {
+      return apiRequest("/api/time-entries/recall", {
+        method: "POST",
+        body: JSON.stringify({ entryIds }),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      toast({
+        title: "Recalled",
+        description: `${data.recalled} time ${data.recalled === 1 ? "entry" : "entries"} returned to draft.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Recall failed",
+        description: error.message || "Failed to recall time entry.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const submitForApprovalMutation = useMutation({
     mutationFn: async (entryIds: string[]) => {
@@ -1509,6 +1532,27 @@ export default function TimeTracking() {
                             {format(parseLocalDate(entry.date), 'MMM d')}
                           </div>
                         </div>
+                        {entry.submissionStatus === 'submitted' && entry.personId === currentUser?.id && !entry.locked && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => recallMutation.mutate([entry.id])}
+                                  disabled={recallMutation.isPending}
+                                  data-testid={`button-recall-${entry.id}`}
+                                >
+                                  <Undo2 className="w-3.5 h-3.5 mr-1" />
+                                  Recall
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Withdraw this submission and return it to draft</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                         {canModifyEntry(entry) && (
                           <div className="flex gap-2">
                             <TooltipProvider>
