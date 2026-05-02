@@ -135,17 +135,83 @@ interface StoredTask extends A2ATask {
   ownerTenantId: string | null;
 }
 
-// ─── In-Memory Task Store ─────────────────────────────────────────────────────
+// ─── Task Store: DB-backed durable store with in-memory LRU cache ────────────
+//
+// Tasks are persisted to the `a2a_tasks` table so they survive server restarts
+// and redeploys. The in-memory Map serves as a fast-path cache for hot reads
+// and a zero-dependency fallback when the DB write fails (dev mode).
 
 const taskStore = new Map<string, StoredTask>();
 const MAX_STORE_SIZE = 1000;
 
-function storeTask(task: StoredTask): void {
-  if (taskStore.size >= MAX_STORE_SIZE) {
+function cacheTask(task: StoredTask): void {
+  if (taskStore.size >= MAX_STORE_SIZE && !taskStore.has(task.id)) {
     const oldestKey = taskStore.keys().next().value;
     if (oldestKey) taskStore.delete(oldestKey);
   }
   taskStore.set(task.id, task);
+}
+
+function rowToStoredTask(row: {
+  id: string;
+  userId: string;
+  tenantId: string | null;
+  sessionId: string | null;
+  status: any;
+  artifacts: any;
+  history: any;
+  metadata: any;
+}): StoredTask {
+  return {
+    id: row.id,
+    sessionId: row.sessionId ?? undefined,
+    ownerUserId: row.userId,
+    ownerTenantId: row.tenantId ?? null,
+    status: row.status as A2ATaskStatus,
+    artifacts: (row.artifacts as A2AArtifact[] | null) ?? undefined,
+    history: (row.history as A2AMessage[] | null) ?? undefined,
+    metadata: (row.metadata as Record<string, unknown> | null) ?? undefined,
+  };
+}
+
+async function storeTask(task: StoredTask): Promise<void> {
+  cacheTask(task);
+  try {
+    await storage.createA2ATask({
+      id: task.id,
+      tenantId: task.ownerTenantId,
+      userId: task.ownerUserId,
+      sessionId: task.sessionId ?? null,
+      state: task.status.state,
+      status: task.status as unknown as Record<string, any>,
+      artifacts: (task.artifacts as unknown as Record<string, any>[]) ?? null,
+      history: (task.history as unknown as Record<string, any>[]) ?? null,
+      metadata: (task.metadata as Record<string, any>) ?? null,
+    });
+  } catch (err: unknown) {
+    console.error(
+      "[A2A] Failed to persist task to DB; retained in memory cache:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+async function loadTask(id: string): Promise<StoredTask | undefined> {
+  const cached = taskStore.get(id);
+  if (cached) return cached;
+  try {
+    const row = await storage.getA2ATask(id);
+    if (!row) return undefined;
+    const stored = rowToStoredTask(row);
+    cacheTask(stored);
+    return stored;
+  } catch (err: unknown) {
+    console.error(
+      "[A2A] Failed to read task from DB; falling back to memory:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return undefined;
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1064,6 +1130,27 @@ export function registerA2ARoutes(app: Express) {
       const user = req.user!;
       const ownerUserId: string = user.id;
       const ownerTenantId: string | null = user.tenantId ?? null;
+
+      // Task-ID collision and idempotency checks (durable across restarts via DB)
+      if (requestedId) {
+        const existing = await loadTask(requestedId);
+        if (existing) {
+          if (existing.ownerUserId !== ownerUserId) {
+            // Cross-user hijacking attempt — always reject
+            return res.status(409).json({
+              error: "task_id_conflict",
+              message: "A task with that ID already exists and belongs to a different caller.",
+            });
+          }
+          // Same owner, terminal task — idempotent replay: return prior result without re-executing
+          const state = existing.status.state;
+          if (state === "completed" || state === "failed") {
+            const { ownerUserId: _u, ownerTenantId: _t, ...publicTask } = existing;
+            return res.status(200).json(publicTask);
+          }
+        }
+      }
+
       const taskId: string = requestedId ?? crypto.randomUUID();
 
       // Tracked across try/catch so failures finalize the durable audit row.
@@ -1223,7 +1310,7 @@ export function registerA2ARoutes(app: Express) {
           metadata: { tool, params, correlationId },
         };
 
-        storeTask(task);
+        await storeTask(task);
 
         const { ownerUserId: _u, ownerTenantId: _t, ...publicTask } = task;
 
@@ -1241,7 +1328,7 @@ export function registerA2ARoutes(app: Express) {
         const errCode = error instanceof Error ? (error as Error & { code?: string }).code : undefined;
         console.error(`[A2A] Task ${taskId} failed:`, errMsg);
         const stored = failedTask(taskId, errMsg ?? "An unexpected error occurred.", ownerUserId, ownerTenantId);
-        storeTask(stored);
+        await storeTask(stored);
         const statusCode = errMsg?.startsWith("Invalid params") ? 400
           : errMsg?.includes("is required") ? 400
           : errMsg?.includes("not found") ? 404
@@ -1267,12 +1354,12 @@ export function registerA2ARoutes(app: Express) {
   app.get(
     "/a2a/tasks/get",
     requireBearerAuth,
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
       const id = req.query.id as string;
       if (!id) {
         return res.status(400).json({ error: "invalid_request", message: "Query parameter 'id' is required." });
       }
-      const task = taskStore.get(id);
+      const task = await loadTask(id);
       if (!task) {
         return res.status(404).json({ error: "task_not_found", message: `No task found with id="${id}"` });
       }

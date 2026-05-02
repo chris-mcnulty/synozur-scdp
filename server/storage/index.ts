@@ -80,6 +80,7 @@ import {
   notifications, userNotificationPreferences,
   type Notification, type InsertNotification,
   type UserNotificationPreference, type InsertUserNotificationPreference,
+  a2aTasks, type A2ATaskRow, type InsertA2ATask,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -98,6 +99,7 @@ import { tenantMethods } from "./tenant";
 import { teamsAutomationMethods } from "./teams-automation";
 import { calendarMappingsMethods } from "./calendar-mappings";
 import { notificationsMethods } from "./notifications";
+import { a2aTasksMethods } from "./a2a";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
@@ -1073,6 +1075,10 @@ export interface IStorage {
   // User Notification Preferences
   getUserNotificationPreferences(userId: string, tenantId: string): Promise<UserNotificationPreference[]>;
   upsertUserNotificationPreference(data: InsertUserNotificationPreference): Promise<UserNotificationPreference>;
+
+  // A2A Task persistence
+  createA2ATask(task: InsertA2ATask): Promise<A2ATaskRow>;
+  getA2ATask(id: string): Promise<A2ATaskRow | undefined>;
 }
 
 export class DatabaseStorage {
@@ -1095,6 +1101,7 @@ Object.assign(
   teamsAutomationMethods,
   calendarMappingsMethods,
   notificationsMethods,
+  a2aTasksMethods,
 );
 
 export const storage: IStorage = new DatabaseStorage();

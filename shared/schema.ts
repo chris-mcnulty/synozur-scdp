@@ -3965,3 +3965,30 @@ export const insertUserNotificationPreferenceSchema = createInsertSchema(userNot
 });
 export type InsertUserNotificationPreference = z.infer<typeof insertUserNotificationPreferenceSchema>;
 export type UserNotificationPreference = typeof userNotificationPreferences.$inferSelect;
+
+// ============================================================================
+// A2A TASK PERSISTENCE — durable store for Google A2A task records
+// ============================================================================
+
+export const a2aTasks = pgTable("a2a_tasks", {
+  id: varchar("id").primaryKey(),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: varchar("session_id", { length: 255 }),
+  state: varchar("state", { length: 30 }).notNull(),
+  status: jsonb("status").$type<Record<string, any>>().notNull(),
+  artifacts: jsonb("artifacts").$type<Record<string, any>[]>(),
+  history: jsonb("history").$type<Record<string, any>[]>(),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_a2a_tasks_tenant").on(table.tenantId),
+  userIdx: index("idx_a2a_tasks_user").on(table.userId),
+  createdIdx: index("idx_a2a_tasks_created").on(table.createdAt),
+}));
+
+export const insertA2ATaskSchema = createInsertSchema(a2aTasks).omit({
+  createdAt: true,
+});
+export type InsertA2ATask = z.infer<typeof insertA2ATaskSchema>;
+export type A2ATaskRow = typeof a2aTasks.$inferSelect;
