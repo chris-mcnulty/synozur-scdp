@@ -15,6 +15,13 @@
       "when": 1777588860270,
       "tag": "0001_add_cascade_audit_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777756800293,
+      "tag": "0002_calendar_suggestions",
+      "breakpoints": true
     }
   ]
 }

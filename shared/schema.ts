@@ -264,6 +264,9 @@ export const users = pgTable("users", {
   weeklyCapacityHours: decimal("weekly_capacity_hours", { precision: 5, scale: 2 }).default("40.00"),
   capacityNotes: text("capacity_notes"), // e.g., "Not available Wednesdays", "20hr/week contract"
   capacityEffectiveDate: date("capacity_effective_date"), // When this capacity setting takes effect
+  // Calendar suggestions preferences
+  calendarSuggestionsEnabled: boolean("calendar_suggestions_enabled").notNull().default(true),
+  calendarSuggestionsDaysBack: integer("calendar_suggestions_days_back").notNull().default(0), // 0 = today only
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -1092,6 +1095,9 @@ export const timeEntries = pgTable("time_entries", {
   invoiceBatchId: text("invoice_batch_id").references(() => invoiceBatches.batchId),
   locked: boolean("locked").notNull().default(false),
   lockedAt: timestamp("locked_at"),
+  // Calendar suggestion telemetry
+  fromCalendarSuggestion: boolean("from_calendar_suggestion").notNull().default(false),
+  calendarEventId: text("calendar_event_id"), // Outlook event ID this entry was created from
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_time_entries_tenant").on(table.tenantId),
@@ -3792,3 +3798,29 @@ export const insertTeamsAlertLogSchema = createInsertSchema(teamsAlertLog).omit(
 });
 export type InsertTeamsAlertLog = z.infer<typeof insertTeamsAlertLogSchema>;
 export type TeamsAlertLog = typeof teamsAlertLog.$inferSelect;
+
+// ============================================================================
+// USER CALENDAR MAPPINGS — recurring Outlook event → project memory
+// ============================================================================
+
+export const userCalendarMappings = pgTable("user_calendar_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  // Key: hash of seriesMasterId (if recurring) or hash of subject+organiserEmail
+  eventKey: varchar("event_key", { length: 255 }).notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  lastUsedAt: timestamp("last_used_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  userKeyIdx: uniqueIndex("idx_user_calendar_mappings_user_key").on(table.userId, table.eventKey),
+  userIdx: index("idx_user_calendar_mappings_user").on(table.userId),
+}));
+
+export const insertUserCalendarMappingSchema = createInsertSchema(userCalendarMappings).omit({
+  id: true,
+  createdAt: true,
+  lastUsedAt: true,
+});
+export type InsertUserCalendarMapping = z.infer<typeof insertUserCalendarMappingSchema>;
+export type UserCalendarMapping = typeof userCalendarMappings.$inferSelect;

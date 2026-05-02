@@ -1,0 +1,281 @@
+import type { Express } from "express";
+import { z } from "zod";
+import { storage } from "../storage";
+import { getEventsForUser } from "../services/outlook-client";
+import {
+  mapEventToProject,
+  buildEventKey,
+  computeEventHours,
+  formatEventTime,
+} from "../services/calendar-project-mapper";
+
+interface CalendarSuggestionsRouteDeps {
+  requireAuth: (req: any, res: any, next: any) => void;
+}
+
+export function registerCalendarSuggestionsRoutes(
+  app: Express,
+  deps: CalendarSuggestionsRouteDeps
+) {
+  /**
+   * GET /api/me/calendar-suggestions?date=YYYY-MM-DD
+   *
+   * Returns the authenticated user's Outlook calendar events for the given
+   * date, enriched with project mapping suggestions.
+   *
+   * Each user's calendar is fetched using their own delegated Azure AD token
+   * (from req.user.ssoRefreshToken) and cached per userId+date — event data is
+   * never shared across users.
+   *
+   * Respects the calendarSuggestionsDaysBack preference: if the requested date
+   * is older than the allowed look-back window, empty suggestions are returned.
+   */
+  app.get("/api/me/calendar-suggestions", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const tenantId: string | null = req.user?.tenantId ?? null;
+    const ssoRefreshToken: string | null | undefined = req.user?.ssoRefreshToken;
+    const today = new Date().toISOString().split("T")[0];
+    const date = typeof req.query.date === "string" ? req.query.date : today;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
+    }
+
+    // Load user preferences
+    const currentUser = await storage.getUser(userId);
+    if (!currentUser?.calendarSuggestionsEnabled) {
+      return res.json({ suggestions: [], disabled: true });
+    }
+
+    // Gate by look-back window: if the requested date is older than daysBack, skip.
+    const daysBack = currentUser.calendarSuggestionsDaysBack ?? 0;
+    const requestedDate = new Date(date);
+    const todayDate = new Date(today);
+    const diffDays = Math.round(
+      (todayDate.getTime() - requestedDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    if (diffDays > daysBack) {
+      return res.json({ suggestions: [], disabled: false });
+    }
+
+    try {
+      const events = await getEventsForUser(userId, date, ssoRefreshToken);
+
+      const [projects, userMappings] = await Promise.all([
+        storage.getProjects(tenantId),
+        storage.getUserCalendarMappings(userId),
+      ]);
+
+      const suggestions = events.map(event => {
+        const mapping = mapEventToProject(event, projects, userMappings);
+        const hours = computeEventHours(event);
+        const timeRange = formatEventTime(event);
+        const eventKey = buildEventKey(event);
+
+        const attendees = (event.attendees ?? [])
+          .map(a => ({
+            name: a.emailAddress?.name ?? null,
+            email: a.emailAddress?.address ?? null,
+          }))
+          .filter((a): a is { name: string | null; email: string } => a.email !== null)
+          .slice(0, 10);
+
+        return {
+          eventId: event.id,
+          eventKey,
+          subject: event.subject,
+          timeRange,
+          hours,
+          date,
+          organizer: event.organizer?.emailAddress
+            ? {
+                name: event.organizer.emailAddress.name,
+                email: event.organizer.emailAddress.address,
+              }
+            : null,
+          attendees,
+          seriesMasterId: event.seriesMasterId ?? null,
+          type: event.type ?? "singleInstance",
+          projectId: mapping.projectId,
+          confidence: mapping.confidence,
+          mappingReason: mapping.reason,
+        };
+      });
+
+      const matchedCount = suggestions.filter(s => s.projectId !== null).length;
+      console.log(
+        `[CALENDAR_SUGGESTIONS] user=${userId} date=${date} total=${suggestions.length} matched=${matchedCount}`
+      );
+
+      return res.json({ suggestions, disabled: false });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message.includes("Outlook not connected") ||
+        message.includes("X_REPLIT_TOKEN") ||
+        message.includes("no delegated token") ||
+        message.includes("MSAL instance")
+      ) {
+        return res.json({ suggestions: [], disabled: false, outlookNotConnected: true });
+      }
+      console.error("[CALENDAR_SUGGESTIONS] Error fetching suggestions:", message);
+      return res.status(500).json({ message: "Failed to fetch calendar suggestions" });
+    }
+  });
+
+  /**
+   * POST /api/me/calendar-suggestions/accept
+   *
+   * Accepts one or more calendar suggestion items, creates draft time entries,
+   * and persists the event→project mapping for recurring event memory.
+   *
+   * Authorization: all accepted projectIds must belong to the authenticated
+   * user's tenant before any entry is created.
+   */
+  app.post("/api/me/calendar-suggestions/accept", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const tenantId: string | null = req.user?.tenantId ?? null;
+
+    const acceptSchema = z.object({
+      items: z
+        .array(
+          z.object({
+            eventId: z.string(),
+            eventKey: z.string(),
+            projectId: z.string(),
+            hours: z.number().min(0.01).max(8),
+            description: z.string().default(""),
+            date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            seriesMasterId: z.string().nullable().optional(),
+          })
+        )
+        .min(1),
+    });
+
+    const parsed = acceptSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
+    }
+
+    const { items } = parsed.data;
+
+    // Resolve all unique project IDs upfront and authorise them against the
+    // user's tenant — reject any project that doesn't belong to this tenant.
+    const uniqueProjectIds = [...new Set(items.map(i => i.projectId))];
+    const projectMap = new Map<string, Awaited<ReturnType<typeof storage.getProject>>>();
+
+    for (const projectId of uniqueProjectIds) {
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(422).json({ message: `Project not found: ${projectId}` });
+      }
+      if (tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({
+          message: `Project ${projectId} does not belong to your organization`,
+        });
+      }
+      projectMap.set(projectId, project);
+    }
+
+    const created = [];
+    const errors: string[] = [];
+
+    for (const item of items) {
+      try {
+        const timeEntry = await storage.createTimeEntry({
+          personId: userId,
+          projectId: item.projectId,
+          date: item.date,
+          hours: String(item.hours),
+          description: item.description || "",
+          billable: true,
+          tenantId,
+          fromCalendarSuggestion: true,
+          calendarEventId: item.eventId,
+        });
+
+        created.push(timeEntry);
+
+        // Persist recurring event memory so future suggestions auto-match
+        await storage.upsertCalendarMapping(userId, tenantId, item.eventKey, item.projectId);
+
+        console.log(
+          `[CALENDAR_SUGGESTIONS] user=${userId} accepted eventId=${item.eventId} project=${item.projectId} entry=${timeEntry.id}`
+        );
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[CALENDAR_SUGGESTIONS] Error creating entry:", message);
+        errors.push(`Failed to create entry for event "${item.eventId}": ${message}`);
+      }
+    }
+
+    return res.status(201).json({
+      created: created.length,
+      total: items.length,
+      entries: created,
+      ...(errors.length > 0 ? { errors } : {}),
+    });
+  });
+
+  /**
+   * POST /api/me/calendar-suggestions/telemetry
+   * Records adoption telemetry events: shown, dismissed, manual_project_pick.
+   * Fire-and-forget — the client does not wait for the response.
+   */
+  app.post("/api/me/calendar-suggestions/telemetry", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+
+    const telemetrySchema = z.object({
+      event: z.enum(["shown", "dismissed", "manual_project_pick"]),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      suggestionCount: z.number().int().min(0).optional(),
+      matchedCount: z.number().int().min(0).optional(),
+      eventId: z.string().optional(),
+    });
+
+    const parsed = telemetrySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid telemetry event" });
+    }
+
+    const { event, ...meta } = parsed.data;
+    console.log(
+      `[CALENDAR_SUGGESTIONS:TELEMETRY] user=${userId} event=${event}`,
+      JSON.stringify(meta)
+    );
+
+    return res.json({ ok: true });
+  });
+
+  /**
+   * PATCH /api/me/calendar-suggestions/settings
+   * Update the authenticated user's calendar suggestion preferences.
+   */
+  app.patch("/api/me/calendar-suggestions/settings", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+
+    const settingsSchema = z.object({
+      calendarSuggestionsEnabled: z.boolean().optional(),
+      calendarSuggestionsDaysBack: z.number().int().min(0).max(30).optional(),
+    });
+
+    const parsed = settingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid settings", errors: parsed.error.errors });
+    }
+
+    const updates: Record<string, boolean | number> = {};
+    if (parsed.data.calendarSuggestionsEnabled !== undefined) {
+      updates.calendarSuggestionsEnabled = parsed.data.calendarSuggestionsEnabled;
+    }
+    if (parsed.data.calendarSuggestionsDaysBack !== undefined) {
+      updates.calendarSuggestionsDaysBack = parsed.data.calendarSuggestionsDaysBack;
+    }
+
+    const updatedUser = await storage.updateUser(userId, updates);
+    return res.json({
+      calendarSuggestionsEnabled: updatedUser.calendarSuggestionsEnabled,
+      calendarSuggestionsDaysBack: updatedUser.calendarSuggestionsDaysBack,
+    });
+  });
+}

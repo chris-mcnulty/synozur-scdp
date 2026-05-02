@@ -16,7 +16,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry, type Project, type Client, type User, type ProjectMilestone, type ProjectWorkstream } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown, Sparkles } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { z } from "zod";
 import { formatProjectLabel } from "@/lib/project-utils";
 import { TimeEntryDescriptionField } from "@/components/time-entry-description-field";
+import { CalendarSuggestionsPanel } from "@/components/calendar-suggestions-panel";
 
 const timeEntryFormSchema = insertTimeEntrySchema.omit({
   personId: true,
@@ -879,6 +880,15 @@ export default function TimeTracking() {
             <ImportTimeEntriesButton />
           </div>
         </div>
+
+        {/* Calendar Suggestions Panel */}
+        {projects && (
+          <CalendarSuggestionsPanel
+            date={formatLocalDate(selectedDate)}
+            projects={projects}
+            onEntriesCreated={() => queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] })}
+          />
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Time Entry Form - Mobile Optimized */}

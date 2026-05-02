@@ -215,14 +215,17 @@ export const msalInstance = isConfigured
   ? new ConfidentialClientApplication(msalConfig)
   : null;
 
-// Authentication request parameters
+// Authentication request parameters.
+// Calendars.Read is included so that users grant calendar consent during initial
+// sign-in and their refresh token can later be exchanged for a Calendars.Read
+// access token in the calendar-suggestions service.
 export const authCodeRequest = {
-  scopes: ["user.read", "profile", "email", "openid", "offline_access"], // Added offline_access for refresh token
+  scopes: ["user.read", "profile", "email", "openid", "offline_access", "Calendars.Read"],
   redirectUri: REDIRECT_URI,
 };
 
 export const tokenRequest = {
-  scopes: ["user.read", "profile", "email", "openid", "offline_access"], // Added offline_access for refresh token
+  scopes: ["user.read", "profile", "email", "openid", "offline_access", "Calendars.Read"],
   redirectUri: REDIRECT_URI,
 };
 

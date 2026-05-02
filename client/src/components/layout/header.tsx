@@ -13,7 +13,9 @@ import { useToast } from "@/hooks/use-toast";
 import { MobileNav } from "./mobile-nav";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +23,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+interface UserSettings {
+  receiveTimeReminders: boolean;
+  calendarSuggestionsEnabled: boolean;
+  calendarSuggestionsDaysBack: number;
+}
 
 export function Header() {
   const { user } = useAuth();
@@ -41,7 +49,7 @@ export function Header() {
     },
   });
 
-  const reminderSettingsQuery = useQuery<{ receiveTimeReminders: boolean }>({
+  const reminderSettingsQuery = useQuery<UserSettings>({
     queryKey: ['/api/users', user?.id, 'reminder-settings'],
     enabled: !!user && settingsOpen,
   });
@@ -68,6 +76,28 @@ export function Header() {
     },
   });
 
+  const updateCalendarSettingsMutation = useMutation({
+    mutationFn: (settings: { calendarSuggestionsEnabled?: boolean; calendarSuggestionsDaysBack?: number }) =>
+      apiRequest("/api/me/calendar-suggestions/settings", {
+        method: "PATCH",
+        body: JSON.stringify(settings),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users', user?.id, 'reminder-settings'] });
+      toast({
+        title: "Settings updated",
+        description: "Your calendar suggestion preferences have been saved",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update calendar settings",
+        variant: "destructive",
+      });
+    },
+  });
+
   const getUserInitials = (name: string) => {
     return name
       .split(' ')
@@ -76,6 +106,9 @@ export function Header() {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  const calendarEnabled = reminderSettingsQuery.data?.calendarSuggestionsEnabled ?? true;
+  const daysBack = reminderSettingsQuery.data?.calendarSuggestionsDaysBack ?? 0;
 
   return (
     <header className="bg-card border-b border-border sticky top-0 z-50" data-testid="header">
@@ -150,6 +183,56 @@ export function Header() {
                 disabled={reminderSettingsQuery.isLoading || toggleRemindersMutation.isPending}
                 onCheckedChange={(checked) => toggleRemindersMutation.mutate(checked)}
               />
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between" data-testid="setting-calendar-suggestions">
+                <div className="space-y-0.5">
+                  <Label htmlFor="calendar-suggestions">Calendar Suggestions</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Show Outlook calendar events as time entry suggestions on the time tracking page
+                  </p>
+                </div>
+                <Switch
+                  id="calendar-suggestions"
+                  data-testid="switch-calendar-suggestions"
+                  checked={calendarEnabled}
+                  disabled={reminderSettingsQuery.isLoading || updateCalendarSettingsMutation.isPending}
+                  onCheckedChange={(checked) =>
+                    updateCalendarSettingsMutation.mutate({ calendarSuggestionsEnabled: checked })
+                  }
+                />
+              </div>
+
+              {calendarEnabled && (
+                <div className="flex items-center justify-between pl-0" data-testid="setting-calendar-days-back">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="calendar-days-back">Look back</Label>
+                    <p className="text-sm text-muted-foreground">
+                      How many days back to fetch suggestions
+                    </p>
+                  </div>
+                  <Select
+                    value={String(daysBack)}
+                    onValueChange={(val) =>
+                      updateCalendarSettingsMutation.mutate({ calendarSuggestionsDaysBack: parseInt(val) })
+                    }
+                    disabled={reminderSettingsQuery.isLoading || updateCalendarSettingsMutation.isPending}
+                  >
+                    <SelectTrigger className="w-36" id="calendar-days-back">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Today only</SelectItem>
+                      <SelectItem value="1">Today + 1 day</SelectItem>
+                      <SelectItem value="3">Today + 3 days</SelectItem>
+                      <SelectItem value="7">Today + 7 days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
         </DialogContent>

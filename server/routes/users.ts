@@ -241,7 +241,9 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
       
       res.json({ 
         receiveTimeReminders: user.receiveTimeReminders,
-        receiveExpenseReminders: (user as any).receiveExpenseReminders ?? true
+        receiveExpenseReminders: (user as any).receiveExpenseReminders ?? true,
+        calendarSuggestionsEnabled: user.calendarSuggestionsEnabled ?? true,
+        calendarSuggestionsDaysBack: user.calendarSuggestionsDaysBack ?? 0,
       });
     } catch (error) {
       console.error("Error fetching reminder settings:", error);

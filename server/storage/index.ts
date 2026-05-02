@@ -76,6 +76,7 @@ import {
   teamsMemberSyncState, type TeamsMemberSyncState, type InsertTeamsMemberSyncState,
   type ProjectStatusReport, type InsertProjectStatusReport,
   agentCardHealthChecks, type AgentCardHealthCheck, type InsertAgentCardHealthCheck,
+  userCalendarMappings, type UserCalendarMapping, type InsertUserCalendarMapping,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -92,6 +93,7 @@ import { documentsMethods } from "./documents";
 import { plannerMethods } from "./planner";
 import { tenantMethods } from "./tenant";
 import { teamsAutomationMethods } from "./teams-automation";
+import { calendarMappingsMethods } from "./calendar-mappings";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf } from "./pdf-generation";
@@ -1032,6 +1034,11 @@ export interface IStorage {
   saveAgentCardHealthCheck(result: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck>;
   getAgentCardHealthChecks(limit?: number): Promise<AgentCardHealthCheck[]>;
   pruneAgentCardHealthHistory(olderThanDays: number): Promise<number>;
+
+  // User Calendar Mappings (recurring event → project memory)
+  getUserCalendarMappings(userId: string): Promise<UserCalendarMapping[]>;
+  upsertCalendarMapping(userId: string, tenantId: string | null, eventKey: string, projectId: string): Promise<UserCalendarMapping>;
+  deleteCalendarMapping(userId: string, eventKey: string): Promise<void>;
 }
 
 export class DatabaseStorage {
@@ -1052,6 +1059,7 @@ Object.assign(
   plannerMethods,
   tenantMethods,
   teamsAutomationMethods,
+  calendarMappingsMethods,
 );
 
 export const storage: IStorage = new DatabaseStorage();
