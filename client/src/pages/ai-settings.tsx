@@ -688,6 +688,12 @@ interface CopilotStudioStatus {
   };
   knownClientIds: string[];
   azpEnforcementActive: boolean;
+  tenant: { id: string; name: string | null; slug: string | null } | null;
+  globalKnownClientIds: string[];
+  tenantKnownClientIds: string[] | null;
+  hasTenantOverride: boolean;
+  effectiveSource: "tenant" | "global" | "none";
+  canEditGlobal: boolean;
 }
 
 interface TestResult {
@@ -861,6 +867,7 @@ function AgentCardHealthCard() {
 function CopilotStudioPanel() {
   const { toast } = useToast();
   const [newClientId, setNewClientId] = useState("");
+  const [scope, setScope] = useState<"global" | "tenant">("global");
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const { data: status, isLoading, refetch } = useQuery<CopilotStudioStatus>({
@@ -868,10 +875,10 @@ function CopilotStudioPanel() {
   });
 
   const addClientMutation = useMutation({
-    mutationFn: async (clientId: string) =>
+    mutationFn: async ({ clientId, scope }: { clientId: string; scope: "global" | "tenant" }) =>
       apiRequest("/api/admin/copilot-studio/known-clients", {
         method: "POST",
-        body: JSON.stringify({ clientId }),
+        body: JSON.stringify({ clientId, scope }),
       }),
     onSuccess: () => {
       setNewClientId("");
@@ -884,8 +891,8 @@ function CopilotStudioPanel() {
   });
 
   const removeClientMutation = useMutation({
-    mutationFn: async (clientId: string) =>
-      apiRequest(`/api/admin/copilot-studio/known-clients/${encodeURIComponent(clientId)}`, {
+    mutationFn: async ({ clientId, scope }: { clientId: string; scope: "global" | "tenant" }) =>
+      apiRequest(`/api/admin/copilot-studio/known-clients/${encodeURIComponent(clientId)}?scope=${scope}`, {
         method: "DELETE",
       }),
     onSuccess: () => {
@@ -894,6 +901,32 @@ function CopilotStudioPanel() {
     },
     onError: (err: Error) => {
       toast({ title: "Failed to remove", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const enableOverrideMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest("/api/admin/copilot-studio/known-clients/override", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/copilot-studio/status"] });
+      setScope("tenant");
+      toast({ title: "Tenant override enabled", description: "This tenant now has its own client ID list." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to enable override", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const disableOverrideMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest("/api/admin/copilot-studio/known-clients/override", { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/copilot-studio/status"] });
+      setScope("global");
+      toast({ title: "Tenant override removed", description: "This tenant now uses the global list." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to remove override", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1041,57 +1074,176 @@ function CopilotStudioPanel() {
             )}
           </CardTitle>
           <CardDescription>
-            Copilot Studio agent app Client IDs allowed to call the MCP endpoints. When the list is non-empty, the MCP bearer auth enforces that incoming tokens carry an <code className="text-xs bg-muted px-1 rounded">azp</code> claim matching one of these IDs — preventing unregistered apps from calling the API. When empty, any validly-signed token is accepted.
+            Copilot Studio agent app Client IDs allowed to call the MCP endpoints. When the effective list is non-empty, the MCP bearer auth enforces that incoming tokens carry an <code className="text-xs bg-muted px-1 rounded">azp</code> claim matching one of these IDs — preventing unregistered apps from calling the API. The list applied to a token is the tenant override (when configured) of the user's primary tenant; otherwise the platform-wide global list.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {status?.tenant && (
+            <div className="flex items-start gap-3 p-3 rounded-md border bg-muted/30">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Tenant override</p>
+                <p className="text-sm">
+                  {status.hasTenantOverride ? (
+                    <>This tenant (<span className="font-medium">{status.tenant.name || status.tenant.slug || status.tenant.id}</span>) uses its own list of {status.tenantKnownClientIds?.length ?? 0} client ID(s).</>
+                  ) : (
+                    <>This tenant (<span className="font-medium">{status.tenant.name || status.tenant.slug || status.tenant.id}</span>) inherits the global list.</>
+                  )}
+                </p>
+              </div>
+              {status.hasTenantOverride ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => disableOverrideMutation.mutate()}
+                  disabled={disableOverrideMutation.isPending}
+                >
+                  {disableOverrideMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Use global list
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => enableOverrideMutation.mutate()}
+                  disabled={enableOverrideMutation.isPending}
+                >
+                  {enableOverrideMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Enable tenant override
+                </Button>
+              )}
+            </div>
+          )}
+
           {!status?.azpEnforcementActive && (
             <div className="flex items-start gap-2 p-3 rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/10 text-sm text-yellow-800 dark:text-yellow-400">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>No client IDs configured — any app with a valid Entra token can call MCP endpoints. Add at least one Copilot Studio agent client ID to restrict access.</span>
+              <span>The effective list is empty — any app with a valid Entra token can call MCP endpoints. Add at least one Copilot Studio agent client ID to restrict access.</span>
             </div>
           )}
-          <div className="flex gap-2">
-            <Input
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              value={newClientId}
-              onChange={(e) => setNewClientId(e.target.value)}
-              className="font-mono text-sm"
-            />
-            <Button
-              onClick={() => addClientMutation.mutate(newClientId.trim())}
-              disabled={!newClientId.trim() || addClientMutation.isPending}
-              size="sm"
-            >
-              {addClientMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4" />
-              )}
-              Add
-            </Button>
-          </div>
 
-          {(!status?.knownClientIds || status.knownClientIds.length === 0) ? (
-            <p className="text-sm text-muted-foreground italic">No pre-authorized client IDs configured.</p>
-          ) : (
-            <div className="space-y-2">
-              {status.knownClientIds.map((id) => (
-                <div key={id} className="flex items-center gap-2 p-2 rounded-md border bg-muted/30">
-                  <span className="font-mono text-xs flex-1 break-all">{id}</span>
+          <Tabs value={scope} onValueChange={(v) => setScope(v as "global" | "tenant")}>
+            <TabsList>
+              <TabsTrigger value="global" className="gap-2" data-testid="copilot-scope-global">
+                Global default
+                <Badge variant="outline" className="text-[10px] h-4 px-1">
+                  {status?.globalKnownClientIds?.length ?? 0}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger
+                value="tenant"
+                className="gap-2"
+                disabled={!status?.tenant || !status?.hasTenantOverride}
+                data-testid="copilot-scope-tenant"
+              >
+                Tenant override
+                <Badge variant="outline" className="text-[10px] h-4 px-1">
+                  {status?.hasTenantOverride ? status.tenantKnownClientIds?.length ?? 0 : "—"}
+                </Badge>
+                {status?.effectiveSource === "tenant" && (
+                  <Badge variant="outline" className="text-[10px] h-4 px-1 bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
+                    Active
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="global" className="space-y-3 pt-3">
+              <p className="text-xs text-muted-foreground">
+                Platform-wide default list. Applied to every tenant unless that tenant has its own override.
+                {!status?.canEditGlobal && " Read-only — only platform admins can edit this list."}
+              </p>
+              {status?.canEditGlobal && (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    value={newClientId}
+                    onChange={(e) => setNewClientId(e.target.value)}
+                    className="font-mono text-sm"
+                  />
                   <Button
-                    variant="ghost"
+                    onClick={() => addClientMutation.mutate({ clientId: newClientId.trim(), scope: "global" })}
+                    disabled={!newClientId.trim() || addClientMutation.isPending}
                     size="sm"
-                    className="shrink-0 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => removeClientMutation.mutate(id)}
-                    disabled={removeClientMutation.isPending}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    {addClientMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    Add
                   </Button>
                 </div>
-              ))}
-            </div>
-          )}
+              )}
+              {(!status?.globalKnownClientIds || status.globalKnownClientIds.length === 0) ? (
+                <p className="text-sm text-muted-foreground italic">No global pre-authorized client IDs configured.</p>
+              ) : (
+                <div className="space-y-2">
+                  {status.globalKnownClientIds.map((id) => (
+                    <div key={id} className="flex items-center gap-2 p-2 rounded-md border bg-muted/30">
+                      <span className="font-mono text-xs flex-1 break-all">{id}</span>
+                      {status?.canEditGlobal && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeClientMutation.mutate({ clientId: id, scope: "global" })}
+                          disabled={removeClientMutation.isPending}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="tenant" className="space-y-3 pt-3">
+              {!status?.tenant ? (
+                <p className="text-sm text-muted-foreground italic">No active tenant context for this admin.</p>
+              ) : !status.hasTenantOverride ? (
+                <p className="text-sm text-muted-foreground italic">Enable the tenant override above to manage a per-tenant list.</p>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Per-tenant list for <span className="font-medium">{status.tenant.name || status.tenant.slug || status.tenant.id}</span>. Replaces the global list for tokens whose user belongs to this tenant.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      value={newClientId}
+                      onChange={(e) => setNewClientId(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      onClick={() => addClientMutation.mutate({ clientId: newClientId.trim(), scope: "tenant" })}
+                      disabled={!newClientId.trim() || addClientMutation.isPending}
+                      size="sm"
+                    >
+                      {addClientMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      Add
+                    </Button>
+                  </div>
+                  {!status.tenantKnownClientIds || status.tenantKnownClientIds.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic">Tenant override is enabled but empty — no app can authenticate against MCP for this tenant until you add at least one client ID.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {status.tenantKnownClientIds.map((id) => (
+                        <div key={id} className="flex items-center gap-2 p-2 rounded-md border bg-muted/30">
+                          <span className="font-mono text-xs flex-1 break-all">{id}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeClientMutation.mutate({ clientId: id, scope: "tenant" })}
+                            disabled={removeClientMutation.isPending}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 

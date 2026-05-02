@@ -401,6 +401,26 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
+// Tenant-scoped settings — when present, these override the matching system_settings entry
+// for the given tenant. Used for per-tenant configuration of platform features such as the
+// Copilot Studio known-client-IDs allow list.
+export const tenantSettings = pgTable("tenant_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  settingKey: text("setting_key").notNull(),
+  settingValue: text("setting_value").notNull(),
+  description: text("description"),
+  settingType: text("setting_type").notNull().default("string"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueTenantKey: uniqueIndex("unique_tenant_setting_key").on(table.tenantId, table.settingKey),
+  tenantIdx: index("idx_tenant_settings_tenant").on(table.tenantId),
+}));
+
+export type TenantSetting = typeof tenantSettings.$inferSelect;
+export type InsertTenantSetting = typeof tenantSettings.$inferInsert;
+
 // Airport Codes - IATA 3-letter airport codes (system-wide, no tenant scoping)
 export const airportCodes = pgTable("airport_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

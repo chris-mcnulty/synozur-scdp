@@ -4,6 +4,7 @@ import {
   projects,
   estimates,
   systemSettings,
+  tenantSettings,
   vocabularyCatalog,
   organizationVocabulary,
   tenants,
@@ -12,6 +13,8 @@ import {
   type Estimate,
   type SystemSetting,
   type InsertSystemSetting,
+  type TenantSetting,
+  type InsertTenantSetting,
   type VocabularyCatalog,
   type InsertVocabularyCatalog,
   type OrganizationVocabulary,
@@ -150,6 +153,57 @@ export const adminMethods: ThisType<IStorage & {
     invalidate('system_settings:all');
     // Cannot know the key, so bust all per-key cache entries too
     invalidatePrefix('system_settings:');
+  },
+
+  async getTenantSetting(tenantId: string, key: string): Promise<TenantSetting | undefined> {
+    return getCached(`tenant_settings:${tenantId}:${key}`, TTL_SETTINGS, async () => {
+      const [row] = await db.select()
+        .from(tenantSettings)
+        .where(and(eq(tenantSettings.tenantId, tenantId), eq(tenantSettings.settingKey, key)));
+      return row || undefined;
+    });
+  },
+
+  async getTenantSettingValue(tenantId: string, key: string, defaultValue?: string): Promise<string | undefined> {
+    const row = await this.getTenantSetting(tenantId, key);
+    if (row) return row.settingValue;
+    return defaultValue;
+  },
+
+  async setTenantSetting(
+    tenantId: string,
+    key: string,
+    value: string,
+    description?: string,
+    settingType: string = 'string',
+  ): Promise<TenantSetting> {
+    const existing = await this.getTenantSetting(tenantId, key);
+    let result: TenantSetting;
+    if (existing) {
+      const [updated] = await db.update(tenantSettings)
+        .set({
+          settingValue: value,
+          description: description ?? existing.description,
+          settingType,
+          updatedAt: sql`now()`,
+        })
+        .where(and(eq(tenantSettings.tenantId, tenantId), eq(tenantSettings.settingKey, key)))
+        .returning();
+      result = updated;
+    } else {
+      const [created] = await db.insert(tenantSettings)
+        .values({ tenantId, settingKey: key, settingValue: value, description, settingType })
+        .returning();
+      result = created;
+    }
+    invalidate(`tenant_settings:${tenantId}:${key}`);
+    return result;
+  },
+
+  async deleteTenantSetting(tenantId: string, key: string): Promise<void> {
+    await db.delete(tenantSettings)
+      .where(and(eq(tenantSettings.tenantId, tenantId), eq(tenantSettings.settingKey, key)));
+    invalidate(`tenant_settings:${tenantId}:${key}`);
   },
 
   async getOrganizationVocabulary(): Promise<VocabularyTerms> {

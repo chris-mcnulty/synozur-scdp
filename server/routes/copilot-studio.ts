@@ -1,14 +1,16 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { AGENT_CARD_STATIC } from "../a2a/agent-card-data.js";
-import { invalidateKnownClientCache } from "../auth/mcp-bearer-auth.js";
+import { getEffectiveKnownClientIds } from "../auth/mcp-bearer-auth.js";
 import { getFailingSince, getLastAlertSentAt, REMINDER_INTERVAL_MS } from "../services/agent-card-health-scheduler.js";
 import { z } from "zod";
 
 const KNOWN_CLIENTS_KEY = "COPILOT_KNOWN_CLIENT_IDS";
+const KNOWN_CLIENTS_DESCRIPTION =
+  "Pre-authorized Copilot Studio agent client IDs. When non-empty, the MCP bearer auth middleware enforces that incoming tokens carry an azp claim matching one of these IDs.";
 
-async function getKnownClientIds(): Promise<string[]> {
-  const raw = await storage.getSystemSettingValue(KNOWN_CLIENTS_KEY, "[]");
+function parseIds(raw: string | undefined): string[] {
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -17,14 +19,46 @@ async function getKnownClientIds(): Promise<string[]> {
   }
 }
 
-async function saveKnownClientIds(ids: string[]): Promise<void> {
+async function getGlobalKnownClientIds(): Promise<string[]> {
+  return parseIds(await storage.getSystemSettingValue(KNOWN_CLIENTS_KEY, "[]"));
+}
+
+async function saveGlobalKnownClientIds(ids: string[]): Promise<void> {
   await storage.setSystemSetting(
     KNOWN_CLIENTS_KEY,
     JSON.stringify(ids),
-    "Pre-authorized Copilot Studio agent client IDs. When non-empty, the MCP bearer auth middleware enforces that incoming tokens carry an azp claim matching one of these IDs.",
+    KNOWN_CLIENTS_DESCRIPTION,
     "json"
   );
-  invalidateKnownClientCache();
+}
+
+async function getTenantKnownClientIds(tenantId: string): Promise<string[] | null> {
+  const raw = await storage.getTenantSettingValue(tenantId, KNOWN_CLIENTS_KEY);
+  if (raw === undefined) return null;
+  return parseIds(raw);
+}
+
+async function saveTenantKnownClientIds(tenantId: string, ids: string[]): Promise<void> {
+  await storage.setTenantSetting(
+    tenantId,
+    KNOWN_CLIENTS_KEY,
+    JSON.stringify(ids),
+    KNOWN_CLIENTS_DESCRIPTION,
+    "json"
+  );
+}
+
+async function clearTenantKnownClientIds(tenantId: string): Promise<void> {
+  await storage.deleteTenantSetting(tenantId, KNOWN_CLIENTS_KEY);
+}
+
+function getActiveTenantId(req: Request): string | null {
+  return req.user?.tenantId ?? req.user?.primaryTenantId ?? null;
+}
+
+function isPlatformAdmin(req: Request): boolean {
+  const role = req.user?.platformRole;
+  return role === "global_admin" || role === "constellation_admin";
 }
 
 interface CopilotStudioRouteDeps {
@@ -80,7 +114,10 @@ export function registerCopilotStudioRoutes(
         const runtimeAudience = `api://${runtimeClientId}`;
         const runtimeScope = `${runtimeAudience}/access_as_user`;
 
-        const knownClientIds = await getKnownClientIds();
+        const tenantId = getActiveTenantId(req);
+        const tenantContext = req.tenantContext;
+        const { effective, source, globalIds, tenantIds } =
+          await getEffectiveKnownClientIds(tenantId);
 
         const failingSince = getFailingSince();
         const lastAlertSentAt = getLastAlertSentAt();
@@ -104,8 +141,22 @@ export function registerCopilotStudioRoutes(
             authorizationUrl: oauth2.authorizationUrl,
             staticCardAudienceMatch: runtimeAudience === oauth2.audience,
           },
-          knownClientIds,
-          azpEnforcementActive: knownClientIds.length > 0,
+          knownClientIds: effective,
+          // Enforcement is active whenever a tenant override exists (even when
+          // empty — that's an explicit deny-all) OR the global list is non-empty.
+          azpEnforcementActive: source === "tenant" || effective.length > 0,
+          tenant: tenantId
+            ? {
+                id: tenantId,
+                name: tenantContext?.tenantName ?? null,
+                slug: tenantContext?.tenantSlug ?? null,
+              }
+            : null,
+          globalKnownClientIds: globalIds,
+          tenantKnownClientIds: tenantIds,
+          hasTenantOverride: tenantIds !== null,
+          effectiveSource: source,
+          canEditGlobal: isPlatformAdmin(req),
         });
       } catch (err: any) {
         console.error("[CopilotStudio] status error:", err);
@@ -114,24 +165,85 @@ export function registerCopilotStudioRoutes(
     }
   );
 
+  const scopeSchema = z.enum(["global", "tenant"]);
+
   app.post(
     "/api/admin/copilot-studio/known-clients",
     requireAuth,
     requireAdmin,
     async (req: Request, res: Response) => {
-      const schema = z.object({ clientId: z.string().uuid("Must be a valid UUID") });
+      const schema = z.object({
+        clientId: z.string().uuid("Must be a valid UUID"),
+        scope: scopeSchema.optional(),
+      });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors[0].message });
       }
       const { clientId } = parsed.data;
-      const existing = await getKnownClientIds();
+      const scope = parsed.data.scope ?? "global";
+
+      if (scope === "global") {
+        if (!isPlatformAdmin(req)) {
+          return res.status(403).json({
+            error: "Only platform admins can edit the global Copilot Studio client ID list",
+          });
+        }
+        const existing = await getGlobalKnownClientIds();
+        if (existing.includes(clientId)) {
+          return res.status(409).json({ error: "Client ID already exists in global list" });
+        }
+        const updated = [...existing, clientId];
+        await saveGlobalKnownClientIds(updated);
+        return res.json({
+          scope,
+          globalKnownClientIds: updated,
+          azpEnforcementActive: updated.length > 0,
+        });
+      }
+
+      const tenantId = getActiveTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "No active tenant for this admin" });
+      }
+      const existing = (await getTenantKnownClientIds(tenantId)) ?? [];
       if (existing.includes(clientId)) {
-        return res.status(409).json({ error: "Client ID already exists" });
+        return res.status(409).json({ error: "Client ID already exists in tenant override" });
       }
       const updated = [...existing, clientId];
-      await saveKnownClientIds(updated);
-      res.json({ knownClientIds: updated, azpEnforcementActive: updated.length > 0 });
+      await saveTenantKnownClientIds(tenantId, updated);
+      return res.json({
+        scope,
+        tenantKnownClientIds: updated,
+        hasTenantOverride: true,
+        // A tenant override is always enforced (an empty list = deny-all).
+        azpEnforcementActive: true,
+      });
+    }
+  );
+
+  // NOTE: this must be registered BEFORE the `/:clientId` route below,
+  // otherwise Express would match `/override` as `clientId = "override"`.
+  app.delete(
+    "/api/admin/copilot-studio/known-clients/override",
+    requireAuth,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      const tenantId = getActiveTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "No active tenant for this admin" });
+      }
+      const existing = await getTenantKnownClientIds(tenantId);
+      if (existing === null) {
+        return res.status(404).json({ error: "No tenant override is configured" });
+      }
+      await clearTenantKnownClientIds(tenantId);
+      const globalIds = await getGlobalKnownClientIds();
+      return res.json({
+        hasTenantOverride: false,
+        globalKnownClientIds: globalIds,
+        azpEnforcementActive: globalIds.length > 0,
+      });
     }
   );
 
@@ -141,13 +253,73 @@ export function registerCopilotStudioRoutes(
     requireAdmin,
     async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const existing = await getKnownClientIds();
+      const scope = req.query.scope === "tenant" ? "tenant" : "global";
+
+      if (scope === "global") {
+        if (!isPlatformAdmin(req)) {
+          return res.status(403).json({
+            error: "Only platform admins can edit the global Copilot Studio client ID list",
+          });
+        }
+        const existing = await getGlobalKnownClientIds();
+        const updated = existing.filter((id) => id !== clientId);
+        if (updated.length === existing.length) {
+          return res.status(404).json({ error: "Client ID not found in global list" });
+        }
+        await saveGlobalKnownClientIds(updated);
+        return res.json({
+          scope,
+          globalKnownClientIds: updated,
+          azpEnforcementActive: updated.length > 0,
+        });
+      }
+
+      const tenantId = getActiveTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "No active tenant for this admin" });
+      }
+      const existing = await getTenantKnownClientIds(tenantId);
+      if (existing === null) {
+        return res.status(404).json({ error: "No tenant override is configured" });
+      }
       const updated = existing.filter((id) => id !== clientId);
       if (updated.length === existing.length) {
-        return res.status(404).json({ error: "Client ID not found" });
+        return res.status(404).json({ error: "Client ID not found in tenant override" });
       }
-      await saveKnownClientIds(updated);
-      res.json({ knownClientIds: updated, azpEnforcementActive: updated.length > 0 });
+      await saveTenantKnownClientIds(tenantId, updated);
+      return res.json({
+        scope,
+        tenantKnownClientIds: updated,
+        hasTenantOverride: true,
+        // A tenant override is always enforced (an empty list = deny-all).
+        azpEnforcementActive: true,
+      });
+    }
+  );
+
+  app.post(
+    "/api/admin/copilot-studio/known-clients/override",
+    requireAuth,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      const tenantId = getActiveTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "No active tenant for this admin" });
+      }
+      const existing = await getTenantKnownClientIds(tenantId);
+      if (existing !== null) {
+        return res.status(409).json({ error: "Tenant override already exists" });
+      }
+      // Seed the new override with the current global list so admins start
+      // from a working baseline rather than locking the tenant out.
+      const seed = await getGlobalKnownClientIds();
+      await saveTenantKnownClientIds(tenantId, seed);
+      return res.json({
+        hasTenantOverride: true,
+        tenantKnownClientIds: seed,
+        // A tenant override is always enforced (an empty list = deny-all).
+        azpEnforcementActive: true,
+      });
     }
   );
 

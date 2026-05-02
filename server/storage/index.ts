@@ -35,6 +35,7 @@ import {
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
   type SystemSetting, type InsertSystemSetting,
+  type TenantSetting, type InsertTenantSetting,
   type AirportCode, type InsertAirportCode,
   type OconusPerDiemRate, type InsertOconusPerDiemRate,
   type VocabularyCatalog, type InsertVocabularyCatalog,
@@ -758,6 +759,12 @@ export interface IStorage {
   setSystemSetting(key: string, value: string, description?: string, settingType?: string): Promise<SystemSetting>;
   updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting>;
   deleteSystemSetting(id: string): Promise<void>;
+
+  // Tenant-scoped settings (override system_settings for a specific tenant)
+  getTenantSetting(tenantId: string, key: string): Promise<TenantSetting | undefined>;
+  getTenantSettingValue(tenantId: string, key: string, defaultValue?: string): Promise<string | undefined>;
+  setTenantSetting(tenantId: string, key: string, value: string, description?: string, settingType?: string): Promise<TenantSetting>;
+  deleteTenantSetting(tenantId: string, key: string): Promise<void>;
   
   // Airport Code Methods
   getAllAirportCodes(limit?: number): Promise<AirportCode[]>;
