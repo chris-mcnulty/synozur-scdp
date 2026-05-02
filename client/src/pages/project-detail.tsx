@@ -294,6 +294,90 @@ const quickLogTimeSchema = z.object({
 });
 type QuickLogTimeData = z.infer<typeof quickLogTimeSchema>;
 
+function RoleCoverageCard({
+  allocations,
+  onRoleClick,
+  onViewAllOpen,
+}: {
+  allocations: any[];
+  onRoleClick: (roleId: string) => void;
+  onViewAllOpen?: () => void;
+}) {
+  const nonBaselineAllocations = allocations.filter((a: any) => !a.isBaseline && a.roleId);
+  if (nonBaselineAllocations.length === 0) return null;
+  const roleMap: Record<string, { name: string; total: number; assigned: number }> = {};
+  for (const a of nonBaselineAllocations) {
+    const roleId = a.roleId;
+    if (!roleMap[roleId]) {
+      roleMap[roleId] = { name: a.role?.name || 'Unknown Role', total: 0, assigned: 0 };
+    }
+    roleMap[roleId].total++;
+    if (a.personId) roleMap[roleId].assigned++;
+  }
+  const roleEntries = Object.entries(roleMap).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const totalUnassigned = roleEntries.reduce((sum, [, info]) => sum + (info.total - info.assigned), 0);
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Role Coverage
+            </CardTitle>
+            <CardDescription>
+              Estimated role slots vs. how many are still unassigned
+              {totalUnassigned > 0 && (
+                <span className="ml-2 text-amber-600 dark:text-amber-400 font-medium">
+                  — {totalUnassigned} open slot{totalUnassigned !== 1 ? 's' : ''} remaining
+                </span>
+              )}
+            </CardDescription>
+          </div>
+          {onViewAllOpen && totalUnassigned > 0 && (
+            <Button variant="outline" size="sm" onClick={onViewAllOpen}>
+              <UserPlus className="h-4 w-4 mr-1" />
+              View All Open Slots
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {roleEntries.map(([roleId, info]) => {
+            const unassigned = info.total - info.assigned;
+            const pct = info.total > 0 ? Math.round((info.assigned / info.total) * 100) : 0;
+            return (
+              <div key={roleId} className="flex flex-col gap-1 rounded-lg border p-3 bg-muted/30 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium truncate">{info.name}</span>
+                  {unassigned > 0 ? (
+                    <button
+                      className="shrink-0 text-xs font-semibold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 rounded px-1.5 py-0.5 hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-colors"
+                      title="Click to view unassigned slots for this role"
+                      onClick={() => onRoleClick(roleId)}
+                    >
+                      {unassigned} open
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-xs font-semibold text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40 rounded px-1.5 py-0.5">
+                      Filled
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <Progress value={pct} className="h-1.5 flex-1" />
+                  <span className="text-xs text-muted-foreground shrink-0">{info.assigned}/{info.total}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function TeamsChannelPanel({
   projectId,
   clientTeamId,
@@ -1167,7 +1251,10 @@ export default function ProjectDetail() {
   const [allocationResourceFilter, setAllocationResourceFilter] = useState<string>(() => readStoredFilters(id).resource ?? 'all');
   const [allocationStageFilter, setAllocationStageFilter] = useState<string>(() => readStoredFilters(id).stage ?? 'all');
   const [allocationAssignedFilter, setAllocationAssignedFilter] = useState<string>(() => readStoredFilters(id).assigned ?? 'all');
+  const [allocationRoleFilter, setAllocationRoleFilter] = useState<string>(() => readStoredFilters(id).role ?? 'all');
   const [allocationSearchQuery, setAllocationSearchQuery] = useState<string>(() => readStoredFilters(id).search ?? '');
+  // Delivery sub-tab controlled state (so we can navigate to it programmatically)
+  const [deliverySubTab, setDeliverySubTab] = useState<string>('allocations');
 
   useEffect(() => {
     const stored = readStoredFilters(id);
@@ -1175,6 +1262,7 @@ export default function ProjectDetail() {
     setAllocationResourceFilter(stored.resource ?? 'all');
     setAllocationStageFilter(stored.stage ?? 'all');
     setAllocationAssignedFilter(stored.assigned ?? 'all');
+    setAllocationRoleFilter(stored.role ?? 'all');
     setAllocationSearchQuery(stored.search ?? '');
   }, [id]);
 
@@ -1185,13 +1273,14 @@ export default function ProjectDetail() {
         resource: allocationResourceFilter,
         stage: allocationStageFilter,
         assigned: allocationAssignedFilter,
+        role: allocationRoleFilter,
         search: allocationSearchQuery,
       });
       sessionStorage.setItem(assignmentFiltersSessionKey, payload);
     } catch {
       // ignore storage errors
     }
-  }, [allocationStatusFilter, allocationResourceFilter, allocationStageFilter, allocationAssignedFilter, allocationSearchQuery, assignmentFiltersSessionKey]);
+  }, [allocationStatusFilter, allocationResourceFilter, allocationStageFilter, allocationAssignedFilter, allocationRoleFilter, allocationSearchQuery, assignmentFiltersSessionKey]);
 
   const saveAssignmentFiltersAsDefault = () => {
     try {
@@ -1200,6 +1289,7 @@ export default function ProjectDetail() {
         resource: allocationResourceFilter,
         stage: allocationStageFilter,
         assigned: allocationAssignedFilter,
+        role: allocationRoleFilter,
         search: allocationSearchQuery,
       });
       localStorage.setItem(assignmentFiltersDefaultKey, payload);
@@ -3567,6 +3657,23 @@ export default function ProjectDetail() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Role Coverage Summary — visible from Overview so PMs see gaps before going to Assignments */}
+            <RoleCoverageCard
+              allocations={allocations}
+              onRoleClick={(roleId) => {
+                setAllocationRoleFilter(roleId);
+                setAllocationAssignedFilter('unassigned');
+                setDeliverySubTab('allocations');
+                handleTabChange('delivery');
+              }}
+              onViewAllOpen={() => {
+                setAllocationRoleFilter('all');
+                setAllocationAssignedFilter('unassigned');
+                setDeliverySubTab('allocations');
+                handleTabChange('delivery');
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-6">
@@ -3802,7 +3909,7 @@ export default function ProjectDetail() {
 
           {/* Delivery Tab - Unified view of Structure and Team Allocations */}
           <TabsContent value="delivery" className="space-y-6">
-            <Tabs defaultValue="allocations" className="w-full">
+            <Tabs value={deliverySubTab} onValueChange={setDeliverySubTab} className="w-full">
               <TabsList className="mb-4">
                 <TabsTrigger value="allocations" data-testid="tab-delivery-allocations" className="flex items-center gap-2">
                   Team &amp; Assignments
@@ -4150,6 +4257,15 @@ export default function ProjectDetail() {
               </CardContent>
             </Card>
             
+            {/* Role Coverage Summary (inline, user is already on Assignments tab) */}
+            <RoleCoverageCard
+              allocations={allocations}
+              onRoleClick={(roleId) => {
+                setAllocationRoleFilter(roleId);
+                setAllocationAssignedFilter('unassigned');
+              }}
+            />
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
@@ -4353,7 +4469,28 @@ export default function ProjectDetail() {
                         })}
                     </SelectContent>
                   </Select>
-                  {(allocationStatusFilter !== 'all' || allocationResourceFilter !== 'all' || allocationStageFilter !== 'all' || allocationAssignedFilter !== 'all' || allocationSearchQuery) && (
+                  <Select
+                    value={allocationRoleFilter}
+                    onValueChange={setAllocationRoleFilter}
+                  >
+                    <SelectTrigger className="w-[160px] h-8" data-testid="filter-allocation-role">
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      {Array.from(new Set(allocations.filter((a: any) => a.roleId && !a.isBaseline).map((a: any) => a.roleId)))
+                        .filter(Boolean)
+                        .map((roleId: any) => {
+                          const allocation = allocations.find((a: any) => a.roleId === roleId);
+                          return (
+                            <SelectItem key={roleId} value={roleId}>
+                              {allocation?.role?.name || 'Unknown Role'}
+                            </SelectItem>
+                          );
+                        })}
+                    </SelectContent>
+                  </Select>
+                  {(allocationStatusFilter !== 'all' || allocationResourceFilter !== 'all' || allocationStageFilter !== 'all' || allocationAssignedFilter !== 'all' || allocationRoleFilter !== 'all' || allocationSearchQuery) && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -4363,6 +4500,7 @@ export default function ProjectDetail() {
                         setAllocationResourceFilter('all');
                         setAllocationStageFilter('all');
                         setAllocationAssignedFilter('all');
+                        setAllocationRoleFilter('all');
                         setAllocationSearchQuery('');
                       }}
                     >
@@ -4425,6 +4563,7 @@ export default function ProjectDetail() {
                             if (resourceId !== allocationResourceFilter) return false;
                           }
                           if (allocationStageFilter !== 'all' && allocation.stage?.id !== allocationStageFilter) return false;
+                          if (allocationRoleFilter !== 'all' && allocation.roleId !== allocationRoleFilter) return false;
                           if (allocationAssignedFilter === 'assigned' && !allocation.personId) return false;
                           if (allocationAssignedFilter === 'unassigned' && allocation.personId) return false;
                           if (allocationSearchQuery) {
