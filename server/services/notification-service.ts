@@ -33,6 +33,7 @@ const DEFAULT_PREFS: Record<string, { inApp: boolean; email: boolean; teams: boo
   raidd_overdue:            { inApp: true, email: false, teams: true  },
   status_report_due:        { inApp: true, email: false, teams: true  },
   ai_budget_alert:          { inApp: true, email: true,  teams: false },
+  project_budget_alert:     { inApp: true, email: true,  teams: false },
   time_reminder:            { inApp: true, email: true,  teams: false },
   expense_reminder:         { inApp: true, email: true,  teams: false },
   general:                  { inApp: true, email: false, teams: false },

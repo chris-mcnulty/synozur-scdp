@@ -309,6 +309,18 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import Teams alert scheduler: ${importError.message}`);
       });
 
+      // Start the project budget alert scheduler
+      log('🔄 Starting project budget alert scheduler...');
+      import('./services/budget-alert-scheduler.js').then(({ startBudgetAlertScheduler }) => {
+        startBudgetAlertScheduler().then(() => {
+          log('✅ Project budget alert scheduler started');
+        }).catch((schedulerError: any) => {
+          log(`⚠️ Project budget alert scheduler failed to start: ${schedulerError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import project budget alert scheduler: ${importError.message}`);
+      });
+
       // Start the background job worker
       log('🔄 Starting background job worker...');
       import('./services/job-worker.js').then(({ startJobWorker }) => {

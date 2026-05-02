@@ -3934,6 +3934,7 @@ export const notificationTypeEnum = z.enum([
   'raidd_overdue',
   'status_report_due',
   'ai_budget_alert',
+  'project_budget_alert',
   'time_reminder',
   'expense_reminder',
   'general',
