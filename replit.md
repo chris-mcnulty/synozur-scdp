@@ -3,6 +3,14 @@
 ## Overview
 Constellation is a comprehensive platform for managing the entire consulting project lifecycle, from estimation and resource allocation to time tracking, expense management, and automated invoice generation. It aims to enhance efficiency, streamline operations, and support data-driven consulting practices through features like AI-powered narrative generation and automated expense calculations. The platform prioritizes improved file management, transparent quote displays, advanced resource capacity planning, and milestone-based invoice generation.
 
+## Key Features Added
+- **Weekly Digest Emails**: Scheduled HTML digest emails for each user with open assignments, pending approvals, RAIDD items, upcoming milestones, PM project health, and personal time/expense status. Users can enable/disable, set preferred day and time via Notification Preferences. "Send me a preview" button triggers an immediate digest. Admins can run digests manually and view delivery stats from the Scheduled Jobs page.
+  - Schema: `digest_sends` table (idempotency + delivery tracking), `weekly_digest_enabled/day/time` columns on `users`
+  - Service: `server/services/weekly-digest-service.ts` (builder + HTML email renderer + sender)
+  - Scheduler: `server/services/weekly-digest-scheduler.ts` (node-cron per tenant, mirrors other schedulers)
+  - Routes: `GET/PUT /api/me/digest-preferences`, `POST /api/me/digest/preview`, `GET /api/admin/digests/stats`, `POST /api/admin/weekly-digest/run`
+  - UI: Weekly Digest card in `/notification-preferences`, Weekly Digest job card in `/scheduled-jobs`
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 User management should be consolidated into a single, unified view (like Vega) rather than separate admin pages.

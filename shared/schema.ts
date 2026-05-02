@@ -268,6 +268,10 @@ export const users = pgTable("users", {
   // Calendar suggestions preferences
   calendarSuggestionsEnabled: boolean("calendar_suggestions_enabled").notNull().default(true),
   calendarSuggestionsDaysBack: integer("calendar_suggestions_days_back").notNull().default(0), // 0 = today only
+  // Weekly digest preferences
+  weeklyDigestEnabled: boolean("weekly_digest_enabled").notNull().default(true),
+  weeklyDigestDay: integer("weekly_digest_day").notNull().default(1), // 1=Monday … 7=Sunday
+  weeklyDigestTime: varchar("weekly_digest_time", { length: 5 }).notNull().default("08:00"), // HH:MM
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -4013,3 +4017,28 @@ export const insertA2ATaskSchema = createInsertSchema(a2aTasks).omit({
 });
 export type InsertA2ATask = z.infer<typeof insertA2ATaskSchema>;
 export type A2ATaskRow = typeof a2aTasks.$inferSelect;
+
+// ============================================================================
+// DIGEST SENDS — idempotency record + delivery stats for weekly digests
+// ============================================================================
+
+export const digestSends = pgTable("digest_sends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  weekLabel: varchar("week_label", { length: 10 }).notNull(), // ISO week e.g. "2025-W04"
+  status: varchar("status", { length: 20 }).notNull().default("sent"), // sent | failed | skipped
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueUserWeek: uniqueIndex("uq_digest_sends_user_week").on(table.userId, table.tenantId, table.weekLabel),
+  tenantWeekIdx: index("idx_digest_sends_tenant_week").on(table.tenantId, table.weekLabel),
+  sentAtIdx: index("idx_digest_sends_sent_at").on(table.sentAt),
+}));
+
+export const insertDigestSendSchema = createInsertSchema(digestSends).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertDigestSend = z.infer<typeof insertDigestSendSchema>;
+export type DigestSend = typeof digestSends.$inferSelect;

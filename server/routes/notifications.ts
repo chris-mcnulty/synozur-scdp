@@ -146,4 +146,108 @@ export function registerNotificationRoutes(app: Express, deps: NotificationRoute
       res.status(500).json({ error: "Failed to save preferences" });
     }
   });
+
+  const digestPrefsSchema = z.object({
+    weeklyDigestEnabled: z.boolean(),
+    weeklyDigestDay: z.number().int().min(0).max(7),
+    weeklyDigestTime: z.string().regex(/^\d{2}:\d{2}$/),
+  });
+
+  app.get("/api/me/digest-preferences", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      res.json({
+        weeklyDigestEnabled: (user as any).weeklyDigestEnabled ?? true,
+        weeklyDigestDay: (user as any).weeklyDigestDay ?? 1,
+        weeklyDigestTime: (user as any).weeklyDigestTime ?? "08:00",
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch digest preferences" });
+    }
+  });
+
+  app.put("/api/me/digest-preferences", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const parsed = digestPrefsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid body", details: parsed.error });
+      const updated = await storage.updateUser(userId, {
+        weeklyDigestEnabled: parsed.data.weeklyDigestEnabled,
+        weeklyDigestDay: parsed.data.weeklyDigestDay,
+        weeklyDigestTime: parsed.data.weeklyDigestTime,
+      } as any);
+      res.json({
+        weeklyDigestEnabled: (updated as any).weeklyDigestEnabled,
+        weeklyDigestDay: (updated as any).weeklyDigestDay,
+        weeklyDigestTime: (updated as any).weeklyDigestTime,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to save digest preferences" });
+    }
+  });
+
+  app.post("/api/me/digest/preview", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      const tenantId = req.user?.tenantId;
+      if (!userId || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+      const { sendDigestForUser } = await import('../services/weekly-digest-service.js');
+      const asOf = new Date();
+      const { db } = await import('../db.js');
+      const { digestSends } = await import('@shared/schema.js');
+      const { eq, and } = await import('drizzle-orm');
+      function getIsoWeekLabel(date: Date): string {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+        return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+      }
+      const weekLabel = getIsoWeekLabel(asOf);
+      await db.delete(digestSends).where(and(
+        eq(digestSends.userId, userId),
+        eq(digestSends.tenantId, tenantId),
+        eq(digestSends.weekLabel, weekLabel)
+      ));
+      const result = await sendDigestForUser(userId, tenantId, asOf);
+      res.json({ success: result.status !== 'failed', status: result.status, reason: result.reason });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to send preview digest" });
+    }
+  });
+
+  app.get("/api/admin/digests/stats", requireAuth, async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) return res.status(400).json({ error: "Tenant context required" });
+      const { db } = await import('../db.js');
+      const { digestSends } = await import('@shared/schema.js');
+      const { eq, gte, and, sql } = await import('drizzle-orm');
+      const fourWeeksAgo = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
+      const rows = await db
+        .select({
+          weekLabel: digestSends.weekLabel,
+          status: digestSends.status,
+          count: sql<number>`cast(count(*) as integer)`,
+        })
+        .from(digestSends)
+        .where(and(eq(digestSends.tenantId, tenantId), gte(digestSends.sentAt, fourWeeksAgo)))
+        .groupBy(digestSends.weekLabel, digestSends.status)
+        .orderBy(digestSends.weekLabel);
+
+      const byWeek: Record<string, { sent: number; skipped: number; failed: number }> = {};
+      for (const row of rows) {
+        if (!byWeek[row.weekLabel]) byWeek[row.weekLabel] = { sent: 0, skipped: 0, failed: 0 };
+        const s = row.status as 'sent' | 'skipped' | 'failed';
+        if (s in byWeek[row.weekLabel]) byWeek[row.weekLabel][s] += row.count;
+      }
+      res.json({ weeks: byWeek });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch digest stats" });
+    }
+  });
 }

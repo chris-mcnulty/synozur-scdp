@@ -5,8 +5,12 @@ import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bell, Save } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Bell, Save, Mail, Send, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 
@@ -15,6 +19,12 @@ type PrefRow = {
   inApp: boolean;
   email: boolean;
   teams: boolean;
+};
+
+type DigestPrefs = {
+  weeklyDigestEnabled: boolean;
+  weeklyDigestDay: number;
+  weeklyDigestTime: string;
 };
 
 const NOTIFICATION_TYPES = [
@@ -88,6 +98,31 @@ const DEFAULTS: Record<string, { inApp: boolean; email: boolean; teams: boolean 
 
 const CATEGORIES = ["Expenses", "Projects", "Platform"];
 
+const DAY_OPTIONS = [
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+  { value: "0", label: "Sunday" },
+];
+
+const TIME_OPTIONS = [
+  { value: "06:00", label: "6:00 AM" },
+  { value: "07:00", label: "7:00 AM" },
+  { value: "08:00", label: "8:00 AM" },
+  { value: "09:00", label: "9:00 AM" },
+  { value: "10:00", label: "10:00 AM" },
+  { value: "11:00", label: "11:00 AM" },
+  { value: "12:00", label: "12:00 PM" },
+  { value: "13:00", label: "1:00 PM" },
+  { value: "14:00", label: "2:00 PM" },
+  { value: "15:00", label: "3:00 PM" },
+  { value: "16:00", label: "4:00 PM" },
+  { value: "17:00", label: "5:00 PM" },
+];
+
 export default function NotificationPreferencesPage() {
   const { toast } = useToast();
 
@@ -96,8 +131,20 @@ export default function NotificationPreferencesPage() {
     queryFn: () => apiRequest("/api/me/notification-preferences"),
   });
 
+  const { data: digestPrefsData, isLoading: digestLoading } = useQuery<DigestPrefs>({
+    queryKey: ["/api/me/digest-preferences"],
+    queryFn: () => apiRequest("/api/me/digest-preferences"),
+  });
+
   const [prefs, setPrefs] = useState<Record<string, { inApp: boolean; email: boolean; teams: boolean }>>({});
   const [dirty, setDirty] = useState(false);
+
+  const [digestPrefs, setDigestPrefs] = useState<DigestPrefs>({
+    weeklyDigestEnabled: true,
+    weeklyDigestDay: 1,
+    weeklyDigestTime: "08:00",
+  });
+  const [digestDirty, setDigestDirty] = useState(false);
 
   useEffect(() => {
     const base: Record<string, { inApp: boolean; email: boolean; teams: boolean }> = {};
@@ -112,6 +159,13 @@ export default function NotificationPreferencesPage() {
     setPrefs(base);
     setDirty(false);
   }, [savedPrefs]);
+
+  useEffect(() => {
+    if (digestPrefsData) {
+      setDigestPrefs(digestPrefsData);
+      setDigestDirty(false);
+    }
+  }, [digestPrefsData]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -134,6 +188,39 @@ export default function NotificationPreferencesPage() {
     },
   });
 
+  const saveDigestMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/me/digest-preferences", {
+        method: "PUT",
+        body: JSON.stringify(digestPrefs),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/me/digest-preferences"] });
+      toast({ title: "Digest preferences saved" });
+      setDigestDirty(false);
+    },
+    onError: () => {
+      toast({ title: "Failed to save digest preferences", variant: "destructive" });
+    },
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/me/digest/preview", { method: "POST", body: JSON.stringify({}) }),
+    onSuccess: (data: any) => {
+      if (data?.status === "sent") {
+        toast({ title: "Preview digest sent", description: "Check your inbox." });
+      } else if (data?.status === "skipped") {
+        toast({ title: "Nothing to send", description: data.reason || "No actionable items this week." });
+      } else {
+        toast({ title: "Digest send failed", description: data?.reason, variant: "destructive" });
+      }
+    },
+    onError: () => {
+      toast({ title: "Failed to send preview", variant: "destructive" });
+    },
+  });
+
   const toggle = (type: string, channel: "inApp" | "email" | "teams") => {
     setPrefs((prev) => ({
       ...prev,
@@ -142,7 +229,7 @@ export default function NotificationPreferencesPage() {
     setDirty(true);
   };
 
-  if (isLoading) {
+  if (isLoading || digestLoading) {
     return (
       <Layout>
         <div className="max-w-3xl mx-auto py-6 px-4">
@@ -235,6 +322,104 @@ export default function NotificationPreferencesPage() {
             </Card>
           );
         })}
+
+        <Separator className="my-6" />
+
+        {/* Weekly Digest */}
+        <Card className="mb-4">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-primary" />
+              <div>
+                <CardTitle className="text-base">Weekly Digest Email</CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  A personalised summary of your open assignments, approvals, RAIDD items, milestones, and more — delivered once a week.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="digest-enabled" className="font-medium">Enable weekly digest</Label>
+                <p className="text-xs text-muted-foreground">Receive a weekly HTML email summarising your Constellation activity</p>
+              </div>
+              <Switch
+                id="digest-enabled"
+                checked={digestPrefs.weeklyDigestEnabled}
+                onCheckedChange={(checked) => {
+                  setDigestPrefs((p) => ({ ...p, weeklyDigestEnabled: checked }));
+                  setDigestDirty(true);
+                }}
+              />
+            </div>
+
+            {digestPrefs.weeklyDigestEnabled && (
+              <div className="grid grid-cols-2 gap-4 pt-1">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Delivery day</Label>
+                  <Select
+                    value={String(digestPrefs.weeklyDigestDay)}
+                    onValueChange={(v) => {
+                      setDigestPrefs((p) => ({ ...p, weeklyDigestDay: Number(v) }));
+                      setDigestDirty(true);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DAY_OPTIONS.map((d) => (
+                        <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Delivery time</Label>
+                  <Select
+                    value={digestPrefs.weeklyDigestTime}
+                    onValueChange={(v) => {
+                      setDigestPrefs((p) => ({ ...p, weeklyDigestTime: v }));
+                      setDigestDirty(true);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIME_OPTIONS.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => previewMutation.mutate()}
+                disabled={previewMutation.isPending}
+              >
+                {previewMutation.isPending
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <Send className="w-4 h-4 mr-2" />}
+                {previewMutation.isPending ? "Sending..." : "Send me a preview"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => saveDigestMutation.mutate()}
+                disabled={!digestDirty || saveDigestMutation.isPending}
+              >
+                <Save className="w-4 h-4 mr-1" />
+                {saveDigestMutation.isPending ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {dirty && (
           <div className="fixed bottom-6 right-6">

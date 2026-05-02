@@ -47,6 +47,14 @@ export async function checkAndRunMissedJobs(): Promise<CatchupResult[]> {
           const { runPlanExpirationCheck } = await import('./plan-expiration-scheduler.js');
           await runPlanExpirationCheck('catchup');
         }
+      },
+      {
+        jobType: 'weekly_digest',
+        getExpectedRun: getExpectedWeeklyDigestRun,
+        runJob: async () => {
+          const { runWeeklyDigestsForAllTenants } = await import('./weekly-digest-scheduler.js');
+          await runWeeklyDigestsForAllTenants('catchup');
+        }
       }
     ];
 
@@ -137,4 +145,10 @@ function getExpectedPlannerSyncRun(now: Date, _jobType: string): Date | null {
   const intervalWithBuffer = 35 * 60 * 1000; // 35 minutes
   const expectedRun = new Date(now.getTime() - intervalWithBuffer);
   return expectedRun;
+}
+
+function getExpectedWeeklyDigestRun(now: Date, _jobType: string): Date | null {
+  // Weekly digest: trigger catch-up if no successful run in the last 8 days
+  const eightDaysAgo = new Date(now.getTime() - (8 * 24 * 60 * 60 * 1000));
+  return eightDaysAgo;
 }

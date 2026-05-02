@@ -69,6 +69,13 @@ const JOB_TYPES = [
     icon: GitBranch,
     schedule: 'Every 30 minutes'
   },
+  {
+    id: 'weekly_digest',
+    name: 'Weekly Digest',
+    description: 'Sends personalised weekly digest emails to users with actionable items',
+    icon: Mail,
+    schedule: 'Weekly (Monday 8 AM per tenant timezone)'
+  },
 ];
 
 function getStatusBadge(status: string) {
@@ -201,6 +208,28 @@ export default function ScheduledJobsPage() {
     },
   });
 
+  const runWeeklyDigestMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('/api/admin/weekly-digest/run', { method: 'POST' });
+      return response;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Weekly digests sent",
+        description: `Sent: ${data.sent}, Skipped: ${data.skipped}, Errors: ${data.errors}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/runs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/stats'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to run weekly digest",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const cancelJobMutation = useMutation({
     mutationFn: async (jobId: string) => {
       const response = await apiRequest(`/api/admin/scheduled-jobs/${jobId}/cancel`, { method: 'POST' });
@@ -297,6 +326,8 @@ export default function ScheduledJobsPage() {
                   ? runExpenseRemindersMutation.isPending 
                   : job.id === 'time_reminder'
                   ? runTimeRemindersMutation.isPending
+                  : job.id === 'weekly_digest'
+                  ? runWeeklyDigestMutation.isPending
                   : runPlannerSyncMutation.isPending;
 
                 const handleRunJob = () => {
@@ -306,6 +337,8 @@ export default function ScheduledJobsPage() {
                     runTimeRemindersMutation.mutate();
                   } else if (job.id === 'planner_sync') {
                     runPlannerSyncMutation.mutate();
+                  } else if (job.id === 'weekly_digest') {
+                    runWeeklyDigestMutation.mutate();
                   }
                 };
 

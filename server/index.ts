@@ -321,6 +321,18 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import project budget alert scheduler: ${importError.message}`);
       });
 
+      // Start the weekly digest scheduler
+      log('🔄 Starting weekly digest scheduler...');
+      import('./services/weekly-digest-scheduler.js').then(({ startWeeklyDigestScheduler }) => {
+        startWeeklyDigestScheduler().then(() => {
+          log('✅ Weekly digest scheduler started');
+        }).catch((schedulerError: any) => {
+          log(`⚠️ Weekly digest scheduler failed to start: ${schedulerError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import weekly digest scheduler: ${importError.message}`);
+      });
+
       // Start the background job worker
       log('🔄 Starting background job worker...');
       import('./services/job-worker.js').then(({ startJobWorker }) => {

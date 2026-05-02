@@ -177,6 +177,32 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
     }
   });
 
+  // Weekly digest management
+  app.post("/api/admin/weekly-digest/run", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user.tenantId || user.primaryTenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const { sendDigestForTenant } = await import('../services/weekly-digest-service.js');
+      const result = await sendDigestForTenant(tenantId, 'manual', user.id);
+      res.json({ success: true, message: "Weekly digests sent", ...result });
+    } catch (error: any) {
+      console.error("Error running weekly digest:", error);
+      res.status(500).json({ message: "Failed to run weekly digest" });
+    }
+  });
+
+  app.post("/api/admin/weekly-digest/restart-scheduler", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { restartWeeklyDigestScheduler } = await import('../services/weekly-digest-scheduler.js');
+      await restartWeeklyDigestScheduler();
+      res.json({ success: true, message: "Weekly digest scheduler restarted" });
+    } catch (error: any) {
+      console.error("Error restarting weekly digest scheduler:", error);
+      res.status(500).json({ message: "Failed to restart weekly digest scheduler" });
+    }
+  });
+
   // Scheduled Job Runs - get run history
   // Get job runs (tenant-scoped with platform admin bypass)
   app.get("/api/admin/scheduled-jobs/runs", requireAuth, requireRole(["admin"]), async (req, res) => {
