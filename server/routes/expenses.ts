@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { receiptStorage } from "../services/receipt-storage.js";
 import { emailService } from "../services/email-notification.js";
+import { notify } from "../services/notification-service.js";
 import { graphClient } from "../services/graph-client.js";
 import type { DocumentMetadata } from "../services/local-file-storage.js";
 import { toPendingReceiptInsert, toDateString, toDecimalString, toExpenseInsert } from "../utils/storageMappers.js";
@@ -1314,47 +1315,61 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       }
 
       const submitted = await storage.submitExpenseReport(req.params.id, req.user!.id);
-      
-      const submitter = await storage.getUser(submitted.submitterId);
-      if (submitter && submitter.email && submitter.name) {
-        const tenantId = (submitted as any).tenantId || (req.user as any)?.tenantId || (req.user as any)?.primaryTenantId;
-        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+      const tenantId = req.user!.tenantId;
+
+      if (tenantId) {
+        const submitter = await storage.getUser(submitted.submitterId);
+        const tenant = await storage.getTenant(tenantId);
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
-        
-        const appUrl = process.env.APP_URL 
+        const appUrl = process.env.APP_URL
           || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
-          || process.env.REPLIT_DEPLOYMENT_URL 
+          || process.env.REPLIT_DEPLOYMENT_URL
           || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
         const reportUrl = appUrl ? `${appUrl}/expenses?report=${submitted.id}` : undefined;
-        
-        await emailService.notifyExpenseReportSubmitted(
-          { email: submitter.email, name: submitter.name },
-          submitted.reportNumber,
-          submitted.title,
-          branding,
-          reportUrl
-        );
-        
-        if (tenantId) {
+
+        if (submitter?.email && submitter?.name) {
+          await notify({
+            userId: submitter.id,
+            tenantId,
+            type: 'expense_submitted',
+            title: `Expense Report ${submitted.reportNumber} Submitted`,
+            body: `Your expense report "${submitted.title}" has been submitted for approval.`,
+            entityRef: `expense_report:${submitted.id}`,
+            link: `/expense-reports`,
+            emailFn: async () => emailService.notifyExpenseReportSubmitted(
+              { email: submitter.email!, name: submitter.name! },
+              submitted.reportNumber,
+              submitted.title,
+              branding,
+              reportUrl
+            ),
+          });
+
           const approvers = await storage.getFinancialAlertRecipients(tenantId);
-          
           for (const approver of approvers) {
-            if (approver.email && approver.name) {
-              await emailService.notifyExpenseReportNeedsApproval(
-                { email: approver.email, name: approver.name },
-                { email: submitter.email, name: submitter.name },
+            await notify({
+              userId: approver.id,
+              tenantId,
+              type: 'expense_approval_needed',
+              title: `Expense Report Awaiting Approval: ${submitted.reportNumber}`,
+              body: `${submitter.name} submitted "${submitted.title}" for approval.`,
+              entityRef: `expense_report:${submitted.id}`,
+              link: `/expense-approval`,
+              emailFn: approver.email && approver.name ? async () => emailService.notifyExpenseReportNeedsApproval(
+                { email: approver.email!, name: approver.name! },
+                { email: submitter.email!, name: submitter.name! },
                 submitted.reportNumber,
                 submitted.title,
                 submitted.totalAmount,
                 submitted.currency,
                 branding,
                 reportUrl
-              );
-            }
+              ) : undefined,
+            });
           }
         }
       }
-      
+
       res.json(submitted);
     } catch (error: any) {
       console.error("[EXPENSE_REPORTS] Failed to submit expense report:", error);
@@ -1370,30 +1385,41 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       }
 
       const approved = await storage.approveExpenseReport(req.params.id, req.user!.id);
-      
-      const submitter = await storage.getUser(approved.submitterId);
-      if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
-        const tenantId = (approved as any).tenantId || (req.user as any)?.tenantId || (req.user as any)?.primaryTenantId;
-        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
-        const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
-        
-        const appUrl = process.env.APP_URL 
-          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
-          || process.env.REPLIT_DEPLOYMENT_URL 
-          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
-        const reportUrl = appUrl ? `${appUrl}/expenses?report=${approved.id}` : undefined;
-        
-        await emailService.notifyExpenseReportApproved(
-          { email: submitter.email, name: submitter.name },
-          { email: req.user.email, name: req.user.name },
-          approved.reportNumber,
-          approved.title,
-          undefined,
-          branding,
-          reportUrl
-        );
+      const tenantId = req.user!.tenantId;
+
+      if (tenantId) {
+        const submitter = await storage.getUser(approved.submitterId);
+        if (submitter?.email && submitter?.name && req.user?.email && req.user?.name) {
+          const tenant = await storage.getTenant(tenantId);
+          const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
+          const appUrl = process.env.APP_URL
+            || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
+            || process.env.REPLIT_DEPLOYMENT_URL
+            || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+          const reportUrl = appUrl ? `${appUrl}/expenses?report=${approved.id}` : undefined;
+          const approver = { email: req.user.email!, name: req.user.name! };
+
+          await notify({
+            userId: submitter.id,
+            tenantId,
+            type: 'expense_approved',
+            title: `Expense Report ${approved.reportNumber} Approved`,
+            body: `Your expense report "${approved.title}" has been approved by ${req.user.name}.`,
+            entityRef: `expense_report:${approved.id}`,
+            link: `/expense-reports`,
+            emailFn: async () => emailService.notifyExpenseReportApproved(
+              { email: submitter.email!, name: submitter.name! },
+              approver,
+              approved.reportNumber,
+              approved.title,
+              undefined,
+              branding,
+              reportUrl
+            ),
+          });
+        }
       }
-      
+
       res.json(approved);
     } catch (error: any) {
       console.error("[EXPENSE_REPORTS] Failed to approve expense report:", error);
@@ -1414,30 +1440,41 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       }
 
       const rejected = await storage.rejectExpenseReport(req.params.id, req.user!.id, rejectionNote);
-      
-      const submitter = await storage.getUser(rejected.submitterId);
-      if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
-        const tenantId = (rejected as any).tenantId || (req.user as any)?.tenantId || (req.user as any)?.primaryTenantId;
-        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
-        const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
-        
-        const appUrl = process.env.APP_URL 
-          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
-          || process.env.REPLIT_DEPLOYMENT_URL 
-          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
-        const reportUrl = appUrl ? `${appUrl}/expenses?report=${rejected.id}` : undefined;
-        
-        await emailService.notifyExpenseReportRejected(
-          { email: submitter.email, name: submitter.name },
-          { email: req.user.email, name: req.user.name },
-          rejected.reportNumber,
-          rejected.title,
-          rejected.rejectionNote ?? undefined,
-          branding,
-          reportUrl
-        );
+      const tenantId = req.user!.tenantId;
+
+      if (tenantId) {
+        const submitter = await storage.getUser(rejected.submitterId);
+        if (submitter?.email && submitter?.name && req.user?.email && req.user?.name) {
+          const tenant = await storage.getTenant(tenantId);
+          const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
+          const appUrl = process.env.APP_URL
+            || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://constellation.synozur.com' : null)
+            || process.env.REPLIT_DEPLOYMENT_URL
+            || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+          const reportUrl = appUrl ? `${appUrl}/expenses?report=${rejected.id}` : undefined;
+          const rejecter = { email: req.user.email!, name: req.user.name! };
+
+          await notify({
+            userId: submitter.id,
+            tenantId,
+            type: 'expense_rejected',
+            title: `Expense Report ${rejected.reportNumber} Requires Revision`,
+            body: `Your expense report "${rejected.title}" was reviewed by ${req.user.name} and requires changes.${rejected.rejectionNote ? ` Reason: ${rejected.rejectionNote}` : ''}`,
+            entityRef: `expense_report:${rejected.id}`,
+            link: `/expense-reports`,
+            emailFn: async () => emailService.notifyExpenseReportRejected(
+              { email: submitter.email!, name: submitter.name! },
+              rejecter,
+              rejected.reportNumber,
+              rejected.title,
+              rejected.rejectionNote ?? undefined,
+              branding,
+              reportUrl
+            ),
+          });
+        }
       }
-      
+
       res.json(rejected);
     } catch (error: any) {
       console.error("[EXPENSE_REPORTS] Failed to reject expense report:", error);

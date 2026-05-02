@@ -1,11 +1,13 @@
 import * as cron from 'node-cron';
 import { storage } from '../storage.js';
 import { EmailNotificationService } from './email-notification.js';
+import { notify } from './notification-service.js';
 
 const emailService = new EmailNotificationService();
 
 interface ReminderRecipient {
   userId: string;
+  tenantId: string;
   email: string;
   name: string;
   projectNames: string[];
@@ -91,6 +93,7 @@ async function getUsersNeedingReminders(): Promise<ReminderRecipient[]> {
     if (timeEntries.length === 0) {
       recipients.set(user.id, {
         userId: user.id,
+        tenantId: user.primaryTenantId ?? '',
         email: user.email!,
         name: user.name,
         projectNames: activeProjectNames
@@ -191,12 +194,25 @@ export async function runTimeReminders(
 
     for (const recipient of recipients) {
       try {
-        await sendReminderEmail(recipient, appUrl);
+        if (!recipient.tenantId) {
+          console.warn(`[TIME-REMINDERS] No tenantId for user ${recipient.userId}, skipping notify()`);
+          await sendReminderEmail(recipient, appUrl);
+        } else {
+          await notify({
+            userId: recipient.userId,
+            tenantId: recipient.tenantId,
+            type: 'time_reminder',
+            title: `Time Entry Reminder`,
+            body: `You have not logged time for last week on: ${recipient.projectNames.join(', ')}.`,
+            link: '/time',
+            emailFn: () => sendReminderEmail(recipient, appUrl),
+          });
+        }
         sent++;
-        console.log(`[TIME-REMINDERS] Sent reminder to ${recipient.email}`);
+        console.log(`[TIME-REMINDERS] Notified ${recipient.email}`);
       } catch (error) {
         errors++;
-        console.error(`[TIME-REMINDERS] Failed to send reminder to ${recipient.email}:`, error);
+        console.error(`[TIME-REMINDERS] Failed to notify ${recipient.email}:`, error);
       }
     }
 

@@ -14,9 +14,10 @@
 
 import { storage } from '../storage.js';
 import { db } from '../db.js';
-import { raiddEntries, teamsAlertLog } from '@shared/schema';
+import { raiddEntries, teamsAlertLog, tenantUsers, users } from '@shared/schema';
 import { eq, and, gte, isNotNull, lt } from 'drizzle-orm';
 import { getPlannerGraphClient, isPlannerConfigured } from './planner-graph-client.js';
+import { notify } from './notification-service.js';
 
 export interface TeamsAlertResult {
   sent: number;
@@ -284,6 +285,34 @@ async function checkAndSendHealthAlerts(
         utilizationRate: alert.utilizationRate,
       });
     }
+
+    // Fan out in-app notifications to tenant admins/PMs
+    try {
+      const tenantUserRows = await db.select({ userId: tenantUsers.userId })
+        .from(tenantUsers)
+        .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.status, 'active')));
+      const allUsers = await db.select().from(users)
+        .where(eq(users.isActive, true));
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+      const notifyUserIds = tenantUserRows
+        .map(r => userMap.get(r.userId))
+        .filter(u => u && (u.role === 'admin' || u.role === 'pm' || u.role === 'executive' || u.role === 'portfolio-manager'))
+        .map(u => u!.id);
+      for (const userId of notifyUserIds) {
+        await notify({
+          userId,
+          tenantId,
+          type: 'project_health_alert',
+          title: `Project Health Alert: ${newAlerts.length} project(s) require attention`,
+          body: newAlerts.map(a => `${a.projectName} — ${a.healthStatus === 'OverBudget' ? 'Over Budget' : 'At Risk'} (${a.utilizationRate}%)`).join('; '),
+          entityRef: 'projects:health',
+          link: '/dashboard',
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[TEAMS-ALERT] In-app notification failed (non-blocking):', notifyErr);
+    }
+
     console.log(`[TEAMS-ALERT] Health card sent for ${newAlerts.length} project(s) in tenant ${tenantId}`);
     return { sent: true };
   } catch (err: any) {
@@ -363,6 +392,34 @@ async function checkAndSendRaiddAlerts(
         priority: alert.priority,
       });
     }
+
+    // Fan out in-app notifications to tenant admins/PMs
+    try {
+      const tenantUserRows = await db.select({ userId: tenantUsers.userId })
+        .from(tenantUsers)
+        .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.status, 'active')));
+      const allUsers = await db.select().from(users)
+        .where(eq(users.isActive, true));
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+      const notifyUserIds = tenantUserRows
+        .map(r => userMap.get(r.userId))
+        .filter(u => u && (u.role === 'admin' || u.role === 'pm' || u.role === 'executive' || u.role === 'portfolio-manager'))
+        .map(u => u!.id);
+      for (const userId of notifyUserIds) {
+        await notify({
+          userId,
+          tenantId,
+          type: 'raidd_overdue',
+          title: `${newAlerts.length} RAIDD item(s) are overdue`,
+          body: newAlerts.slice(0, 3).map(a => `${a.title} (${a.projectName}, ${a.daysOverdue}d overdue)`).join('; ') + (newAlerts.length > 3 ? ` +${newAlerts.length - 3} more` : ''),
+          entityRef: 'raidd:overdue',
+          link: '/dashboard',
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[TEAMS-ALERT] In-app notification failed (non-blocking):', notifyErr);
+    }
+
     console.log(`[TEAMS-ALERT] RAIDD card sent for ${newAlerts.length} item(s) in tenant ${tenantId}`);
     return { sent: true };
   } catch (err: any) {
@@ -429,6 +486,34 @@ async function checkAndSendStatusReportAlerts(
         daysSinceLastReport: alert.daysSinceLastReport,
       });
     }
+
+    // Fan out in-app notifications to tenant admins/PMs
+    try {
+      const tenantUserRows = await db.select({ userId: tenantUsers.userId })
+        .from(tenantUsers)
+        .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.status, 'active')));
+      const allUsers = await db.select().from(users)
+        .where(eq(users.isActive, true));
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+      const notifyUserIds = tenantUserRows
+        .map(r => userMap.get(r.userId))
+        .filter(u => u && (u.role === 'admin' || u.role === 'pm' || u.role === 'executive' || u.role === 'portfolio-manager'))
+        .map(u => u!.id);
+      for (const userId of notifyUserIds) {
+        await notify({
+          userId,
+          tenantId,
+          type: 'status_report_due',
+          title: `${newAlerts.length} project(s) have not had a status report in 14+ days`,
+          body: newAlerts.slice(0, 3).map(a => `${a.projectName} (${a.daysSinceLastReport !== null ? `${a.daysSinceLastReport}d ago` : 'never reported'})`).join('; ') + (newAlerts.length > 3 ? ` +${newAlerts.length - 3} more` : ''),
+          entityRef: 'projects:status_report',
+          link: '/dashboard',
+        });
+      }
+    } catch (notifyErr) {
+      console.error('[TEAMS-ALERT] In-app notification failed (non-blocking):', notifyErr);
+    }
+
     console.log(`[TEAMS-ALERT] Status report card sent for ${newAlerts.length} project(s) in tenant ${tenantId}`);
     return { sent: true };
   } catch (err: any) {

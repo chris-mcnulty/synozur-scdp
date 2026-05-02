@@ -1,5 +1,6 @@
 import { storage } from "../storage.js";
 import { emailService } from "./email-notification.js";
+import { notify } from "./notification-service.js";
 
 const ALERT_CHECK_DEBOUNCE_MS = 60_000;
 let lastAlertCheckTime = 0;
@@ -85,12 +86,38 @@ export async function checkUsageThresholds(): Promise<void> {
         </html>
       `;
 
-      for (const email of adminEmails) {
-        await emailService.sendEmail({
-          to: { email, name: 'Platform Admin' },
-          subject,
-          body,
-        });
+      // Fan out via notify() so both in-app and email are gated on each user's preferences.
+      // The rich HTML email body is built once and reused per recipient via the emailFn closure.
+      try {
+        const adminUsers = await storage.getUsers(undefined);
+        const platformAdmins = adminUsers.filter((u: any) =>
+          u.platformRole === 'global_admin' ||
+          u.platformRole === 'constellation_admin' ||
+          adminEmails.includes(u.email ?? '')
+        );
+        const alertTitle = threshold >= 100
+          ? `AI Token Budget Exceeded (${formattedPercent}%)`
+          : `AI Token Usage: ${threshold}% of Monthly Budget Reached`;
+        const alertBody = `Current usage: ${formattedUsage} / ${formattedBudget} tokens (${formattedPercent}%) for ${periodMonth}.`;
+        for (const admin of platformAdmins) {
+          if (!admin.primaryTenantId) continue;
+          const adminEmail = admin.email;
+          const adminName = admin.name;
+          await notify({
+            userId: admin.id,
+            tenantId: admin.primaryTenantId,
+            type: 'ai_budget_alert',
+            title: alertTitle,
+            body: alertBody,
+            entityRef: `ai_budget:${periodMonth}:${threshold}`,
+            link: `/ai-settings`,
+            emailFn: adminEmail
+              ? () => emailService.sendEmail({ to: { email: adminEmail, name: adminName }, subject, body })
+              : undefined,
+          });
+        }
+      } catch (notifyErr) {
+        console.error('[AI_ALERTS] Failed to create in-app notification (non-blocking):', notifyErr);
       }
 
       console.log(`[AI_ALERTS] Sent ${threshold}% threshold alert for ${periodMonth} to ${adminEmails.length} admin(s). Usage: ${formattedUsage}/${formattedBudget} tokens`);

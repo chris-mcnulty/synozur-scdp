@@ -3898,3 +3898,68 @@ export const insertBackgroundJobSchema = createInsertSchema(backgroundJobs).omit
 });
 export type InsertBackgroundJob = z.infer<typeof insertBackgroundJobSchema>;
 export type BackgroundJob = typeof backgroundJobs.$inferSelect;
+
+// ============================================================================
+// IN-APP NOTIFICATION CENTER
+// ============================================================================
+
+export const notificationTypeEnum = z.enum([
+  'expense_submitted',
+  'expense_approval_needed',
+  'expense_approved',
+  'expense_rejected',
+  'project_health_alert',
+  'raidd_overdue',
+  'status_report_due',
+  'ai_budget_alert',
+  'time_reminder',
+  'expense_reminder',
+  'general',
+]);
+export type NotificationType = z.infer<typeof notificationTypeEnum>;
+
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  type: varchar("type", { length: 100 }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  body: text("body"),
+  entityRef: varchar("entity_ref", { length: 100 }),
+  link: text("link"),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  userReadIdx: index("idx_notifications_user_read").on(table.userId, table.readAt, table.createdAt),
+  tenantIdx: index("idx_notifications_tenant").on(table.tenantId),
+  userIdx: index("idx_notifications_user").on(table.userId),
+}));
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+export const userNotificationPreferences = pgTable("user_notification_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  notificationType: varchar("notification_type", { length: 100 }).notNull(),
+  inApp: boolean("in_app").notNull().default(true),
+  email: boolean("email").notNull().default(true),
+  teams: boolean("teams").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  userTypeIdx: uniqueIndex("idx_notif_prefs_user_type").on(table.userId, table.tenantId, table.notificationType),
+}));
+
+export const insertUserNotificationPreferenceSchema = createInsertSchema(userNotificationPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertUserNotificationPreference = z.infer<typeof insertUserNotificationPreferenceSchema>;
+export type UserNotificationPreference = typeof userNotificationPreferences.$inferSelect;

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TenantSwitcher } from "@/components/tenant-switcher";
 import { Separator } from "@/components/ui/separator";
+import { NotificationBell } from "./notification-bell";
 import {
   Dialog,
   DialogContent,
@@ -122,6 +123,7 @@ export function Header() {
         {/* User Menu */}
         <div className="flex items-center space-x-4">
           <TenantSwitcher />
+          <NotificationBell />
           {user && (
             <>
               <div className="text-right hidden sm:block">

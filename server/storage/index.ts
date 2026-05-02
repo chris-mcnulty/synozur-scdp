@@ -77,6 +77,9 @@ import {
   type ProjectStatusReport, type InsertProjectStatusReport,
   agentCardHealthChecks, type AgentCardHealthCheck, type InsertAgentCardHealthCheck,
   userCalendarMappings, type UserCalendarMapping, type InsertUserCalendarMapping,
+  notifications, userNotificationPreferences,
+  type Notification, type InsertNotification,
+  type UserNotificationPreference, type InsertUserNotificationPreference,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -94,6 +97,7 @@ import { plannerMethods } from "./planner";
 import { tenantMethods } from "./tenant";
 import { teamsAutomationMethods } from "./teams-automation";
 import { calendarMappingsMethods } from "./calendar-mappings";
+import { notificationsMethods } from "./notifications";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
@@ -1047,6 +1051,26 @@ export interface IStorage {
   getUserCalendarMappings(userId: string): Promise<UserCalendarMapping[]>;
   upsertCalendarMapping(userId: string, tenantId: string | null, eventKey: string, projectId: string): Promise<UserCalendarMapping>;
   deleteCalendarMapping(userId: string, eventKey: string): Promise<void>;
+
+  // Notifications
+  createNotification(data: InsertNotification): Promise<Notification>;
+  getNotifications(userId: string, tenantId: string, options?: {
+    unreadOnly?: boolean;
+    type?: string;
+    entityRef?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<Notification[]>;
+  getUnreadNotificationCount(userId: string, tenantId: string): Promise<number>;
+  markNotificationRead(id: string, userId: string): Promise<Notification | undefined>;
+  markAllNotificationsRead(userId: string, tenantId: string): Promise<void>;
+  dismissNotification(id: string, userId: string): Promise<void>;
+  dismissAllNotifications(userId: string, tenantId: string): Promise<void>;
+  pruneOldNotifications(olderThanDays: number): Promise<number>;
+
+  // User Notification Preferences
+  getUserNotificationPreferences(userId: string, tenantId: string): Promise<UserNotificationPreference[]>;
+  upsertUserNotificationPreference(data: InsertUserNotificationPreference): Promise<UserNotificationPreference>;
 }
 
 export class DatabaseStorage {
@@ -1068,6 +1092,7 @@ Object.assign(
   tenantMethods,
   teamsAutomationMethods,
   calendarMappingsMethods,
+  notificationsMethods,
 );
 
 export const storage: IStorage = new DatabaseStorage();

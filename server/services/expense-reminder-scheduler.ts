@@ -1,6 +1,7 @@
 import * as cron from 'node-cron';
 import { storage } from '../storage.js';
 import { EmailNotificationService } from './email-notification.js';
+import { notify } from './notification-service.js';
 
 const emailService = new EmailNotificationService();
 
@@ -168,12 +169,20 @@ export async function runExpenseRemindersForTenant(
 
     for (const recipient of recipients) {
       try {
-        await sendExpenseReminderEmail(recipient, appUrl, branding);
+        await notify({
+          userId: recipient.userId,
+          tenantId: recipient.tenantId,
+          type: 'expense_reminder',
+          title: `Expense Submission Reminder`,
+          body: `You have ${recipient.unsubmittedExpenseCount} unsubmitted expense${recipient.unsubmittedExpenseCount === 1 ? '' : 's'} awaiting approval.`,
+          link: '/expenses',
+          emailFn: () => sendExpenseReminderEmail(recipient, appUrl, branding),
+        });
         sent++;
-        console.log(`[EXPENSE-REMINDERS] Sent reminder to ${recipient.email}`);
+        console.log(`[EXPENSE-REMINDERS] Notified ${recipient.email}`);
       } catch (error) {
         errors++;
-        console.error(`[EXPENSE-REMINDERS] Failed to send reminder to ${recipient.email}:`, error);
+        console.error(`[EXPENSE-REMINDERS] Failed to notify ${recipient.email}:`, error);
       }
     }
 

@@ -68,6 +68,8 @@ import EmbedAuthPopup from "@/pages/embed-auth-popup";
 import ResourcePlanning from "@/pages/resource-planning";
 import CapacityPlanning from "@/pages/capacity-planning";
 import NotFound from "@/pages/not-found";
+import NotificationsPage from "@/pages/notifications";
+import NotificationPreferencesPage from "@/pages/notification-preferences";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
 import { useEffect, useState } from "react";
@@ -451,6 +453,12 @@ function Router() {
       </Route>
       <Route path="/support">
         {user ? <Support /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/notifications">
+        {user ? <NotificationsPage /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/notifications/preferences">
+        {user ? <NotificationPreferencesPage /> : <Redirect to="/login" />}
       </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />
