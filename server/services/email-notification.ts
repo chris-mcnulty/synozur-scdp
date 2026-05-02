@@ -363,6 +363,132 @@ export class EmailNotificationService {
 
     await this.sendEmail({ to: employee, subject, body });
   }
+
+  /**
+   * Notify approvers that time entries have been submitted for approval
+   */
+  async notifyTimeEntriesSubmitted(
+    submitter: EmailRecipient,
+    approvers: EmailRecipient[],
+    entryCount: number,
+    weekLabel: string,
+    projectNames: string[],
+    branding?: TenantBranding,
+    inboxUrl?: string
+  ): Promise<void> {
+    if (approvers.length === 0) return;
+    const subject = `Time Entries Submitted for Approval — ${submitter.name}`;
+    const header = getEmailHeader(branding);
+    const reviewButton = inboxUrl ? `
+      <p style="margin: 20px 0;">
+        <a href="${escapeHtml(inboxUrl)}" style="background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Review Submissions</a>
+      </p>
+    ` : '';
+    const projectList = projectNames.length > 0
+      ? `<strong>Projects:</strong> ${escapeHtml(projectNames.join(', '))}<br>`
+      : '';
+    const body = `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
+          <h2 style="color: #7C3AED;">Time Entries Awaiting Your Approval</h2>
+          <p>Hi,</p>
+          <p><strong>${escapeHtml(submitter.name)}</strong> has submitted time entries for your approval:</p>
+          <div style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
+            <strong>Week:</strong> ${escapeHtml(weekLabel)}<br>
+            <strong>Entries:</strong> ${entryCount}<br>
+            ${projectList}
+          </div>
+          ${reviewButton}
+          <p>Please review and approve or reject these entries at your earliest convenience.</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
+        </body>
+      </html>
+    `;
+
+    for (const approver of approvers) {
+      await this.sendEmail({ to: approver, subject, body });
+    }
+  }
+
+  /**
+   * Notify submitter that their time entries were approved
+   */
+  async notifyTimeEntriesApproved(
+    submitter: EmailRecipient,
+    approver: EmailRecipient,
+    entryCount: number,
+    weekLabel: string,
+    branding?: TenantBranding,
+    timeUrl?: string
+  ): Promise<void> {
+    const subject = `Your Time Entries Have Been Approved`;
+    const header = getEmailHeader(branding);
+    const viewButton = timeUrl ? `
+      <p style="margin: 20px 0;">
+        <a href="${escapeHtml(timeUrl)}" style="background-color: #22C55E; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Time Entries</a>
+      </p>
+    ` : '';
+    const body = `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
+          <h2 style="color: #22C55E;">Time Entries Approved</h2>
+          <p>Hi ${escapeHtml(submitter.name)},</p>
+          <p>Your time entries have been approved:</p>
+          <div style="background-color: #f0fdf4; padding: 15px; border-left: 4px solid #22C55E; margin: 20px 0;">
+            <strong>Week:</strong> ${escapeHtml(weekLabel)}<br>
+            <strong>Entries:</strong> ${entryCount}<br>
+            <strong>Approved By:</strong> ${escapeHtml(approver.name)}
+          </div>
+          ${viewButton}
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
+        </body>
+      </html>
+    `;
+    await this.sendEmail({ to: submitter, subject, body });
+  }
+
+  /**
+   * Notify submitter that their time entries were rejected
+   */
+  async notifyTimeEntriesRejected(
+    submitter: EmailRecipient,
+    rejecter: EmailRecipient,
+    entryCount: number,
+    weekLabel: string,
+    rejectionNote: string,
+    branding?: TenantBranding,
+    timeUrl?: string
+  ): Promise<void> {
+    const subject = `Your Time Entries Require Revision`;
+    const header = getEmailHeader(branding);
+    const viewButton = timeUrl ? `
+      <p style="margin: 20px 0;">
+        <a href="${escapeHtml(timeUrl)}" style="background-color: #EF4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Edit Time Entries</a>
+      </p>
+    ` : '';
+    const body = `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
+          <h2 style="color: #EF4444;">Time Entries Require Revision</h2>
+          <p>Hi ${escapeHtml(submitter.name)},</p>
+          <p>Your time entries have been reviewed and require changes:</p>
+          <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #EF4444; margin: 20px 0;">
+            <strong>Week:</strong> ${escapeHtml(weekLabel)}<br>
+            <strong>Entries:</strong> ${entryCount}<br>
+            <strong>Reviewed By:</strong> ${escapeHtml(rejecter.name)}
+            ${rejectionNote ? `<br><br><strong>Reason:</strong><br>${escapeHtml(rejectionNote).replace(/\n/g, '<br>')}` : ''}
+          </div>
+          ${viewButton}
+          <p>Please update your entries and resubmit.</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
+        </body>
+      </html>
+    `;
+    await this.sendEmail({ to: submitter, subject, body });
+  }
 }
 
 // Export the TenantBranding type for use in routes

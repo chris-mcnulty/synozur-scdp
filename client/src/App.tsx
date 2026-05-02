@@ -16,6 +16,7 @@ import Expenses from "@/pages/expenses";
 import ExpenseManagement from "@/pages/expense-management";
 import ExpenseReports from "@/pages/expense-reports";
 import ExpenseApproval from "@/pages/expense-approval";
+import TimeApproval from "@/pages/time-approval";
 import ReimbursementBatches from "@/pages/reimbursement-batches";
 import ContractorInvoices from "@/pages/contractor-invoices";
 import MyContractorInvoices from "@/pages/my-contractor-invoices";
@@ -252,6 +253,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={['admin', 'executive', 'billing-admin']}>
             <ExpenseApproval />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/approvals/time">
+        {user ? (
+          <PermissionGuard allowedRoles={['admin', 'billing-admin', 'pm', 'executive', 'portfolio-manager']}>
+            <TimeApproval />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>

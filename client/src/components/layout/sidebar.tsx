@@ -131,7 +131,7 @@ interface SectionRoute {
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-raidd"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
-  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/contractor-invoices", "/rates"] },
+  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/admin/agent-card-health", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
@@ -264,9 +264,11 @@ export function Sidebar() {
                 <SidebarItem href="/billing" icon={<DollarSign />} label="Billing & Invoicing" />
                 <SidebarItem href="/invoice-report" icon={<FileText />} label="Invoice Report" />
                 <SidebarItem href="/client-revenue-report" icon={<Building2 />} label="Client Revenue" />
+                <SubGroupLabel label="Approvals" />
+                <SidebarItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" />
+                <SidebarItem href="/approvals/time" icon={<Clock />} label="Time Approval" />
                 <SubGroupLabel label="Expenses" />
                 <SidebarItem href="/expense-management" icon={<CreditCard />} label="Expense Management" />
-                <SidebarItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" />
                 <SidebarItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursement Batches" />
                 <SidebarItem href="/contractor-invoices" icon={<FileText />} label="Contractor Invoices" />
                 <SubGroupLabel label="Rates" />

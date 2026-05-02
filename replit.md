@@ -55,6 +55,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Estimate Management**: Supports Excel/CSV import/export, status-based locking, hierarchical rate precedence, and various estimate types.
 - **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, and expense receipt inclusion.
 - **Expense Approval Workflow**: Comprehensive system with finite state machine and role-based access.
+- **Time Entry Approval Workflow**: Time entries follow a `draft → submitted → approved/rejected` lifecycle. When "Require time entry approval before billing" is enabled in Organization Settings (Financial tab), only approved entries appear in billing batches. Managers review submissions at `/approvals/time`. Email notifications sent on submit, approve, and reject. New schema fields: `submissionStatus`, `submittedAt`, `submittedBy`, `approvedBy`, `approvedAt`, `rejectionNote` on `time_entries`; `requireTimeApproval` on `tenants`.
 - **Resource Management**: Dual List/Timeline views, capacity planning, and conflict detection.
 - **Assignment Baselines**: Snapshot current assignments for future analysis, excluded from normal views.
 - **Slippage Analytics Engine**: Composite slippage scoring per project based on weighted signals (Schedule Position, Assignment Health, Milestone Health, RAIDD Signals, Velocity Lag).

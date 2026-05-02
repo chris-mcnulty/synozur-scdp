@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -16,7 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry, type Project, type Client, type User, type ProjectMilestone, type ProjectWorkstream } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown, Sparkles } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown, Sparkles, Send, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -92,6 +93,7 @@ export default function TimeTracking() {
   const [editProjectId, setEditProjectId] = useState<string>("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [editDatePickerOpen, setEditDatePickerOpen] = useState(false);
+  const [selectedForSubmit, setSelectedForSubmit] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -139,7 +141,36 @@ export default function TimeTracking() {
     queryKey: ["/api/auth/user"],
   });
 
-  const isManagerRole = currentUser && ['admin', 'billing-admin', 'pm', 'executive'].includes(currentUser.role);
+  const isManagerRole = currentUser && ['admin', 'billing-admin', 'pm', 'executive', 'portfolio-manager'].includes(currentUser.role);
+
+  const { data: tenantSettings } = useQuery<{ requireTimeApproval?: boolean }>({
+    queryKey: ["/api/tenant/settings"],
+  });
+  const requireTimeApproval = tenantSettings?.requireTimeApproval ?? false;
+
+  const submitForApprovalMutation = useMutation({
+    mutationFn: async (entryIds: string[]) => {
+      return apiRequest("/api/time-entries/submit", {
+        method: "POST",
+        body: JSON.stringify({ entryIds }),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      setSelectedForSubmit(new Set());
+      toast({
+        title: "Submitted for approval",
+        description: `${data.submitted} time ${data.submitted === 1 ? "entry" : "entries"} submitted for manager approval.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Submission failed",
+        description: error.message || "Failed to submit time entries for approval.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: allUsers } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -1269,10 +1300,31 @@ export default function TimeTracking() {
           {/* Time Entries List */}
           <Card className="lg:col-span-2" data-testid="time-entries-list">
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <Clock className="w-5 h-5 mr-2" />
-                Recent Time Entries
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center">
+                  <Clock className="w-5 h-5 mr-2" />
+                  Recent Time Entries
+                </CardTitle>
+                {requireTimeApproval && selectedForSubmit.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => submitForApprovalMutation.mutate(Array.from(selectedForSubmit))}
+                    disabled={submitForApprovalMutation.isPending}
+                    className="text-xs"
+                  >
+                    <Send className="h-3.5 w-3.5 mr-1.5" />
+                    {submitForApprovalMutation.isPending
+                      ? "Submitting..."
+                      : `Submit ${selectedForSubmit.size} for Approval`}
+                  </Button>
+                )}
+              </div>
+              {requireTimeApproval && timeEntries && timeEntries.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Select draft entries and click "Submit for Approval" to send them to your manager.
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -1291,14 +1343,32 @@ export default function TimeTracking() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {timeEntries?.map((entry) => (
+                  {timeEntries?.map((entry) => {
+                    const isDraft = !entry.submissionStatus || entry.submissionStatus === 'draft' || entry.submissionStatus === 'rejected';
+                    const isOwnerEntry = entry.personId === currentUser?.id;
+                    const canSelect = requireTimeApproval && isDraft && isOwnerEntry && !entry.locked;
+                    return (
                     <div
                       key={entry.id}
-                      className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
+                      className="flex items-start justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
                       data-testid={`time-entry-${entry.id}`}
                     >
+                      {canSelect && (
+                        <Checkbox
+                          className="mt-0.5 mr-3 shrink-0"
+                          checked={selectedForSubmit.has(entry.id)}
+                          onCheckedChange={() => {
+                            setSelectedForSubmit(prev => {
+                              const next = new Set(prev);
+                              if (next.has(entry.id)) next.delete(entry.id);
+                              else next.add(entry.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      )}
                       <div className="flex-1">
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
                           <div className="font-medium" data-testid={`entry-project-${entry.id}`}>
                             {entry.project.name}
                           </div>
@@ -1309,6 +1379,42 @@ export default function TimeTracking() {
                             <div className="text-xs bg-chart-4/10 text-chart-4 px-2 py-0.5 rounded-full">
                               Billable
                             </div>
+                          )}
+                          {entry.submissionStatus === 'submitted' && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
+                                    <AlertCircle className="h-3 w-3 mr-1" />Pending
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Submitted, awaiting approval</p></TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                          {entry.submissionStatus === 'approved' && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-xs text-green-600 border-green-500 bg-green-50 dark:bg-green-950/20">
+                                    <CheckCircle className="h-3 w-3 mr-1" />Approved
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Approved for billing</p></TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                          {entry.submissionStatus === 'rejected' && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Badge variant="outline" className="text-xs text-red-600 border-red-500 bg-red-50 dark:bg-red-950/20">
+                                    <XCircle className="h-3 w-3 mr-1" />Rejected
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent><p>{entry.rejectionNote || 'Rejected — check with your manager'}</p></TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           )}
                           {entry.locked && (
                             <TooltipProvider>
@@ -1338,6 +1444,11 @@ export default function TimeTracking() {
                         <div className="text-sm text-muted-foreground mt-1" data-testid={`entry-description-${entry.id}`}>
                           {entry.description}
                         </div>
+                        {entry.submissionStatus === 'rejected' && entry.rejectionNote && (
+                          <div className="text-xs text-red-600 mt-1 italic">
+                            Rejected: {entry.rejectionNote}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
@@ -1390,7 +1501,8 @@ export default function TimeTracking() {
                         )}
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               )}
             </CardContent>

@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog, Search } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog, Search, Clock } from "lucide-react";
 import { MicrosoftPlannerIcon, MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 import { TeamsLinksTab } from "@/components/admin/TeamsLinksTab";
@@ -116,6 +116,7 @@ const financialSchema = z.object({
     const num = parseFloat(val);
     return !isNaN(num) && num >= 0;
   }, "Must be a valid number 0 or greater"),
+  requireTimeApproval: z.boolean().optional(),
 });
 
 type FinancialFormData = z.infer<typeof financialSchema>;
@@ -2852,6 +2853,7 @@ export default function OrganizationSettings() {
       defaultTaxRate: "0",
       invoiceDefaultDiscountType: "percent",
       invoiceDefaultDiscountValue: "0",
+      requireTimeApproval: false,
     },
     values: {
       defaultBillingRate: tenantSettings?.defaultBillingRate || "0",
@@ -2860,6 +2862,7 @@ export default function OrganizationSettings() {
       defaultTaxRate: tenantSettings?.defaultTaxRate || "0",
       invoiceDefaultDiscountType: tenantSettings?.invoiceDefaultDiscountType || "percent",
       invoiceDefaultDiscountValue: tenantSettings?.invoiceDefaultDiscountValue || "0",
+      requireTimeApproval: tenantSettings?.requireTimeApproval ?? false,
     },
   });
 
@@ -2874,6 +2877,7 @@ export default function OrganizationSettings() {
           defaultTaxRate: data.defaultTaxRate,
           invoiceDefaultDiscountType: data.invoiceDefaultDiscountType,
           invoiceDefaultDiscountValue: data.invoiceDefaultDiscountValue,
+          requireTimeApproval: data.requireTimeApproval,
         }),
       });
     },
@@ -3495,6 +3499,37 @@ export default function OrganizationSettings() {
                           )}
                         />
                       </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Clock className="h-5 w-5" />
+                        Time Entry Approval
+                      </CardTitle>
+                      <CardDescription>
+                        Control whether time entries must be approved by a manager before they can be included in invoice batches.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <FormField
+                        control={financialForm.control}
+                        name="requireTimeApproval"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Require time entry approval before billing</FormLabel>
+                              <FormDescription>
+                                When enabled, time entries must be submitted and approved before they appear in billing batches. Managers can approve entries in the Time Approval inbox.
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
                     </CardContent>
                   </Card>
 

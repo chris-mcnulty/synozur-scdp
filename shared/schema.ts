@@ -154,6 +154,7 @@ export const tenants = pgTable("tenants", {
   expenseRemindersEnabled: boolean("expense_reminders_enabled").default(false),
   expenseReminderTime: varchar("expense_reminder_time", { length: 5 }).default("08:00"),
   expenseReminderDay: integer("expense_reminder_day").default(1),
+  requireTimeApproval: boolean("require_time_approval").default(false),
 
   // Teams Proactive Alert Settings
   teamsAlertsEnabled: boolean("teams_alerts_enabled").default(false),
@@ -1073,6 +1074,9 @@ export const rateOverrides = pgTable("rate_overrides", {
 });
 
 // Time entries
+export const timeSubmissionStatusEnum = z.enum(['draft', 'submitted', 'approved', 'rejected']);
+export type TimeSubmissionStatus = z.infer<typeof timeSubmissionStatusEnum>;
+
 export const timeEntries = pgTable("time_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
@@ -1098,9 +1102,17 @@ export const timeEntries = pgTable("time_entries", {
   // Calendar suggestion telemetry
   fromCalendarSuggestion: boolean("from_calendar_suggestion").notNull().default(false),
   calendarEventId: text("calendar_event_id"), // Outlook event ID this entry was created from
+  // Approval workflow fields
+  submissionStatus: text("submission_status").notNull().default("draft"), // draft, submitted, approved, rejected
+  submittedAt: timestamp("submitted_at"),
+  submittedBy: varchar("submitted_by").references(() => users.id),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  rejectionNote: text("rejection_note"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_time_entries_tenant").on(table.tenantId),
+  submissionStatusIdx: index("idx_time_entries_submission_status").on(table.submissionStatus),
 }));
 
 // Expenses
@@ -2106,8 +2118,14 @@ export const insertEstimateShareSchema = createInsertSchema(estimateShares).omit
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
   createdAt: true,
-  billingRate: true,  // Calculated server-side
-  costRate: true,     // Calculated server-side
+  billingRate: true,      // Calculated server-side
+  costRate: true,         // Calculated server-side
+  submissionStatus: true, // Managed by workflow
+  submittedAt: true,
+  submittedBy: true,
+  approvedBy: true,
+  approvedAt: true,
+  rejectionNote: true,
 }).extend({
   // Ensure projectId is a non-empty string (required for foreign key)
   projectId: z.string().trim().min(1, "Project is required"),

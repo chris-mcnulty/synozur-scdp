@@ -11,7 +11,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import type { IStorage } from "./index";
-import { eq, desc, and, or, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, sql, inArray } from "drizzle-orm";
 
 export const timeEntriesMethods: ThisType<IStorage> = {
   async getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
@@ -355,5 +355,123 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         lockedAt: sql`now()`
       })
       .where(sql`id = ANY(${entryIds})`);
-  }
+  },
+
+  async submitTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]> {
+    if (entryIds.length === 0) return [];
+    const updated = await db.update(timeEntries)
+      .set({
+        submissionStatus: 'submitted',
+        submittedAt: sql`now()`,
+        submittedBy: userId,
+        rejectionNote: null,
+      })
+      .where(and(
+        inArray(timeEntries.id, entryIds),
+        sql`${timeEntries.submissionStatus} IN ('draft', 'rejected')`
+      ))
+      .returning();
+    return updated;
+  },
+
+  async approveTimeEntries(entryIds: string[], approverId: string): Promise<TimeEntry[]> {
+    if (entryIds.length === 0) return [];
+    const updated = await db.update(timeEntries)
+      .set({
+        submissionStatus: 'approved',
+        approvedBy: approverId,
+        approvedAt: sql`now()`,
+        rejectionNote: null,
+      })
+      .where(and(
+        inArray(timeEntries.id, entryIds),
+        eq(timeEntries.submissionStatus, 'submitted')
+      ))
+      .returning();
+    return updated;
+  },
+
+  async rejectTimeEntries(entryIds: string[], approverId: string, note: string): Promise<TimeEntry[]> {
+    if (entryIds.length === 0) return [];
+    const updated = await db.update(timeEntries)
+      .set({
+        submissionStatus: 'rejected',
+        approvedBy: null,
+        approvedAt: null,
+        rejectionNote: note,
+      })
+      .where(and(
+        inArray(timeEntries.id, entryIds),
+        eq(timeEntries.submissionStatus, 'submitted')
+      ))
+      .returning();
+    return updated;
+  },
+
+  async getTimeApprovalsInbox(filters: {
+    tenantId?: string;
+    submitterId?: string;
+    projectId?: string;
+    startDate?: string;
+    endDate?: string;
+    status?: string;
+  }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
+    const baseQuery = db.select().from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(clients, eq(projects.clientId, clients.id));
+
+    const conditions = [];
+    if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
+    if (filters.submitterId) conditions.push(eq(timeEntries.personId, filters.submitterId));
+    if (filters.projectId) conditions.push(eq(timeEntries.projectId, filters.projectId));
+    if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
+    if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
+    if (filters.status && filters.status !== 'all') {
+      conditions.push(eq(timeEntries.submissionStatus, filters.status));
+    } else if (!filters.status) {
+      conditions.push(eq(timeEntries.submissionStatus, 'submitted'));
+    }
+    // if filters.status === 'all', no status filter — return everything
+
+    const query = conditions.length > 0
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
+
+    const rows = await query.orderBy(desc(timeEntries.date));
+
+    return rows.map(row => {
+      const person = row.users || {
+        id: row.time_entries.personId,
+        email: 'unknown@example.com',
+        name: 'Unknown User',
+        firstName: null,
+        lastName: null,
+        initials: null,
+        title: null,
+        role: 'employee',
+        canLogin: false,
+        isAssignable: false,
+        roleId: null,
+        customRole: null,
+        defaultBillingRate: null,
+        defaultCostRate: null,
+        isSalaried: false,
+        isActive: false,
+        receiveTimeReminders: true,
+        primaryTenantId: null,
+        platformRole: null,
+        createdAt: new Date()
+      };
+      return {
+        ...row.time_entries,
+        person,
+        personName: person.name,
+        project: {
+          ...row.projects!,
+          client: row.clients!
+        }
+      };
+    });
+  },
 };

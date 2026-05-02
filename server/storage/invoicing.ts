@@ -972,20 +972,37 @@ export const invoicingMethods: ThisType<IStorage & {
       console.warn('[STORAGE] Failed to fetch vocabulary for invoice generation, using defaults:', error);
     }
 
+    // Check if tenant requires time approval before billing
+    let tenantRequiresTimeApproval = false;
+    try {
+      const projectTenantId = project.projects.tenantId || undefined;
+      if (projectTenantId) {
+        const tenant = await this.getTenant(projectTenantId);
+        tenantRequiresTimeApproval = tenant?.requireTimeApproval ?? false;
+      }
+    } catch (tenantLookupErr) {
+      console.error('[STORAGE] Failed to check requireTimeApproval for project invoice generation:', tenantLookupErr);
+    }
+
     // Get unbilled time entries for this project
+    const timeEntryWhereConditions: any[] = [
+      eq(timeEntries.projectId, projectId),
+      eq(timeEntries.billable, true),
+      eq(timeEntries.billedFlag, false),
+      gte(timeEntries.date, startDate),
+      lte(timeEntries.date, endDate),
+    ];
+    if (tenantRequiresTimeApproval) {
+      timeEntryWhereConditions.push(eq(timeEntries.submissionStatus, 'approved'));
+    }
+
     const unbilledTimeEntries = await tx.select({
       timeEntry: timeEntries,
       user: users
     })
     .from(timeEntries)
     .innerJoin(users, eq(timeEntries.personId, users.id))
-    .where(and(
-      eq(timeEntries.projectId, projectId),
-      eq(timeEntries.billable, true),
-      eq(timeEntries.billedFlag, false),
-      gte(timeEntries.date, startDate),
-      lte(timeEntries.date, endDate)
-    ));
+    .where(and(...timeEntryWhereConditions));
 
     // Get unbilled expenses for this project (only approved expenses) with person info
     const unbilledExpensesWithPerson = await tx.select({
@@ -2024,10 +2041,23 @@ export const invoicingMethods: ThisType<IStorage & {
       console.warn('[STORAGE] Failed to fetch invoiced source IDs for safety check, relying on billedFlag only:', error);
     }
 
-    // Get unbilled time entries
+    // Get unbilled time entries (filter by approval status if tenant requires it)
     const timeEntryFilters = { ...filters };
+    let requireApproval = false;
+    try {
+      if (filters?.tenantId) {
+        const tenant = await this.getTenant(filters.tenantId);
+        requireApproval = tenant?.requireTimeApproval ?? false;
+      }
+    } catch (tenantErr) {
+      console.warn('[STORAGE] Failed to check requireTimeApproval tenant setting:', tenantErr);
+    }
     const unbilledTimeEntries = (await this.getTimeEntries(timeEntryFilters))
-      .filter(entry => entry.billable && !entry.billedFlag && !entry.locked && !invoicedTimeEntryIds.has(entry.id));
+      .filter(entry => {
+        if (!entry.billable || entry.billedFlag || entry.locked || invoicedTimeEntryIds.has(entry.id)) return false;
+        if (requireApproval && entry.submissionStatus !== 'approved') return false;
+        return true;
+      });
 
     // Get unbilled expenses (only approved expenses)
     const expenseFilters = { ...filters };

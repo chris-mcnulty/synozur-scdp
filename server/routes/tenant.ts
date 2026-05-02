@@ -67,6 +67,7 @@ const tenantSettingsUpdateSchema = z.object({
   expenseRemindersEnabled: z.boolean().optional(),
   expenseReminderTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format").optional(),
   expenseReminderDay: z.number().int().min(0).max(6).optional(),
+  requireTimeApproval: z.boolean().optional(),
   defaultTimezone: z.string().max(50).optional(),
   showChangelogOnLogin: z.boolean().optional(),
   branding: z.object({
@@ -121,6 +122,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseRemindersEnabled: tenant.expenseRemindersEnabled ?? false,
         expenseReminderTime: tenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: tenant.expenseReminderDay ?? 1,
+        requireTimeApproval: tenant.requireTimeApproval ?? false,
         defaultTimezone: tenant.defaultTimezone ?? "America/New_York",
         showChangelogOnLogin: tenant.showChangelogOnLogin ?? true,
         defaultBillingRate: (tenant as any).defaultBillingRate,
@@ -563,7 +565,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue } = validationResult.data;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, requireTimeApproval, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue } = validationResult.data;
 
       const updateData: any = {
         name,
@@ -580,6 +582,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseRemindersEnabled,
         expenseReminderTime,
         expenseReminderDay,
+        requireTimeApproval,
         defaultTimezone,
         showChangelogOnLogin,
       };
@@ -614,6 +617,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseRemindersEnabled: updatedTenant.expenseRemindersEnabled ?? false,
         expenseReminderTime: updatedTenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: updatedTenant.expenseReminderDay ?? 1,
+        requireTimeApproval: updatedTenant.requireTimeApproval ?? false,
         defaultTimezone: updatedTenant.defaultTimezone ?? "America/New_York",
         showChangelogOnLogin: updatedTenant.showChangelogOnLogin ?? true,
         defaultBillingRate: (updatedTenant as any).defaultBillingRate,

@@ -158,6 +158,12 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         });
       }
 
+      if (!isAdmin && (existingEntry.submissionStatus === 'submitted' || existingEntry.submissionStatus === 'approved')) {
+        return res.status(403).json({
+          message: `This time entry is ${existingEntry.submissionStatus} and cannot be edited. Contact your manager.`
+        });
+      }
+
       if (req.user?.role === "employee") {
         if (existingEntry.personId !== req.user.id) {
           return res.status(403).json({ message: "You can only edit your own time entries" });
@@ -309,6 +315,12 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       if (existingEntry.locked && !isAdmin) {
         return res.status(403).json({ 
           message: "This time entry has been locked in an invoice batch and cannot be deleted" 
+        });
+      }
+
+      if (!isAdmin && (existingEntry.submissionStatus === 'submitted' || existingEntry.submissionStatus === 'approved')) {
+        return res.status(403).json({
+          message: `This time entry is ${existingEntry.submissionStatus} and cannot be deleted. Contact your manager.`
         });
       }
 
@@ -812,6 +824,283 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       res.status(500).json({ message: "Failed to import time entries" });
     }
   });
+
+  // ─── Time Approval Workflow Routes ───────────────────────────────────────
+
+  app.post("/api/time-entries/submit", deps.requireAuth, async (req, res) => {
+    try {
+      const { entryIds } = req.body;
+      if (!Array.isArray(entryIds) || entryIds.length === 0) {
+        return res.status(400).json({ message: "entryIds must be a non-empty array" });
+      }
+
+      const userId = req.user!.id;
+      const tenantId = req.user?.tenantId || req.user?.primaryTenantId;
+      const isManagerRole = ["admin", "billing-admin", "pm", "executive", "portfolio-manager"].includes(req.user!.role);
+
+      // Verify all entries belong to the caller's tenant and (for non-managers) the caller
+      for (const id of entryIds) {
+        const entry = await storage.getTimeEntry(id);
+        if (!entry) return res.status(404).json({ message: `Entry ${id} not found` });
+        if (tenantId && entry.tenantId !== tenantId) {
+          return res.status(403).json({ message: "Access denied: entry does not belong to your tenant" });
+        }
+        if (!isManagerRole) {
+          if (entry.personId !== userId) {
+            return res.status(403).json({ message: "You can only submit your own time entries" });
+          }
+          if (entry.locked) {
+            return res.status(400).json({ message: "Cannot submit locked time entries" });
+          }
+          if (entry.submissionStatus !== 'draft' && entry.submissionStatus !== 'rejected') {
+            return res.status(400).json({ message: `Entry ${id} is already submitted or approved` });
+          }
+        }
+      }
+
+      const updated = await storage.submitTimeEntries(entryIds, userId);
+
+      // Send notifications to approvers
+      try {
+        if (tenantId) {
+          const tenant = await storage.getTenant(tenantId);
+          if (tenant?.requireTimeApproval) {
+            const allUsers = await storage.getUsers(tenantId);
+            const approvers = allUsers.filter(u =>
+              u.email && u.isActive && ["admin", "billing-admin", "pm"].includes(u.role)
+            );
+            if (approvers.length > 0) {
+              const submitter = await storage.getUser(userId);
+              const projectIds = [...new Set(updated.map(e => e.projectId))];
+              const projectNames: string[] = [];
+              for (const pid of projectIds) {
+                const p = await storage.getProject(pid);
+                if (p) projectNames.push(p.name);
+              }
+              const weekDates = updated.map(e => e.date).sort();
+              const weekLabel = weekDates.length > 0
+                ? `${weekDates[0]} – ${weekDates[weekDates.length - 1]}`
+                : 'this week';
+              const branding = { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl };
+              const inboxUrl = `${process.env.APP_BASE_URL || ''}/approvals/time`;
+              const { emailService } = await import('../services/email-notification.js');
+              await emailService.notifyTimeEntriesSubmitted(
+                { name: submitter?.name || 'User', email: submitter?.email || '' },
+                approvers.map(a => ({ name: a.name, email: a.email! })),
+                updated.length,
+                weekLabel,
+                projectNames,
+                branding,
+                inboxUrl
+              );
+            }
+          }
+        }
+      } catch (notifyErr) {
+        console.error("[TIME_APPROVAL] Failed to send submit notification:", notifyErr);
+      }
+
+      res.json({ submitted: updated.length, entries: updated });
+    } catch (error: any) {
+      console.error("[TIME_APPROVAL] Submit error:", error);
+      res.status(500).json({ message: "Failed to submit time entries" });
+    }
+  });
+
+  app.post("/api/time-entries/approve", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { entryIds } = req.body;
+      if (!Array.isArray(entryIds) || entryIds.length === 0) {
+        return res.status(400).json({ message: "entryIds must be a non-empty array" });
+      }
+
+      const approverId = req.user!.id;
+      const approverTenantId = req.user?.tenantId || req.user?.primaryTenantId;
+
+      const isPM = req.user!.role === 'pm' || req.user!.role === 'portfolio-manager';
+
+      // Verify all entries exist, belong to the approver's tenant, are in submitted state,
+      // and (for PMs) are on projects the PM manages
+      for (const id of entryIds) {
+        const entry = await storage.getTimeEntry(id);
+        if (!entry) return res.status(404).json({ message: `Entry ${id} not found` });
+        if (approverTenantId && entry.tenantId !== approverTenantId) {
+          return res.status(403).json({ message: "Access denied: entry does not belong to your tenant" });
+        }
+        if (entry.submissionStatus !== 'submitted') {
+          return res.status(409).json({ message: `Entry ${id} is not in submitted state (current: ${entry.submissionStatus})` });
+        }
+        if (isPM && entry.projectId) {
+          const project = await storage.getProject(entry.projectId);
+          if (project && project.pm !== approverId) {
+            return res.status(403).json({ message: `You can only approve entries for projects you manage (entry ${id})` });
+          }
+        }
+      }
+
+      const updated = await storage.approveTimeEntries(entryIds, approverId);
+
+      // Send notification to submitter(s)
+      try {
+        const tenantId = req.user?.tenantId || req.user?.primaryTenantId;
+        const submitterMap = new Map<string, typeof updated>();
+        for (const entry of updated) {
+          const sid = entry.submittedBy || entry.personId;
+          if (!submitterMap.has(sid)) submitterMap.set(sid, []);
+          submitterMap.get(sid)!.push(entry);
+        }
+        const approver = await storage.getUser(approverId);
+        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+        const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
+        const timeUrl = `${process.env.APP_BASE_URL || ''}/time`;
+        const { emailService } = await import('../services/email-notification.js');
+        for (const [submitterId, entries] of submitterMap) {
+          const submitter = await storage.getUser(submitterId);
+          if (!submitter?.email) continue;
+          const dates = entries.map(e => e.date).sort();
+          const weekLabel = `${dates[0]} – ${dates[dates.length - 1]}`;
+          await emailService.notifyTimeEntriesApproved(
+            { name: submitter.name, email: submitter.email },
+            { name: approver?.name || 'Manager', email: approver?.email || '' },
+            entries.length,
+            weekLabel,
+            branding,
+            timeUrl
+          );
+        }
+      } catch (notifyErr) {
+        console.error("[TIME_APPROVAL] Failed to send approve notification:", notifyErr);
+      }
+
+      res.json({ approved: updated.length, entries: updated });
+    } catch (error: any) {
+      console.error("[TIME_APPROVAL] Approve error:", error);
+      res.status(500).json({ message: "Failed to approve time entries" });
+    }
+  });
+
+  app.post("/api/time-entries/reject", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { entryIds, note } = req.body;
+      if (!Array.isArray(entryIds) || entryIds.length === 0) {
+        return res.status(400).json({ message: "entryIds must be a non-empty array" });
+      }
+      if (!note || typeof note !== 'string' || note.trim().length === 0) {
+        return res.status(400).json({ message: "A rejection note is required" });
+      }
+
+      const approverId = req.user!.id;
+      const rejecterTenantId = req.user?.tenantId || req.user?.primaryTenantId;
+      const isRejecterPM = req.user!.role === 'pm' || req.user!.role === 'portfolio-manager';
+
+      // Verify all entries exist, belong to the rejecter's tenant, are in submitted state,
+      // and (for PMs) are on projects the PM manages
+      for (const id of entryIds) {
+        const entry = await storage.getTimeEntry(id);
+        if (!entry) return res.status(404).json({ message: `Entry ${id} not found` });
+        if (rejecterTenantId && entry.tenantId !== rejecterTenantId) {
+          return res.status(403).json({ message: "Access denied: entry does not belong to your tenant" });
+        }
+        if (entry.submissionStatus !== 'submitted') {
+          return res.status(409).json({ message: `Entry ${id} is not in submitted state (current: ${entry.submissionStatus})` });
+        }
+        if (isRejecterPM && entry.projectId) {
+          const project = await storage.getProject(entry.projectId);
+          if (project && project.pm !== approverId) {
+            return res.status(403).json({ message: `You can only reject entries for projects you manage (entry ${id})` });
+          }
+        }
+      }
+
+      const updated = await storage.rejectTimeEntries(entryIds, approverId, note.trim());
+
+      // Send notification to submitter(s)
+      try {
+        const tenantId = req.user?.tenantId || req.user?.primaryTenantId;
+        const submitterMap = new Map<string, typeof updated>();
+        for (const entry of updated) {
+          const sid = entry.submittedBy || entry.personId;
+          if (!submitterMap.has(sid)) submitterMap.set(sid, []);
+          submitterMap.get(sid)!.push(entry);
+        }
+        const rejecter = await storage.getUser(approverId);
+        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+        const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
+        const timeUrl = `${process.env.APP_BASE_URL || ''}/time`;
+        const { emailService } = await import('../services/email-notification.js');
+        for (const [submitterId, entries] of submitterMap) {
+          const submitter = await storage.getUser(submitterId);
+          if (!submitter?.email) continue;
+          const dates = entries.map(e => e.date).sort();
+          const weekLabel = `${dates[0]} – ${dates[dates.length - 1]}`;
+          await emailService.notifyTimeEntriesRejected(
+            { name: submitter.name, email: submitter.email },
+            { name: rejecter?.name || 'Manager', email: rejecter?.email || '' },
+            entries.length,
+            weekLabel,
+            note.trim(),
+            branding,
+            timeUrl
+          );
+        }
+      } catch (notifyErr) {
+        console.error("[TIME_APPROVAL] Failed to send reject notification:", notifyErr);
+      }
+
+      res.json({ rejected: updated.length, entries: updated });
+    } catch (error: any) {
+      console.error("[TIME_APPROVAL] Reject error:", error);
+      res.status(500).json({ message: "Failed to reject time entries" });
+    }
+  });
+
+  app.get("/api/time-approvals/inbox", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { submitterId, projectId, startDate, endDate, status } = req.query as Record<string, string>;
+      const tenantId = req.user?.tenantId || req.user?.primaryTenantId;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      const isPM = userRole === 'pm' || userRole === 'portfolio-manager';
+
+      // For PMs, scope the inbox to their managed projects
+      let pmProjectIds: string[] | null = null;
+      if (isPM) {
+        const allProjects = await storage.getProjects({ tenantId: tenantId || undefined });
+        const managed = allProjects.filter(p => p.pm === userId);
+        pmProjectIds = managed.map(p => p.id);
+        // If PM manages no projects, return empty immediately
+        if (pmProjectIds.length === 0) {
+          return res.json([]);
+        }
+        // If caller also supplied a projectId filter, intersect it
+        if (projectId && !pmProjectIds.includes(projectId)) {
+          return res.json([]);
+        }
+      }
+
+      const entries = await storage.getTimeApprovalsInbox({
+        tenantId: tenantId || undefined,
+        submitterId: submitterId || undefined,
+        projectId: isPM && !projectId ? undefined : (projectId || undefined),
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        status: status || undefined,
+      });
+
+      // Post-filter for PM: only return entries from their managed projects
+      const filtered = isPM && pmProjectIds
+        ? entries.filter(e => pmProjectIds!.includes(e.projectId))
+        : entries;
+
+      res.json(filtered);
+    } catch (error) {
+      console.error("[TIME_APPROVAL] Inbox error:", error);
+      res.status(500).json({ message: "Failed to fetch approvals inbox" });
+    }
+  });
+
+  // ─── End Time Approval Workflow Routes ───────────────────────────────────
 
   app.post("/api/time-entries/fix-rates", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
