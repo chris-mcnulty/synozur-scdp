@@ -71,90 +71,109 @@ import { convertDecimalFieldsToNumbers } from "./helpers";
 export const projectsMethods: ThisType<IStorage> = {
   async getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]> {
     const pmAlias = alias(users, 'pm_user');
-    let query = db.select().from(projects)
+    // Select only the columns needed for pmName resolution instead of pmAlias.* to
+    // avoid breaking when the users table has columns not yet migrated in the DB.
+    let query = db.select({
+      projects,
+      clients,
+      pm_first: pmAlias.firstName,
+      pm_last: pmAlias.lastName,
+      pm_email: pmAlias.email,
+    }).from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(pmAlias, eq(projects.pm, pmAlias.id));
-    
-    // Apply tenant filter if provided
+
+    // Query 1: fetch all projects with client + PM in one go
     const projectRows = tenantId
       ? await query.where(eq(projects.tenantId, tenantId)).orderBy(desc(projects.createdAt))
       : await query.orderBy(desc(projects.createdAt));
-    
-    // Get budget, burned, and utilization for each project
-    const projectsWithBillableInfo = await Promise.all(
-      projectRows.map(async (row) => {
-        const project = row.projects;
-        // Handle case where client might be null (LEFT JOIN)
-        const client = row.clients || {
-          id: 'unknown',
-          name: 'No Client Assigned',
-          status: 'inactive',
-          currency: 'USD',
-          tenantId: null,
-          shortName: null,
-          billingContact: null,
-          contactName: null,
-          contactAddress: null,
-          vocabularyOverrides: null,
-          epicTermId: null,
-          stageTermId: null,
-          workstreamTermId: null,
-          milestoneTermId: null,
-          activityTermId: null,
-          msaDate: null,
-          msaDocument: null,
-          hasMsa: false,
-          sinceDate: null,
-          ndaDate: null,
-          ndaDocument: null,
-          hasNda: false,
-          microsoftTeamId: null,
-          microsoftTeamName: null,
-          createdAt: new Date()
-        };
-        
-        // Get total budget from approved SOWs
-        const totalBudget = await this.getProjectTotalBudget(project.id);
-        
-        // Get burned amount from billable time entries using actual billing rates only
-        const burnedData = await db.select({
-          totalBurned: sql<number>`COALESCE(SUM(
-            CAST(${timeEntries.hours} AS NUMERIC) * 
-            CAST(${timeEntries.billingRate} AS NUMERIC)
-          ), 0)`
-        })
-        .from(timeEntries)
-        .where(and(
-          eq(timeEntries.projectId, project.id),
-          eq(timeEntries.billable, true)
-        ));
-        
-        const burnedAmount = Math.round(Number(burnedData[0]?.totalBurned || 0));
-        
-        // Calculate utilization rate
-        const utilizationRate = totalBudget > 0 
-          ? Math.round((burnedAmount / totalBudget) * 100)
-          : 0;
-        
-        const pmUser = (row as any).pm_user;
-        const pmName = pmUser ? `${pmUser.firstName || ''} ${pmUser.lastName || ''}`.trim() || pmUser.email : null;
 
-        return {
-          ...project,
-          client,
-          pmName,
-          totalBudget,
-          burnedAmount,
-          utilizationRate
-        };
-      })
-    );
-    
-    // Filter to only show active projects (those with approved SOWs)
-    // Note: We return all projects but include the budget info
-    // The frontend can filter based on having totalBudget > 0 if needed
-    // This maintains backward compatibility while providing the budget info
-    return projectsWithBillableInfo;
+    if (projectRows.length === 0) return [];
+
+    const projectIds = projectRows.map(r => r.projects.id);
+
+    // Query 2: single UNION ALL query to fetch both approved-SOW budget totals and
+    // billable-time-entry burn totals — O(1) queries regardless of project count.
+    const idList = sql.join(projectIds.map(id => sql`${id}`), sql`,`);
+    type AggRow = { project_id: string; total_budget: string; total_burned: string };
+    const aggRows = await db.execute<AggRow>(sql`
+      SELECT
+        project_id,
+        COALESCE(SUM(CASE WHEN src = 'sow'  THEN amount ELSE 0 END), 0) AS total_budget,
+        COALESCE(SUM(CASE WHEN src = 'burn' THEN amount ELSE 0 END), 0) AS total_burned
+      FROM (
+        SELECT project_id, 'sow'  AS src, CAST(value AS NUMERIC) AS amount
+          FROM sows
+         WHERE status = 'approved' AND project_id IN (${idList})
+        UNION ALL
+        SELECT project_id, 'burn' AS src,
+               CAST(hours AS NUMERIC) * CAST(billing_rate AS NUMERIC) AS amount
+          FROM time_entries
+         WHERE billable = true AND project_id IN (${idList})
+      ) t
+      GROUP BY project_id
+    `);
+
+    const budgetByProject = new Map<string, number>();
+    const burnedByProject = new Map<string, number>();
+    for (const row of aggRows.rows) {
+      // totalBudget preserves decimal precision (SOW values may include cents).
+      // burnedAmount is rounded to nearest integer as it is derived from
+      // hours × rate multiplication and displayed as a whole-dollar figure.
+      budgetByProject.set(row.project_id, Number(row.total_budget));
+      burnedByProject.set(row.project_id, Math.round(Number(row.total_burned)));
+    }
+
+    return projectRows.map((row) => {
+      const project = row.projects;
+
+      // Handle case where client might be null (LEFT JOIN)
+      const client = row.clients || {
+        id: 'unknown',
+        name: 'No Client Assigned',
+        status: 'inactive',
+        currency: 'USD',
+        tenantId: null,
+        shortName: null,
+        billingContact: null,
+        contactName: null,
+        contactAddress: null,
+        vocabularyOverrides: null,
+        epicTermId: null,
+        stageTermId: null,
+        workstreamTermId: null,
+        milestoneTermId: null,
+        activityTermId: null,
+        msaDate: null,
+        msaDocument: null,
+        hasMsa: false,
+        sinceDate: null,
+        ndaDate: null,
+        ndaDocument: null,
+        hasNda: false,
+        microsoftTeamId: null,
+        microsoftTeamName: null,
+        createdAt: new Date(),
+      };
+
+      const totalBudget = budgetByProject.get(project.id) ?? 0;
+      const burnedAmount = burnedByProject.get(project.id) ?? 0;
+      const utilizationRate = totalBudget > 0
+        ? Math.round((burnedAmount / totalBudget) * 100)
+        : 0;
+
+      const pmFullName = `${row.pm_first || ''} ${row.pm_last || ''}`.trim();
+      const pmName = pmFullName || row.pm_email || null;
+
+      return {
+        ...project,
+        client,
+        pmName,
+        totalBudget,
+        burnedAmount,
+        utilizationRate,
+      };
+    });
   },
 
   async getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]; total: number; hasMore: boolean }> {
@@ -1430,6 +1449,7 @@ export const projectsMethods: ThisType<IStorage> = {
   },
 
   async getProjectAllocations(projectId: string): Promise<any[]> {
+    // Single query: all related entities resolved via LEFT JOINs — no N+1.
     const allocations = await db
       .select({
         allocation: projectAllocations,

@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload, LifeBuoy, BarChart2, Users, Eye, RefreshCw, MessageSquare, CheckCircle, XCircle } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload, LifeBuoy, BarChart2, Users, Eye, RefreshCw, MessageSquare, CheckCircle, XCircle, Zap } from "lucide-react";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -716,6 +716,10 @@ export default function SystemSettings() {
             <TabsTrigger value="teams-alerts" className="flex items-center space-x-2">
               <Bell className="w-4 h-4" />
               <span>Teams Alerts</span>
+            </TabsTrigger>
+            <TabsTrigger value="cache" className="flex items-center space-x-2">
+              <Zap className="w-4 h-4" />
+              <span>Cache</span>
             </TabsTrigger>
           </TabsList>
 
@@ -2067,6 +2071,10 @@ export default function SystemSettings() {
             <PageAnalyticsTab />
           </TabsContent>
 
+          <TabsContent value="cache" className="space-y-6">
+            <CacheStatsTab />
+          </TabsContent>
+
           <TeamsAlertsTab />
         </Tabs>
       </div>
@@ -2809,6 +2817,77 @@ function PageAnalyticsTab() {
               </div>
             ))}
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CacheStatsTab() {
+  const { data, isLoading, refetch, isFetching } = useQuery<{
+    size: number;
+    entries: Record<string, { hits: number; misses: number; invalidations: number; hitRatio: number }>;
+  }>({
+    queryKey: ["/api/admin/cache/stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/cache/stats", {
+        headers: { "x-session-id": localStorage.getItem("sessionId") || "" },
+      });
+      if (!res.ok) throw new Error("Failed to load cache stats");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  const entries = data ? Object.entries(data.entries) : [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-primary" />
+              Hot-Data Cache
+            </CardTitle>
+            <CardDescription>
+              In-process LRU cache for tenant settings, vocabulary, and exchange rates. Refreshes every 30 seconds.
+            </CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading cache stats…</p>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground mb-4">
+              Total entries in cache: <span className="font-medium text-foreground">{data?.size ?? 0}</span>
+            </p>
+            {entries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No cache entries yet — stats appear after the first requests.</p>
+            ) : (
+              <div className="space-y-2">
+                {entries.sort(([a], [b]) => a.localeCompare(b)).map(([key, s]) => (
+                  <div key={key} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+                    <span className="font-mono text-xs text-muted-foreground truncate max-w-[40%]">{key}</span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-green-600 dark:text-green-400">{s.hits} hits</span>
+                      <span className="text-orange-600 dark:text-orange-400">{s.misses} miss</span>
+                      <span className="text-muted-foreground">{s.invalidations} inv</span>
+                      <Badge variant={s.hitRatio >= 80 ? "default" : s.hitRatio >= 50 ? "secondary" : "destructive"}>
+                        {s.hitRatio}%
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

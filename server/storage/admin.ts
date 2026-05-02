@@ -63,6 +63,10 @@ import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, ne, desc, and, or, gte, lte, sql, isNotNull, isNull, inArray, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { getCached, invalidate, invalidatePrefix } from "../lib/cache";
+
+const TTL_SETTINGS = 5 * 60 * 1000;
+const TTL_VOCAB = 5 * 60 * 1000;
 
 const raiddOwnerAlias = alias(users, 'raidd_owner');
 const raiddAssigneeAlias = alias(users, 'raidd_assignee');
@@ -73,16 +77,18 @@ export const adminMethods: ThisType<IStorage & {
   getNextRaiddRefNumber(projectId: string, type: string): Promise<string>;
 }> = {
   async getSystemSettings(): Promise<SystemSetting[]> {
-    return await db.select()
-      .from(systemSettings)
-      .orderBy(systemSettings.settingKey);
+    return getCached('system_settings:all', TTL_SETTINGS, () =>
+      db.select().from(systemSettings).orderBy(systemSettings.settingKey)
+    );
   },
 
   async getSystemSetting(key: string): Promise<SystemSetting | undefined> {
-    const [setting] = await db.select()
-      .from(systemSettings)
-      .where(eq(systemSettings.settingKey, key));
-    return setting || undefined;
+    return getCached(`system_settings:${key}`, TTL_SETTINGS, async () => {
+      const [setting] = await db.select()
+        .from(systemSettings)
+        .where(eq(systemSettings.settingKey, key));
+      return setting || undefined;
+    });
   },
 
   async getSystemSettingValue(key: string, defaultValue?: string): Promise<string> {
@@ -91,9 +97,11 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async setSystemSetting(key: string, value: string, description?: string, settingType: string = 'string'): Promise<SystemSetting> {
-    // Try to update existing setting first
+    // Use cached existence check, then invalidate AFTER the write so
+    // subsequent reads get the fresh value (not the pre-write cached one).
     const existingSetting = await this.getSystemSetting(key);
-    
+
+    let result: SystemSetting;
     if (existingSetting) {
       const [updated] = await db.update(systemSettings)
         .set({ 
@@ -104,7 +112,7 @@ export const adminMethods: ThisType<IStorage & {
         })
         .where(eq(systemSettings.settingKey, key))
         .returning();
-      return updated;
+      result = updated;
     } else {
       // Create new setting
       const [created] = await db.insert(systemSettings)
@@ -115,8 +123,12 @@ export const adminMethods: ThisType<IStorage & {
           settingType
         })
         .returning();
-      return created;
+      result = created;
     }
+    // Invalidate AFTER write so the next read fetches the updated value
+    invalidate(`system_settings:${key}`);
+    invalidate('system_settings:all');
+    return result;
   },
 
   async updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting> {
@@ -124,12 +136,20 @@ export const adminMethods: ThisType<IStorage & {
       .set({ ...updates, updatedAt: sql`now()` })
       .where(eq(systemSettings.id, id))
       .returning();
+    // Invalidate by key if we know it, otherwise bust the whole settings cache
+    if (updated?.settingKey) {
+      invalidate(`system_settings:${updated.settingKey}`);
+    }
+    invalidate('system_settings:all');
     return updated;
   },
 
   async deleteSystemSetting(id: string): Promise<void> {
     await db.delete(systemSettings)
       .where(eq(systemSettings.id, id));
+    invalidate('system_settings:all');
+    // Cannot know the key, so bust all per-key cache entries too
+    invalidatePrefix('system_settings:');
   },
 
   async getOrganizationVocabulary(): Promise<VocabularyTerms> {
@@ -282,20 +302,24 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async getVocabularyCatalog(): Promise<VocabularyCatalog[]> {
-    return await db.select()
-      .from(vocabularyCatalog)
-      .where(eq(vocabularyCatalog.isActive, true))
-      .orderBy(vocabularyCatalog.termType, vocabularyCatalog.sortOrder);
+    return getCached('vocab_catalog:all', TTL_VOCAB, () =>
+      db.select()
+        .from(vocabularyCatalog)
+        .where(eq(vocabularyCatalog.isActive, true))
+        .orderBy(vocabularyCatalog.termType, vocabularyCatalog.sortOrder)
+    );
   },
 
   async getVocabularyCatalogByType(termType: string): Promise<VocabularyCatalog[]> {
-    return await db.select()
-      .from(vocabularyCatalog)
-      .where(and(
-        eq(vocabularyCatalog.termType, termType),
-        eq(vocabularyCatalog.isActive, true)
-      ))
-      .orderBy(vocabularyCatalog.sortOrder);
+    return getCached(`vocab_catalog:type:${termType}`, TTL_VOCAB, () =>
+      db.select()
+        .from(vocabularyCatalog)
+        .where(and(
+          eq(vocabularyCatalog.termType, termType),
+          eq(vocabularyCatalog.isActive, true)
+        ))
+        .orderBy(vocabularyCatalog.sortOrder)
+    );
   },
 
   async getOrganizationVocabularySelections(tenantId?: string): Promise<OrganizationVocabulary | undefined> {
@@ -304,12 +328,13 @@ export const adminMethods: ThisType<IStorage & {
       console.warn('[VOCABULARY] getOrganizationVocabularySelections called without tenantId - returning undefined for tenant isolation');
       return undefined;
     }
-    
-    const [orgVocab] = await db.select()
-      .from(organizationVocabulary)
-      .where(eq(organizationVocabulary.tenantId, tenantId))
-      .limit(1);
-    return orgVocab || undefined;
+    return getCached(`org_vocab:${tenantId}`, TTL_VOCAB, async () => {
+      const [orgVocab] = await db.select()
+        .from(organizationVocabulary)
+        .where(eq(organizationVocabulary.tenantId, tenantId))
+        .limit(1);
+      return orgVocab || undefined;
+    });
   },
 
   async updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>, tenantId?: string): Promise<OrganizationVocabulary> {
@@ -341,7 +366,8 @@ export const adminMethods: ThisType<IStorage & {
 
     // Ensure only one organization vocabulary record exists per tenant (enforce single-record invariant)
     const existing = await this.getOrganizationVocabularySelections(tenantId);
-    
+
+    let result: OrganizationVocabulary;
     if (existing) {
       // Update existing record - strictly by tenant
       const [updated] = await db.update(organizationVocabulary)
@@ -351,14 +377,16 @@ export const adminMethods: ThisType<IStorage & {
           eq(organizationVocabulary.tenantId, tenantId)
         ))
         .returning();
-      return updated;
+      result = updated;
     } else {
       // Create new record for this tenant (should only happen once per tenant on initial setup)
       const [created] = await db.insert(organizationVocabulary)
         .values({ ...updates, tenantId })
         .returning();
-      return created;
+      result = created;
     }
+    invalidate(`org_vocab:${tenantId}`);
+    return result;
   },
 
   async getVocabularyTermById(termId: string): Promise<VocabularyCatalog | undefined> {
@@ -377,6 +405,7 @@ export const adminMethods: ThisType<IStorage & {
         sortOrder: term.sortOrder !== undefined ? term.sortOrder : 0
       })
       .returning();
+    invalidatePrefix('vocab_catalog:');
     return created;
   },
 
@@ -388,6 +417,7 @@ export const adminMethods: ThisType<IStorage & {
     if (!updated) {
       throw new Error(`Vocabulary term with id ${id} not found`);
     }
+    invalidatePrefix('vocab_catalog:');
     return updated;
   },
 
@@ -396,6 +426,7 @@ export const adminMethods: ThisType<IStorage & {
     await db.update(vocabularyCatalog)
       .set({ isActive: false })
       .where(eq(vocabularyCatalog.id, id));
+    invalidatePrefix('vocab_catalog:');
   },
 
   async seedDefaultVocabulary(): Promise<void> {
@@ -541,6 +572,7 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async getRaiddEntries(projectId: string, filters?: { type?: string; status?: string; priority?: string; ownerId?: string; assigneeId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string })[]> {
+    // Single query: owner/assignee/createdBy user names resolved via LEFT JOINs — no N+1.
     const conditions = [eq(raiddEntries.projectId, projectId)];
     if (filters?.type) conditions.push(eq(raiddEntries.type, filters.type));
     if (filters?.status) conditions.push(eq(raiddEntries.status, filters.status));

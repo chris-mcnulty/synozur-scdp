@@ -6,6 +6,7 @@ import { storage, db } from "../storage";
 import { runAgentCardHealthCheck, getLastHealthCheckResult, getLastAgentCardHealthResult, getAgentCardHealthHistory, getSchedulerIntervalHours } from "../services/agent-card-health-scheduler.js";
 import { insertSystemSettingSchema, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertAiConfigurationSchema, users, projects, clients, tenants, tenantUsers, airportCodes, timeEntries, pageViews, supportTickets, supportTicketReplies, supportTicketPlannerSync, groundingDocuments, aiConfiguration, aiUsageLogs, aiUsageSummaries, aiUsageAlerts } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, desc, or } from "drizzle-orm";
+import { getCacheStats, getCacheSize } from "../lib/cache";
 import { emailService } from "../services/email-notification.js";
 import { graphClient } from "../services/graph-client.js";
 import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO } from "@shared/schema";
@@ -2354,6 +2355,18 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
     } catch (error: any) {
       console.error("[TEAMS-ALERT] Manual run failed:", error);
       res.status(500).json({ message: "Failed to run Teams alerts" });
+    }
+  });
+
+  // Cache stats endpoint — admin only
+  app.get("/api/admin/cache/stats", requireAuth, requireRole(["admin"]), async (_req, res) => {
+    try {
+      const stats = getCacheStats();
+      const size = getCacheSize();
+      res.json({ size, entries: stats });
+    } catch (error) {
+      console.error("Error fetching cache stats:", error);
+      res.status(500).json({ message: "Failed to fetch cache stats" });
     }
   });
 }

@@ -29,6 +29,9 @@ import {
 import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, desc, and, or, gte, lte, sql, isNotNull, isNull, inArray } from "drizzle-orm";
+import { getCached, invalidate } from "../lib/cache";
+
+const TTL_ROLES = 5 * 60 * 1000;
 
 export const usersMethods: ThisType<IStorage> = {
   async getUsersPaginated(tenantId: string | undefined, options: { includeInactive?: boolean; includeStakeholders?: boolean; search?: string; role?: string; limit: number; offset: number }): Promise<{ items: User[]; total: number; hasMore: boolean }> {
@@ -99,6 +102,10 @@ export const usersMethods: ThisType<IStorage> = {
   },
 
   async getUsers(tenantId?: string, options?: { includeInactive?: boolean; includeStakeholders?: boolean }): Promise<User[]> {
+    // At most 2 queries in the tenant path: first tries the tenantUsers membership join;
+    // if that returns empty (legacy/unmigrated tenants) it falls back to primaryTenantId.
+    // No per-user sub-queries — not an N+1. The two-query fallback is an intentional
+    // migration-compat path and will be collapsed to one once all tenants are migrated.
     const includeInactive = options?.includeInactive ?? false;
     const includeStakeholders = options?.includeStakeholders ?? false;
 
@@ -336,31 +343,43 @@ export const usersMethods: ThisType<IStorage> = {
   },
 
   async getRoles(tenantId?: string | null): Promise<Role[]> {
-    if (tenantId) {
-      return await db.select().from(roles)
-        .where(eq(roles.tenantId, tenantId))
-        .orderBy(roles.name);
-    }
-    return await db.select().from(roles).orderBy(roles.name);
+    const cacheKey = tenantId ? `roles:tenant:${tenantId}` : 'roles:all';
+    return getCached(cacheKey, TTL_ROLES, async () => {
+      if (tenantId) {
+        return db.select().from(roles).where(eq(roles.tenantId, tenantId)).orderBy(roles.name);
+      }
+      return db.select().from(roles).orderBy(roles.name);
+    });
   },
 
   async getRole(id: string): Promise<Role | undefined> {
-    const [role] = await db.select().from(roles).where(eq(roles.id, id));
-    return role || undefined;
+    return getCached(`roles:id:${id}`, TTL_ROLES, async () => {
+      const [role] = await db.select().from(roles).where(eq(roles.id, id));
+      return role || undefined;
+    });
   },
 
   async createRole(insertRole: InsertRole): Promise<Role> {
     const [role] = await db.insert(roles).values(insertRole).returning();
+    invalidate('roles:all');
+    if (role.tenantId) invalidate(`roles:tenant:${role.tenantId}`);
     return role;
   },
 
   async updateRole(id: string, updateRole: Partial<InsertRole>): Promise<Role> {
     const [role] = await db.update(roles).set(updateRole).where(eq(roles.id, id)).returning();
+    invalidate(`roles:id:${id}`);
+    invalidate('roles:all');
+    if (role.tenantId) invalidate(`roles:tenant:${role.tenantId}`);
     return role;
   },
 
   async deleteRole(id: string): Promise<void> {
+    const [existing] = await db.select({ tenantId: roles.tenantId }).from(roles).where(eq(roles.id, id));
     await db.delete(roles).where(eq(roles.id, id));
+    invalidate(`roles:id:${id}`);
+    invalidate('roles:all');
+    if (existing?.tenantId) invalidate(`roles:tenant:${existing.tenantId}`);
   },
 
   async getClientRateOverrides(clientId: string): Promise<ClientRateOverride[]> {
