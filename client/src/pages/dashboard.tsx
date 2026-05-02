@@ -22,11 +22,13 @@ import {
   AlertTriangle,
   TrendingDown,
   Activity,
+  CheckCircle,
 } from "lucide-react";
 import type { DashboardMetrics, ProjectWithClient, PortfolioSlippageSummary } from "@/lib/types";
 import { useAuth } from "@/hooks/use-auth";
 
 const SLIPPAGE_ROLES = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"];
+const APPROVAL_ROLES = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"];
 
 interface TenantInfo {
   id: string;
@@ -43,6 +45,32 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const { hasAnyRole } = useAuth();
   const canViewSlippage = hasAnyRole(SLIPPAGE_ROLES);
+  const canApproveTime = hasAnyRole(APPROVAL_ROLES);
+
+  const { data: tenantSettings } = useQuery<{ requireTimeApproval?: boolean }>({
+    queryKey: ["/api/tenant/settings"],
+  });
+  const requireTimeApproval = tenantSettings?.requireTimeApproval ?? false;
+
+  const {
+    data: pendingApprovals,
+    isLoading: pendingApprovalsLoading,
+    isError: pendingApprovalsError,
+  } = useQuery<Array<{ id: string }>>({
+    queryKey: ["/api/time-approvals/inbox", "submitted"],
+    queryFn: async () => {
+      const sessionId = localStorage.getItem("sessionId");
+      const res = await fetch(`/api/time-approvals/inbox?status=submitted`, {
+        credentials: "include",
+        headers: sessionId ? { "X-Session-Id": sessionId } : {},
+      });
+      if (!res.ok) throw new Error("Failed to fetch pending approvals");
+      return res.json();
+    },
+    enabled: canApproveTime && requireTimeApproval,
+    staleTime: 60 * 1000,
+  });
+  const pendingApprovalCount = pendingApprovals?.length ?? 0;
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
@@ -201,6 +229,91 @@ export default function Dashboard() {
           </div>
         )}
         
+        {/* Pending Time Approvals card — only when tenant requires time approval */}
+        {canApproveTime && requireTimeApproval && (
+          <button
+            type="button"
+            className="text-left w-full"
+            onClick={() => navigate("/approvals/time")}
+            data-testid="card-pending-time-approvals"
+          >
+            <Card className="hover:bg-accent/30 transition-colors">
+              <CardContent className="p-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div
+                    className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                      pendingApprovalsError
+                        ? "bg-red-100 text-red-600 dark:bg-red-950/40"
+                        : pendingApprovalsLoading
+                        ? "bg-muted text-muted-foreground"
+                        : pendingApprovalCount > 0
+                        ? "bg-yellow-100 text-yellow-600 dark:bg-yellow-950/40"
+                        : "bg-green-100 text-green-600 dark:bg-green-950/40"
+                    }`}
+                  >
+                    {pendingApprovalsError ? (
+                      <AlertTriangle className="w-5 h-5" />
+                    ) : pendingApprovalsLoading || pendingApprovalCount > 0 ? (
+                      <Clock className="w-5 h-5" />
+                    ) : (
+                      <CheckCircle className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Time Approvals
+                    </p>
+                    {pendingApprovalsLoading ? (
+                      <div
+                        className="h-7 w-48 bg-muted rounded animate-pulse mt-0.5"
+                        data-testid="loading-pending-approvals"
+                      />
+                    ) : pendingApprovalsError ? (
+                      <p
+                        className="text-2xl font-bold"
+                        data-testid="text-pending-approval-count"
+                      >
+                        Unable to load
+                      </p>
+                    ) : (
+                      <p
+                        className="text-2xl font-bold"
+                        data-testid="text-pending-approval-count"
+                      >
+                        {pendingApprovalCount > 0
+                          ? `${pendingApprovalCount} ${pendingApprovalCount === 1 ? "entry" : "entries"} awaiting approval`
+                          : "All caught up"}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {pendingApprovalsLoading
+                        ? "Checking the approval inbox…"
+                        : pendingApprovalsError
+                        ? "Click to open the approval inbox"
+                        : pendingApprovalCount > 0
+                        ? "Click to review submissions in the approval inbox"
+                        : "No time entries are pending review"}
+                    </p>
+                  </div>
+                </div>
+                <svg
+                  className="w-5 h-5 text-muted-foreground"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </CardContent>
+            </Card>
+          </button>
+        )}
+
         {/* Active Projects Table */}
         <Card data-testid="active-projects-table">
           <CardHeader className="border-b border-border">
