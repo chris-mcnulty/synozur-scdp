@@ -27,6 +27,7 @@ import { useEffectiveRates } from "@/hooks/useEffectiveRates";
 import { useGenerateEstimateNarrative, useAIStatus } from "@/lib/ai";
 import { ProgramEstimateView } from "@/components/ProgramEstimateView";
 import { EstimateCrmPanel } from "@/components/estimates/estimate-crm-panel";
+import { ClientSignoffPanel } from "@/components/client-signoff-panel";
 
 const EPIC_COLORS = [
   "bg-violet-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500",
@@ -2790,6 +2791,29 @@ function EstimateDetailContent() {
             />
           </div>
         </div>
+
+        {/* Client Signoff Panel - visible to client users on sent estimates */}
+        {((): JSX.Element | null => {
+          if (!user || user.role !== "client" || !estimate || estimate.status !== "sent" || !estimate.id) return null;
+          const sigId = estimate.id;
+          const sigName = estimate.name ?? "Estimate";
+          const sigStatus = estimate.status;
+          return (
+            <Card className="mb-6 border-primary/30 bg-primary/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Estimate Review</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ClientSignoffPanel
+                  entityType="estimate"
+                  entityId={sigId}
+                  entityName={sigName}
+                  entityStatus={sigStatus}
+                />
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Pricing Configuration Section */}
         <Card className="mb-6">

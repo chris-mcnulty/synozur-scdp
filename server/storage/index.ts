@@ -82,6 +82,7 @@ import {
   type Notification, type InsertNotification,
   type UserNotificationPreference, type InsertUserNotificationPreference,
   a2aTasks, type A2ATaskRow, type InsertA2ATask,
+  clientSignoffs, type ClientSignoff, type InsertClientSignoff,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -101,6 +102,7 @@ import { teamsAutomationMethods } from "./teams-automation";
 import { calendarMappingsMethods } from "./calendar-mappings";
 import { notificationsMethods } from "./notifications";
 import { a2aTasksMethods } from "./a2a";
+import { signoffsMethods } from "./signoffs";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
@@ -1086,6 +1088,11 @@ export interface IStorage {
   // A2A Task persistence
   createA2ATask(task: InsertA2ATask): Promise<A2ATaskRow>;
   getA2ATask(id: string): Promise<A2ATaskRow | undefined>;
+
+  // Client Sign-offs
+  recordClientSignoff(data: InsertClientSignoff): Promise<ClientSignoff>;
+  getClientSignoffs(entityType: string, entityId: string): Promise<ClientSignoff[]>;
+  getClientSignoff(id: string): Promise<ClientSignoff | undefined>;
 }
 
 export class DatabaseStorage {
@@ -1109,6 +1116,7 @@ Object.assign(
   calendarMappingsMethods,
   notificationsMethods,
   a2aTasksMethods,
+  signoffsMethods,
 );
 
 export const storage: IStorage = new DatabaseStorage();

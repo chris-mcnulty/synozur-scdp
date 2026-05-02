@@ -45,6 +45,7 @@ import { registerCopilotStudioRoutes } from "./routes/copilot-studio.js";
 import { registerCalendarSuggestionsRoutes } from "./routes/calendar-suggestions.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
+import { registerEmbedRoutes } from "./routes/embed.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -545,6 +546,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });
     registerJobRoutes(app, { requireAuth, requireRole });
     registerNotificationRoutes(app, { requireAuth });
+    registerEmbedRoutes(app, { requireAuth });
 
 
 

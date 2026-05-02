@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useEmbed } from "@/hooks/use-embed";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, Trash2, Eye, FileText, Presentation, CheckCircle2, Clock, Loader2, AlertTriangle } from "lucide-react";
 import type { StatusReport } from "@shared/schema";
+import { ClientSignoffPanel } from "@/components/client-signoff-panel";
 
 interface StatusReportMetadata {
   projectName?: string;
@@ -54,6 +56,7 @@ const TYPE_ICONS: Record<string, typeof FileText> = {
 export function StatusReportsTab({ projectId }: StatusReportsTabProps) {
   const { toast } = useToast();
   const { isReadonly: embedReadonly } = useEmbed();
+  const { user } = useAuth();
   const [viewingReport, setViewingReport] = useState<(StatusReport & { generatorName?: string }) | null>(null);
 
   const { data: reports = [], isLoading } = useQuery<(StatusReport & { generatorName?: string })[]>({
@@ -249,6 +252,16 @@ export function StatusReportsTab({ projectId }: StatusReportsTabProps) {
           <DialogHeader>
             <DialogTitle>{viewingReport?.title}</DialogTitle>
           </DialogHeader>
+          {viewingReport && user?.role === "client" && (
+            <div className="border rounded-lg p-4 bg-muted/20">
+              <ClientSignoffPanel
+                entityType="status_report"
+                entityId={viewingReport.id}
+                entityName={viewingReport.title}
+                entityStatus={viewingReport.status ?? undefined}
+              />
+            </div>
+          )}
           {(() => {
             const meta = getReportMetadata(viewingReport?.metadata);
             const warnings: string[] = meta.dataQualityWarnings || [];

@@ -140,6 +140,7 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useEmbed } from "@/hooks/use-embed";
+import { ClientSignoffPanel } from "@/components/client-signoff-panel";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/download";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -5199,6 +5200,31 @@ export default function ProjectDetail() {
                 </Table>
               </CardContent>
             </Card>
+
+            {/* Client Signoff Panels for pending change orders */}
+            {user?.role === "client" && sows && sows.filter((s: any) => s.type === "change_order" && ["draft", "pending"].includes(s.status)).length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Change Order Approvals</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {sows.filter((s: any) => s.type === "change_order" && ["draft", "pending"].includes(s.status)).map((sow: any) => (
+                    <div key={sow.id} className="border rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="font-medium text-sm">{sow.name}</p>
+                        <span className="text-sm text-muted-foreground">${parseFloat(sow.value).toLocaleString()}</span>
+                      </div>
+                      <ClientSignoffPanel
+                        entityType="sow"
+                        entityId={sow.id}
+                        entityName={sow.name}
+                        entityStatus={sow.status}
+                      />
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
               </TabsContent>
               
               <TabsContent value="budget-history" className="space-y-6">
@@ -5439,6 +5465,28 @@ export default function ProjectDetail() {
                 </Table>
               </CardContent>
             </Card>
+
+            {/* Client Signoff Panels for completed milestones */}
+            {user?.role === "client" && milestones && milestones.filter((m: any) => m.status === "completed").length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Milestone Sign-offs</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {milestones.filter((m: any) => m.status === "completed").map((milestone: any) => (
+                    <div key={milestone.id} className="border rounded-lg p-4">
+                      <p className="font-medium text-sm mb-2">{milestone.name}</p>
+                      <ClientSignoffPanel
+                        entityType="project_milestone"
+                        entityId={milestone.id}
+                        entityName={milestone.name}
+                        entityStatus={milestone.status}
+                      />
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Workstreams Tab */}

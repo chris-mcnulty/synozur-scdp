@@ -3942,6 +3942,7 @@ export const notificationTypeEnum = z.enum([
   'time_reminder',
   'expense_reminder',
   'general',
+  'client_signoff',
 ]);
 export type NotificationType = z.infer<typeof notificationTypeEnum>;
 
@@ -4042,3 +4043,31 @@ export const insertDigestSendSchema = createInsertSchema(digestSends).omit({
 });
 export type InsertDigestSend = z.infer<typeof insertDigestSendSchema>;
 export type DigestSend = typeof digestSends.$inferSelect;
+
+// ============================================================================
+// CLIENT SIGN-OFFS — formal approval / acceptance / acknowledgement records
+// ============================================================================
+
+export const clientSignoffs = pgTable("client_signoffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  entityType: varchar("entity_type", { length: 50 }).notNull(), // 'estimate' | 'project_milestone' | 'status_report' | 'sow'
+  entityId: varchar("entity_id", { length: 255 }).notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  action: varchar("action", { length: 50 }).notNull(), // 'approved' | 'changes_requested' | 'accepted' | 'rejected' | 'acknowledged'
+  comment: text("comment"),
+  clientUserName: text("client_user_name").notNull(),
+  clientUserEmail: text("client_user_email"),
+  ipAddress: varchar("ip_address", { length: 64 }),
+  signedAt: timestamp("signed_at").notNull().default(sql`now()`),
+}, (table) => ({
+  entityIdx: index("idx_client_signoffs_entity").on(table.entityType, table.entityId),
+  tenantSignedIdx: index("idx_client_signoffs_tenant_signed").on(table.tenantId, table.signedAt),
+}));
+
+export const insertClientSignoffSchema = createInsertSchema(clientSignoffs).omit({
+  id: true,
+  signedAt: true,
+});
+export type InsertClientSignoff = z.infer<typeof insertClientSignoffSchema>;
+export type ClientSignoff = typeof clientSignoffs.$inferSelect;
