@@ -3851,6 +3851,8 @@ export const userCalendarMappings = pgTable("user_calendar_mappings", {
   // Key: hash of seriesMasterId (if recurring) or hash of subject+organiserEmail
   eventKey: varchar("event_key", { length: 255 }).notNull(),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  // Human-readable label (typically the event subject) shown in mapping management UI.
+  label: varchar("label", { length: 500 }),
   lastUsedAt: timestamp("last_used_at").notNull().default(sql`now()`),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({

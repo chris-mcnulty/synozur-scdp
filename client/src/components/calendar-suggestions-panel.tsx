@@ -117,6 +117,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       description: string;
       date: string;
       seriesMasterId?: string | null;
+      subject?: string | null;
     }>) => {
       const response = await apiRequest("/api/me/calendar-suggestions/accept", {
         method: "POST",
@@ -161,6 +162,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       description: suggestion.subject,
       date: suggestion.date,
       seriesMasterId: suggestion.seriesMasterId,
+      subject: suggestion.subject,
     }]);
   };
 
@@ -175,6 +177,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
         description: s.subject,
         date: s.date,
         seriesMasterId: s.seriesMasterId,
+        subject: s.subject,
       }));
 
     if (toAccept.length === 0) {

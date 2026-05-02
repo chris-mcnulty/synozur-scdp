@@ -1050,7 +1050,8 @@ export interface IStorage {
 
   // User Calendar Mappings (recurring event → project memory)
   getUserCalendarMappings(userId: string): Promise<UserCalendarMapping[]>;
-  upsertCalendarMapping(userId: string, tenantId: string | null, eventKey: string, projectId: string): Promise<UserCalendarMapping>;
+  upsertCalendarMapping(userId: string, tenantId: string | null, eventKey: string, projectId: string, label?: string | null): Promise<UserCalendarMapping>;
+  updateCalendarMappingProject(userId: string, eventKey: string, projectId: string): Promise<UserCalendarMapping | null>;
   deleteCalendarMapping(userId: string, eventKey: string): Promise<void>;
 
   // Notifications

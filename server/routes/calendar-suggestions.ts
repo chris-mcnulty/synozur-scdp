@@ -147,6 +147,7 @@ export function registerCalendarSuggestionsRoutes(
             description: z.string().default(""),
             date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
             seriesMasterId: z.string().nullable().optional(),
+            subject: z.string().nullable().optional(),
           })
         )
         .min(1),
@@ -197,7 +198,13 @@ export function registerCalendarSuggestionsRoutes(
         created.push(timeEntry);
 
         // Persist recurring event memory so future suggestions auto-match
-        await storage.upsertCalendarMapping(userId, tenantId, item.eventKey, item.projectId);
+        await storage.upsertCalendarMapping(
+          userId,
+          tenantId,
+          item.eventKey,
+          item.projectId,
+          item.subject ?? null,
+        );
 
         console.log(
           `[CALENDAR_SUGGESTIONS] user=${userId} accepted eventId=${item.eventId} project=${item.projectId} entry=${timeEntry.id}`
@@ -215,6 +222,101 @@ export function registerCalendarSuggestionsRoutes(
       entries: created,
       ...(errors.length > 0 ? { errors } : {}),
     });
+  });
+
+  /**
+   * GET /api/me/calendar-mappings
+   *
+   * Returns the authenticated user's saved recurring-event → project mappings,
+   * each enriched with project name + client name for display.
+   */
+  app.get("/api/me/calendar-mappings", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const tenantId: string | null = req.user?.tenantId ?? null;
+
+    try {
+      const [mappings, projects] = await Promise.all([
+        storage.getUserCalendarMappings(userId),
+        storage.getProjects(tenantId),
+      ]);
+
+      const projectMap = new Map(projects.map(p => [p.id, p]));
+
+      const items = mappings.map(m => {
+        const project = projectMap.get(m.projectId);
+        return {
+          eventKey: m.eventKey,
+          projectId: m.projectId,
+          projectName: project?.name ?? null,
+          clientName: project?.client?.name ?? null,
+          label: m.label,
+          lastUsedAt: m.lastUsedAt,
+          createdAt: m.createdAt,
+        };
+      });
+
+      // Sort most recently used first
+      items.sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime());
+
+      return res.json({ mappings: items });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[CALENDAR_MAPPINGS] Error fetching mappings:", message);
+      return res.status(500).json({ message: "Failed to fetch calendar mappings" });
+    }
+  });
+
+  /**
+   * PATCH /api/me/calendar-mappings/:eventKey
+   * Update the project a saved mapping points to. The project must belong to
+   * the authenticated user's tenant.
+   */
+  app.patch("/api/me/calendar-mappings/:eventKey", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const tenantId: string | null = req.user?.tenantId ?? null;
+    const { eventKey } = req.params;
+
+    const bodySchema = z.object({ projectId: z.string().min(1) });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
+    }
+
+    const { projectId } = parsed.data;
+
+    const project = await storage.getProject(projectId);
+    if (!project) {
+      return res.status(422).json({ message: `Project not found: ${projectId}` });
+    }
+    if (tenantId && project.tenantId !== tenantId) {
+      return res.status(403).json({
+        message: `Project ${projectId} does not belong to your organization`,
+      });
+    }
+
+    const updated = await storage.updateCalendarMappingProject(userId, eventKey, projectId);
+    if (!updated) {
+      return res.status(404).json({ message: "Mapping not found" });
+    }
+
+    console.log(
+      `[CALENDAR_MAPPINGS] user=${userId} updated eventKey=${eventKey} -> project=${projectId}`
+    );
+    return res.json({ mapping: updated });
+  });
+
+  /**
+   * DELETE /api/me/calendar-mappings/:eventKey
+   * Remove a saved mapping. Future suggestions for this event will fall back
+   * to heuristic matching.
+   */
+  app.delete("/api/me/calendar-mappings/:eventKey", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const { eventKey } = req.params;
+
+    await storage.deleteCalendarMapping(userId, eventKey);
+    console.log(`[CALENDAR_MAPPINGS] user=${userId} deleted eventKey=${eventKey}`);
+    return res.status(204).end();
   });
 
   /**

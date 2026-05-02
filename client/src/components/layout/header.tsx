@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TenantSwitcher } from "@/components/tenant-switcher";
 import { Separator } from "@/components/ui/separator";
 import { NotificationBell } from "./notification-bell";
+import { CalendarMappingsManager } from "@/components/calendar-mappings-manager";
 import {
   Dialog,
   DialogContent,
@@ -209,31 +210,44 @@ export function Header() {
               </div>
 
               {calendarEnabled && (
-                <div className="flex items-center justify-between pl-0" data-testid="setting-calendar-days-back">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="calendar-days-back">Look back</Label>
-                    <p className="text-sm text-muted-foreground">
-                      How many days back to fetch suggestions
-                    </p>
+                <>
+                  <div className="flex items-center justify-between pl-0" data-testid="setting-calendar-days-back">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="calendar-days-back">Look back</Label>
+                      <p className="text-sm text-muted-foreground">
+                        How many days back to fetch suggestions
+                      </p>
+                    </div>
+                    <Select
+                      value={String(daysBack)}
+                      onValueChange={(val) =>
+                        updateCalendarSettingsMutation.mutate({ calendarSuggestionsDaysBack: parseInt(val) })
+                      }
+                      disabled={reminderSettingsQuery.isLoading || updateCalendarSettingsMutation.isPending}
+                    >
+                      <SelectTrigger className="w-36" id="calendar-days-back">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Today only</SelectItem>
+                        <SelectItem value="1">Today + 1 day</SelectItem>
+                        <SelectItem value="3">Today + 3 days</SelectItem>
+                        <SelectItem value="7">Today + 7 days</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Select
-                    value={String(daysBack)}
-                    onValueChange={(val) =>
-                      updateCalendarSettingsMutation.mutate({ calendarSuggestionsDaysBack: parseInt(val) })
-                    }
-                    disabled={reminderSettingsQuery.isLoading || updateCalendarSettingsMutation.isPending}
-                  >
-                    <SelectTrigger className="w-36" id="calendar-days-back">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Today only</SelectItem>
-                      <SelectItem value="1">Today + 1 day</SelectItem>
-                      <SelectItem value="3">Today + 3 days</SelectItem>
-                      <SelectItem value="7">Today + 7 days</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+
+                  <div className="space-y-2" data-testid="setting-calendar-mappings">
+                    <div className="space-y-0.5">
+                      <Label>Saved event mappings</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Recurring meetings you've matched to projects. Change or remove any to
+                        improve future suggestions.
+                      </p>
+                    </div>
+                    <CalendarMappingsManager />
+                  </div>
+                </>
               )}
             </div>
           </div>
