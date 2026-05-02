@@ -109,7 +109,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2, Search, Loader2, Globe, Info
+  Link2, Search, Loader2, Globe, Info, GripVertical
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -117,6 +117,23 @@ import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
 import { SubSOWGenerator } from "@/components/sub-sow-generator";
 import { StatusReportDialog } from "@/components/status-report-dialog";
 import { format, startOfMonth, parseISO } from "date-fns";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -949,6 +966,66 @@ function SharePointStatusReportHistory({ projectId }: { projectId: string }) {
   );
 }
 
+function SortableFillSlotRow({ slot, idx, sel, activeRoleName, assignableUsers, onLabelChange, onPersonChange }: {
+  slot: any;
+  idx: number;
+  sel: { personId: string; label: string };
+  activeRoleName: string;
+  assignableUsers: any[];
+  onLabelChange: (label: string) => void;
+  onPersonChange: (personId: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slot.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell className="w-8 pr-0">
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 rounded"
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+      </TableCell>
+      <TableCell className="text-muted-foreground text-sm font-mono">{idx + 1}</TableCell>
+      <TableCell>
+        <Input
+          value={sel.label}
+          onChange={(e) => onLabelChange(e.target.value)}
+          placeholder={`${activeRoleName} ${idx + 1}`}
+          className="h-8 text-sm w-40"
+        />
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
+        {slot.taskDescription || '—'}
+      </TableCell>
+      <TableCell className="text-sm">{parseFloat(slot.hours || '0').toFixed(1)}h</TableCell>
+      <TableCell>
+        <Select
+          value={sel.personId || ''}
+          onValueChange={onPersonChange}
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue placeholder="Select person..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_none">— Not assigned —</SelectItem>
+            {assignableUsers.map((u: any) => (
+              <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
@@ -1080,6 +1157,11 @@ export default function ProjectDetail() {
   const [fillRoleSlotsRoleId, setFillRoleSlotsRoleId] = useState<string | null>(null);
   const [fillRoleSlotSelections, setFillRoleSlotSelections] = useState<Record<string, { personId: string; label: string }>>({});
   const [fillRoleSlotsReassignPersonId, setFillRoleSlotsReassignPersonId] = useState<string>('');
+  const [fillRoleSlotsOrder, setFillRoleSlotsOrder] = useState<string[]>([]);
+  const fillSlotsDndSensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
   const [selectedTimeEntry, setSelectedTimeEntry] = useState<any>(null);
   const [timeEntryDialogOpen, setTimeEntryDialogOpen] = useState(false);
   const [timeEntryToDelete, setTimeEntryToDelete] = useState<any>(null);
@@ -6566,6 +6648,7 @@ export default function ProjectDetail() {
             setShowFillRoleSlotsDialog(false);
             setFillRoleSlotsRoleId(null);
             setFillRoleSlotSelections({});
+            setFillRoleSlotsOrder([]);
           }
         }}>
           <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
@@ -6575,7 +6658,7 @@ export default function ProjectDetail() {
                 Fill Role Slots
               </DialogTitle>
               <DialogDescription>
-                Select a role to view its open slots, then assign a different person to each slot in one submission.
+                Select a role to view its open slots, then assign a different person to each slot in one submission. Drag rows to reorder.
               </DialogDescription>
             </DialogHeader>
             {(() => {
@@ -6588,12 +6671,47 @@ export default function ProjectDetail() {
               }, {});
               const roleIds = Object.keys(roleGroups);
               const activeRoleId = fillRoleSlotsRoleId || roleIds[0] || null;
-              const activeSlots = activeRoleId ? (roleGroups[activeRoleId] || []) : [];
-              const activeRoleName = activeSlots[0]?.role?.name || 'Unknown Role';
+              const rawSlots: any[] = activeRoleId ? (roleGroups[activeRoleId] || []) : [];
+              const activeRoleName = rawSlots[0]?.role?.name || 'Unknown Role';
               const assignableUsers = (users as any[]).filter((u: any) => u.isAssignable !== false && u.isActive !== false);
-              const initSlotLabel = (slot: any, idx: number) => {
-                const roleName = slot.role?.name || 'Resource';
-                return slot.roleInstanceLabel || `${roleName} ${idx + 1}`;
+
+              const slotMap = Object.fromEntries(rawSlots.map((s: any) => [s.id, s]));
+              const orderedIds = fillRoleSlotsOrder.length > 0 && fillRoleSlotsOrder.every(id => !!slotMap[id])
+                ? fillRoleSlotsOrder
+                : rawSlots.map((s: any) => s.id);
+              const activeSlots = orderedIds.map(id => slotMap[id]).filter(Boolean);
+
+              const isAutoGeneratedLabel = (label: string, roleName: string): boolean => {
+                const prefix = `${roleName} `;
+                if (!label.startsWith(prefix)) return false;
+                const suffix = label.slice(prefix.length);
+                return suffix.length > 0 && /^\d+$/.test(suffix);
+              };
+
+              const handleDragEnd = (event: DragEndEvent) => {
+                const { active, over } = event;
+                if (over && active.id !== over.id) {
+                  const oldIndex = orderedIds.indexOf(active.id as string);
+                  const newIndex = orderedIds.indexOf(over.id as string);
+                  const newOrder = arrayMove(orderedIds, oldIndex, newIndex);
+                  setFillRoleSlotsOrder(newOrder);
+                  setFillRoleSlotSelections(prev => {
+                    const updated = { ...prev };
+                    newOrder.forEach((slotId, idx) => {
+                      const slot = slotMap[slotId];
+                      const roleName = slot?.role?.name || 'Resource';
+                      const existing = prev[slotId];
+                      const newDefaultLabel = `${roleName} ${idx + 1}`;
+                      const currentLabel = existing?.label ?? slot?.roleInstanceLabel ?? '';
+                      const isAutoLabel = !currentLabel || isAutoGeneratedLabel(currentLabel, roleName);
+                      updated[slotId] = {
+                        personId: existing?.personId ?? '',
+                        label: isAutoLabel ? newDefaultLabel : currentLabel,
+                      };
+                    });
+                    return updated;
+                  });
+                }
               };
 
               return (
@@ -6608,6 +6726,7 @@ export default function ProjectDetail() {
                             onClick={() => {
                               setFillRoleSlotsRoleId(roleId);
                               setFillRoleSlotSelections({});
+                              setFillRoleSlotsOrder([]);
                             }}
                             className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm transition-colors ${
                               activeRoleId === roleId
@@ -6634,57 +6753,47 @@ export default function ProjectDetail() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-12">#</TableHead>
+                            <TableHead className="w-8"></TableHead>
+                            <TableHead className="w-10">#</TableHead>
                             <TableHead>Role Instance Label</TableHead>
                             <TableHead>Task</TableHead>
                             <TableHead>Hours</TableHead>
                             <TableHead className="w-56">Assign To</TableHead>
                           </TableRow>
                         </TableHeader>
-                        <TableBody>
-                          {activeSlots.map((slot: any, idx: number) => {
-                            const sel = fillRoleSlotSelections[slot.id] || { personId: '', label: initSlotLabel(slot, idx) };
-                            return (
-                              <TableRow key={slot.id}>
-                                <TableCell className="text-muted-foreground text-sm font-mono">{idx + 1}</TableCell>
-                                <TableCell>
-                                  <Input
-                                    value={sel.label}
-                                    onChange={(e) => setFillRoleSlotSelections(prev => ({
+                        <DndContext
+                          sensors={fillSlotsDndSensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleDragEnd}
+                        >
+                          <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
+                            <TableBody>
+                              {activeSlots.map((slot: any, idx: number) => {
+                                const roleName = slot.role?.name || 'Resource';
+                                const defaultLabel = slot.roleInstanceLabel || `${roleName} ${idx + 1}`;
+                                const sel = fillRoleSlotSelections[slot.id] || { personId: '', label: defaultLabel };
+                                return (
+                                  <SortableFillSlotRow
+                                    key={slot.id}
+                                    slot={slot}
+                                    idx={idx}
+                                    sel={sel}
+                                    activeRoleName={activeRoleName}
+                                    assignableUsers={assignableUsers}
+                                    onLabelChange={(label) => setFillRoleSlotSelections(prev => ({
                                       ...prev,
-                                      [slot.id]: { ...sel, label: e.target.value }
+                                      [slot.id]: { ...sel, label }
                                     }))}
-                                    placeholder={`${activeRoleName} ${idx + 1}`}
-                                    className="h-8 text-sm w-40"
+                                    onPersonChange={(personId) => setFillRoleSlotSelections(prev => ({
+                                      ...prev,
+                                      [slot.id]: { ...sel, personId: personId === '_none' ? '' : personId }
+                                    }))}
                                   />
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
-                                  {slot.taskDescription || '—'}
-                                </TableCell>
-                                <TableCell className="text-sm">{parseFloat(slot.hours || '0').toFixed(1)}h</TableCell>
-                                <TableCell>
-                                  <Select
-                                    value={sel.personId || ''}
-                                    onValueChange={(value) => setFillRoleSlotSelections(prev => ({
-                                      ...prev,
-                                      [slot.id]: { ...sel, personId: value === '_none' ? '' : value }
-                                    }))}
-                                  >
-                                    <SelectTrigger className="h-8 text-sm">
-                                      <SelectValue placeholder="Select person..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="_none">— Not assigned —</SelectItem>
-                                      {assignableUsers.map((u: any) => (
-                                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
+                                );
+                              })}
+                            </TableBody>
+                          </SortableContext>
+                        </DndContext>
                       </Table>
                     )}
                   </div>
@@ -6735,6 +6844,7 @@ export default function ProjectDetail() {
                         setShowFillRoleSlotsDialog(false);
                         setFillRoleSlotsRoleId(null);
                         setFillRoleSlotSelections({});
+                        setFillRoleSlotsOrder([]);
                         setFillRoleSlotsReassignPersonId('');
                       }}
                     >
@@ -6750,7 +6860,7 @@ export default function ProjectDetail() {
               );
             })()}
             <DialogFooter className="border-t pt-4">
-              <Button variant="outline" onClick={() => { setShowFillRoleSlotsDialog(false); setFillRoleSlotsRoleId(null); setFillRoleSlotSelections({}); setFillRoleSlotsReassignPersonId(''); }}>
+              <Button variant="outline" onClick={() => { setShowFillRoleSlotsDialog(false); setFillRoleSlotsRoleId(null); setFillRoleSlotSelections({}); setFillRoleSlotsOrder([]); setFillRoleSlotsReassignPersonId(''); }}>
                 Cancel
               </Button>
               <Button
@@ -6764,11 +6874,17 @@ export default function ProjectDetail() {
                   }, {});
                   const roleIds = Object.keys(roleGroups);
                   const activeRoleId = fillRoleSlotsRoleId || roleIds[0] || null;
-                  const activeSlots = activeRoleId ? (roleGroups[activeRoleId] || []) : [];
+                  const rawSlots: any[] = activeRoleId ? (roleGroups[activeRoleId] || []) : [];
+                  const slotMap = Object.fromEntries(rawSlots.map((s: any) => [s.id, s]));
+                  const orderedIds = fillRoleSlotsOrder.length > 0 && fillRoleSlotsOrder.every(id => !!slotMap[id])
+                    ? fillRoleSlotsOrder
+                    : rawSlots.map((s: any) => s.id);
+                  const activeSlots = orderedIds.map(id => slotMap[id]).filter(Boolean);
 
                   const assignments = activeSlots
                     .map((slot: any, idx: number) => {
-                      const sel = fillRoleSlotSelections[slot.id] || { personId: '', label: (slot.role?.name ? `${slot.role.name} ${idx + 1}` : `Resource ${idx + 1}`) };
+                      const roleName = slot.role?.name || 'Resource';
+                      const sel = fillRoleSlotSelections[slot.id] || { personId: '', label: slot.roleInstanceLabel || `${roleName} ${idx + 1}` };
                       if (!sel.personId) return null;
                       return {
                         allocationId: slot.id,
