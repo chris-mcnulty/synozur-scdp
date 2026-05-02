@@ -4850,6 +4850,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const effectiveEndDate = endDate || new Date().toISOString().split('T')[0];
 
       const tenantId = req.user!.tenantId || (project as any).tenantId;
+
+      // Pre-flight data quality check — same check used by the text status report flow
+      let dataQualityReport: Awaited<ReturnType<typeof storage.checkStatusReportDataQuality>> | null = null;
+      try {
+        dataQualityReport = await storage.checkStatusReportDataQuality(req.params.id, effectiveStartDate, effectiveEndDate, tenantId);
+      } catch (qErr) {
+        console.warn("[PPTX] Could not run data quality pre-flight:", qErr);
+      }
       const [milestones, raiddEntries, allocations, tenant, timeEntries, expenseData, epics, pptxDeliverables] = await Promise.all([
         storage.getProjectMilestones(req.params.id),
         storage.getRaiddEntries(req.params.id, {}),
@@ -5639,6 +5647,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
               style: reportStyle,
               generatedAt: new Date().toISOString(),
               generatedBy: req.user!.name || req.user!.email,
+              dataQualityWarnings: dataQualityReport?.warnings || [],
+              dataQualityOverallStatus: dataQualityReport?.overallStatus || null,
             },
             generatedBy: req.user!.id,
           });
