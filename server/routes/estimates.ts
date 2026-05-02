@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients, estimateChannels, clientTeams, projectChannels } from "@shared/schema";
+import { storage, db, generateSubSOWPdf, generateEstimateProposalPdf } from "../storage";
+import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients, estimateChannels, clientTeams, projectChannels, estimateVersions } from "@shared/schema";
+import { EstimateVersionService } from "../services/estimate-version-service";
 import { eq, sql, inArray, max, and, isNull } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 import { RateResolver } from "../rate-resolver";
@@ -73,6 +74,21 @@ export function isLineItemSalaried(item: any): boolean {
   // No specific person assigned - use role's isAlwaysSalaried as fallback for estimate planning
   if (item.role?.isAlwaysSalaried === true) return true;
   return false;
+}
+
+// Helper: Backfill a v1 version snapshot before the first mutation to an estimate.
+// This is non-blocking so a failure never aborts the mutating operation.
+async function backfillVersionIfNeeded(estimateId: string, req: Request): Promise<void> {
+  try {
+    const versionCount = await EstimateVersionService.countVersions(estimateId);
+    if (versionCount === 0) {
+      const userId = (req as any).user?.id ?? null;
+      await EstimateVersionService.snapshot(estimateId, "manual", userId, "Initial snapshot (backfill on first edit)");
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn("[VERSIONS] Backfill snapshot failed (non-blocking):", msg);
+  }
 }
 
 // Helper: Recalculate referral fee distribution across line items
@@ -1891,6 +1907,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       if (!name) {
         return res.status(400).json({ message: "Epic name is required" });
       }
+      await backfillVersionIfNeeded(req.params.id, req);
       const epic = await storage.createEstimateEpic(req.params.id, { name });
       res.json(epic);
     } catch (error) {
@@ -1911,6 +1928,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const updateData: { name?: string; order?: number } = {};
       if (name) updateData.name = name;
       if (order !== undefined) updateData.order = order;
+      await backfillVersionIfNeeded(req.params.estimateId, req);
       const epic = await storage.updateEstimateEpic(req.params.epicId, updateData);
       res.json(epic);
     } catch (error) {
@@ -1924,6 +1942,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       
+      await backfillVersionIfNeeded(req.params.estimateId, req);
       await storage.deleteEstimateEpic(req.params.estimateId, req.params.epicId);
       res.json({ message: "Epic deleted successfully" });
     } catch (error: any) {
@@ -2075,6 +2094,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         estimateId: req.params.id,
       });
 
+      await backfillVersionIfNeeded(req.params.id, req);
       console.log("Validated data:", JSON.stringify(validatedData, null, 2));
       const lineItem = await storage.createEstimateLineItem(validatedData);
       console.log("Created line item:", lineItem);
@@ -2242,6 +2262,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         }
       }
 
+      await backfillVersionIfNeeded(req.params.estimateId, req);
+
       const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
 
       // Recalculate referral markup after line item changes
@@ -2269,6 +2291,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     try {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      await backfillVersionIfNeeded(req.params.estimateId, req);
       await storage.deleteEstimateLineItem(req.params.id);
       
       // Recalculate referral markup after line item deletion
@@ -2284,6 +2307,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   app.delete("/api/estimates/:estimateId/line-items", requireAuth, async (req, res) => {
     try {
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      await backfillVersionIfNeeded(req.params.estimateId, req);
       const existingItems = await storage.getEstimateLineItems(req.params.estimateId);
       const itemIds = existingItems.map(item => item.id);
       if (itemIds.length > 0) {
@@ -3976,12 +4000,107 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           });
       }
 
+      // Append version footer
+      try {
+        const latestVersion = await EstimateVersionService.getLatestVersion(req.params.id);
+        if (latestVersion) {
+          const snapDate = new Date(latestVersion.snapshottedAt).toISOString().split("T")[0];
+          textOutput += `\n${"=".repeat(80)}\n`;
+          textOutput += `Estimate v${latestVersion.versionNumber} | Generated ${new Date().toISOString().split("T")[0]} | Snapshot taken ${snapDate}\n`;
+        } else {
+          textOutput += `\n${"=".repeat(80)}\n`;
+          textOutput += `Generated ${new Date().toISOString().split("T")[0]}\n`;
+        }
+      } catch {
+        // version footer is best-effort
+      }
+
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${estimate.name.replace(/[^a-z0-9]/gi, '_')}-ai-export.txt"`);
       res.send(textOutput);
     } catch (error) {
       console.error("Text export error:", error);
       res.status(500).json({ message: "Failed to export text" });
+    }
+  });
+
+  // Estimate proposal PDF — embeds latest version number in footer
+  app.get("/api/estimates/:id/export-pdf", requireAuth, async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+      const tenantId = (req.user as any)?.tenantId;
+      if (tenantId && estimate.tenantId && estimate.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const [lineItems, epics, client] = await Promise.all([
+        storage.getEstimateLineItems(req.params.id),
+        storage.getEstimateEpics(req.params.id),
+        estimate.clientId ? storage.getClient(estimate.clientId) : Promise.resolve(null),
+      ]);
+
+      // Latest snapshot version for footer
+      const latestVersion = await EstimateVersionService.getLatestVersion(req.params.id);
+      const versionNumber = latestVersion?.versionNumber ?? null;
+      const versionDate = latestVersion
+        ? new Date(latestVersion.snapshottedAt).toISOString().split("T")[0]
+        : null;
+
+      // Group line items by epic
+      const epicMap = new Map(epics.map((e) => [e.id, e.name]));
+      const grouped = new Map<string, Array<{ description: string; adjustedHours: number; totalAmount: number }>>();
+      for (const li of lineItems) {
+        const key = li.epicId ? (epicMap.get(li.epicId) ?? "General") : "General";
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push({
+          description: li.description,
+          adjustedHours: Number(li.adjustedHours || 0),
+          totalAmount: Number(li.totalAmount || 0),
+        });
+      }
+
+      const lineItemsByEpic = Array.from(grouped.entries()).map(([epicName, items]) => ({
+        epicName,
+        items,
+        epicHours: items.reduce((s, i) => s + i.adjustedHours, 0),
+        epicAmount: items.reduce((s, i) => s + i.totalAmount, 0),
+      }));
+
+      // Tenant name for footer
+      let tenantName = "Constellation";
+      if (tenantId) {
+        const [tenantRow] = await db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId));
+        if (tenantRow) tenantName = tenantRow.name;
+      }
+
+      const totalHours = lineItems.reduce((s, li) => s + Number(li.adjustedHours || 0), 0);
+      const totalFees = lineItems.reduce((s, li) => s + Number(li.totalAmount || 0), 0);
+
+      const pdfBuffer = await generateEstimateProposalPdf({
+        estimateName: estimate.name,
+        clientName: client?.name ?? "Unknown Client",
+        estimateDate: estimate.estimateDate,
+        validUntil: estimate.validUntil,
+        totalHours,
+        totalFees,
+        presentedTotal: estimate.presentedTotal ? Number(estimate.presentedTotal) : null,
+        lineItemsByEpic,
+        generatedDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+        versionNumber,
+        versionDate,
+        tenantName,
+      });
+
+      const safeName = estimate.name.replace(/[^a-zA-Z0-9]/g, "_");
+      const vSuffix = versionNumber ? `_v${versionNumber}` : "";
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}${vSuffix}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[ESTIMATE-PDF] Failed to generate proposal PDF:", msg);
+      res.status(500).json({ message: "Failed to generate proposal PDF", error: msg });
     }
   });
 
@@ -4154,6 +4273,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Import CSV endpoint hit for estimate:", req.params.id);
+
+      await backfillVersionIfNeeded(req.params.id, req);
 
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
 
@@ -4491,6 +4612,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Import Excel endpoint hit for estimate:", req.params.id);
+
+      await backfillVersionIfNeeded(req.params.id, req);
 
       const xlsx = await import("xlsx");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
@@ -5367,6 +5490,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         }
       }
       
+      // Backfill: create a v1 snapshot of the PRE-edit state before any content mutation is applied.
+      if (!updateData.status) {
+        await backfillVersionIfNeeded(req.params.id, req);
+      }
+
       const estimate = await storage.updateEstimate(req.params.id, updateData);
 
       if (updateData.status && estimate) {
@@ -5378,6 +5506,18 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             updateData.status,
             estimate.presentedTotal || estimate.totalFees
           ).catch(() => {});
+        }
+
+        // Auto-snapshot when estimate is marked as sent (awaited — snapshot is a required invariant)
+        if (updateData.status === "sent") {
+          const userId = (req as any).user?.id ?? null;
+          try {
+            await EstimateVersionService.snapshot(req.params.id, "sent", userId, "Auto-snapshot on send");
+          } catch (snapErr: unknown) {
+            const msg = snapErr instanceof Error ? snapErr.message : String(snapErr);
+            console.error("[VERSIONS] Auto-snapshot on send failed:", msg);
+            return res.status(500).json({ message: "Estimate was updated but auto-snapshot failed. Please try again.", detail: msg });
+          }
         }
       }
 
@@ -5447,6 +5587,16 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const updatedEstimate = await storage.updateEstimate(req.params.id, { 
         status: "approved"
       });
+
+      // Auto-snapshot on approval (blocking — snapshot is a required invariant for audit trail)
+      try {
+        const userId = (req.user as { id?: string } | undefined)?.id ?? null;
+        await EstimateVersionService.snapshot(req.params.id, "approved", userId, "Auto-snapshot on approval");
+      } catch (snapErr: unknown) {
+        const msg = snapErr instanceof Error ? snapErr.message : String(snapErr);
+        console.error("[VERSIONS] Auto-snapshot on approve failed:", msg);
+        return res.status(500).json({ message: "Estimate was approved but auto-snapshot failed. Please retry approval.", detail: msg });
+      }
 
       let project = null;
       if (shouldCreateProject && updatedEstimate) {
@@ -5524,6 +5674,215 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       res.json(updatedEstimate);
     } catch (error) {
       res.status(500).json({ message: "Failed to reject estimate" });
+    }
+  });
+
+  // ============================================================================
+  // ESTIMATE VERSION HISTORY ROUTES
+  // ============================================================================
+
+  // GET all versions for an estimate (enriched with snapshotted-by user display name)
+  app.get("/api/estimates/:id/versions", requireAuth, async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+      const tenantId = (req.user as any)?.tenantId;
+      if (tenantId && estimate.tenantId && estimate.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const versions = await EstimateVersionService.listVersions(req.params.id);
+
+      // Enrich with user display names for snapshottedBy
+      const userIds = [...new Set(versions.map((v) => v.snapshottedBy).filter((id): id is string => !!id))];
+      const userMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const userRows = await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, userIds));
+        for (const u of userRows) {
+          userMap[u.id] = u.name || u.email || u.id;
+        }
+      }
+
+      const enriched = versions.map((v) => ({
+        ...v,
+        snapshottedByName: v.snapshottedBy ? (userMap[v.snapshottedBy] ?? null) : null,
+      }));
+
+      res.json(enriched);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ message: "Failed to list estimate versions", error: msg });
+    }
+  });
+
+  // POST create a manual snapshot
+  app.post("/api/estimates/:id/versions", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+      const tenantId = (req.user as any)?.tenantId;
+      if (tenantId && estimate.tenantId && estimate.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const { notes } = req.body;
+      const userId = (req.user as any)?.id ?? null;
+      const version = await EstimateVersionService.snapshot(req.params.id, "manual", userId, notes);
+      res.status(201).json(version);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to create version snapshot", error: err.message });
+    }
+  });
+
+  // GET diff between two versions
+  app.get("/api/estimates/:id/versions/:vA/diff/:vB", requireAuth, async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+      const tenantId = (req.user as any)?.tenantId;
+      if (tenantId && estimate.tenantId && estimate.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const vA = parseInt(req.params.vA, 10);
+      const vB = parseInt(req.params.vB, 10);
+      if (isNaN(vA) || isNaN(vB)) {
+        return res.status(400).json({ message: "Version numbers must be integers" });
+      }
+
+      const [snapA, snapB] = await Promise.all([
+        EstimateVersionService.getVersion(req.params.id, vA),
+        EstimateVersionService.getVersion(req.params.id, vB),
+      ]);
+      if (!snapA) return res.status(404).json({ message: `Version ${vA} not found` });
+      if (!snapB) return res.status(404).json({ message: `Version ${vB} not found` });
+
+      const diff = EstimateVersionService.diffSnapshots(
+        snapA.snapshotJson as import("../services/estimate-version-service").EstimateSnapshot,
+        snapB.snapshotJson as import("../services/estimate-version-service").EstimateSnapshot
+      );
+
+      res.json({ vA: snapA, vB: snapB, diff });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to diff versions", error: err.message });
+    }
+  });
+
+  // POST restore a version as a new draft estimate (restores from snapshot JSON, not current state)
+  app.post("/api/estimates/:id/versions/:v/restore", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+      const tenantId = (req.user as any)?.tenantId;
+      if (tenantId && estimate.tenantId && estimate.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const vNum = parseInt(req.params.v, 10);
+      if (isNaN(vNum)) return res.status(400).json({ message: "Version number must be an integer" });
+
+      const snap = await EstimateVersionService.getVersion(req.params.id, vNum);
+      if (!snap) return res.status(404).json({ message: `Version ${vNum} not found` });
+
+      const snapshot = snap.snapshotJson as import("../services/estimate-version-service").EstimateSnapshot;
+
+      // Create a new draft estimate populated from the snapshot header + multipliers
+      const newEstimate = await storage.createEstimate({
+        name: `${snapshot.header.name} (Restored from v${vNum})`,
+        clientId: snapshot.header.clientId,
+        projectId: snapshot.header.projectId ?? null,
+        status: "draft",
+        tenantId: estimate.tenantId ?? null,
+        estimateType: snapshot.header.estimateType as any,
+        pricingType: snapshot.header.pricingType as any,
+        version: 1,
+        margin: snapshot.header.margin,
+        totalHours: snapshot.header.totalHours,
+        totalFees: snapshot.header.totalFees,
+        presentedTotal: snapshot.header.presentedTotal,
+        blockHours: snapshot.header.blockHours,
+        blockDollars: snapshot.header.blockDollars,
+        fixedPrice: snapshot.header.fixedPrice,
+        referralFeeType: snapshot.header.referralFeeType as any,
+        referralFeePercent: snapshot.header.referralFeePercent as any,
+        referralFeeFlat: snapshot.header.referralFeeFlat as any,
+        referralFeeAmount: snapshot.header.referralFeeAmount,
+        netRevenue: snapshot.header.netRevenue,
+        estimateDate: snapshot.header.estimateDate,
+        // Multipliers from snapshot
+        sizeSmallMultiplier: snapshot.multipliers.sizeSmall,
+        sizeMediumMultiplier: snapshot.multipliers.sizeMedium,
+        sizeLargeMultiplier: snapshot.multipliers.sizeLarge,
+        complexitySmallMultiplier: snapshot.multipliers.complexitySmall,
+        complexityMediumMultiplier: snapshot.multipliers.complexityMedium,
+        complexityLargeMultiplier: snapshot.multipliers.complexityLarge,
+        confidenceHighMultiplier: snapshot.multipliers.confidenceHigh,
+        confidenceMediumMultiplier: snapshot.multipliers.confidenceMedium,
+        confidenceLowMultiplier: snapshot.multipliers.confidenceLow,
+        // Labels from original estimate (not in snapshot — copy from original)
+        epicLabel: estimate.epicLabel,
+        stageLabel: estimate.stageLabel,
+        activityLabel: estimate.activityLabel,
+      });
+
+      // Recreate epics from snapshot, capturing new IDs for line item reassignment
+      const epicIdMap: Record<string, string> = {};
+      for (const snepic of snapshot.epics) {
+        const newEpic = await storage.createEstimateEpic(newEstimate.id, { name: snepic.name });
+        epicIdMap[snepic.id] = newEpic.id;
+      }
+
+      // Recreate stages from snapshot (requires mapped epicId), capturing new IDs for line items
+      const stageIdMap: Record<string, string> = {};
+      const snapshotStages = (snapshot as import("../services/estimate-version-service").EstimateSnapshot).stages ?? [];
+      for (const snstage of snapshotStages) {
+        const mappedEpicId = epicIdMap[snstage.epicId];
+        if (mappedEpicId) {
+          const newStage = await storage.createEstimateStage(newEstimate.id, { epicId: mappedEpicId, name: snstage.name });
+          stageIdMap[snstage.id] = newStage.id;
+        }
+      }
+
+      // Recreate line items from snapshot (map old epicId → new epicId, old stageId → new stageId)
+      for (const sli of snapshot.lineItems) {
+        await storage.createEstimateLineItem({
+          estimateId: newEstimate.id,
+          description: sli.description,
+          category: sli.category,
+          workstream: sli.workstream,
+          week: sli.week,
+          baseHours: sli.baseHours,
+          factor: sli.factor,
+          rate: sli.rate,
+          size: sli.size as any,
+          complexity: sli.complexity as any,
+          confidence: sli.confidence as any,
+          adjustedHours: sli.adjustedHours,
+          totalAmount: sli.totalAmount,
+          totalCost: sli.totalCost,
+          margin: sli.margin,
+          marginPercent: sli.marginPercent,
+          comments: sli.comments,
+          resourceName: sli.resourceName,
+          roleId: sli.roleId,
+          assignedUserId: sli.assignedUserId,
+          epicId: sli.epicId ? (epicIdMap[sli.epicId] ?? null) : null,
+          stageId: sli.stageId ? (stageIdMap[sli.stageId] ?? null) : null,
+          sortOrder: sli.sortOrder,
+        });
+      }
+
+      // Add an initial snapshot of the restored estimate for traceability
+      const userId = (req.user as any)?.id ?? null;
+      await EstimateVersionService.snapshot(
+        newEstimate.id,
+        "manual",
+        userId,
+        `Restored from ${estimate.name} v${vNum} (snapshot taken ${new Date(snap.snapshottedAt).toISOString().split("T")[0]})`
+      );
+
+      res.status(201).json({ estimate: newEstimate, restoredFromVersion: vNum });
+    } catch (err: any) {
+      console.error("[VERSIONS] Restore failed:", err);
+      res.status(500).json({ message: "Failed to restore version", error: err.message });
     }
   });
 

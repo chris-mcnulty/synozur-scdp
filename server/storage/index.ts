@@ -96,7 +96,7 @@ import { teamsAutomationMethods } from "./teams-automation";
 import { calendarMappingsMethods } from "./calendar-mappings";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
-export { generateInvoicePDF, generateSubSOWPdf } from "./pdf-generation";
+export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
 
 export interface IStorage {
   // Users

@@ -866,3 +866,133 @@ export async function generateSubSOWPdf(input: SubSOWPdfInput): Promise<Buffer> 
     }
   }
 }
+
+// ============================================================================
+// ESTIMATE PROPOSAL PDF
+// ============================================================================
+
+export interface EstimateProposalPdfInput {
+  estimateName: string;
+  clientName: string;
+  estimateDate: string | null;
+  validUntil: string | null;
+  totalHours: number;
+  totalFees: number;
+  presentedTotal: number | null;
+  lineItemsByEpic: Array<{
+    epicName: string;
+    items: Array<{
+      description: string;
+      adjustedHours: number;
+      totalAmount: number;
+    }>;
+    epicHours: number;
+    epicAmount: number;
+  }>;
+  generatedDate: string;
+  versionNumber: number | null;
+  versionDate: string | null;
+  tenantName: string;
+}
+
+export async function generateEstimateProposalPdf(input: EstimateProposalPdfInput): Promise<Buffer> {
+  const rowsHtml = input.lineItemsByEpic.map(({ epicName, items, epicHours, epicAmount }) => {
+    const itemRows = items.map((item) => `
+      <tr>
+        <td class="desc">${escapeHtml(item.description)}</td>
+        <td class="num">${item.adjustedHours.toFixed(1)}</td>
+        <td class="num">$${item.totalAmount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+      </tr>
+    `).join("");
+
+    const epicRow = `
+      <tr class="epic-row">
+        <td colspan="3">${escapeHtml(epicName)}</td>
+      </tr>
+      ${itemRows}
+      <tr class="subtotal-row">
+        <td>Subtotal — ${escapeHtml(epicName)}</td>
+        <td class="num">${epicHours.toFixed(1)} hrs</td>
+        <td class="num">$${epicAmount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+      </tr>
+    `;
+    return epicRow;
+  }).join("");
+
+  const displayTotal = input.presentedTotal ?? input.totalFees;
+  const versionLine = input.versionNumber != null
+    ? `Estimate v${input.versionNumber}${input.versionDate ? ` · Snapshot ${input.versionDate}` : ""} · `
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #222; padding: 40px; }
+  h1 { font-size: 20pt; color: #1a2e4a; margin-bottom: 4px; }
+  .meta { color: #555; font-size: 10pt; margin-bottom: 24px; }
+  .meta span { margin-right: 16px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  th { background: #1a2e4a; color: #fff; padding: 8px 10px; text-align: left; font-size: 10pt; }
+  th.num { text-align: right; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e5e7eb; font-size: 10pt; }
+  td.num { text-align: right; }
+  td.desc { max-width: 320px; }
+  tr.epic-row td { background: #f1f5f9; font-weight: 700; color: #1a2e4a; padding: 6px 10px; border-top: 2px solid #cbd5e1; }
+  tr.subtotal-row td { background: #f8fafc; font-style: italic; color: #555; font-size: 9.5pt; }
+  .total-row { margin-top: 24px; text-align: right; font-size: 13pt; font-weight: 700; color: #1a2e4a; }
+  .footer { margin-top: 40px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 8.5pt; color: #888; }
+</style>
+</head>
+<body>
+  <h1>${escapeHtml(input.estimateName)}</h1>
+  <div class="meta">
+    <span>Client: ${escapeHtml(input.clientName)}</span>
+    ${input.estimateDate ? `<span>Date: ${input.estimateDate}</span>` : ""}
+    ${input.validUntil ? `<span>Valid until: ${input.validUntil}</span>` : ""}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th class="num">Hours</th>
+        <th class="num">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml || `<tr><td colspan="3" style="color:#888;text-align:center;padding:20px">No line items</td></tr>`}
+    </tbody>
+  </table>
+  <div class="total-row">
+    Total: $${displayTotal.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+    &nbsp;(${input.totalHours.toFixed(1)} hrs)
+  </div>
+  <div class="footer">
+    ${versionLine}Generated ${input.generatedDate} · ${escapeHtml(input.tenantName)}
+  </div>
+</body>
+</html>`;
+
+  let browser: import('puppeteer').Browser | null = null;
+  try {
+    const puppeteerModule = await import('puppeteer');
+    browser = await puppeteerModule.default.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdf = await page.pdf({ format: 'A4', margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' } });
+    console.log('[ESTIMATE-PDF] Proposal PDF generated successfully');
+    return Buffer.from(pdf);
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
+function escapeHtml(str: string | null | undefined): string {
+  if (!str) return "";
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}

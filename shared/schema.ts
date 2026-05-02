@@ -1031,6 +1031,29 @@ export const estimateAllocations = pgTable("estimate_allocations", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Estimate Version Snapshots - immutable audit trail of estimate states
+export const estimateVersions = pgTable("estimate_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  versionNumber: integer("version_number").notNull(),
+  snapshotJson: jsonb("snapshot_json").notNull(), // { header, lineItems, multipliers, totals }
+  triggerEvent: text("trigger_event").notNull().default("manual"), // manual, sent, approved, change-order
+  notes: text("notes"),
+  snapshottedAt: timestamp("snapshotted_at").notNull().default(sql`now()`),
+  snapshottedBy: varchar("snapshotted_by").references(() => users.id),
+}, (table) => ({
+  estimateIdx: index("idx_estimate_versions_estimate").on(table.estimateId),
+  uniqueVersion: unique("uq_estimate_versions_version").on(table.estimateId, table.versionNumber),
+}));
+
+export const insertEstimateVersionSchema = createInsertSchema(estimateVersions).omit({
+  id: true,
+  snapshottedAt: true,
+});
+export type InsertEstimateVersion = z.infer<typeof insertEstimateVersionSchema>;
+export type EstimateVersion = typeof estimateVersions.$inferSelect;
+
 // User Rate Schedules (time-based rate management)
 export const userRateSchedules = pgTable("user_rate_schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

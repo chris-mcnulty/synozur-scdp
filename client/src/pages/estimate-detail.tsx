@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users, BarChart3, List, ExternalLink, Search } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users, BarChart3, List, ExternalLink, Search, History, GitCompare, RotateCcw, Clock } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -1000,6 +1000,14 @@ function EstimateDetailContent() {
   const [generatedNarrative, setGeneratedNarrative] = useState<string>("");
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
   const [narrativeGeneratedAt, setNarrativeGeneratedAt] = useState<string | null>(null);
+  // Version history state
+  const [selectedVersions, setSelectedVersions] = useState<Set<number>>(new Set());
+  const [showCompareDialog, setShowCompareDialog] = useState(false);
+  const [showSaveVersionDialog, setShowSaveVersionDialog] = useState(false);
+  const [versionNotes, setVersionNotes] = useState("");
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState<number | null>(null);
+  const [compareData, setCompareData] = useState<any>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -3241,12 +3249,13 @@ function EstimateDetailContent() {
         ) : (
         /* Show detailed estimate UI for detailed type estimates */
         (<Tabs defaultValue="outputs" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="outputs">Quotes</TabsTrigger>
             <TabsTrigger value="inputs">Inputs</TabsTrigger>
             <TabsTrigger value="resources">Resources</TabsTrigger>
             <TabsTrigger value="contingency">Contingency</TabsTrigger>
             <TabsTrigger value="management">Structure</TabsTrigger>
+            <TabsTrigger value="history" className="flex items-center gap-1"><History className="h-3.5 w-3.5" />History</TabsTrigger>
           </TabsList>
           <TabsContent value="outputs" className="space-y-6">
             {/* Quotes */}
@@ -5091,6 +5100,26 @@ function EstimateDetailContent() {
           <TabsContent value="contingency" className="space-y-6">
             <ContingencyAnalysisView estimateId={id!} vocabulary={vocabulary} />
           </TabsContent>
+          {/* Version History Tab */}
+          <TabsContent value="history" className="space-y-6">
+            <VersionHistoryPanel
+              estimateId={id!}
+              selectedVersions={selectedVersions}
+              setSelectedVersions={setSelectedVersions}
+              showCompareDialog={showCompareDialog}
+              setShowCompareDialog={setShowCompareDialog}
+              showSaveVersionDialog={showSaveVersionDialog}
+              setShowSaveVersionDialog={setShowSaveVersionDialog}
+              versionNotes={versionNotes}
+              setVersionNotes={setVersionNotes}
+              showRestoreConfirm={showRestoreConfirm}
+              setShowRestoreConfirm={setShowRestoreConfirm}
+              compareData={compareData}
+              setCompareData={setCompareData}
+              compareLoading={compareLoading}
+              setCompareLoading={setCompareLoading}
+            />
+          </TabsContent>
           {/* Structure Management Tab */}
           <TabsContent value="management" className="space-y-6">
             <Card>
@@ -6883,6 +6912,506 @@ function EstimateDetailContent() {
 }
 
 // ResourcesView Component
+// ============================================================================
+// VERSION HISTORY PANEL
+// ============================================================================
+
+interface VersionHistoryPanelProps {
+  estimateId: string;
+  selectedVersions: Set<number>;
+  setSelectedVersions: (v: Set<number>) => void;
+  showCompareDialog: boolean;
+  setShowCompareDialog: (v: boolean) => void;
+  showSaveVersionDialog: boolean;
+  setShowSaveVersionDialog: (v: boolean) => void;
+  versionNotes: string;
+  setVersionNotes: (v: string) => void;
+  showRestoreConfirm: number | null;
+  setShowRestoreConfirm: (v: number | null) => void;
+  compareData: any;
+  setCompareData: (v: any) => void;
+  compareLoading: boolean;
+  setCompareLoading: (v: boolean) => void;
+}
+
+function VersionHistoryPanel({
+  estimateId,
+  selectedVersions,
+  setSelectedVersions,
+  showCompareDialog,
+  setShowCompareDialog,
+  showSaveVersionDialog,
+  setShowSaveVersionDialog,
+  versionNotes,
+  setVersionNotes,
+  showRestoreConfirm,
+  setShowRestoreConfirm,
+  compareData,
+  setCompareData,
+  compareLoading,
+  setCompareLoading,
+}: VersionHistoryPanelProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: versions = [], isLoading } = useQuery<any[]>({
+    queryKey: ['/api/estimates', estimateId, 'versions'],
+    queryFn: () => apiRequest(`/api/estimates/${estimateId}/versions`),
+    enabled: !!estimateId,
+  });
+
+  const saveVersionMutation = useMutation({
+    mutationFn: ({ notes }: { notes: string }) =>
+      apiRequest(`/api/estimates/${estimateId}/versions`, {
+        method: 'POST',
+        body: JSON.stringify({ notes }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', estimateId, 'versions'] });
+      setShowSaveVersionDialog(false);
+      setVersionNotes("");
+      toast({ title: "Version saved", description: "A new snapshot has been created." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to save version", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (vNum: number) =>
+      apiRequest(`/api/estimates/${estimateId}/versions/${vNum}/restore`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: (data: any) => {
+      setShowRestoreConfirm(null);
+      toast({
+        title: "Draft created",
+        description: `Restored as new draft estimate: "${data.estimate?.name}"`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to restore", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleToggleVersion = (vNum: number) => {
+    const next = new Set(selectedVersions);
+    if (next.has(vNum)) {
+      next.delete(vNum);
+    } else {
+      if (next.size >= 2) {
+        toast({ title: "Select exactly 2 versions to compare", variant: "destructive" });
+        return;
+      }
+      next.add(vNum);
+    }
+    setSelectedVersions(next);
+  };
+
+  const handleCompare = async () => {
+    const [vA, vB] = Array.from(selectedVersions).sort((a, b) => a - b);
+    if (!vA || !vB) return;
+    setCompareLoading(true);
+    try {
+      const data = await apiRequest(`/api/estimates/${estimateId}/versions/${vA}/diff/${vB}`);
+      setCompareData(data);
+      setShowCompareDialog(true);
+    } catch (err: any) {
+      toast({ title: "Failed to compare", description: err.message, variant: "destructive" });
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const triggerBadge = (trigger: string) => {
+    const map: Record<string, { label: string; className: string }> = {
+      manual: { label: "Manual", className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
+      sent: { label: "Sent", className: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" },
+      approved: { label: "Approved", className: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" },
+      "change-order": { label: "Change Order", className: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300" },
+    };
+    const config = map[trigger] || map.manual;
+    return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${config.className}`}>{config.label}</span>;
+  };
+
+  const snap = (v: any): any => v?.snapshotJson ?? {};
+  const fmt$ = (n: any) => n != null ? `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—";
+  const fmtH = (n: any) => n != null ? `${Number(n).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hrs` : "—";
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" />Version History</CardTitle>
+              <CardDescription>
+                Immutable snapshots of this estimate. Select two to compare side-by-side.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedVersions.size === 2 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCompare}
+                  disabled={compareLoading}
+                >
+                  {compareLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <GitCompare className="h-4 w-4 mr-2" />}
+                  Compare Selected
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(`/api/estimates/${estimateId}/export-pdf`, "_blank")}
+              >
+                <FileDown className="h-4 w-4 mr-2" />
+                Download PDF
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowSaveVersionDialog(true)}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Version
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : versions.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground">
+              <Clock className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No versions saved yet.</p>
+              <p className="text-xs mt-1">Snapshots are created automatically when an estimate is sent or approved, or manually via "Save Version".</p>
+            </div>
+          ) : (
+            <div className="space-y-0 divide-y">
+              {versions.map((v: any) => {
+                const sn = snap(v);
+                const isSelected = selectedVersions.has(v.versionNumber);
+                return (
+                  <div
+                    key={v.id}
+                    className={`flex items-start gap-3 py-3 px-1 rounded transition-colors ${isSelected ? "bg-primary/5" : "hover:bg-muted/30"}`}
+                  >
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => handleToggleVersion(v.versionNumber)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">v{v.versionNumber}</span>
+                        {triggerBadge(v.triggerEvent)}
+                        {v.notes && <span className="text-xs text-muted-foreground italic truncate max-w-xs">{v.notes}</span>}
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(v.snapshottedAt).toLocaleString()}</span>
+                        {v.snapshottedByName && <span>by {v.snapshottedByName}</span>}
+                        {sn.lineItemCount != null && <span>{sn.lineItemCount} line items</span>}
+                        {sn.totalHours != null && <span>{fmtH(sn.totalHours)}</span>}
+                        {sn.totalValue != null && <span>{fmt$(sn.totalValue)}</span>}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-xs"
+                      onClick={() => setShowRestoreConfirm(v.versionNumber)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                      Restore
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {selectedVersions.size === 1 && (
+            <p className="text-xs text-muted-foreground mt-3 text-center">Select one more version to enable comparison.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Save Version Dialog */}
+      <Dialog open={showSaveVersionDialog} onOpenChange={setShowSaveVersionDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save Version Snapshot</DialogTitle>
+            <DialogDescription>
+              Create an immutable snapshot of the current estimate state. Add optional notes to describe what changed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label>Notes (optional)</Label>
+            <Input
+              placeholder="e.g. Added Phase 3 discovery tasks"
+              value={versionNotes}
+              onChange={(e) => setVersionNotes(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveVersionDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => saveVersionMutation.mutate({ notes: versionNotes })}
+              disabled={saveVersionMutation.isPending}
+            >
+              {saveVersionMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+              Save Snapshot
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={showRestoreConfirm !== null} onOpenChange={(o) => { if (!o) setShowRestoreConfirm(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore as New Draft</DialogTitle>
+            <DialogDescription>
+              This will create a new draft estimate based on version {showRestoreConfirm}. The snapshot itself will not be modified.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRestoreConfirm(null)}>Cancel</Button>
+            <Button
+              onClick={() => showRestoreConfirm !== null && restoreMutation.mutate(showRestoreConfirm)}
+              disabled={restoreMutation.isPending}
+            >
+              {restoreMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+              Restore as Draft
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Compare Dialog */}
+      {compareData && (
+        <CompareDiffDialog
+          open={showCompareDialog}
+          onOpenChange={setShowCompareDialog}
+          data={compareData}
+        />
+      )}
+    </div>
+  );
+}
+
+interface CompareDiffDialogProps {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  data: {
+    vA: any;
+    vB: any;
+    diff: {
+      headerChanges: { field: string; before: any; after: any }[];
+      multiplierChanges: { field: string; before: any; after: any }[];
+      lineItemChanges: {
+        added: any[];
+        removed: any[];
+        modified: { id: string; description: string; changes: { field: string; before: any; after: any }[] }[];
+      };
+      totalChanges: {
+        hoursBefore: number;
+        hoursAfter: number;
+        valueBefore: number;
+        valueAfter: number;
+        lineCountBefore: number;
+        lineCountAfter: number;
+      };
+    };
+  };
+}
+
+function CompareDiffDialog({ open, onOpenChange, data }: CompareDiffDialogProps) {
+  const { vA, vB, diff } = data;
+  const fmt$ = (n: any) => n != null ? `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—";
+  const fmtH = (n: any) => n != null ? `${Number(n).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hrs` : "—";
+  const fmtDelta = (before: number, after: number) => {
+    const d = after - before;
+    return d === 0 ? null : (d > 0 ? `+${d.toLocaleString(undefined, { maximumFractionDigits: 1 })}` : d.toLocaleString(undefined, { maximumFractionDigits: 1 }));
+  };
+
+  const fieldLabel = (f: string) => {
+    const map: Record<string, string> = {
+      name: "Name", status: "Status", estimateType: "Type", pricingType: "Pricing",
+      totalHours: "Total Hours", totalFees: "Total Fees", presentedTotal: "Presented Total",
+      margin: "Margin %", blockHours: "Block Hours", blockDollars: "Block Dollars",
+      fixedPrice: "Fixed Price", referralFeeType: "Referral Fee Type", referralFeeAmount: "Referral Fee Amount",
+      baseHours: "Base Hours", factor: "Factor", rate: "Rate", adjustedHours: "Adjusted Hours",
+      totalAmount: "Total Amount", totalCost: "Total Cost", size: "Size", complexity: "Complexity",
+      confidence: "Confidence", description: "Description", category: "Category", workstream: "Workstream",
+      week: "Week", resourceName: "Resource", roleId: "Role", comments: "Comments",
+      sizeSmall: "Size Small", sizeMedium: "Size Medium", sizeLarge: "Size Large",
+      complexitySmall: "Complexity Small", complexityMedium: "Complexity Medium", complexityLarge: "Complexity Large",
+      confidenceHigh: "Confidence High", confidenceMedium: "Confidence Medium", confidenceLow: "Confidence Low",
+    };
+    return map[f] ?? f;
+  };
+
+  const totalHoursDelta = fmtDelta(diff.totalChanges.hoursBefore, diff.totalChanges.hoursAfter);
+  const totalValueDelta = fmtDelta(diff.totalChanges.valueBefore, diff.totalChanges.valueAfter);
+  const lineCountDelta = fmtDelta(diff.totalChanges.lineCountBefore, diff.totalChanges.lineCountAfter);
+  const hasChanges =
+    diff.headerChanges.length > 0 ||
+    diff.multiplierChanges.length > 0 ||
+    diff.lineItemChanges.added.length > 0 ||
+    diff.lineItemChanges.removed.length > 0 ||
+    diff.lineItemChanges.modified.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <GitCompare className="h-5 w-5" />
+            Compare v{vA.versionNumber} → v{vB.versionNumber}
+          </DialogTitle>
+          <DialogDescription>
+            {new Date(vA.snapshottedAt).toLocaleDateString()} → {new Date(vB.snapshottedAt).toLocaleDateString()}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-3 gap-3 my-2">
+          {[
+            { label: "Total Hours", before: fmtH(diff.totalChanges.hoursBefore), after: fmtH(diff.totalChanges.hoursAfter), delta: totalHoursDelta },
+            { label: "Total Value", before: fmt$(diff.totalChanges.valueBefore), after: fmt$(diff.totalChanges.valueAfter), delta: totalValueDelta },
+            { label: "Line Items", before: diff.totalChanges.lineCountBefore, after: diff.totalChanges.lineCountAfter, delta: lineCountDelta },
+          ].map((card) => (
+            <div key={card.label} className="border rounded-lg p-3 space-y-1">
+              <p className="text-xs text-muted-foreground font-medium">{card.label}</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm line-through text-muted-foreground">{card.before}</span>
+                <span className="font-semibold text-sm">{card.after}</span>
+                {card.delta && (
+                  <span className={`text-xs font-medium ${card.delta.startsWith("+") ? "text-green-600" : "text-red-500"}`}>
+                    {card.delta}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {!hasChanges ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Check className="h-8 w-8 mx-auto mb-2 text-green-500" />
+            <p>No changes between these two versions.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Header Changes */}
+            {diff.headerChanges.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Header Changes</h4>
+                <div className="border rounded-md divide-y text-sm">
+                  {diff.headerChanges.map((ch) => (
+                    <div key={ch.field} className="flex items-center gap-2 px-3 py-2">
+                      <span className="text-muted-foreground w-32 shrink-0">{fieldLabel(ch.field)}</span>
+                      <span className="line-through text-red-500 truncate max-w-[200px]">{String(ch.before ?? "—")}</span>
+                      <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                      <span className="text-green-600 truncate max-w-[200px]">{String(ch.after ?? "—")}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Multiplier Changes */}
+            {diff.multiplierChanges.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Multiplier Changes</h4>
+                <div className="border rounded-md divide-y text-sm">
+                  {diff.multiplierChanges.map((ch) => (
+                    <div key={ch.field} className="flex items-center gap-2 px-3 py-2">
+                      <span className="text-muted-foreground w-40 shrink-0">{fieldLabel(ch.field)}</span>
+                      <span className="line-through text-red-500">{String(ch.before ?? "—")}</span>
+                      <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                      <span className="text-green-600">{String(ch.after ?? "—")}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Added Line Items */}
+            {diff.lineItemChanges.added.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2 text-green-600">Added ({diff.lineItemChanges.added.length})</h4>
+                <div className="border border-green-200 dark:border-green-800 rounded-md divide-y text-sm">
+                  {diff.lineItemChanges.added.map((li) => (
+                    <div key={li.id} className="flex items-center gap-3 px-3 py-2 bg-green-50/50 dark:bg-green-950/20">
+                      <Plus className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                      <span className="flex-1 truncate font-medium">{li.description}</span>
+                      <span className="text-muted-foreground">{Number(li.adjustedHours || 0).toFixed(1)} hrs</span>
+                      <span className="text-muted-foreground">${Number(li.totalAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Removed Line Items */}
+            {diff.lineItemChanges.removed.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2 text-red-500">Removed ({diff.lineItemChanges.removed.length})</h4>
+                <div className="border border-red-200 dark:border-red-800 rounded-md divide-y text-sm">
+                  {diff.lineItemChanges.removed.map((li) => (
+                    <div key={li.id} className="flex items-center gap-3 px-3 py-2 bg-red-50/50 dark:bg-red-950/20">
+                      <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                      <span className="flex-1 truncate line-through text-muted-foreground">{li.description}</span>
+                      <span className="text-muted-foreground">{Number(li.adjustedHours || 0).toFixed(1)} hrs</span>
+                      <span className="text-muted-foreground">${Number(li.totalAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Modified Line Items */}
+            {diff.lineItemChanges.modified.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2 text-amber-600">Modified ({diff.lineItemChanges.modified.length})</h4>
+                <div className="border border-amber-200 dark:border-amber-800 rounded-md divide-y text-sm">
+                  {diff.lineItemChanges.modified.map((mod) => (
+                    <div key={mod.id} className="px-3 py-2 bg-amber-50/30 dark:bg-amber-950/10">
+                      <p className="font-medium mb-1 truncate">{mod.description}</p>
+                      <div className="space-y-0.5">
+                        {mod.changes.map((ch) => (
+                          <div key={ch.field} className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="w-28 shrink-0">{fieldLabel(ch.field)}:</span>
+                            <span className="line-through text-red-500">{String(ch.before ?? "—")}</span>
+                            <ArrowRight className="h-3 w-3 shrink-0" />
+                            <span className="text-green-600">{String(ch.after ?? "—")}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ArrowRight({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 interface ResourcesViewProps {
   estimateId: string;
   epics: EstimateEpic[];
