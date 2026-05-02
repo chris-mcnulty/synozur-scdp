@@ -1146,12 +1146,68 @@ export default function ProjectDetail() {
     billableFilter: "all" as "all" | "billable" | "non-billable"
   });
   
-  // Team assignments filter state
-  const [allocationStatusFilter, setAllocationStatusFilter] = useState<string>('all');
-  const [allocationResourceFilter, setAllocationResourceFilter] = useState<string>('all');
-  const [allocationStageFilter, setAllocationStageFilter] = useState<string>('all');
-  const [allocationAssignedFilter, setAllocationAssignedFilter] = useState<string>('all');
-  const [allocationSearchQuery, setAllocationSearchQuery] = useState<string>('');
+  // Team assignments filter state — persisted to sessionStorage (session-scoped) per project.
+  // localStorage is used only for the optional "Save as default view" feature.
+  const assignmentFiltersSessionKey = `assignment-filters-session-${id}`;
+  const assignmentFiltersDefaultKey = `assignment-filters-default-${id}`;
+
+  const readStoredFilters = (projectId: string | undefined) => {
+    try {
+      const sessionStored = sessionStorage.getItem(`assignment-filters-session-${projectId}`);
+      if (sessionStored) return JSON.parse(sessionStored);
+      const defaultStored = localStorage.getItem(`assignment-filters-default-${projectId}`);
+      if (defaultStored) return JSON.parse(defaultStored);
+    } catch {
+      // ignore
+    }
+    return {};
+  };
+
+  const [allocationStatusFilter, setAllocationStatusFilter] = useState<string>(() => readStoredFilters(id).status ?? 'all');
+  const [allocationResourceFilter, setAllocationResourceFilter] = useState<string>(() => readStoredFilters(id).resource ?? 'all');
+  const [allocationStageFilter, setAllocationStageFilter] = useState<string>(() => readStoredFilters(id).stage ?? 'all');
+  const [allocationAssignedFilter, setAllocationAssignedFilter] = useState<string>(() => readStoredFilters(id).assigned ?? 'all');
+  const [allocationSearchQuery, setAllocationSearchQuery] = useState<string>(() => readStoredFilters(id).search ?? '');
+
+  useEffect(() => {
+    const stored = readStoredFilters(id);
+    setAllocationStatusFilter(stored.status ?? 'all');
+    setAllocationResourceFilter(stored.resource ?? 'all');
+    setAllocationStageFilter(stored.stage ?? 'all');
+    setAllocationAssignedFilter(stored.assigned ?? 'all');
+    setAllocationSearchQuery(stored.search ?? '');
+  }, [id]);
+
+  useEffect(() => {
+    try {
+      const payload = JSON.stringify({
+        status: allocationStatusFilter,
+        resource: allocationResourceFilter,
+        stage: allocationStageFilter,
+        assigned: allocationAssignedFilter,
+        search: allocationSearchQuery,
+      });
+      sessionStorage.setItem(assignmentFiltersSessionKey, payload);
+    } catch {
+      // ignore storage errors
+    }
+  }, [allocationStatusFilter, allocationResourceFilter, allocationStageFilter, allocationAssignedFilter, allocationSearchQuery, assignmentFiltersSessionKey]);
+
+  const saveAssignmentFiltersAsDefault = () => {
+    try {
+      const payload = JSON.stringify({
+        status: allocationStatusFilter,
+        resource: allocationResourceFilter,
+        stage: allocationStageFilter,
+        assigned: allocationAssignedFilter,
+        search: allocationSearchQuery,
+      });
+      localStorage.setItem(assignmentFiltersDefaultKey, payload);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   // Fill Role Slots dialog state
   const [showFillRoleSlotsDialog, setShowFillRoleSlotsDialog] = useState(false);
   const [fillRoleSlotsRoleId, setFillRoleSlotsRoleId] = useState<string | null>(null);
@@ -4314,6 +4370,19 @@ export default function ProjectDetail() {
                       Clear
                     </Button>
                   )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 ml-auto"
+                    title="Save current filters as your default view for this project"
+                    onClick={() => {
+                      saveAssignmentFiltersAsDefault();
+                      toast({ title: "Default view saved", description: "These filters will be restored the next time you open this project." });
+                    }}
+                  >
+                    <Bookmark className="w-3 h-3 mr-1" />
+                    Save as default view
+                  </Button>
                 </div>
                 {allocationsLoading ? (
                   <div className="space-y-4">
