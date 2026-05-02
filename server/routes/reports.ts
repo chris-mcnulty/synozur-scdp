@@ -1672,4 +1672,130 @@ ${raiddSummary}`;
       res.status(500).json({ message: error.message || "Failed to fetch my RAIDD entries" });
     }
   });
+
+  // Calendar suggestion adoption analytics
+  // GET /api/reports/calendar-suggestion-adoption?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&scope=me|tenant
+  // - scope=me (default): returns the caller's own breakdown
+  // - scope=tenant: admin-only; returns tenant-wide totals plus a per-user breakdown.
+  //   Fails closed (400) when active tenant context is missing.
+  app.get("/api/reports/calendar-suggestion-adoption", requireAuth, async (req, res) => {
+    try {
+      const userId: string = req.user!.id;
+      const tenantId: string | null = req.user?.tenantId ?? null;
+      const role: string = req.user!.role;
+      const scope = req.query.scope === "tenant" ? "tenant" : "me";
+
+      if (scope === "tenant" && role !== "admin") {
+        return res.status(403).json({ message: "Insufficient permissions to view tenant-wide adoption" });
+      }
+      if (scope === "tenant" && !tenantId) {
+        return res.status(400).json({ message: "Active tenant context is required for tenant-wide adoption" });
+      }
+
+      // Default to current ISO week (Mon..Sun)
+      const today = new Date();
+      const day = today.getDay(); // 0=Sun
+      const diffToMon = (day === 0 ? -6 : 1 - day);
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() + diffToMon);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      const fmt = (d: Date) => d.toISOString().split("T")[0];
+
+      const startDate = typeof req.query.startDate === "string" ? req.query.startDate : fmt(weekStart);
+      const endDate = typeof req.query.endDate === "string" ? req.query.endDate : fmt(weekEnd);
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+        return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
+      }
+
+      const filters: { startDate: string; endDate: string; tenantId?: string; personId?: string } = { startDate, endDate };
+      if (tenantId) filters.tenantId = tenantId;
+      if (scope === "me") filters.personId = userId;
+
+      const entries = await storage.getTimeEntries(filters);
+
+      let suggestionHours = 0;
+      let manualHours = 0;
+      let suggestionCount = 0;
+      let manualCount = 0;
+      const byUser = new Map<string, { personId: string; personName: string; suggestionHours: number; manualHours: number; suggestionCount: number; manualCount: number }>();
+
+      for (const e of entries) {
+        const hoursRaw = e.hours == null ? 0 : Number(e.hours);
+        const hours = Number.isFinite(hoursRaw) ? hoursRaw : 0;
+        const isSuggested = !!e.fromCalendarSuggestion;
+        if (isSuggested) {
+          suggestionHours += hours;
+          suggestionCount += 1;
+        } else {
+          manualHours += hours;
+          manualCount += 1;
+        }
+
+        if (scope === "tenant") {
+          const key = e.personId;
+          const existing = byUser.get(key) ?? {
+            personId: key,
+            personName: e.person?.name || e.person?.email || "Unknown",
+            suggestionHours: 0,
+            manualHours: 0,
+            suggestionCount: 0,
+            manualCount: 0,
+          };
+          if (isSuggested) {
+            existing.suggestionHours += hours;
+            existing.suggestionCount += 1;
+          } else {
+            existing.manualHours += hours;
+            existing.manualCount += 1;
+          }
+          byUser.set(key, existing);
+        }
+      }
+
+      const totalHours = suggestionHours + manualHours;
+      const suggestionPercentage = totalHours > 0 ? (suggestionHours / totalHours) * 100 : 0;
+
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      const round1 = (n: number) => Math.round(n * 10) / 10;
+
+      const perUser = scope === "tenant"
+        ? Array.from(byUser.values())
+            .map(u => {
+              const total = u.suggestionHours + u.manualHours;
+              return {
+                personId: u.personId,
+                personName: u.personName,
+                suggestionHours: round2(u.suggestionHours),
+                manualHours: round2(u.manualHours),
+                totalHours: round2(total),
+                suggestionCount: u.suggestionCount,
+                manualCount: u.manualCount,
+                suggestionPercentage: round1(total > 0 ? (u.suggestionHours / total) * 100 : 0),
+              };
+            })
+            .sort((a, b) => b.suggestionHours - a.suggestionHours)
+        : undefined;
+
+      res.json({
+        scope,
+        startDate,
+        endDate,
+        summary: {
+          suggestionHours: round2(suggestionHours),
+          manualHours: round2(manualHours),
+          totalHours: round2(totalHours),
+          suggestionCount,
+          manualCount,
+          totalEntries: suggestionCount + manualCount,
+          suggestionPercentage: round1(suggestionPercentage),
+        },
+        perUser,
+      });
+    } catch (error: any) {
+      console.error("Error fetching calendar suggestion adoption:", error);
+      res.status(500).json({ message: error.message || "Failed to fetch calendar suggestion adoption" });
+    }
+  });
 }

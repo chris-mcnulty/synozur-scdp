@@ -27,6 +27,7 @@ import { z } from "zod";
 import { formatProjectLabel } from "@/lib/project-utils";
 import { TimeEntryDescriptionField } from "@/components/time-entry-description-field";
 import { CalendarSuggestionsPanel } from "@/components/calendar-suggestions-panel";
+import { CalendarSuggestionAdoptionCard } from "@/components/calendar-suggestion-adoption-card";
 
 const timeEntryFormSchema = insertTimeEntrySchema.omit({
   personId: true,
@@ -181,6 +182,7 @@ export default function TimeTracking() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/calendar-suggestion-adoption"] });
       setSelectedForSubmit(new Set());
       toast({
         title: "Submitted for approval",
@@ -472,6 +474,7 @@ export default function TimeTracking() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/calendar-suggestion-adoption"] });
       // Preserve the project selection and only reset the variable fields
       const currentPersonId = form.getValues("personId");
       const currentProjectId = form.getValues("projectId");
@@ -525,6 +528,7 @@ export default function TimeTracking() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/calendar-suggestion-adoption"] });
       setEditingEntry(null);
       editForm.reset();
       toast({
@@ -559,6 +563,7 @@ export default function TimeTracking() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/calendar-suggestion-adoption"] });
       setDeletingEntry(null);
       toast({
         title: "Time entry deleted",
@@ -674,6 +679,7 @@ export default function TimeTracking() {
       },
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/reports/calendar-suggestion-adoption"] });
         
         // Handle complete failure (all rows failed)
         if (data.errors && data.errors.length > 0 && data.imported === 0) {
@@ -957,9 +963,15 @@ export default function TimeTracking() {
           <CalendarSuggestionsPanel
             date={formatLocalDate(selectedDate)}
             projects={projects}
-            onEntriesCreated={() => queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] })}
+            onEntriesCreated={() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/reports/calendar-suggestion-adoption"] });
+            }}
           />
         )}
+
+        {/* Calendar Suggestion Adoption Stats */}
+        <CalendarSuggestionAdoptionCard canViewTenant={currentUser?.role === "admin"} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Time Entry Form - Mobile Optimized */}
