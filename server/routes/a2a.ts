@@ -234,34 +234,143 @@ async function checkDuplicateEstimates(
     .limit(5);
 }
 
-// ─── Audit Logging for Write Tools ────────────────────────────────────────────
+// ─── Durable Idempotency for Write Tools ─────────────────────────────────────
+//
+// Mirrors the semantics of mcpWriteGuard for the /mcp/v1/* endpoints, but
+// adapted to the A2A request shape. The A2A task ID becomes the idempotency
+// key (prefixed with "a2a:"), and the request hash covers the canonical
+// {tool, params} payload so that reusing a task ID with a different operation
+// is detected as a conflict instead of silently replaying the prior result.
+//
+// Storage is mcpWriteAudit (the same table used by /mcp/v1/*), so:
+//   * the unique index (tenantId, userId, idempotencyKey) gives an atomic
+//     "first writer wins" claim across replicas / process restarts;
+//   * a concurrent retry observes the PENDING row and gets a 202 instead of
+//     re-executing the write;
+//   * a completed retry replays the cached envelope verbatim;
+//   * a retry with a different payload is rejected with 409.
 
-async function auditWriteTask(
+const A2A_PENDING_STATUS = 202;
+const A2A_PENDING_BODY = { pending: true, code: "a2a_write_in_progress" } as const;
+
+/** Stable JSON stringify so equivalent payloads produce identical hashes. */
+function stableJsonStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(stableJsonStringify).join(",") + "]";
+  const sorted = Object.keys(value as Record<string, unknown>)
+    .sort()
+    .map(
+      (k) =>
+        JSON.stringify(k) + ":" +
+        stableJsonStringify((value as Record<string, unknown>)[k])
+    )
+    .join(",");
+  return "{" + sorted + "}";
+}
+
+interface A2AClaimResult {
+  status: "claimed" | "conflict" | "pending" | "replay";
+  auditId?: string;
+  cachedStatus?: number;
+  cachedBody?: unknown;
+}
+
+function hashWritePayload(tool: string, params: Record<string, unknown>): string {
+  return crypto
+    .createHash("sha256")
+    .update(`a2a ${tool}\n${stableJsonStringify(params ?? {})}`)
+    .digest("hex");
+}
+
+async function claimA2AWriteIdempotency(
   tenantId: string,
   userId: string,
   taskId: string,
   tool: string,
-  responseStatus: number,
-  responseBody: unknown,
-  resourceType?: string,
-  resourceId?: string
-): Promise<void> {
-  try {
-    await db.insert(mcpWriteAudit).values({
+  params: Record<string, unknown>,
+  correlationId: string,
+): Promise<A2AClaimResult> {
+  const idempotencyKey = `a2a:${taskId}`;
+  const requestHash = hashWritePayload(tool, params);
+
+  // Atomic claim: insert the pending row. The unique index on
+  // (tenantId, userId, idempotencyKey) makes this safe under concurrent retries.
+  const claimed = await db
+    .insert(mcpWriteAudit)
+    .values({
       tenantId,
       userId,
       endpoint: `A2A tasks/send tool=${tool}`,
-      idempotencyKey: `a2a:${taskId}`,
-      requestHash: crypto.createHash("sha256").update(taskId).digest("hex"),
-      responseStatus,
-      responseBody: responseBody,
-      resourceType: resourceType ?? null,
-      resourceId: resourceId ?? null,
-      correlationId: taskId,
+      idempotencyKey,
+      requestHash,
+      responseStatus: A2A_PENDING_STATUS,
+      responseBody: A2A_PENDING_BODY as unknown as Record<string, unknown>,
+      correlationId,
       dryRun: false,
-    }).onConflictDoNothing();
+    })
+    .onConflictDoNothing()
+    .returning({ id: mcpWriteAudit.id });
+
+  if (claimed.length > 0 && claimed[0].id) {
+    return { status: "claimed", auditId: claimed[0].id };
+  }
+
+  // Someone else already owns this key — fetch the existing row.
+  const [existing] = await db
+    .select()
+    .from(mcpWriteAudit)
+    .where(and(
+      eq(mcpWriteAudit.tenantId, tenantId),
+      eq(mcpWriteAudit.userId, userId),
+      eq(mcpWriteAudit.idempotencyKey, idempotencyKey),
+    ))
+    .limit(1);
+
+  if (!existing) {
+    // Vanishingly rare race: insert lost the conflict but the row is gone.
+    // Treat as claimed without an auditId so we can still proceed.
+    return { status: "claimed" };
+  }
+
+  if (existing.requestHash !== requestHash) {
+    return { status: "conflict", auditId: existing.id };
+  }
+
+  if (existing.responseStatus === A2A_PENDING_STATUS) {
+    return { status: "pending", auditId: existing.id };
+  }
+
+  return {
+    status: "replay",
+    auditId: existing.id,
+    cachedStatus: existing.responseStatus ?? 200,
+    cachedBody: existing.responseBody,
+  };
+}
+
+async function finalizeA2AAudit(
+  auditId: string | undefined,
+  statusCode: number,
+  body: unknown,
+  resourceType?: string,
+  resourceId?: string,
+): Promise<void> {
+  if (!auditId) return;
+  try {
+    await db
+      .update(mcpWriteAudit)
+      .set({
+        responseStatus: statusCode,
+        responseBody: body as Record<string, unknown>,
+        resourceType: resourceType ?? null,
+        resourceId: resourceId ?? null,
+      })
+      .where(eq(mcpWriteAudit.id, auditId));
   } catch (err: unknown) {
-    console.error("[A2A] Audit write failed:", err instanceof Error ? err.message : String(err));
+    console.error(
+      "[A2A] Audit finalize failed:",
+      err instanceof Error ? err.message : String(err),
+    );
   }
 }
 
@@ -955,28 +1064,12 @@ export function registerA2ARoutes(app: Express) {
       const user = req.user!;
       const ownerUserId: string = user.id;
       const ownerTenantId: string | null = user.tenantId ?? null;
-
-      // Task-ID collision and idempotency checks
-      if (requestedId) {
-        const existing = taskStore.get(requestedId);
-        if (existing) {
-          if (existing.ownerUserId !== ownerUserId) {
-            // Cross-user hijacking attempt — always reject
-            return res.status(409).json({
-              error: "task_id_conflict",
-              message: "A task with that ID already exists and belongs to a different caller.",
-            });
-          }
-          // Same owner, terminal task — idempotent replay: return prior result without re-executing
-          const state = existing.status.state;
-          if (state === "completed" || state === "failed") {
-            const { ownerUserId: _u, ownerTenantId: _t, ...publicTask } = existing;
-            return res.status(200).json(publicTask);
-          }
-        }
-      }
-
       const taskId: string = requestedId ?? crypto.randomUUID();
+
+      // Tracked across try/catch so failures finalize the durable audit row.
+      let isWriteTool = false;
+      let claimedAuditId: string | undefined;
+      const correlationId = crypto.randomUUID();
 
       try {
         const message: A2AMessage | undefined = req.body?.message;
@@ -1008,6 +1101,106 @@ export function registerA2ARoutes(app: Express) {
           });
         }
 
+        isWriteTool = WRITE_TOOLS.has(tool);
+
+        // ── Require caller-supplied task id for writes ──────────────────────
+        // The task id IS the idempotency key. Auto-generating one server-side
+        // would let normal transport retries (timeout / dropped response)
+        // produce a fresh id and double-execute the write. /mcp/v1/* enforces
+        // the same rule via its X-Idempotency-Key header; A2A enforces it via
+        // the request `id` field.
+        if (isWriteTool) {
+          if (!requestedId) {
+            return res.status(400).json({
+              error: "missing_task_id",
+              code: "a2a_write_missing_id",
+              message:
+                "Write tools require a caller-supplied 'id' on the request body. " +
+                "The task id is used as the idempotency key to prevent duplicate execution on retry.",
+            });
+          }
+          // Audit column is varchar(255); reserve 4 chars for the "a2a:" prefix.
+          if (requestedId.length > 251) {
+            return res.status(400).json({
+              error: "task_id_too_long",
+              code: "a2a_write_id_too_long",
+              message: "Task id must be at most 251 characters for write tools.",
+            });
+          }
+        }
+
+        // ── Cross-user hijacking guard (always) ─────────────────────────────
+        if (requestedId) {
+          const existing = taskStore.get(requestedId);
+          if (existing && existing.ownerUserId !== ownerUserId) {
+            return res.status(409).json({
+              error: "task_id_conflict",
+              message: "A task with that ID already exists and belongs to a different caller.",
+            });
+          }
+        }
+
+        // ── Idempotency for write tools (durable, atomic) ───────────────────
+        if (isWriteTool) {
+          // Fail fast on missing prerequisites BEFORE we claim an audit row,
+          // so retries with the same task id can succeed once enabled.
+          if (!writesEnabled()) {
+            return res.status(403).json({
+              error: "writes_disabled",
+              code: "mcp_writes_disabled",
+              message: "Write tools are disabled on this deployment. Set MCP_WRITES_ENABLED=true to enable.",
+            });
+          }
+          if (!ownerTenantId) {
+            return res.status(403).json({
+              error: "tenant_required",
+              message: "Write tools require an authenticated tenant context.",
+            });
+          }
+
+          const claim = await claimA2AWriteIdempotency(
+            ownerTenantId, ownerUserId, taskId, tool, params, correlationId,
+          );
+
+          if (claim.status === "conflict") {
+            return res.status(409).json({
+              error: "idempotency_conflict",
+              code: "a2a_idempotency_conflict",
+              message:
+                "Task id already used with a different tool or params. " +
+                "Use a fresh task id for new write operations.",
+              auditId: claim.auditId,
+            });
+          }
+          if (claim.status === "pending") {
+            return res.status(202).json({
+              ...A2A_PENDING_BODY,
+              idempotent: true,
+              taskId,
+              auditId: claim.auditId,
+            });
+          }
+          if (claim.status === "replay") {
+            const cached = claim.cachedBody;
+            const replayBody: Record<string, unknown> =
+              cached && typeof cached === "object" && !Array.isArray(cached)
+                ? { ...(cached as Record<string, unknown>) }
+                : { data: cached };
+            replayBody.idempotent = true;
+            replayBody.auditId = claim.auditId;
+            return res.status(claim.cachedStatus ?? 200).json(replayBody);
+          }
+          claimedAuditId = claim.auditId;
+        } else if (requestedId) {
+          // Read tools: in-memory replay for terminal same-owner tasks is
+          // safe (reads are side-effect free) and saves redundant work.
+          const existing = taskStore.get(requestedId);
+          if (existing && (existing.status.state === "completed" || existing.status.state === "failed")) {
+            const { ownerUserId: _u, ownerTenantId: _t, ...publicTask } = existing;
+            return res.status(200).json(publicTask);
+          }
+        }
+
         console.log(`[A2A] Task ${taskId}: dispatching tool=${tool} user=${user.email}`);
 
         const result = await dispatchTool(tool, params, user);
@@ -1027,24 +1220,21 @@ export function registerA2ARoutes(app: Express) {
           },
           artifacts: [makeDataArtifact(result.data, tool)],
           history: [message],
-          metadata: { tool, params },
+          metadata: { tool, params, correlationId },
         };
 
         storeTask(task);
 
-        // Audit write tools
-        if (WRITE_TOOLS.has(tool) && ownerTenantId) {
-          await auditWriteTask(
-            ownerTenantId, ownerUserId, taskId, tool,
-            200, { summary: result.summary },
-            result.resourceType, result.resourceId
+        const { ownerUserId: _u, ownerTenantId: _t, ...publicTask } = task;
+
+        if (isWriteTool) {
+          await finalizeA2AAudit(
+            claimedAuditId, 200, publicTask,
+            result.resourceType, result.resourceId,
           );
         }
 
         console.log(`[A2A] Task ${taskId}: completed (tool=${tool})`);
-
-        // Return public task (omit ownership fields)
-        const { ownerUserId: _u, ownerTenantId: _t, ...publicTask } = task;
         return res.status(200).json(publicTask);
       } catch (error: unknown) {
         const errMsg = error instanceof Error ? error.message : String(error);
@@ -1052,13 +1242,22 @@ export function registerA2ARoutes(app: Express) {
         console.error(`[A2A] Task ${taskId} failed:`, errMsg);
         const stored = failedTask(taskId, errMsg ?? "An unexpected error occurred.", ownerUserId, ownerTenantId);
         storeTask(stored);
-        const statusCode = errMsg?.includes("not found") ? 404
+        const statusCode = errMsg?.startsWith("Invalid params") ? 400
+          : errMsg?.includes("is required") ? 400
+          : errMsg?.includes("not found") ? 404
           : errMsg?.includes("Insufficient role") ? 403
           : errMsg?.includes("Tenant context") ? 403
           : errMsg?.includes("disabled") ? 403
           : errCode === "near_match" || errCode === "duplicate_estimate" ? 409
           : 500;
         const { ownerUserId: _u, ownerTenantId: _t, ...publicTask } = stored;
+
+        // Finalize the durable audit row so that retries replay the failure
+        // verbatim instead of re-executing the write.
+        if (isWriteTool) {
+          await finalizeA2AAudit(claimedAuditId, statusCode, publicTask);
+        }
+
         return res.status(statusCode).json(publicTask);
       }
     }
