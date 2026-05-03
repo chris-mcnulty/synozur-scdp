@@ -270,17 +270,34 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       let batchQuoteCurrency = "USD";
       let batchCostCurrency = "USD";
       let batchExchangeRate: string | null = null;
+      let batchExchangeRateLockedAt: Date | null = null;
+      let batchExchangeRateSource: string | null = null;
       if (reqProjectId) {
         const [proj] = await db.select({
           quoteCurrency: projects.quoteCurrency,
           costCurrency: projects.costCurrency,
           exchangeRate: projects.exchangeRate,
+          exchangeRateLockedAt: projects.exchangeRateLockedAt,
+          exchangeRateSource: projects.exchangeRateSource,
         }).from(projects).where(eq(projects.id, reqProjectId));
         if (proj) {
           batchQuoteCurrency = proj.quoteCurrency || "USD";
           batchCostCurrency = proj.costCurrency || "USD";
           batchExchangeRate = proj.exchangeRate ?? null;
+          batchExchangeRateLockedAt = proj.exchangeRateLockedAt ?? null;
+          batchExchangeRateSource = proj.exchangeRateSource ?? null;
         }
+      }
+      // If currencies differ but the project never locked the rate, snapshot
+      // the moment the batch was created so the invoice can show transparency
+      // about when the rate was captured.
+      if (
+        batchQuoteCurrency.toUpperCase() !== batchCostCurrency.toUpperCase() &&
+        batchExchangeRate &&
+        !batchExchangeRateLockedAt
+      ) {
+        batchExchangeRateLockedAt = new Date();
+        if (!batchExchangeRateSource) batchExchangeRateSource = "live";
       }
 
       const batch = await storage.createInvoiceBatch({
@@ -303,6 +320,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         quoteCurrency: batchQuoteCurrency,
         costCurrency: batchCostCurrency,
         exchangeRate: batchExchangeRate,
+        exchangeRateLockedAt: batchExchangeRateLockedAt,
+        exchangeRateSource: batchExchangeRateSource,
       });
 
       res.json(batch);

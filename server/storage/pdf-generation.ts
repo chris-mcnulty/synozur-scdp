@@ -510,6 +510,34 @@ export async function generateInvoicePDF(params: {
     // Currency info
     invoiceCurrency,
     hasCurrencyConversions,
+
+    // Multi-currency batch info (quote vs cost)
+    quoteCurrency: (batch.quoteCurrency || 'USD').toUpperCase(),
+    costCurrency: (batch.costCurrency || 'USD').toUpperCase(),
+    exchangeRate: batch.exchangeRate ? parseFloat(batch.exchangeRate).toFixed(4) : null,
+    exchangeRateLockedAt: batch.exchangeRateLockedAt
+      ? formatDateInTimezone(new Date(batch.exchangeRateLockedAt), tz)
+      : null,
+    exchangeRateSource: batch.exchangeRateSource || null,
+    hasDualCurrency: !!(
+      batch.quoteCurrency &&
+      batch.costCurrency &&
+      batch.quoteCurrency.toUpperCase() !== batch.costCurrency.toUpperCase() &&
+      batch.exchangeRate &&
+      parseFloat(batch.exchangeRate) > 0
+    ),
+    quoteSubtotal: batch.exchangeRate && parseFloat(batch.exchangeRate) > 0
+      ? (subtotal / parseFloat(batch.exchangeRate)).toFixed(2)
+      : null,
+    quoteSubtotalAfterDiscount: batch.exchangeRate && parseFloat(batch.exchangeRate) > 0
+      ? (subtotalAfterDiscount / parseFloat(batch.exchangeRate)).toFixed(2)
+      : null,
+    quoteTaxAmount: batch.exchangeRate && parseFloat(batch.exchangeRate) > 0 && taxAmount > 0
+      ? (taxAmount / parseFloat(batch.exchangeRate)).toFixed(2)
+      : null,
+    quoteTotal: batch.exchangeRate && parseFloat(batch.exchangeRate) > 0
+      ? (total / parseFloat(batch.exchangeRate)).toFixed(2)
+      : null,
     
     // Line items
     groupedLines,

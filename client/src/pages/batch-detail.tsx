@@ -136,6 +136,11 @@ interface InvoiceBatchDetails {
   asOfDateUpdatedBy?: string | null;
   asOfDateUpdatedAt?: string | null;
   paymentMilestone?: { id: string; name: string; amount: string; status: string; projectId: string; projectName: string } | null;
+  quoteCurrency?: string;
+  costCurrency?: string;
+  exchangeRate?: string | number | null;
+  exchangeRateLockedAt?: string | null;
+  exchangeRateSource?: string | null;
 }
 
 interface InvoiceLine {
@@ -1197,6 +1202,32 @@ export default function BatchDetail() {
   const effectiveTaxPercent = subtotalAfterDiscount > 0 ? (taxAmount / subtotalAfterDiscount) * 100 : 0;
   const netTotal = subtotalAfterDiscount + taxAmount;
 
+  // Multi-currency: show quote-currency totals when batch was billed in a different currency than the cost currency
+  const batchQuoteCurrency = (batchDetails?.quoteCurrency || "USD").toUpperCase();
+  const batchCostCurrency = (batchDetails?.costCurrency || "USD").toUpperCase();
+  const batchExchangeRateNum = batchDetails?.exchangeRate != null
+    ? parseFloat(String(batchDetails.exchangeRate))
+    : null;
+  const showDualCurrency =
+    batchQuoteCurrency !== batchCostCurrency &&
+    !!batchExchangeRateNum &&
+    batchExchangeRateNum > 0;
+  const formatMoney = (val: number, currency: string) => {
+    try {
+      return val.toLocaleString("en-US", {
+        style: "currency",
+        currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    } catch {
+      return `${currency} ${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+  };
+  // exchangeRate is "costCurrency per 1 quoteCurrency", so quote = cost / rate
+  const toQuote = (costAmount: number) =>
+    batchExchangeRateNum && batchExchangeRateNum > 0 ? costAmount / batchExchangeRateNum : 0;
+
   return (
     <Layout>
       <div className="container mx-auto py-6">
@@ -1407,6 +1438,56 @@ export default function BatchDetail() {
                 </div>
               </div>
             </div>
+
+            {showDualCurrency && (
+              <>
+                <Separator className="my-3" />
+                <div
+                  className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4"
+                  data-testid="section-dual-currency"
+                >
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Cost Currency</p>
+                    <p className="text-sm font-medium" data-testid="text-cost-currency">{batchCostCurrency}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Quoted Currency</p>
+                    <p className="text-sm font-medium" data-testid="text-quote-currency">{batchQuoteCurrency}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Exchange Rate</p>
+                    <p className="text-sm font-medium" data-testid="text-exchange-rate">
+                      1 {batchQuoteCurrency} = {batchExchangeRateNum!.toFixed(4)} {batchCostCurrency}
+                    </p>
+                    {batchDetails.exchangeRateSource && (
+                      <p className="text-[10px] text-muted-foreground capitalize" data-testid="text-exchange-rate-source">
+                        {batchDetails.exchangeRateSource}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Rate Locked</p>
+                    <p className="text-sm font-medium" data-testid="text-exchange-rate-locked-at">
+                      {batchDetails.exchangeRateLockedAt
+                        ? format(new Date(batchDetails.exchangeRateLockedAt), "MMM d, yyyy")
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="col-span-2 md:col-span-4 lg:col-span-1 lg:text-right">
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Total ({batchQuoteCurrency})</p>
+                    <p
+                      className="text-base font-bold text-green-600 dark:text-green-400"
+                      data-testid="text-net-total-quote"
+                    >
+                      {formatMoney(toQuote(netTotal), batchQuoteCurrency)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground" data-testid="text-net-total-cost-note">
+                      = {formatMoney(netTotal, batchCostCurrency)}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
 
             {batchDetails.paymentMilestone && (
               <>

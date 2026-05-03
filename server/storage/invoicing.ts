@@ -537,6 +537,76 @@ export const invoicingMethods: ThisType<IStorage & {
       
       console.log(`[STORAGE] Generating invoices for batch ${batchId} from ${startDate} to ${endDate} (mode: ${invoicingMode}, type: ${batchType})`);
 
+      // Snapshot multi-currency fields onto the batch from the selected
+      // project(s) at generation time. The /api/invoice-batches create endpoint
+      // doesn't always know which projects are involved (the standard UI
+      // sends projectIds/clientIds only at /generate time), so we resolve and
+      // persist quoteCurrency / costCurrency / exchangeRate / lock metadata
+      // here as well. We only overwrite when the existing batch values are
+      // still defaults (USD/USD with no rate) to avoid clobbering an explicit
+      // snapshot.
+      try {
+        const isDefaultSnapshot =
+          (!batch.quoteCurrency || batch.quoteCurrency.toUpperCase() === 'USD') &&
+          (!batch.costCurrency || batch.costCurrency.toUpperCase() === 'USD') &&
+          (batch.exchangeRate == null);
+
+        if (isDefaultSnapshot) {
+          let resolvedProjectIds = projectIds.slice();
+          if (resolvedProjectIds.length === 0 && clientIds.length > 0) {
+            const rows = await tx.select({ id: projects.id })
+              .from(projects)
+              .where(inArray(projects.clientId, clientIds));
+            resolvedProjectIds = rows.map(r => r.id);
+          }
+
+          if (resolvedProjectIds.length > 0) {
+            const projRows = await tx.select({
+              quoteCurrency: projects.quoteCurrency,
+              costCurrency: projects.costCurrency,
+              exchangeRate: projects.exchangeRate,
+              exchangeRateLockedAt: projects.exchangeRateLockedAt,
+              exchangeRateSource: projects.exchangeRateSource,
+            }).from(projects).where(inArray(projects.id, resolvedProjectIds));
+
+            // Use the first project that actually has a non-default
+            // multi-currency configuration, otherwise fall back to the first.
+            const nonDefault = projRows.find(p =>
+              (p.quoteCurrency || 'USD').toUpperCase() !== (p.costCurrency || 'USD').toUpperCase()
+            );
+            const chosen = nonDefault || projRows[0];
+
+            if (chosen) {
+              const qc = (chosen.quoteCurrency || 'USD').toUpperCase();
+              const cc = (chosen.costCurrency || 'USD').toUpperCase();
+              const rate = chosen.exchangeRate ?? null;
+              let lockedAt = chosen.exchangeRateLockedAt ?? null;
+              let source = chosen.exchangeRateSource ?? null;
+
+              // If currencies differ but no lock timestamp exists yet, stamp
+              // it now so the invoice can show when the rate was captured.
+              if (qc !== cc && rate && !lockedAt) {
+                lockedAt = new Date();
+                if (!source) source = 'live';
+              }
+
+              await tx.update(invoiceBatches)
+                .set({
+                  quoteCurrency: qc,
+                  costCurrency: cc,
+                  exchangeRate: rate,
+                  exchangeRateLockedAt: lockedAt,
+                  exchangeRateSource: source,
+                })
+                .where(eq(invoiceBatches.batchId, batchId));
+            }
+          }
+        }
+      } catch (currencySnapshotErr) {
+        console.warn(`[STORAGE] Failed to snapshot batch currency for ${batchId}:`, currencySnapshotErr);
+        // Non-fatal: continue with batch generation using existing snapshot.
+      }
+
       if (invoicingMode === 'project') {
         // Project-based invoicing: one invoice per project
         for (const projectId of projectIds) {
