@@ -7,6 +7,7 @@ import { RaiddLogTab } from "@/components/raidd-log-tab";
 import { DeliverablesTab } from "@/components/project/deliverables-tab";
 import { StatusReportsTab } from "@/components/project/status-reports-tab";
 import { Button } from "@/components/ui/button";
+import { ToastAction } from "@/components/ui/toast";
 
 // Error Boundary for catching render errors
 interface ErrorBoundaryProps {
@@ -2120,15 +2121,43 @@ export default function ProjectDetail() {
     }
   });
 
-  const updateMilestoneInvoiceStatusMutation = useMutation({
-    mutationFn: async ({ milestoneId, invoiceStatus }: { milestoneId: string; invoiceStatus: string }) => {
+  const updateMilestoneInvoiceStatusMutation = useMutation<
+    {
+      id: string;
+      invoiceStatus?: string | null;
+      autoCreatedBatch?: { batchId: string } | null;
+      autoBatchError?: string | null;
+    },
+    Error,
+    { milestoneId: string; invoiceStatus: string }
+  >({
+    mutationFn: async ({ milestoneId, invoiceStatus }) => {
       return apiRequest(`/api/milestones/${milestoneId}`, {
         method: "PATCH",
         body: JSON.stringify({ invoiceStatus })
       });
     },
-    onSuccess: () => {
-      toast({ title: "Billing status updated" });
+    onSuccess: (response) => {
+      const autoBatch = response?.autoCreatedBatch;
+      if (autoBatch?.batchId) {
+        toast({
+          title: "Invoice batch created",
+          description: `Batch ${autoBatch.batchId} was generated for this milestone.`,
+          action: (
+            <ToastAction altText="View invoice" onClick={() => navigate(`/billing/batches/${autoBatch.batchId}`)}>
+              View Invoice
+            </ToastAction>
+          ),
+        });
+      } else if (response?.autoBatchError) {
+        toast({
+          title: "Billing status updated",
+          description: `Auto-creating the invoice batch failed: ${response.autoBatchError}. Create the batch manually from billing.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Billing status updated" });
+      }
       refetchMilestones();
     },
     onError: (error: any) => {

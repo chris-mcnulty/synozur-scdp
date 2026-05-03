@@ -146,6 +146,7 @@ export const tenants = pgTable("tenants", {
   defaultTaxRate: decimal("default_tax_rate", { precision: 5, scale: 2 }).default('0'),
   invoiceDefaultDiscountType: text("invoice_default_discount_type").default('percent'),
   invoiceDefaultDiscountValue: decimal("invoice_default_discount_value", { precision: 10, scale: 2 }).default('0'),
+  autoCreateInvoiceOnMilestoneInvoiced: boolean("auto_create_invoice_on_milestone_invoiced").notNull().default(true),
 
   // Feature Settings
   showChangelogOnLogin: boolean("show_changelog_on_login").default(true), // Show "What's New" modal to users on login
@@ -1540,6 +1541,11 @@ export const invoiceBatches = pgTable("invoice_batches", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_invoice_batches_tenant").on(table.tenantId),
+  // One invoice batch per payment milestone — enforced as a partial unique
+  // index so multiple non-milestone batches with NULL still coexist.
+  uniqueProjectMilestone: uniqueIndex("idx_invoice_batches_project_milestone_unique")
+    .on(table.projectMilestoneId)
+    .where(sql`${table.projectMilestoneId} IS NOT NULL`),
 }));
 
 // Invoice lines

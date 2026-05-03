@@ -58,6 +58,8 @@ interface TenantSettings {
   defaultTaxRate: string | null;
   invoiceDefaultDiscountType: string | null;
   invoiceDefaultDiscountValue: string | null;
+  requireTimeApproval: boolean;
+  autoCreateInvoiceOnMilestoneInvoiced: boolean;
   speContainerIdDev: string | null;
   speContainerIdProd: string | null;
   speStorageEnabled: boolean;
@@ -117,6 +119,7 @@ const financialSchema = z.object({
     return !isNaN(num) && num >= 0;
   }, "Must be a valid number 0 or greater"),
   requireTimeApproval: z.boolean().optional(),
+  autoCreateInvoiceOnMilestoneInvoiced: z.boolean().optional(),
 });
 
 type FinancialFormData = z.infer<typeof financialSchema>;
@@ -2854,6 +2857,7 @@ export default function OrganizationSettings() {
       invoiceDefaultDiscountType: "percent",
       invoiceDefaultDiscountValue: "0",
       requireTimeApproval: false,
+      autoCreateInvoiceOnMilestoneInvoiced: true,
     },
     values: {
       defaultBillingRate: tenantSettings?.defaultBillingRate || "0",
@@ -2863,6 +2867,7 @@ export default function OrganizationSettings() {
       invoiceDefaultDiscountType: tenantSettings?.invoiceDefaultDiscountType || "percent",
       invoiceDefaultDiscountValue: tenantSettings?.invoiceDefaultDiscountValue || "0",
       requireTimeApproval: tenantSettings?.requireTimeApproval ?? false,
+      autoCreateInvoiceOnMilestoneInvoiced: tenantSettings?.autoCreateInvoiceOnMilestoneInvoiced ?? true,
     },
   });
 
@@ -2878,6 +2883,7 @@ export default function OrganizationSettings() {
           invoiceDefaultDiscountType: data.invoiceDefaultDiscountType,
           invoiceDefaultDiscountValue: data.invoiceDefaultDiscountValue,
           requireTimeApproval: data.requireTimeApproval,
+          autoCreateInvoiceOnMilestoneInvoiced: data.autoCreateInvoiceOnMilestoneInvoiced,
         }),
       });
     },
@@ -3526,6 +3532,27 @@ export default function OrganizationSettings() {
                             </div>
                             <FormControl>
                               <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={financialForm.control}
+                        name="autoCreateInvoiceOnMilestoneInvoiced"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 mt-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Auto-create invoice batch when a payment milestone is marked Invoiced</FormLabel>
+                              <FormDescription>
+                                When enabled, marking a payment milestone as Invoiced automatically generates an invoice batch pre-populated with the milestone's amount. Disable to create batches manually.
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value !== false}
+                                onCheckedChange={field.onChange}
+                                data-testid="switch-auto-create-invoice-on-milestone"
+                              />
                             </FormControl>
                           </FormItem>
                         )}

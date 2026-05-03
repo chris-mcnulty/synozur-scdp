@@ -4,7 +4,7 @@ import * as osNode from "os";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers } from "@shared/schema";
+import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, type InvoiceBatch } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, desc, or } from "drizzle-orm";
 import { emailService } from "../services/email-notification.js";
 import { SharePointFileStorage } from "../services/sharepoint-file-storage.js";
@@ -6114,6 +6114,25 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       }
 
       const prevMilestone = await storage.getProjectMilestoneById(req.params.id);
+      if (!prevMilestone) {
+        return res.status(404).json({ message: "Milestone not found" });
+      }
+
+      // Tenant isolation: ensure the milestone's project belongs to the caller's
+      // tenant before any update or invoice batch creation. Without this check
+      // an admin/billing-admin holding a milestone ID from another tenant could
+      // mark it invoiced and have an auto-batch created against their tenant.
+      const callerTenantId = req.user?.tenantId || null;
+      const [milestoneProject] = await db
+        .select({ tenantId: projects.tenantId, clientId: projects.clientId })
+        .from(projects)
+        .where(eq(projects.id, prevMilestone.projectId));
+      if (!milestoneProject) {
+        return res.status(404).json({ message: "Milestone project not found" });
+      }
+      if (!callerTenantId || milestoneProject.tenantId !== callerTenantId) {
+        return res.status(403).json({ message: "Milestone does not belong to your tenant" });
+      }
 
       // Enforce forward-only invoice status transitions (planned → invoiced → paid)
       if (req.body.invoiceStatus !== undefined && prevMilestone?.invoiceStatus) {
@@ -6145,7 +6164,159 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         }));
       }
 
-      res.json(milestone);
+      // Auto-generate an invoice batch when a payment milestone transitions to "invoiced"
+      let autoCreatedBatch: InvoiceBatch | null = null;
+      let autoBatchError: string | null = null;
+      if (
+        milestone.isPaymentMilestone &&
+        req.body.invoiceStatus === 'invoiced' &&
+        prevMilestone &&
+        prevMilestone.invoiceStatus !== 'invoiced'
+      ) {
+        try {
+          const tenantId = callerTenantId;
+          let autoEnabled = true;
+          const tenant = await storage.getTenant(tenantId);
+          if (tenant && tenant.autoCreateInvoiceOnMilestoneInvoiced === false) {
+            autoEnabled = false;
+          }
+
+          if (autoEnabled) {
+            // Skip if a batch is already linked to this milestone (within tenant)
+            const [existingBatch] = await db.select()
+              .from(invoiceBatches)
+              .where(and(
+                eq(invoiceBatches.projectMilestoneId, milestone.id),
+                eq(invoiceBatches.tenantId, tenantId),
+              ));
+
+            if (existingBatch) {
+              autoCreatedBatch = existingBatch;
+            } else {
+              // Project tenant already verified above; reuse its clientId.
+              const project = { clientId: milestoneProject.clientId };
+
+              const today = new Date();
+              const todayStr = today.toISOString().split('T')[0];
+              const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+              const timestamp = Date.now().toString().slice(-4);
+              let batchId = `INV-${dateStr}-${timestamp}`;
+              const existing = await db.select({ batchId: invoiceBatches.batchId })
+                .from(invoiceBatches)
+                .where(eq(invoiceBatches.batchId, batchId));
+              if (existing.length > 0) {
+                const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                batchId = `${batchId}-${uniqueSuffix}`;
+              }
+              const normalizedMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+
+              let glInvoiceNumber: string | null = null;
+              if (tenantId) {
+                try {
+                  glInvoiceNumber = await storage.getAndIncrementGlInvoiceNumber(tenantId);
+                } catch (err) {
+                  console.warn("[INVOICE] Failed to auto-generate GL invoice number for auto milestone batch:", err);
+                }
+              }
+
+              const amountStr = milestone.amount || "0";
+
+              try {
+                autoCreatedBatch = await db.transaction(async (tx) => {
+                  const [batch] = await tx.insert(invoiceBatches).values({
+                    batchId,
+                    startDate: todayStr,
+                    endDate: todayStr,
+                    month: normalizedMonth,
+                    pricingSnapshotDate: todayStr,
+                    discountPercent: null,
+                    discountAmount: null,
+                    totalAmount: amountStr,
+                    invoicingMode: "project",
+                    batchType: "mixed",
+                    projectMilestoneId: milestone.id,
+                    exportedToQBO: false,
+                    createdBy: req.user?.id || null,
+                    tenantId,
+                    glInvoiceNumber,
+                  }).returning();
+
+                  await tx.insert(invoiceLines).values({
+                    batchId,
+                    projectId: milestone.projectId,
+                    clientId: project.clientId,
+                    description: `${milestone.name} - Payment Milestone`,
+                    amount: amountStr,
+                    quantity: "1",
+                    rate: amountStr,
+                    type: "milestone",
+                    projectMilestoneId: milestone.id,
+                    originalAmount: amountStr,
+                    billedAmount: amountStr,
+                    originalRate: amountStr,
+                    originalQuantity: "1",
+                  });
+
+                  return batch;
+                });
+              } catch (txErr: any) {
+                // Concurrent retries hit the partial unique index on
+                // invoice_batches.project_milestone_id (Postgres SQLSTATE 23505).
+                // Treat as idempotent: load the winning batch and return it.
+                if (txErr?.code === '23505') {
+                  const [winner] = await db.select()
+                    .from(invoiceBatches)
+                    .where(and(
+                      eq(invoiceBatches.projectMilestoneId, milestone.id),
+                      eq(invoiceBatches.tenantId, tenantId),
+                    ));
+                  if (winner) {
+                    autoCreatedBatch = winner;
+                  } else {
+                    throw txErr;
+                  }
+                } else {
+                  throw txErr;
+                }
+              }
+
+              if (autoCreatedBatch && autoCreatedBatch.batchId === batchId) {
+                // Tax recalculation reads the persisted lines; safe to run
+                // after commit. A failure here is non-fatal — the batch is
+                // still valid, just without computed tax.
+                try {
+                  await storage.recalculateBatchTax(batchId);
+                } catch (err) {
+                  console.warn("[INVOICE] Failed to recalculate tax for auto milestone batch:", err);
+                }
+
+                console.info('[AUDIT] milestone.invoice.auto-created', JSON.stringify({
+                  timestamp: new Date().toISOString(),
+                  tenantId,
+                  userId: req.user?.id || null,
+                  milestoneId: milestone.id,
+                  batchId,
+                }));
+              }
+            }
+          }
+        } catch (autoErr: any) {
+          // Auto-creation should never block the status change itself.
+          // The transaction above guarantees we either created both the batch
+          // and its line, or neither — so no orphaned partial batches remain.
+          autoBatchError = autoErr?.message || "Auto-create failed";
+          console.error("[ERROR] Failed to auto-create invoice batch for milestone:", autoErr);
+          console.info('[AUDIT] milestone.invoice.auto-create-failed', JSON.stringify({
+            timestamp: new Date().toISOString(),
+            tenantId: req.user?.tenantId || null,
+            userId: req.user?.id || null,
+            milestoneId: milestone.id,
+            error: autoBatchError,
+          }));
+        }
+      }
+
+      res.json({ ...milestone, autoCreatedBatch, autoBatchError });
     } catch (error) {
       res.status(500).json({ message: "Failed to update milestone" });
     }

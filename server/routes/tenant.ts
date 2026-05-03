@@ -85,6 +85,7 @@ const tenantSettingsUpdateSchema = z.object({
   defaultTaxRate: z.string().optional().nullable(),
   invoiceDefaultDiscountType: z.string().optional().nullable(),
   invoiceDefaultDiscountValue: z.string().optional().nullable(),
+  autoCreateInvoiceOnMilestoneInvoiced: z.boolean().optional(),
 });
 
 export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
@@ -123,6 +124,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseReminderTime: tenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: tenant.expenseReminderDay ?? 1,
         requireTimeApproval: tenant.requireTimeApproval ?? false,
+        autoCreateInvoiceOnMilestoneInvoiced: tenant.autoCreateInvoiceOnMilestoneInvoiced ?? true,
         defaultTimezone: tenant.defaultTimezone ?? "America/New_York",
         showChangelogOnLogin: tenant.showChangelogOnLogin ?? true,
         defaultBillingRate: (tenant as any).defaultBillingRate,
@@ -565,7 +567,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, requireTimeApproval, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue } = validationResult.data;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, requireTimeApproval, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue, autoCreateInvoiceOnMilestoneInvoiced } = validationResult.data;
 
       const updateData: any = {
         name,
@@ -593,6 +595,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
       if (defaultTaxRate !== undefined) updateData.defaultTaxRate = defaultTaxRate;
       if (invoiceDefaultDiscountType !== undefined) updateData.invoiceDefaultDiscountType = invoiceDefaultDiscountType;
       if (invoiceDefaultDiscountValue !== undefined) updateData.invoiceDefaultDiscountValue = invoiceDefaultDiscountValue;
+      if (autoCreateInvoiceOnMilestoneInvoiced !== undefined) updateData.autoCreateInvoiceOnMilestoneInvoiced = autoCreateInvoiceOnMilestoneInvoiced;
 
       const updatedTenant = await storage.updateTenant(tenantId, updateData);
 
@@ -618,6 +621,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseReminderTime: updatedTenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: updatedTenant.expenseReminderDay ?? 1,
         requireTimeApproval: updatedTenant.requireTimeApproval ?? false,
+        autoCreateInvoiceOnMilestoneInvoiced: updatedTenant.autoCreateInvoiceOnMilestoneInvoiced ?? true,
         defaultTimezone: updatedTenant.defaultTimezone ?? "America/New_York",
         showChangelogOnLogin: updatedTenant.showChangelogOnLogin ?? true,
         defaultBillingRate: (updatedTenant as any).defaultBillingRate,
