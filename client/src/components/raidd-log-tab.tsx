@@ -51,6 +51,7 @@ interface RaiddEntry {
   convertedFromId: string | null;
   supersededById: string | null;
   tags: string[] | null;
+  clientVisible: boolean;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: Date;
@@ -140,6 +141,7 @@ const raiddFormSchema = z.object({
   resolutionNotes: z.string().optional(),
   parentEntryId: z.string().optional(),
   tags: z.string().optional(),
+  clientVisible: z.boolean().default(true),
 });
 
 type RaiddFormData = z.infer<typeof raiddFormSchema>;
@@ -1195,6 +1197,7 @@ function RaiddFormDialog({
       resolutionNotes: entry?.resolutionNotes || "",
       parentEntryId: entry?.parentEntryId || defaultParentId || "",
       tags: entry?.tags?.join(", ") || "",
+      clientVisible: entry?.clientVisible ?? true,
     },
   });
 
@@ -1216,6 +1219,7 @@ function RaiddFormDialog({
         resolutionNotes: entry?.resolutionNotes || "",
         parentEntryId: entry?.parentEntryId || defaultParentId || "",
         tags: entry?.tags?.join(", ") || "",
+        clientVisible: entry?.clientVisible ?? true,
       });
     }
   }, [open, entry?.id]);
@@ -1598,6 +1602,29 @@ function RaiddFormDialog({
                     <Input {...field} placeholder="Comma-separated tags" disabled={isDecisionReadOnly} />
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="clientVisible"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start gap-3 rounded-md border border-border p-3">
+                  <FormControl>
+                    <Checkbox
+                      checked={!!field.value}
+                      onCheckedChange={(v) => field.onChange(v === true)}
+                      disabled={isDecisionReadOnly}
+                      data-testid="checkbox-client-visible"
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="cursor-pointer">Visible to clients</FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      When enabled, this entry is exposed through the Galaxy client portal API. On by default — turn off to keep an entry internal-only.
+                    </p>
+                  </div>
                 </FormItem>
               )}
             />

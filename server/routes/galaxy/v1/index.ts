@@ -693,9 +693,11 @@ export function registerGalaxyV1Routes(
     res.json({ items: page.map(projectMilestone), nextCursor: next });
   });
 
-  // RAIDD entries — only entries explicitly marked clientVisible=true are
-  // exposed to portal users. The column defaults false, so legacy entries are
-  // never leaked.
+  // RAIDD entries — only entries marked clientVisible=true are exposed to
+  // portal users. The column defaults true for new entries; staff can opt
+  // an entry out via the "Visible to clients" toggle in the internal UI.
+  // Legacy rows previously tagged "internal-only" were backfilled to false
+  // by migration 0012 to preserve prior visibility semantics.
   app.get(`${base}/projects/:id/raidd`, galaxyAuth(["raidd:read"]), async (req, res) => {
     const g = req.galaxy!;
     if (!(await userCanSeeProject(g, req.params.id))) return res.status(404).json({ error: "not_found" });

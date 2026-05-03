@@ -3200,10 +3200,9 @@ export const raiddEntries = pgTable("raidd_entries", {
   convertedFromId: varchar("converted_from_id"),
   supersededById: varchar("superseded_by_id"),
   tags: jsonb("tags").$type<string[]>(),
-  // When false (default), this entry is internal-only and MUST NOT be exposed
-  // to client portal users via the Galaxy API or any embed surface. Authors
-  // must explicitly opt-in to client visibility.
-  clientVisible: boolean("client_visible").notNull().default(false),
+  // When true (default), this entry is exposed to client portal users via
+  // the Galaxy API. Staff can flip this off to mark an entry internal-only.
+  clientVisible: boolean("client_visible").notNull().default(true),
   createdBy: varchar("created_by").references(() => users.id),
   updatedBy: varchar("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
