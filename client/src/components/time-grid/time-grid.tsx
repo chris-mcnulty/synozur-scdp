@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { Project, Client, TimeEntry, User } from "@shared/schema";
 import { parseClipboard, toTsv, toCsv, coerceDate, coerceHours, coerceBoolean } from "./clipboard";
+import { pushHistorySnapshot, markDirty, markSaving, markSaved, markError } from "./state";
 
 type ProjectWithClient = Project & { client: Client };
 type TimeEntryRow = TimeEntry & { project?: ProjectWithClient };
@@ -228,21 +229,21 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   const redoStack = useRef<DraftRow[][]>([]);
 
   const pushHistory = useCallback((current: DraftRow[]) => {
-    undoStack.current.push(current.map((r) => ({ ...r, errors: { ...r.errors } })));
-    if (undoStack.current.length > 50) undoStack.current.shift();
+    const snapshot = current.map((r) => ({ ...r, errors: { ...r.errors } }));
+    undoStack.current = pushHistorySnapshot(undoStack.current, snapshot);
     redoStack.current = [];
   }, []);
 
   const undo = () => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
-    redoStack.current.push(drafts.map((r) => ({ ...r })));
+    redoStack.current = pushHistorySnapshot(redoStack.current, drafts.map((r) => ({ ...r })));
     setDrafts(prev);
   };
   const redo = () => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
-    undoStack.current.push(drafts.map((r) => ({ ...r })));
+    undoStack.current = pushHistorySnapshot(undoStack.current, drafts.map((r) => ({ ...r })));
     setDrafts(next);
   };
 
@@ -251,14 +252,14 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   const updateCell = (rowIdx: number, col: ColKey, value: unknown) => {
     setDrafts((prev) => {
       const next = prev.slice();
-      const row: DraftRow = { ...next[rowIdx], [col]: value } as DraftRow;
+      let row: DraftRow = { ...next[rowIdx], [col]: value } as DraftRow;
       // Reset dependent fields if project changed
       if (col === "projectId") {
         row.allocationId = "";
         row.milestoneId = "";
       }
       row.errors = validateRow(row);
-      row.state = "dirty";
+      row = markDirty(row);
       pushHistory(prev);
       next[rowIdx] = row;
       return next;
@@ -296,16 +297,12 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       const row = drafts.find((r) => r.id === rowId);
       if (!row) return;
       if (Object.keys(row.errors).length > 0) return;
-      setDrafts((prev) => prev.map((r) => (r.id === rowId ? { ...r, state: "saving", saveError: undefined } : r)));
+      setDrafts((prev) => prev.map((r) => (r.id === rowId ? markSaving(r) : r)));
       try {
         const result = await saveMutation.mutateAsync(row);
         const newId = result?.id;
         setDrafts((prev) =>
-          prev.map((r) =>
-            r.id === rowId
-              ? { ...r, serverId: newId || r.serverId, id: newId || r.id, state: "saved" }
-              : r,
-          ),
+          prev.map((r) => (r.id === rowId ? markSaved(r, newId) : r)),
         );
         // If the row id changed (newly created → server uuid), keep the
         // selection stable so subsequent bulk actions still see this row.
@@ -322,7 +319,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Save failed";
         setDrafts((prev) =>
-          prev.map((r) => (r.id === rowId ? { ...r, state: "error", saveError: message } : r)),
+          prev.map((r) => (r.id === rowId ? markError(r, message) : r)),
         );
       }
     },
