@@ -790,7 +790,12 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         isSalaried: user.isSalaried,
         totalHours,
         totalCost,
-        assignments
+        assignments,
+        quoteCurrency: project.quoteCurrency,
+        costCurrency: project.costCurrency,
+        exchangeRate: project.exchangeRate,
+        exchangeRateLockedAt: project.exchangeRateLockedAt,
+        exchangeRateSource: project.exchangeRateSource,
       });
     } catch (error: any) {
       console.error("Error fetching Sub-SOW data:", error);
@@ -909,7 +914,12 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         totalCost,
         assignments,
         narrative,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        quoteCurrency: project.quoteCurrency,
+        costCurrency: project.costCurrency,
+        exchangeRate: project.exchangeRate,
+        exchangeRateLockedAt: project.exchangeRateLockedAt,
+        exchangeRateSource: project.exchangeRateSource,
       });
     } catch (error: any) {
       console.error("Error generating Sub-SOW:", error);
@@ -996,6 +1006,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const pdfBuffer = await generateSubSOWPdf({
         tenantName: tenant?.name || 'Synozur Consulting',
         tenantLogo: tenant?.logoUrl,
+        quoteCurrency: project.quoteCurrency,
+        costCurrency: project.costCurrency,
+        exchangeRate: project.exchangeRate,
+        exchangeRateLockedAt: project.exchangeRateLockedAt,
+        exchangeRateSource: project.exchangeRateSource,
         projectName: project.name,
         clientName: client?.name || 'Unknown Client',
         resourceName: resourceName || 'Unknown Resource',
@@ -4100,6 +4115,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         versionNumber,
         versionDate,
         tenantName,
+        quoteCurrency: estimate.quoteCurrency,
+        costCurrency: estimate.costCurrency,
+        exchangeRate: estimate.exchangeRate,
+        exchangeRateLockedAt: estimate.exchangeRateLockedAt,
+        exchangeRateSource: estimate.exchangeRateSource,
       });
 
       const safeName = estimate.name.replace(/[^a-zA-Z0-9]/g, "_");
@@ -5629,6 +5649,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
                     versionNumber: snapshotForEmail.versionNumber,
                     versionDate: sentDate,
                     tenantName: branding?.companyName || "Constellation",
+                    quoteCurrency: estimate.quoteCurrency,
+                    costCurrency: estimate.costCurrency,
+                    exchangeRate: estimate.exchangeRate,
+                    exchangeRateLockedAt: estimate.exchangeRateLockedAt,
+                    exchangeRateSource: estimate.exchangeRateSource,
                   });
 
                   const safeName = estimate.name.replace(/[^a-zA-Z0-9]/g, "_");

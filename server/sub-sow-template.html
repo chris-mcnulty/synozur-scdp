@@ -343,11 +343,20 @@
       {{#if isSubcontractor}}
       <div class="summary-item">
         <h4>Total Cost</h4>
-        <div class="value">${{totalCost}}</div>
+        <div class="value">{{totalCost}}</div>
+        {{#if totalCostQuote}}
+        <div style="font-size: 9pt; opacity: 0.85; margin-top: 4px;">≈ {{totalCostQuote}} (client)</div>
+        {{/if}}
       </div>
       {{/if}}
     </div>
-    
+
+    {{#if showCurrencyNote}}
+    <div class="salaried-note" style="background: #fef3c7; color: #92400e;">
+      <strong>Currency Note:</strong> Contractor amounts are shown in {{costCurrency}}. The client is invoiced in {{quoteCurrency}}. Exchange rate: {{exchangeRateText}} ({{rateSourceLabel}}{{#if rateLockedAtStr}}, set {{rateLockedAtStr}}{{/if}}).
+    </div>
+    {{/if}}
+
     {{#if isSalaried}}
     <div class="salaried-note">
       <strong>Note:</strong> This resource is a salaried employee. Their time allocation is shown for planning purposes, but does not represent direct project cost.
@@ -371,7 +380,7 @@
       <div class="epic-group">
         <div class="epic-header">
           <span>{{epicName}}</span>
-          <span>{{totalHours}} hours{{#unless ../isSalaried}} | ${{totalAmount}}{{/unless}}</span>
+          <span>{{totalHours}} hours{{#unless ../isSalaried}} | {{totalAmount}}{{#if totalAmountQuote}} (≈ {{totalAmountQuote}}){{/if}}{{/unless}}</span>
         </div>
         <table class="assignments-table">
           <thead>
@@ -392,8 +401,8 @@
               <td>{{description}}</td>
               <td class="number">{{hours}}</td>
               {{#unless ../../isSalaried}}
-              <td class="number">${{rate}}</td>
-              <td class="number">${{amount}}</td>
+              <td class="number">{{rate}}</td>
+              <td class="number">{{amount}}</td>
               {{/unless}}
             </tr>
             {{/each}}
@@ -409,7 +418,7 @@
             <td class="number"><strong>{{../totalHours}} hrs</strong></td>
             {{#unless isSalaried}}
             <td class="number"></td>
-            <td class="number"><strong>${{../totalCost}}</strong></td>
+            <td class="number"><strong>{{../totalCost}}{{#if ../totalCostQuote}}<br><span style="font-weight:400;font-size:9pt;color:#6b7280;">≈ {{../totalCostQuote}}</span>{{/if}}</strong></td>
             {{/unless}}
           </tr>
         </tbody>

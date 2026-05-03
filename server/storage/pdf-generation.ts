@@ -762,6 +762,26 @@ interface SubSOWPdfInput {
   generatedDate: string;
   projectStartDate?: string | null;
   projectEndDate?: string | null;
+  // Multi-currency context (optional for backward compat)
+  quoteCurrency?: string | null;
+  costCurrency?: string | null;
+  exchangeRate?: number | string | null;
+  exchangeRateLockedAt?: Date | string | null;
+  exchangeRateSource?: string | null;
+}
+
+function formatMoney(amount: number, currency: string, fractionDigits = 2): string {
+  const safeCurrency = (currency || 'USD').toUpperCase();
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: safeCurrency,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    }).format(amount);
+  } catch {
+    return `${safeCurrency} ${amount.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}`;
+  }
 }
 
 export async function generateSubSOWPdf(input: SubSOWPdfInput): Promise<Buffer> {
@@ -780,19 +800,37 @@ export async function generateSubSOWPdf(input: SubSOWPdfInput): Promise<Buffer> 
     epicGroups.get(epicName)!.push(assignment);
   }
   
+  // Currency context
+  const costCurrency = (input.costCurrency || 'USD').toUpperCase();
+  const quoteCurrency = (input.quoteCurrency || costCurrency).toUpperCase();
+  const exchangeRate = input.exchangeRate != null ? Number(input.exchangeRate) : null;
+  const hasFx = quoteCurrency !== costCurrency && !!exchangeRate && exchangeRate > 0;
+  const toQuote = (amt: number) => (hasFx ? amt / (exchangeRate as number) : amt);
+
   // Build assignment rows
-  const assignmentsByEpic = Array.from(epicGroups.entries()).map(([epicName, assignments]) => ({
-    epicName,
-    totalHours: assignments.reduce((sum, a) => sum + a.hours, 0),
-    totalAmount: assignments.reduce((sum, a) => sum + a.amount, 0),
-    assignments: assignments.map(a => ({
-      stageName: a.stageName || '',
-      description: a.description,
-      hours: a.hours.toFixed(1),
-      rate: a.rate.toFixed(2),
-      amount: a.amount.toFixed(2)
-    }))
-  }));
+  const assignmentsByEpic = Array.from(epicGroups.entries()).map(([epicName, assignments]) => {
+    const epicTotalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
+    const epicTotalAmount = assignments.reduce((sum, a) => sum + a.amount, 0);
+    return {
+      epicName,
+      totalHours: epicTotalHours,
+      totalAmount: formatMoney(epicTotalAmount, costCurrency, 2),
+      totalAmountQuote: hasFx ? formatMoney(toQuote(epicTotalAmount), quoteCurrency, 2) : null,
+      assignments: assignments.map(a => ({
+        stageName: a.stageName || '',
+        description: a.description,
+        hours: a.hours.toFixed(1),
+        rate: formatMoney(a.rate, costCurrency, 2),
+        amount: formatMoney(a.amount, costCurrency, 2),
+      })),
+    };
+  });
+
+  const lockedAt = input.exchangeRateLockedAt
+    ? (typeof input.exchangeRateLockedAt === 'string' ? new Date(input.exchangeRateLockedAt) : input.exchangeRateLockedAt)
+    : null;
+  const lockedAtStr = lockedAt ? lockedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : null;
+  const rateSourceLabel = input.exchangeRateSource === 'manual' ? 'manual override' : input.exchangeRateSource === 'locked' ? 'locked' : 'live';
 
   const templateData = {
     tenantName: input.tenantName,
@@ -805,14 +843,21 @@ export async function generateSubSOWPdf(input: SubSOWPdfInput): Promise<Buffer> 
     isSalaried: input.isSalaried,
     isSubcontractor: !input.isSalaried,
     totalHours: input.totalHours.toFixed(1),
-    totalCost: input.totalCost.toFixed(2),
+    totalCost: formatMoney(input.totalCost, costCurrency, 2),
+    totalCostQuote: hasFx ? formatMoney(toQuote(input.totalCost), quoteCurrency, 2) : null,
+    quoteCurrency,
+    costCurrency,
+    showCurrencyNote: hasFx,
+    exchangeRateText: hasFx ? `1 ${quoteCurrency} = ${(exchangeRate as number).toFixed(4)} ${costCurrency}` : null,
+    rateSourceLabel,
+    rateLockedAtStr: lockedAtStr,
     generatedDate: input.generatedDate,
     projectStartDate: input.projectStartDate,
     projectEndDate: input.projectEndDate,
     narrative: narrativeHtml,
     hasNarrative: !!input.narrative,
     assignmentsByEpic,
-    hasAssignments: input.assignments.length > 0
+    hasAssignments: input.assignments.length > 0,
   };
 
   // Load template
@@ -921,15 +966,28 @@ export interface EstimateProposalPdfInput {
   versionNumber: number | null;
   versionDate: string | null;
   tenantName: string;
+  // Multi-currency context (optional for backward compat)
+  quoteCurrency?: string | null;
+  costCurrency?: string | null;
+  exchangeRate?: number | string | null;
+  exchangeRateLockedAt?: Date | string | null;
+  exchangeRateSource?: string | null;
 }
 
 export async function generateEstimateProposalPdf(input: EstimateProposalPdfInput): Promise<Buffer> {
+  const costCurrency = (input.costCurrency || 'USD').toUpperCase();
+  const quoteCurrency = (input.quoteCurrency || costCurrency).toUpperCase();
+  const exchangeRate = input.exchangeRate != null ? Number(input.exchangeRate) : null;
+  const hasFx = quoteCurrency !== costCurrency && !!exchangeRate && exchangeRate > 0;
+  const toQuote = (amt: number) => (hasFx ? amt / (exchangeRate as number) : amt);
+  const fmtQuote = (amt: number) => formatMoney(toQuote(amt), quoteCurrency, 0);
+
   const rowsHtml = input.lineItemsByEpic.map(({ epicName, items, epicHours, epicAmount }) => {
     const itemRows = items.map((item) => `
       <tr>
         <td class="desc">${escapeHtml(item.description)}</td>
         <td class="num">${item.adjustedHours.toFixed(1)}</td>
-        <td class="num">$${item.totalAmount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+        <td class="num">${fmtQuote(item.totalAmount)}</td>
       </tr>
     `).join("");
 
@@ -941,16 +999,32 @@ export async function generateEstimateProposalPdf(input: EstimateProposalPdfInpu
       <tr class="subtotal-row">
         <td>Subtotal — ${escapeHtml(epicName)}</td>
         <td class="num">${epicHours.toFixed(1)} hrs</td>
-        <td class="num">$${epicAmount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+        <td class="num">${fmtQuote(epicAmount)}</td>
       </tr>
     `;
     return epicRow;
   }).join("");
 
-  const displayTotal = input.presentedTotal ?? input.totalFees;
+  // presentedTotal is the customer-facing total (already in quoteCurrency per the
+  // To-Client Total UI). totalFees is the sum of line item totalAmount values,
+  // which are stored in costCurrency, so it must be converted to quoteCurrency.
+  const displayTotalQuote = input.presentedTotal != null
+    ? input.presentedTotal
+    : toQuote(input.totalFees);
+  const displayTotalCost = hasFx ? displayTotalQuote * (exchangeRate as number) : displayTotalQuote;
   const versionLine = input.versionNumber != null
     ? `Estimate v${input.versionNumber}${input.versionDate ? ` · Snapshot ${input.versionDate}` : ""} · `
     : "";
+
+  const lockedAt = input.exchangeRateLockedAt
+    ? (typeof input.exchangeRateLockedAt === 'string' ? new Date(input.exchangeRateLockedAt) : input.exchangeRateLockedAt)
+    : null;
+  const lockedAtStr = lockedAt ? lockedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : null;
+  const rateSourceLabel = input.exchangeRateSource === 'manual' ? 'manual override' : input.exchangeRateSource === 'locked' ? 'locked' : 'live';
+  const fxNoteHtml = hasFx
+    ? `<div class="fx-note">Amounts shown in ${quoteCurrency}. Exchange rate: 1 ${quoteCurrency} = ${(exchangeRate as number).toFixed(4)} ${costCurrency} (${rateSourceLabel}${lockedAtStr ? `, set ${lockedAtStr}` : ''}).</div>`
+    : '';
+  const headerCurrencyHtml = `<span>Currency: ${quoteCurrency}</span>`;
 
   const html = `<!DOCTYPE html>
 <html>
@@ -971,6 +1045,8 @@ export async function generateEstimateProposalPdf(input: EstimateProposalPdfInpu
   tr.epic-row td { background: #f1f5f9; font-weight: 700; color: #1a2e4a; padding: 6px 10px; border-top: 2px solid #cbd5e1; }
   tr.subtotal-row td { background: #f8fafc; font-style: italic; color: #555; font-size: 9.5pt; }
   .total-row { margin-top: 24px; text-align: right; font-size: 13pt; font-weight: 700; color: #1a2e4a; }
+  .total-sub { font-size: 9.5pt; font-weight: 400; color: #555; margin-top: 4px; }
+  .fx-note { margin-top: 16px; padding: 10px 12px; background: #fef3c7; color: #92400e; font-size: 9.5pt; border-radius: 4px; }
   .footer { margin-top: 40px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 8.5pt; color: #888; }
 </style>
 </head>
@@ -980,6 +1056,7 @@ export async function generateEstimateProposalPdf(input: EstimateProposalPdfInpu
     <span>Client: ${escapeHtml(input.clientName)}</span>
     ${input.estimateDate ? `<span>Date: ${input.estimateDate}</span>` : ""}
     ${input.validUntil ? `<span>Valid until: ${input.validUntil}</span>` : ""}
+    ${headerCurrencyHtml}
   </div>
   <table>
     <thead>
@@ -994,9 +1071,11 @@ export async function generateEstimateProposalPdf(input: EstimateProposalPdfInpu
     </tbody>
   </table>
   <div class="total-row">
-    Total: $${displayTotal.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+    Total: ${formatMoney(displayTotalQuote, quoteCurrency, 0)}
     &nbsp;(${input.totalHours.toFixed(1)} hrs)
+    ${hasFx ? `<div class="total-sub">Equivalent: ${formatMoney(displayTotalCost, costCurrency, 0)}</div>` : ""}
   </div>
+  ${fxNoteHtml}
   <div class="footer">
     ${versionLine}Generated ${input.generatedDate} · ${escapeHtml(input.tenantName)}
   </div>

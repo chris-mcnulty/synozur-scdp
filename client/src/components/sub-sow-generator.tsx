@@ -46,6 +46,25 @@ interface SubSOWData {
   assignments: SubSOWAssignment[];
   narrative?: string;
   generatedAt?: string;
+  quoteCurrency?: string | null;
+  costCurrency?: string | null;
+  exchangeRate?: string | number | null;
+  exchangeRateLockedAt?: string | null;
+  exchangeRateSource?: string | null;
+}
+
+function formatMoney(amount: number, currency: string, fractionDigits = 2): string {
+  const safe = (currency || 'USD').toUpperCase();
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: safe,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    }).format(amount);
+  } catch {
+    return `${safe} ${amount.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })}`;
+  }
 }
 
 interface SubSOWGeneratorProps {
@@ -63,7 +82,13 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
 
   const generateWordContent = () => {
     if (!subSOWData || !selectedResource) return '';
-    
+
+    const costCurrency = (subSOWData.costCurrency || 'USD').toUpperCase();
+    const quoteCurrency = (subSOWData.quoteCurrency || costCurrency).toUpperCase();
+    const fxRate = subSOWData.exchangeRate != null ? Number(subSOWData.exchangeRate) : null;
+    const hasFx = quoteCurrency !== costCurrency && !!fxRate && fxRate > 0;
+    const toQuote = (amt: number) => (hasFx ? amt / (fxRate as number) : amt);
+
     const lines: string[] = [];
     lines.push(`SUB-STATEMENT OF WORK`);
     lines.push(`${'='.repeat(50)}`);
@@ -74,24 +99,31 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
     lines.push(`Role: ${subSOWData.resourceRole}`);
     lines.push(`Type: ${subSOWData.isSalaried ? 'Salaried Employee' : 'Subcontractor'}`);
     lines.push('');
+    if (hasFx) {
+      const lockedAt = subSOWData.exchangeRateLockedAt ? new Date(subSOWData.exchangeRateLockedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : null;
+      const src = subSOWData.exchangeRateSource === 'manual' ? 'manual override' : subSOWData.exchangeRateSource === 'locked' ? 'locked' : 'live';
+      lines.push(`Currency Note: Contractor amounts are in ${costCurrency}. Client invoiced in ${quoteCurrency}.`);
+      lines.push(`  Exchange rate: 1 ${quoteCurrency} = ${(fxRate as number).toFixed(4)} ${costCurrency} (${src}${lockedAt ? `, set ${lockedAt}` : ''})`);
+      lines.push('');
+    }
     lines.push(`SUMMARY`);
     lines.push(`${'-'.repeat(30)}`);
     lines.push(`Total Hours: ${subSOWData.totalHours.toFixed(1)}`);
     if (!subSOWData.isSalaried) {
-      lines.push(`Total Cost: $${subSOWData.totalCost.toLocaleString()}`);
+      lines.push(`Total Cost: ${formatMoney(subSOWData.totalCost, costCurrency, 2)}${hasFx ? ` (≈ ${formatMoney(toQuote(subSOWData.totalCost), quoteCurrency, 2)})` : ''}`);
     }
     lines.push(`Number of Assignments: ${subSOWData.assignments.length}`);
     lines.push('');
     lines.push(`ASSIGNED TASKS`);
     lines.push(`${'-'.repeat(30)}`);
-    
+
     subSOWData.assignments.forEach((a, idx) => {
       lines.push(`${idx + 1}. ${a.description}`);
       if (a.epicName) lines.push(`   Epic: ${a.epicName}`);
       if (a.stageName) lines.push(`   Stage: ${a.stageName}`);
       lines.push(`   Hours: ${a.hours.toFixed(1)}`);
       if (!subSOWData.isSalaried) {
-        lines.push(`   Amount: $${a.amount.toFixed(2)}`);
+        lines.push(`   Amount: ${formatMoney(a.amount, costCurrency, 2)}`);
       }
       lines.push('');
     });
@@ -340,7 +372,20 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
               <span>Generating Sub-SOW with AI...</span>
             </div>
           ) : subSOWData ? (
+            (() => {
+              const costCcy = (subSOWData.costCurrency || 'USD').toUpperCase();
+              const quoteCcy = (subSOWData.quoteCurrency || costCcy).toUpperCase();
+              const fxRate = subSOWData.exchangeRate != null ? Number(subSOWData.exchangeRate) : null;
+              const hasFx = quoteCcy !== costCcy && !!fxRate && fxRate > 0;
+              const lockedAt = subSOWData.exchangeRateLockedAt ? new Date(subSOWData.exchangeRateLockedAt).toLocaleDateString() : null;
+              const src = subSOWData.exchangeRateSource === 'manual' ? 'manual override' : subSOWData.exchangeRateSource === 'locked' ? 'locked' : 'live';
+              return (
             <div className="space-y-6">
+              {hasFx && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2 text-sm">
+                  <strong>Currency:</strong> Contractor amounts in {costCcy}; client invoiced in {quoteCcy}. Rate: 1 {quoteCcy} = {(fxRate as number).toFixed(4)} {costCcy} ({src}{lockedAt ? `, set ${lockedAt}` : ''}).
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-4">
                 <Card>
                   <CardContent className="p-4">
@@ -352,8 +397,13 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
                   <CardContent className="p-4">
                     <div className="text-sm text-muted-foreground">Total Cost</div>
                     <div className="text-2xl font-bold">
-                      {subSOWData.isSalaried ? '$0' : `$${subSOWData.totalCost.toLocaleString()}`}
+                      {subSOWData.isSalaried ? formatMoney(0, costCcy, 0) : formatMoney(subSOWData.totalCost, costCcy, 0)}
                     </div>
+                    {hasFx && !subSOWData.isSalaried && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        ≈ {formatMoney(subSOWData.totalCost / (fxRate as number), quoteCcy, 0)} (client)
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
@@ -387,7 +437,7 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
                           <TableCell className="text-sm max-w-xs truncate">{assignment.description}</TableCell>
                           <TableCell className="text-right text-sm">{assignment.hours.toFixed(1)}</TableCell>
                           {!subSOWData.isSalaried && (
-                            <TableCell className="text-right text-sm">${assignment.amount.toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-sm">{formatMoney(assignment.amount, costCcy, 2)}</TableCell>
                           )}
                         </TableRow>
                       ))}
@@ -410,6 +460,8 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
                 />
               </div>
             </div>
+              );
+            })()
           ) : null}
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
