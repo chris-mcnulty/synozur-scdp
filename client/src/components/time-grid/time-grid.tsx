@@ -105,6 +105,79 @@ function entryToDraft(entry: TimeEntryRow): DraftRow {
   };
 }
 
+// --- Drag-fill series detection helpers ---------------------------------
+// Parse a YYYY-MM-DD string to a UTC Date. Returns null if not a strict ISO
+// date — we don't want to over-interpret free-form text from other columns.
+function parseIsoDate(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const da = Number(m[3]);
+  const d = new Date(Date.UTC(y, mo - 1, da));
+  if (isNaN(d.getTime())) return null;
+  // Reject overflow dates (e.g. 2026-02-31 → normalised to March) so we
+  // don't silently treat invalid input as a valid date series seed.
+  if (d.getUTCFullYear() !== y || d.getUTCMonth() !== mo - 1 || d.getUTCDate() !== da) return null;
+  return d;
+}
+function formatIsoDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+function addUtcDays(d: Date, days: number): Date {
+  const r = new Date(d.getTime());
+  r.setUTCDate(r.getUTCDate() + days);
+  return r;
+}
+function dayDiff(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+// Returns a value-generator for the fill cells, or null if no series can be
+// detected (caller falls back to cyclic copy of the seed values).
+// `offset` is 1-based: 1 = first cell after the seed in the fill direction.
+function detectSeries(
+  col: ColKey,
+  values: (string | boolean | undefined)[],
+  downward: boolean,
+): ((offset: number) => string | boolean | undefined) | null {
+  if (col === "date") {
+    const dates = values.map((v) => (typeof v === "string" ? parseIsoDate(v) : null));
+    if (dates.some((d) => !d)) return null;
+    let step = 1; // single-seed default: one day per row
+    if (dates.length >= 2) {
+      const diffs: number[] = [];
+      for (let i = 1; i < dates.length; i++) diffs.push(dayDiff(dates[i - 1]!, dates[i]!));
+      if (!diffs.every((d) => d === diffs[0])) return null;
+      step = diffs[0];
+    }
+    const last = dates[dates.length - 1]!;
+    const first = dates[0]!;
+    return (offset: number) => formatIsoDate(addUtcDays(downward ? last : first, downward ? step * offset : -step * offset));
+  }
+  if (col === "hours") {
+    if (values.length < 2) return null; // single number → copy
+    const nums = values.map((v) => {
+      const n = parseFloat(String(v ?? ""));
+      return isFinite(n) ? n : null;
+    });
+    if (nums.some((n) => n === null)) return null;
+    const diffs: number[] = [];
+    for (let i = 1; i < nums.length; i++) diffs.push(nums[i]! - nums[i - 1]!);
+    const step = diffs[0];
+    if (!diffs.every((d) => Math.abs(d - step) < 1e-9)) return null;
+    if (step === 0) return null; // identical values → cyclic copy is equivalent
+    const last = nums[nums.length - 1]!;
+    const first = nums[0]!;
+    return (offset: number) => {
+      const v = downward ? last + step * offset : first - step * offset;
+      // Trim trailing zeros while keeping reasonable precision.
+      return String(Number(v.toFixed(6)));
+    };
+  }
+  return null;
+}
+
 function validateRow(row: DraftRow): Partial<Record<ColKey, string>> {
   const errs: Partial<Record<ColKey, string>> = {};
   if (!row.projectId) errs.projectId = "Project required";
@@ -634,21 +707,42 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     return raw;
   }
 
-  // Drag-fill: copy active cell value down a column
-  const dragFill = (toRow: number) => {
-    const fromRow = active.row;
+  // Drag-fill: extend a series (date increments, numeric step) when possible,
+  // otherwise copy the seed values cyclically — mirrors Excel/Sheets behaviour.
+  // `seed` is the row range selected before the drag started; the drag extends
+  // that pattern toward `toRow`.
+  const dragFill = (toRow: number, seed?: { r0: number; r1: number }) => {
     const col = COLUMNS[active.col].key;
     if (col === "projectId" || col === "allocationId" || col === "milestoneId") return; // skip refs
+    const seedStart = seed ? seed.r0 : active.row;
+    const seedEnd = seed ? seed.r1 : active.row;
+    if (toRow >= seedStart && toRow <= seedEnd) return;
+    const downward = toRow > seedEnd;
+    const fillStart = downward ? seedEnd + 1 : toRow;
+    const fillEnd = downward ? toRow : seedStart - 1;
     pushHistory(drafts);
     setDrafts((prev) => {
-      const src = prev[fromRow];
-      if (!src) return prev;
-      const val = getCell(src, col);
       const next = prev.slice();
-      const start = Math.min(fromRow, toRow);
-      const end = Math.max(fromRow, toRow);
-      for (let r = start; r <= end; r++) {
-        if (r === fromRow) continue;
+      const seedValues: (string | boolean | undefined)[] = [];
+      for (let r = seedStart; r <= seedEnd; r++) {
+        if (!prev[r]) return prev;
+        seedValues.push(getCell(prev[r], col));
+      }
+      const series = detectSeries(col, seedValues, downward);
+      const seedLen = seedValues.length;
+      for (let r = fillStart; r <= fillEnd; r++) {
+        if (!next[r]) continue;
+        let val: string | boolean | undefined;
+        if (series) {
+          const offset = downward ? r - seedEnd : seedStart - r;
+          val = series(offset);
+        } else {
+          // Cyclic copy from seed values, preserving order in fill direction.
+          const dist = downward ? r - seedEnd - 1 : seedStart - r - 1;
+          const idxInCycle = dist % seedLen;
+          const pick = downward ? idxInCycle : seedLen - 1 - idxInCycle;
+          val = seedValues[pick];
+        }
         const row = { ...next[r], [col]: val } as DraftRow;
         row.errors = validateRow(row);
         row.state = "dirty";
@@ -1046,7 +1140,7 @@ function GridTable(props: {
   selectedIds: Set<string>;
   toggleSelect: (id: string) => void;
   editable: boolean;
-  onDragFill?: (toRow: number) => void;
+  onDragFill?: (toRow: number, seed: { r0: number; r1: number }) => void;
 }) {
   const { rows, projects, active, range, editable, editing, setEditing, setActive, startRange, extendRange, updateCell, selectedIds, toggleSelect, onDragFill, personId } = props;
   const [dragFromRow, setDragFromRow] = useState<number | null>(null);
@@ -1141,6 +1235,9 @@ function GridTable(props: {
                           onMouseDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            // Capture the seed row-range (selection at drag-start)
+                            // so series detection works for multi-row patterns.
+                            const seed = { r0: range.r0, r1: range.r1 };
                             setDragFromRow(ri);
                             dragToRowRef.current = ri;
                             const onMove = (ev: MouseEvent) => {
@@ -1155,7 +1252,7 @@ function GridTable(props: {
                             };
                             const onUp = () => {
                               const toRow = dragToRowRef.current ?? ri;
-                              if (toRow !== ri) onDragFill(toRow);
+                              if (toRow < seed.r0 || toRow > seed.r1) onDragFill(toRow, seed);
                               setDragFromRow(null);
                               dragToRowRef.current = null;
                               window.removeEventListener("mouseup", onUp);
