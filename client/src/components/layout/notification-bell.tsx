@@ -56,6 +56,20 @@ export function NotificationBell() {
     },
   });
 
+  const unreadCountForTitle = data?.unreadCount ?? 0;
+  useEffect(() => {
+    const baseTitle = document.title.replace(/^\(\d+\+?\)\s*/, "");
+    if (unreadCountForTitle > 0) {
+      const prefix = unreadCountForTitle > 99 ? "99+" : String(unreadCountForTitle);
+      document.title = `(${prefix}) ${baseTitle}`;
+    } else {
+      document.title = baseTitle;
+    }
+    return () => {
+      document.title = document.title.replace(/^\(\d+\+?\)\s*/, "");
+    };
+  }, [unreadCountForTitle]);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
