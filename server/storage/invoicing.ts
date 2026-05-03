@@ -48,61 +48,70 @@ export const invoicingMethods: ThisType<IStorage & {
   })[]> {
     // Get all batches
     const batches = await db.select().from(invoiceBatches).orderBy(desc(invoiceBatches.createdAt));
-    
-    // For each batch, get client and project information
-    const batchesWithDetails = await Promise.all(batches.map(async (batch) => {
-      // Get unique clients and projects for this batch
-      const lines = await db
-        .select({
-          clientId: invoiceLines.clientId,
-          projectId: invoiceLines.projectId,
-        })
-        .from(invoiceLines)
-        .where(eq(invoiceLines.batchId, batch.batchId));
-      
-      if (lines.length === 0) {
-        return {
-          ...batch,
-          clientCount: 0,
-          projectCount: 0,
-          clientNames: [],
-          projectNames: []
+
+    if (batches.length === 0) return [];
+
+    // Single bulk query: join invoice_lines with clients/projects to retrieve all
+    // (batchId, clientId, projectId, clientName, projectName) tuples in one DB round trip.
+    const batchIds = batches.map(b => b.batchId);
+    const lineRows = await db
+      .select({
+        batchId: invoiceLines.batchId,
+        clientId: invoiceLines.clientId,
+        projectId: invoiceLines.projectId,
+        clientName: clients.name,
+        projectName: projects.name,
+      })
+      .from(invoiceLines)
+      .innerJoin(clients, eq(invoiceLines.clientId, clients.id))
+      .innerJoin(projects, eq(invoiceLines.projectId, projects.id))
+      .where(inArray(invoiceLines.batchId, batchIds));
+
+    type Aggregate = {
+      clientIds: Set<string>;
+      projectIds: Set<string>;
+      clientNameById: Map<string, string>;
+      projectNameById: Map<string, string>;
+    };
+    const byBatch = new Map<string, Aggregate>();
+    for (const row of lineRows) {
+      let agg = byBatch.get(row.batchId);
+      if (!agg) {
+        agg = {
+          clientIds: new Set(),
+          projectIds: new Set(),
+          clientNameById: new Map(),
+          projectNameById: new Map(),
         };
+        byBatch.set(row.batchId, agg);
       }
-      
-      const uniqueClientIds = Array.from(new Set(lines.map(l => l.clientId)));
-      const uniqueProjectIds = Array.from(new Set(lines.map(l => l.projectId)));
-      
-      // Get client names if there are 3 or fewer
-      let clientNames: string[] = [];
-      if (uniqueClientIds.length > 0 && uniqueClientIds.length <= 3) {
-        const clientData = await db
-          .select({ name: clients.name })
-          .from(clients)
-          .where(inArray(clients.id, uniqueClientIds));
-        clientNames = clientData.map(c => c.name);
-      }
-      
-      // Get project names if there are 3 or fewer
-      let projectNames: string[] = [];
-      if (uniqueProjectIds.length > 0 && uniqueProjectIds.length <= 3) {
-        const projectData = await db
-          .select({ name: projects.name })
-          .from(projects)
-          .where(inArray(projects.id, uniqueProjectIds));
-        projectNames = projectData.map(p => p.name);
-      }
-      
+      agg.clientIds.add(row.clientId);
+      agg.projectIds.add(row.projectId);
+      agg.clientNameById.set(row.clientId, row.clientName);
+      agg.projectNameById.set(row.projectId, row.projectName);
+    }
+
+    return batches.map((batch) => {
+      const agg = byBatch.get(batch.batchId);
+      const clientCount = agg?.clientIds.size ?? 0;
+      const projectCount = agg?.projectIds.size ?? 0;
+      // Match prior behavior: only return names when there are 3 or fewer.
+      const clientNames =
+        agg && clientCount > 0 && clientCount <= 3
+          ? Array.from(agg.clientNameById.values())
+          : [];
+      const projectNames =
+        agg && projectCount > 0 && projectCount <= 3
+          ? Array.from(agg.projectNameById.values())
+          : [];
       return convertDecimalFieldsToNumbers({
         ...batch,
-        clientCount: uniqueClientIds.length,
-        projectCount: uniqueProjectIds.length,
+        clientCount,
+        projectCount,
         clientNames,
-        projectNames
+        projectNames,
       });
-    }));
-    
-    return batchesWithDetails;
+    });
   },
 
   async getInvoiceBatchesForClient(clientId: string, projectId?: string): Promise<(InvoiceBatch & {
@@ -125,40 +134,54 @@ export const invoicingMethods: ThisType<IStorage & {
     }
     
     // Get the full batch details for these batch IDs
+    const batchIdList = batchIds.map(b => b.batchId);
     const batches = await db
       .select()
       .from(invoiceBatches)
-      .where(sql`${invoiceBatches.batchId} IN ${batchIds.map(b => b.batchId)}`)
+      .where(inArray(invoiceBatches.batchId, batchIdList))
       .orderBy(desc(invoiceBatches.createdAt));
-    
-    // Enrich with project info
-    const batchesWithDetails = await Promise.all(batches.map(async (batch) => {
-      const lines = await db
-        .select({
-          projectId: invoiceLines.projectId,
-        })
-        .from(invoiceLines)
-        .where(eq(invoiceLines.batchId, batch.batchId));
-      
-      const uniqueProjectIds = Array.from(new Set(lines.map(l => l.projectId)));
-      let projectNames: string[] = [];
-      if (uniqueProjectIds.length > 0 && uniqueProjectIds.length <= 3) {
-        const projectData = await db
-          .select({ name: projects.name })
-          .from(projects)
-          .where(inArray(projects.id, uniqueProjectIds));
-        projectNames = projectData.map(p => p.name);
+
+    if (batches.length === 0) return [];
+
+    // Single bulk query: pull all (batchId, projectId, projectName) tuples for these
+    // batches. NOTE: not filtered by clientId/projectId here — preserves prior
+    // behavior of summarizing every project that appears in the matched batches,
+    // not just lines belonging to the queried client/project.
+    const lineRows = await db
+      .select({
+        batchId: invoiceLines.batchId,
+        projectId: invoiceLines.projectId,
+        projectName: projects.name,
+      })
+      .from(invoiceLines)
+      .innerJoin(projects, eq(invoiceLines.projectId, projects.id))
+      .where(inArray(invoiceLines.batchId, batchIdList));
+
+    const byBatch = new Map<string, { projectIds: Set<string>; nameById: Map<string, string> }>();
+    for (const row of lineRows) {
+      let agg = byBatch.get(row.batchId);
+      if (!agg) {
+        agg = { projectIds: new Set(), nameById: new Map() };
+        byBatch.set(row.batchId, agg);
       }
-      
+      agg.projectIds.add(row.projectId);
+      agg.nameById.set(row.projectId, row.projectName);
+    }
+
+    return batches.map((batch) => {
+      const agg = byBatch.get(batch.batchId);
+      const uniqueProjectIds = agg ? Array.from(agg.projectIds) : [];
+      const projectNames =
+        agg && uniqueProjectIds.length > 0 && uniqueProjectIds.length <= 3
+          ? Array.from(agg.nameById.values())
+          : [];
       return convertDecimalFieldsToNumbers({
         ...batch,
         projectCount: uniqueProjectIds.length,
         projectNames,
-        projectIds: uniqueProjectIds
+        projectIds: uniqueProjectIds,
       });
-    }));
-    
-    return batchesWithDetails;
+    });
   },
 
   async getInvoiceBatchDetails(batchId: string): Promise<(InvoiceBatch & {
