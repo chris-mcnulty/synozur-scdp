@@ -22,6 +22,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { NarrativeEstimateGenerator } from "@/components/estimates/narrative-estimate-generator";
+import { actionBadge, type ClientSignoff } from "@/components/client-signoff-panel";
+import { Badge } from "@/components/ui/badge";
+import { Clock, CheckCircle } from "lucide-react";
 
 // Copy estimate form schemas
 const copySameClientSchema = z.object({
@@ -160,6 +163,51 @@ export default function Estimates() {
         return true;
     }
   });
+
+  // Bulk-fetch sign-offs for the currently rendered estimates only (filtered tab view)
+  const estimateIds = estimates.map((e) => e.id);
+  const estimateIdsKey = estimateIds.slice().sort().join(",");
+  const { data: signoffsByEstimate = {} } = useQuery<Record<string, ClientSignoff[]>>({
+    queryKey: ["/api/embed/signoffs/estimate/bulk", estimateIdsKey],
+    queryFn: () =>
+      apiRequest("/api/embed/signoffs/estimate/bulk", {
+        method: "POST",
+        body: JSON.stringify({ ids: estimateIds }),
+      }),
+    enabled: estimateIds.length > 0,
+  });
+
+  const renderSignoffBadge = (estimate: Estimate) => {
+    const signoffs = signoffsByEstimate[estimate.id] ?? [];
+    const latest = signoffs[0];
+    if (latest) {
+      if (latest.action === "approved") {
+        return (
+          <Badge
+            className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200 dark:border-green-700"
+            data-testid={`signoff-approved-${estimate.id}`}
+          >
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Approved by Client
+          </Badge>
+        );
+      }
+      return actionBadge(latest.action);
+    }
+    if (estimate.status === "sent") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 border-amber-200 dark:border-amber-700"
+          data-testid={`signoff-awaiting-${estimate.id}`}
+        >
+          <Clock className="w-3 h-3 mr-1" />
+          Awaiting Client Sign-off
+        </Badge>
+      );
+    }
+    return null;
+  };
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -538,7 +586,12 @@ export default function Estimates() {
                           {estimate.estimateType === 'block' ? 'Block' : estimate.estimateType === 'retainer' ? 'Retainer' : estimate.estimateType === 'program' ? 'Program' : 'Detailed'}
                         </span>
                       </TableCell>
-                      <TableCell>{getStatusBadge(estimate.status)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {getStatusBadge(estimate.status)}
+                          {renderSignoffBadge(estimate)}
+                        </div>
+                      </TableCell>
                       {crmEnabled && (
                         <TableCell className="text-center">
                           {linkedEstimateIds.has(estimate.id) ? (

@@ -141,7 +141,7 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useEmbed } from "@/hooks/use-embed";
-import { ClientSignoffPanel } from "@/components/client-signoff-panel";
+import { ClientSignoffPanel, actionBadge, type ClientSignoff } from "@/components/client-signoff-panel";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { downloadFile } from "@/lib/download";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -1453,6 +1453,19 @@ export default function ProjectDetail() {
   const { data: milestones = [], refetch: refetchMilestones } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/milestones`],
     enabled: !!id,
+  });
+
+  // Bulk-fetch sign-offs for all project milestones for inline acceptance badges
+  const milestoneIds = (milestones ?? []).map((m: any) => m.id);
+  const milestoneIdsKey = milestoneIds.slice().sort().join(",");
+  const { data: signoffsByMilestone = {} } = useQuery<Record<string, ClientSignoff[]>>({
+    queryKey: ["/api/embed/signoffs/project_milestone/bulk", milestoneIdsKey],
+    queryFn: () =>
+      apiRequest("/api/embed/signoffs/project_milestone/bulk", {
+        method: "POST",
+        body: JSON.stringify({ ids: milestoneIds }),
+      }),
+    enabled: milestoneIds.length > 0,
   });
   
   const { data: paymentMilestones = [], isLoading: paymentMilestonesLoading, refetch: refetchPaymentMilestones } = useQuery<any[]>({
@@ -5491,12 +5504,18 @@ export default function ProjectDetail() {
                           </TableCell>
                           <TableCell>{milestone.epic?.name || '-'}</TableCell>
                           <TableCell>
-                            <Badge variant={
-                              milestone.status === "completed" ? "default" : 
-                              milestone.status === "in-progress" ? "secondary" : "outline"
-                            }>
-                              {milestone.status}
-                            </Badge>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <Badge variant={
+                                milestone.status === "completed" ? "default" : 
+                                milestone.status === "in-progress" ? "secondary" : "outline"
+                              }>
+                                {milestone.status}
+                              </Badge>
+                              {milestone.status === "completed" && (() => {
+                                const latest = (signoffsByMilestone[milestone.id] ?? [])[0];
+                                return latest ? actionBadge(latest.action) : null;
+                              })()}
+                            </div>
                           </TableCell>
                           <TableCell>
                             {milestone.isPaymentMilestone ? (

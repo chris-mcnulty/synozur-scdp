@@ -74,6 +74,33 @@ export function registerEmbedRoutes(
     }
   );
 
+  // POST /api/embed/signoffs/:entityType/bulk  body: { ids: string[] }
+  // Returns: { [entityId]: ClientSignoff[] } — tenant-scoped to the caller's tenant.
+  // Storage chunks the IN(...) query internally so this scales to large lists.
+  app.post(
+    "/api/embed/signoffs/:entityType/bulk",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) {
+          return res.status(403).json({ message: "Tenant context required" });
+        }
+        const { entityType } = req.params;
+        const schema = z.object({ ids: z.array(z.string()) });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Invalid request body", errors: parsed.error.errors });
+        }
+        const result = await storage.getClientSignoffsByEntities(entityType, parsed.data.ids, tenantId);
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ message: err.message });
+      }
+    }
+  );
+
   // POST /api/embed/estimates/:id/approve
   app.post(
     "/api/embed/estimates/:id/approve",

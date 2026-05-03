@@ -127,7 +127,7 @@ function getActionConfigs(
   }
 }
 
-function actionBadge(action: string) {
+export function actionBadge(action: string) {
   switch (action) {
     case "approved":
       return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200 dark:border-green-700"><CheckCircle className="w-3 h-3 mr-1" />Approved</Badge>;
@@ -183,6 +183,7 @@ export function ClientSignoffPanel({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/embed/signoffs", entityType, entityId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/embed/signoffs/${entityType}/bulk`] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setSelectedAction(null);
