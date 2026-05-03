@@ -110,7 +110,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2, Search, Loader2, Globe, Info, GripVertical
+  Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -4809,10 +4809,53 @@ export default function ProjectDetail() {
                             }
                           </TableCell>
                           <TableCell>
-                            {allocation.plannedEndDate ? 
-                              safeFormatDate(allocation.plannedEndDate, "MMM d, yyyy") : 
-                              '—'
-                            }
+                            <div className="flex items-center gap-1.5">
+                              <span>
+                                {allocation.plannedEndDate ? 
+                                  safeFormatDate(allocation.plannedEndDate, "MMM d, yyyy") : 
+                                  '—'
+                                }
+                              </span>
+                              {allocation.cascadeSourceMilestoneId && (() => {
+                                const sourceMilestone = milestones.find((m: any) => m.id === allocation.cascadeSourceMilestoneId);
+                                const priorRef = allocation.priorPlannedEndDate || allocation.priorPlannedStartDate;
+                                const newRef = allocation.plannedEndDate || allocation.plannedStartDate;
+                                let deltaDays: number | null = null;
+                                if (priorRef && newRef) {
+                                  deltaDays = Math.round(
+                                    (new Date(newRef).getTime() - new Date(priorRef).getTime()) / 86400000
+                                  );
+                                }
+                                const sign = deltaDays !== null && deltaDays > 0 ? '+' : '';
+                                const milestoneDate = sourceMilestone?.endDate || sourceMilestone?.startDate;
+                                const milestoneName = sourceMilestone?.name || 'a milestone';
+                                const tooltipText = deltaDays !== null
+                                  ? `Shifted ${sign}${deltaDays} day${Math.abs(deltaDays) === 1 ? '' : 's'} from ${milestoneName}${milestoneDate ? ` on ${safeFormatDate(milestoneDate, 'MMM d, yyyy')}` : ''}`
+                                  : `Shifted from ${milestoneName}`;
+                                return (
+                                  <UITooltipProvider>
+                                    <UITooltip>
+                                      <UITooltipTrigger asChild>
+                                        <span
+                                          className="inline-flex items-center text-amber-600 dark:text-amber-400 cursor-help"
+                                          data-testid={`badge-shifted-${allocation.id}`}
+                                        >
+                                          <CalendarClock className="w-3.5 h-3.5" />
+                                        </span>
+                                      </UITooltipTrigger>
+                                      <UITooltipContent side="top" className="max-w-xs text-xs">
+                                        <div className="font-medium">{tooltipText}</div>
+                                        {allocation.priorPlannedStartDate && allocation.priorPlannedEndDate && (
+                                          <div className="text-muted-foreground mt-0.5">
+                                            Was {safeFormatDate(allocation.priorPlannedStartDate, 'MMM d')} – {safeFormatDate(allocation.priorPlannedEndDate, 'MMM d, yyyy')}
+                                          </div>
+                                        )}
+                                      </UITooltipContent>
+                                    </UITooltip>
+                                  </UITooltipProvider>
+                                );
+                              })()}
+                            </div>
                           </TableCell>
                           <TableCell>
                             {allocation.weekNumber !== null ? 
@@ -5477,7 +5520,11 @@ export default function ProjectDetail() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      milestones.map((milestone: any) => (
+                      milestones.map((milestone: any) => {
+                        const cascadedCount = allocations.filter(
+                          (a: any) => a.cascadeSourceMilestoneId === milestone.id
+                        ).length;
+                        return (
                         <TableRow
                           key={milestone.id}
                           data-testid={`milestone-row-${milestone.id}`}
@@ -5488,7 +5535,30 @@ export default function ProjectDetail() {
                           }}
                           className={highlightedMilestoneId === milestone.id ? 'ring-2 ring-primary ring-offset-2 bg-primary/5 animate-pulse' : ''}
                         >
-                          <TableCell className="font-medium">{milestone.name}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <span>{milestone.name}</span>
+                              {cascadedCount > 0 && !milestone.isPaymentMilestone && (
+                                <UITooltipProvider>
+                                  <UITooltip>
+                                    <UITooltipTrigger asChild>
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs font-normal border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700 cursor-help"
+                                        data-testid={`badge-cascaded-${milestone.id}`}
+                                      >
+                                        <CalendarClock className="w-3 h-3 mr-1" />
+                                        {cascadedCount} shifted
+                                      </Badge>
+                                    </UITooltipTrigger>
+                                    <UITooltipContent side="top" className="max-w-xs text-xs">
+                                      {cascadedCount} allocation{cascadedCount === 1 ? '' : 's'} last cascaded from this milestone
+                                    </UITooltipContent>
+                                  </UITooltip>
+                                </UITooltipProvider>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             {milestone.isPaymentMilestone ? (
                               <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200">
@@ -5588,7 +5658,8 @@ export default function ProjectDetail() {
                           </TableCell>
                           )}
                         </TableRow>
-                      ))
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
