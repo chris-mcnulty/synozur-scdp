@@ -675,6 +675,12 @@ export const projects = pgTable("projects", {
   workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id),
   milestoneTermId: varchar("milestone_term_id").references(() => vocabularyCatalog.id),
   activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id),
+  // Multi-currency: snapshot from the approved estimate
+  quoteCurrency: varchar("quote_currency", { length: 3 }).notNull().default("USD"),
+  costCurrency: varchar("cost_currency", { length: 3 }).notNull().default("USD"),
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }), // costCurrency per 1 quoteCurrency
+  exchangeRateLockedAt: timestamp("exchange_rate_locked_at"),
+  exchangeRateSource: varchar("exchange_rate_source", { length: 20 }).default("live"), // 'live', 'locked', 'manual'
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_projects_tenant").on(table.tenantId),
@@ -733,6 +739,12 @@ export const estimates = pgTable("estimates", {
   referralFeeAmount: decimal("referral_fee_amount", { precision: 10, scale: 2 }), // Calculated fee amount
   referralFeePaidTo: text("referral_fee_paid_to"), // Name of seller/referrer
   netRevenue: decimal("net_revenue", { precision: 12, scale: 2 }), // Total fees minus referral fee
+  // Multi-currency support
+  quoteCurrency: varchar("quote_currency", { length: 3 }).notNull().default("USD"), // Currency shown to the client
+  costCurrency: varchar("cost_currency", { length: 3 }).notNull().default("USD"),   // Tenant's base/cost currency
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }),              // costCurrency per 1 quoteCurrency
+  exchangeRateLockedAt: timestamp("exchange_rate_locked_at"),
+  exchangeRateSource: varchar("exchange_rate_source", { length: 20 }).default("live"), // 'live', 'locked', 'manual'
   proposalNarrative: text("proposal_narrative"),
   proposalNarrativeGeneratedAt: timestamp("proposal_narrative_generated_at"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -1384,7 +1396,7 @@ export const sows = pgTable("sows", {
   type: text("type").notNull().default("initial"), // "initial" or "change_order"
   name: text("name").notNull(), // e.g., "Initial SOW", "Change Order #1"
   description: text("description"),
-  value: decimal("value", { precision: 10, scale: 2 }).notNull(), // Dollar value
+  value: decimal("value", { precision: 10, scale: 2 }).notNull(), // Dollar value in quoteCurrency
   hours: decimal("hours", { precision: 10, scale: 2 }), // Optional hour budget
   documentUrl: text("document_url"), // Link to uploaded document
   documentName: text("document_name"), // Original filename
@@ -1395,6 +1407,12 @@ export const sows = pgTable("sows", {
   approvedBy: varchar("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   notes: text("notes"),
+  // Currency snapshot — inherited from linked project at creation time
+  quoteCurrency: varchar("quote_currency", { length: 3 }).notNull().default("USD"),
+  costCurrency: varchar("cost_currency", { length: 3 }).notNull().default("USD"),
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }), // costCurrency per 1 quoteCurrency
+  exchangeRateLockedAt: timestamp("exchange_rate_locked_at"),
+  exchangeRateSource: varchar("exchange_rate_source", { length: 20 }).default("live"), // 'live', 'locked', 'manual'
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 }, (table) => ({
@@ -1513,6 +1531,12 @@ export const invoiceBatches = pgTable("invoice_batches", {
   paymentNotes: text("payment_notes"), // Notes about payment
   paymentUpdatedBy: varchar("payment_updated_by").references(() => users.id), // Who updated payment status
   paymentUpdatedAt: timestamp("payment_updated_at"), // When payment status was updated
+  // Multi-currency: snapshot from the project at batch creation time
+  quoteCurrency: varchar("quote_currency", { length: 3 }).notNull().default("USD"),
+  costCurrency: varchar("cost_currency", { length: 3 }).notNull().default("USD"),
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }), // costCurrency per 1 quoteCurrency
+  exchangeRateLockedAt: timestamp("exchange_rate_locked_at"),
+  exchangeRateSource: varchar("exchange_rate_source", { length: 20 }).default("live"), // 'live', 'locked', 'manual'
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_invoice_batches_tenant").on(table.tenantId),

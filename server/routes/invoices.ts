@@ -212,7 +212,12 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
   // Invoice batch endpoints
   app.post("/api/invoice-batches", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
-      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, taxRate, invoicingMode, batchType, paymentTerms: requestPaymentTerms } = req.body;
+      const {
+        batchId: providedBatchId, startDate, endDate, month,
+        discountPercent, discountAmount, taxRate, invoicingMode, batchType,
+        paymentTerms: requestPaymentTerms,
+        projectId: reqProjectId,
+      } = req.body;
 
       console.log("[DEBUG] Creating invoice batch with:", { providedBatchId, startDate, endDate, month, invoicingMode, taxRate });
 
@@ -260,6 +265,23 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         finalPaymentTerms = "Payment Due Upon Receipt";
       }
 
+      // Derive currency snapshot server-side from project (preferred) rather than accepting from caller
+      let batchQuoteCurrency = "USD";
+      let batchCostCurrency = "USD";
+      let batchExchangeRate: string | null = null;
+      if (reqProjectId) {
+        const [proj] = await db.select({
+          quoteCurrency: projects.quoteCurrency,
+          costCurrency: projects.costCurrency,
+          exchangeRate: projects.exchangeRate,
+        }).from(projects).where(eq(projects.id, reqProjectId));
+        if (proj) {
+          batchQuoteCurrency = proj.quoteCurrency || "USD";
+          batchCostCurrency = proj.costCurrency || "USD";
+          batchExchangeRate = proj.exchangeRate ?? null;
+        }
+      }
+
       const batch = await storage.createInvoiceBatch({
         batchId: finalBatchId,
         startDate: finalStartDate,
@@ -277,6 +299,9 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         tenantId: tenantId || null,
         glInvoiceNumber,
         paymentTerms: finalPaymentTerms,
+        quoteCurrency: batchQuoteCurrency,
+        costCurrency: batchCostCurrency,
+        exchangeRate: batchExchangeRate,
       });
 
       res.json(batch);

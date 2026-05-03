@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users, BarChart3, List, ExternalLink, Search, History, GitCompare, RotateCcw, Clock } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users, BarChart3, List, ExternalLink, Search, History, GitCompare, RotateCcw, Clock, Lock } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -989,6 +989,10 @@ function EstimateDetailContent() {
   const [blockDescriptionInput, setBlockDescriptionInput] = useState<string>("");
   const [editingEpicId, setEditingEpicId] = useState<string | null>(null);
   const [editingEpicName, setEditingEpicName] = useState<string>("");
+  // Multi-currency state
+  const [showLockRateDialog, setShowLockRateDialog] = useState(false);
+  const [manualRateInput, setManualRateInput] = useState("");
+  const [showRefreshRateDialog, setShowRefreshRateDialog] = useState(false);
   const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
   const [pendingImportFile, setPendingImportFile] = useState<string | null>(null);
   const [importType, setImportType] = useState<'excel' | 'csv'>('excel');
@@ -1711,6 +1715,54 @@ function EstimateDetailContent() {
         description: error.message || "Please try again",
         variant: "destructive" 
       });
+    }
+  });
+
+  const updateCurrencyMutation = useMutation({
+    mutationFn: ({ quoteCurrency, costCurrency }: { quoteCurrency?: string; costCurrency?: string }) =>
+      apiRequest(`/api/estimates/${id}/currency`, {
+        method: "PATCH",
+        body: JSON.stringify({ quoteCurrency, costCurrency }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      toast({ title: "Currency updated", description: "Exchange rate has been fetched automatically." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update currency", description: error.message || "Please try again", variant: "destructive" });
+    }
+  });
+
+  const lockRateMutation = useMutation({
+    mutationFn: (manualRate?: string) =>
+      apiRequest(`/api/estimates/${id}/lock-rate`, {
+        method: "POST",
+        body: JSON.stringify({ rate: manualRate ? Number(manualRate) : undefined }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      setShowLockRateDialog(false);
+      setManualRateInput("");
+      toast({ title: "Exchange rate locked", description: "The rate has been frozen for this estimate." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to lock rate", description: error.message || "Please try again", variant: "destructive" });
+    }
+  });
+
+  const refreshRateMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/estimates/${id}/refresh-rate`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      setShowRefreshRateDialog(false);
+      toast({ title: "Exchange rate refreshed", description: "The live rate has been pulled and the lock cleared." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to refresh rate", description: error.message || "Please try again", variant: "destructive" });
     }
   });
 
@@ -2898,6 +2950,97 @@ function EstimateDetailContent() {
                 </div>
               </div>
 
+              {/* Currency Configuration Row */}
+              <div className="grid grid-cols-3 gap-4 border-t pt-4">
+                <div>
+                  <Label>Quote Currency</Label>
+                  <Select
+                    value={estimate?.quoteCurrency || "USD"}
+                    onValueChange={(value) => {
+                      updateCurrencyMutation.mutate({ quoteCurrency: value });
+                    }}
+                    disabled={!isEditable || updateCurrencyMutation.isPending}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["USD","CAD","EUR","GBP","AUD","NZD","CHF","JPY","MXN","BRL","INR","SGD","HKD","SEK","NOK","DKK"].map(c => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">Currency presented to the client</p>
+                </div>
+                <div>
+                  <Label>Cost Currency</Label>
+                  <Select
+                    value={estimate?.costCurrency || "USD"}
+                    onValueChange={(value) => {
+                      updateCurrencyMutation.mutate({ costCurrency: value });
+                    }}
+                    disabled={!isEditable || updateCurrencyMutation.isPending}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["USD","CAD","EUR","GBP","AUD","NZD","CHF","JPY","MXN","BRL","INR","SGD","HKD","SEK","NOK","DKK"].map(c => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">Internal cost tracking currency</p>
+                </div>
+                {estimate?.quoteCurrency && estimate?.costCurrency && estimate.quoteCurrency !== estimate.costCurrency && (
+                  <div>
+                    <Label>Exchange Rate</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <div className={`flex-1 rounded-md border px-3 py-2 text-sm ${estimate.exchangeRateSource === 'locked' || estimate.exchangeRateSource === 'manual' ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700' : 'bg-muted'}`}>
+                        {estimate.exchangeRate ? `1 ${estimate.quoteCurrency} = ${Number(estimate.exchangeRate).toFixed(4)} ${estimate.costCurrency}` : 'Not set'}
+                      </div>
+                      {(estimate.exchangeRateSource === 'locked' || estimate.exchangeRateSource === 'manual') ? (
+                        <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
+                          {estimate.exchangeRateSource === 'manual' ? 'Manual' : 'Locked'}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="whitespace-nowrap">Live</Badge>
+                      )}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      {isEditable && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7"
+                          onClick={() => { setManualRateInput(estimate.exchangeRate ? String(Number(estimate.exchangeRate).toFixed(6)) : ""); setShowLockRateDialog(true); }}
+                          disabled={lockRateMutation.isPending}
+                        >
+                          Lock Rate
+                        </Button>
+                      )}
+                      {(user?.role === 'admin' || user?.role === 'billing-admin') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7"
+                          onClick={() => setShowRefreshRateDialog(true)}
+                          disabled={refreshRateMutation.isPending}
+                        >
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Refresh
+                        </Button>
+                      )}
+                    </div>
+                    {estimate.exchangeRateLockedAt && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {estimate.exchangeRateSource === 'manual' ? 'Manual override' : 'Locked'} at {new Date(estimate.exchangeRateLockedAt).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Second row - Project Selection and Potential Start Date */}
               <div className="grid grid-cols-3 gap-4">
                 <div>
@@ -3289,9 +3432,27 @@ function EstimateDetailContent() {
                 <CardDescription>Customer-facing pricing and margins</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Multi-currency summary banner */}
+                {estimate?.quoteCurrency && estimate?.costCurrency && estimate.quoteCurrency !== estimate.costCurrency && estimate.exchangeRate && (
+                  <div className="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Multi-Currency Estimate</p>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-700 dark:text-blue-300">
+                        <span>Quote ({estimate.quoteCurrency}): <strong>{estimate.quoteCurrency} {(totalAmount / Number(estimate.exchangeRate)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong></span>
+                        <span>Cost ({estimate.costCurrency}): <strong>{estimate.costCurrency} {Math.round(totalAmount).toLocaleString()}</strong></span>
+                        <span>Rate: 1 {estimate.quoteCurrency} = {Number(estimate.exchangeRate).toFixed(4)} {estimate.costCurrency}</span>
+                        {(estimate.exchangeRateSource === 'locked' || estimate.exchangeRateSource === 'manual') && (
+                          <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 text-[10px] px-1.5 py-0 h-4">
+                            {estimate.exchangeRateSource === 'manual' ? 'Manual Rate' : 'Rate Locked'}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="presented-total">To-Client Total ($)</Label>
+                    <Label htmlFor="presented-total">To-Client Total ({estimate?.quoteCurrency || 'USD'})</Label>
                     <Input
                       id="presented-total"
                       type="number"
@@ -3315,7 +3476,12 @@ function EstimateDetailContent() {
                       disabled={estimate?.marginOverrideActive === true}
                     />
                     <p className="text-sm text-muted-foreground mt-1">
-                      Client Total (before commissions): ${Math.round(totalAmount).toLocaleString()}
+                      Client Total (before commissions): {estimate?.costCurrency || '$'} {Math.round(totalAmount).toLocaleString()}
+                      {estimate?.quoteCurrency && estimate?.costCurrency && estimate.quoteCurrency !== estimate.costCurrency && estimate.exchangeRate && (
+                        <span className="ml-2 text-blue-600 dark:text-blue-400">
+                          ({estimate.quoteCurrency} {(totalAmount / Number(estimate.exchangeRate)).toLocaleString(undefined, { maximumFractionDigits: 0 })})
+                        </span>
+                      )}
                     </p>
                   </div>
                   <div>
@@ -6749,6 +6915,85 @@ function EstimateDetailContent() {
               {marginOverrideMutation.isPending ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Applying...</>
               ) : "Apply Margin Override"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lock Exchange Rate Dialog */}
+      <Dialog open={showLockRateDialog} onOpenChange={setShowLockRateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5" />
+              Lock Exchange Rate
+            </DialogTitle>
+            <DialogDescription>
+              Freeze the exchange rate for this estimate. Once locked, rate changes won't affect the quote. You can enter a manual rate or lock the current live rate.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Current Rate</Label>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {estimate?.exchangeRate ? `1 ${estimate.quoteCurrency} = ${Number(estimate.exchangeRate).toFixed(6)} ${estimate.costCurrency}` : 'Not set'}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="manual-rate">Manual Rate Override (optional)</Label>
+              <Input
+                id="manual-rate"
+                type="number"
+                step="0.000001"
+                placeholder={`e.g. ${estimate?.exchangeRate ? Number(estimate.exchangeRate).toFixed(6) : '1.000000'}`}
+                value={manualRateInput}
+                onChange={(e) => setManualRateInput(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Leave blank to lock the live rate. Enter a value to use a custom rate.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLockRateDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => lockRateMutation.mutate(manualRateInput || undefined)}
+              disabled={lockRateMutation.isPending}
+            >
+              {lockRateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Locking...</> : "Lock Rate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Refresh Exchange Rate Dialog */}
+      <Dialog open={showRefreshRateDialog} onOpenChange={setShowRefreshRateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Refresh Exchange Rate
+            </DialogTitle>
+            <DialogDescription>
+              Pull the latest live exchange rate and clear any lock on this estimate. This is an admin action.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                This will override any manually locked or custom rate with the current market rate for {estimate?.quoteCurrency} → {estimate?.costCurrency}.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRefreshRateDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => refreshRateMutation.mutate()}
+              disabled={refreshRateMutation.isPending}
+            >
+              {refreshRateMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Refreshing...</> : "Refresh Rate"}
             </Button>
           </DialogFooter>
         </DialogContent>

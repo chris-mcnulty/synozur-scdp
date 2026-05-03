@@ -172,12 +172,12 @@ function RevenueDrillDownDialog({ open, onClose, title, description, invoices, i
   );
 }
 
-function fmt(n: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+function fmt(n: number, currency = "USD", rate = 1): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n * rate);
 }
 
-function fmtCompact(n: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+function fmtCompact(n: number, currency = "USD", rate = 1): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n * rate);
 }
 
 function fmtPct(n: number): string {
@@ -204,11 +204,13 @@ function VarianceIndicator({ current, prior }: { current: number; prior: number 
   );
 }
 
-function ComparisonMetricCard({ label, icon, years, onClick }: {
+function ComparisonMetricCard({ label, icon, years, onClick, displayCurrency = "USD", displayRate = 1 }: {
   label: string;
   icon: any;
   years: { year: number; value: number }[];
   onClick?: () => void;
+  displayCurrency?: string;
+  displayRate?: number;
 }) {
   const Icon = icon;
   const latest = years[years.length - 1];
@@ -223,19 +225,22 @@ function ComparisonMetricCard({ label, icon, years, onClick }: {
           {years.map(y => (
             <div key={y.year} className="min-w-0">
               <div className="text-xs text-muted-foreground mb-0.5">{y.year}</div>
-              <div className="text-base font-bold truncate" title={fmt(y.value)}>{fmtCompact(y.value)}</div>
+              <div className="text-base font-bold truncate" title={fmt(y.value, displayCurrency, displayRate)}>{fmtCompact(y.value, displayCurrency, displayRate)}</div>
             </div>
           ))}
         </div>
         {prior && (
           <div className="mt-2 pt-2 border-t">
-            <VarianceIndicator current={latest.value} prior={prior.value} />
+            <VarianceIndicator current={latest.value * displayRate} prior={prior.value * displayRate} />
           </div>
         )}
       </CardContent>
     </Card>
   );
 }
+
+const REVENUE_REPORT_CURRENCIES = ["USD","CAD","EUR","GBP","AUD","NZD","CHF","JPY","MXN","BRL","INR","SGD","SEK","NOK","DKK"] as const;
+
 
 function ClientRevenueReport() {
   const currentYear = new Date().getFullYear();
@@ -249,6 +254,32 @@ function ClientRevenueReport() {
   const [comparisonBatchType, setComparisonBatchType] = useState('services');
   const [comparisonGroupBy, setComparisonGroupBy] = useState<'client' | 'client-project'>('client');
   const [drillDown, setDrillDown] = useState<{ filter: DrillDownFilter; dateRange: { start: string; end: string; batchType: string }; description: string } | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<string>("USD");
+  const [displayRate, setDisplayRate] = useState<number>(1);
+  const [displayRateLoading, setDisplayRateLoading] = useState(false);
+
+  const handleDisplayCurrencyChange = async (currency: string) => {
+    setDisplayCurrency(currency);
+    if (currency === "USD") { setDisplayRate(1); return; }
+    setDisplayRateLoading(true);
+    try {
+      const res = await fetch(`/api/exchange-rates/current?from=USD&to=${currency}`, {
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' }
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setDisplayRate(d.rate || 1);
+      } else {
+        console.warn(`[client-revenue-report] Exchange rate fetch failed for USD→${currency}: HTTP ${res.status}`);
+        setDisplayRate(1);
+      }
+    } catch (err) {
+      console.warn(`[client-revenue-report] Exchange rate fetch error for USD→${currency}:`, err);
+      setDisplayRate(1);
+    } finally {
+      setDisplayRateLoading(false);
+    }
+  };
 
   const { hasAnyRole } = useAuth();
 
@@ -384,6 +415,23 @@ function ClientRevenueReport() {
             <p className="text-muted-foreground">Invoice revenue by client and project</p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 mr-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">View in</Label>
+              <Select value={displayCurrency} onValueChange={handleDisplayCurrencyChange} disabled={displayRateLoading}>
+                <SelectTrigger className="w-24 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REVENUE_REPORT_CURRENCIES.map(c => (
+                    <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {displayCurrency !== "USD" && !displayRateLoading && (
+                <span className="text-xs text-muted-foreground">@ {displayRate.toFixed(4)}</span>
+              )}
+              {displayRateLoading && <span className="text-xs text-muted-foreground">loading...</span>}
+            </div>
             {viewMode === 'comparison' && comparisonRows && (
               <Button variant="outline" onClick={handleComparisonExport}>
                 <Download className="w-4 h-4 mr-2" /> Export Comparison
@@ -486,25 +534,25 @@ function ClientRevenueReport() {
                         <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('invoiced')}>
                           <CardContent className="pt-4 pb-3">
                             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><DollarSign className="w-4 h-4" /> Pre-Tax Revenue</div>
-                            <div className="text-2xl font-bold">{fmt(data?.totals.invoiceAmount || 0)}</div>
+                            <div className="text-2xl font-bold">{fmt(data?.totals.invoiceAmount || 0, displayCurrency, displayRate)}</div>
                           </CardContent>
                         </Card>
                         <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('invoiced')}>
                           <CardContent className="pt-4 pb-3">
                             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><FileText className="w-4 h-4" /> Total Invoiced</div>
-                            <div className="text-2xl font-bold">{fmt(data?.totals.invoiceTotal || 0)}</div>
+                            <div className="text-2xl font-bold">{fmt(data?.totals.invoiceTotal || 0, displayCurrency, displayRate)}</div>
                           </CardContent>
                         </Card>
                         <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('paid')}>
                           <CardContent className="pt-4 pb-3">
                             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><TrendingUp className="w-4 h-4" /> Amount Paid</div>
-                            <div className="text-2xl font-bold text-green-600">{fmt(data?.totals.amountPaid || 0)}</div>
+                            <div className="text-2xl font-bold text-green-600">{fmt(data?.totals.amountPaid || 0, displayCurrency, displayRate)}</div>
                           </CardContent>
                         </Card>
                         <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('outstanding')}>
                           <CardContent className="pt-4 pb-3">
                             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><TrendingDown className="w-4 h-4" /> Outstanding</div>
-                            <div className="text-2xl font-bold text-amber-600">{fmt(data?.totals.outstanding || 0)}</div>
+                            <div className="text-2xl font-bold text-amber-600">{fmt(data?.totals.outstanding || 0, displayCurrency, displayRate)}</div>
                           </CardContent>
                         </Card>
                       </>
@@ -544,23 +592,23 @@ function ClientRevenueReport() {
                                     <TableCell className="max-w-[200px] truncate" title={r.projectName || ''}>{r.projectName || '(No Project)'}</TableCell>
                                   )}
                                   <TableCell className="text-right tabular-nums">{r.invoiceCount}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{fmt(r.invoiceAmount)}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{fmt(r.taxAmount)}</TableCell>
-                                  <TableCell className="text-right tabular-nums font-medium">{fmt(r.invoiceTotal)}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{r.amountPaid > 0 ? fmt(r.amountPaid) : '—'}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{fmt(r.invoiceAmount, displayCurrency, displayRate)}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{fmt(r.taxAmount, displayCurrency, displayRate)}</TableCell>
+                                  <TableCell className="text-right tabular-nums font-medium">{fmt(r.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{r.amountPaid > 0 ? fmt(r.amountPaid, displayCurrency, displayRate) : '—'}</TableCell>
                                   <TableCell className="text-right tabular-nums">
-                                    {r.outstanding > 0 ? <span className="text-amber-600">{fmt(r.outstanding)}</span> : '—'}
+                                    {r.outstanding > 0 ? <span className="text-amber-600">{fmt(r.outstanding, displayCurrency, displayRate)}</span> : '—'}
                                   </TableCell>
                                 </TableRow>
                               ))}
                               <TableRow className="bg-primary/5 font-bold border-t-2 border-primary/20">
                                 <TableCell colSpan={groupBy === 'client-project' ? 2 : 1} className="text-right">Grand Total</TableCell>
                                 <TableCell className="text-right tabular-nums">{data.totals.invoiceCount}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(data.totals.invoiceAmount)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(data.totals.taxAmount)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(data.totals.invoiceTotal)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(data.totals.amountPaid)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(data.totals.outstanding)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(data.totals.invoiceAmount, displayCurrency, displayRate)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(data.totals.taxAmount, displayCurrency, displayRate)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(data.totals.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(data.totals.amountPaid, displayCurrency, displayRate)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(data.totals.outstanding, displayCurrency, displayRate)}</TableCell>
                               </TableRow>
                             </>
                           )}
@@ -627,6 +675,8 @@ function ClientRevenueReport() {
                             { year: currentYear, value: comparisonTotals.current.invoiceAmount },
                           ]}
                           onClick={() => setDrillDown({ filter: 'invoiced', dateRange: compDateRange, description: compDesc })}
+                          displayCurrency={displayCurrency}
+                          displayRate={displayRate}
                         />
                         <ComparisonMetricCard
                           label="Total Invoiced"
@@ -637,6 +687,8 @@ function ClientRevenueReport() {
                             { year: currentYear, value: comparisonTotals.current.invoiceTotal },
                           ]}
                           onClick={() => setDrillDown({ filter: 'all', dateRange: compDateRange, description: compDesc })}
+                          displayCurrency={displayCurrency}
+                          displayRate={displayRate}
                         />
                         <ComparisonMetricCard
                           label="Amount Paid"
@@ -647,6 +699,8 @@ function ClientRevenueReport() {
                             { year: currentYear, value: comparisonTotals.current.amountPaid },
                           ]}
                           onClick={() => setDrillDown({ filter: 'paid', dateRange: compDateRange, description: compDesc })}
+                          displayCurrency={displayCurrency}
+                          displayRate={displayRate}
                         />
                         <ComparisonMetricCard
                           label="Outstanding"
@@ -657,6 +711,8 @@ function ClientRevenueReport() {
                             { year: currentYear, value: comparisonTotals.current.outstanding },
                           ]}
                           onClick={() => setDrillDown({ filter: 'outstanding', dateRange: compDateRange, description: compDesc })}
+                          displayCurrency={displayCurrency}
+                          displayRate={displayRate}
                         />
                       </>
                     );
@@ -709,14 +765,14 @@ function ClientRevenueReport() {
                                     {comparisonGroupBy === 'client-project' && (
                                       <TableCell className="border-r max-w-[180px] truncate" title={r.projectName || ''}>{r.projectName || '(No Project)'}</TableCell>
                                     )}
-                                    <TableCell className="text-right tabular-nums">{fmt(r.oldest.invoiceTotal)}</TableCell>
-                                    <TableCell className="text-right tabular-nums border-r">{fmt(r.oldest.amountPaid)}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{fmt(r.prior.invoiceTotal)}</TableCell>
-                                    <TableCell className="text-right tabular-nums border-r">{fmt(r.prior.amountPaid)}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{fmt(r.current.invoiceTotal)}</TableCell>
-                                    <TableCell className="text-right tabular-nums border-r">{fmt(r.current.amountPaid)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{fmt(r.oldest.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums border-r">{fmt(r.oldest.amountPaid, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{fmt(r.prior.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums border-r">{fmt(r.prior.amountPaid, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{fmt(r.current.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums border-r">{fmt(r.current.amountPaid, displayCurrency, displayRate)}</TableCell>
                                     <TableCell className={`text-right tabular-nums font-medium ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
-                                      {delta > 0 ? '+' : ''}{fmt(delta)}
+                                      {delta > 0 ? '+' : ''}{fmt(delta, displayCurrency, displayRate)}
                                     </TableCell>
                                     <TableCell className={`text-right tabular-nums font-medium ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                       {fmtPct(pct)}
@@ -733,14 +789,14 @@ function ClientRevenueReport() {
                                       {comparisonGroupBy === 'client-project' ? 'Grand Total' : 'Grand Total'}
                                     </TableCell>
                                     {comparisonGroupBy === 'client-project' && <TableCell className="border-r"></TableCell>}
-                                    <TableCell className="text-right tabular-nums">{fmt(comparisonTotals!.oldest.invoiceTotal)}</TableCell>
-                                    <TableCell className="text-right tabular-nums border-r">{fmt(comparisonTotals!.oldest.amountPaid)}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{fmt(comparisonTotals!.prior.invoiceTotal)}</TableCell>
-                                    <TableCell className="text-right tabular-nums border-r">{fmt(comparisonTotals!.prior.amountPaid)}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{fmt(comparisonTotals!.current.invoiceTotal)}</TableCell>
-                                    <TableCell className="text-right tabular-nums border-r">{fmt(comparisonTotals!.current.amountPaid)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{fmt(comparisonTotals!.oldest.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums border-r">{fmt(comparisonTotals!.oldest.amountPaid, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{fmt(comparisonTotals!.prior.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums border-r">{fmt(comparisonTotals!.prior.amountPaid, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{fmt(comparisonTotals!.current.invoiceTotal, displayCurrency, displayRate)}</TableCell>
+                                    <TableCell className="text-right tabular-nums border-r">{fmt(comparisonTotals!.current.amountPaid, displayCurrency, displayRate)}</TableCell>
                                     <TableCell className={`text-right tabular-nums ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
-                                      {delta > 0 ? '+' : ''}{fmt(delta)}
+                                      {delta > 0 ? '+' : ''}{fmt(delta, displayCurrency, displayRate)}
                                     </TableCell>
                                     <TableCell className={`text-right tabular-nums ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                       {fmtPct(pct)}

@@ -1142,8 +1142,14 @@ export const projectsMethods: ThisType<IStorage> = {
           throw new Error('Estimate not found');
         }
         
-        // 2. Create the project
-        const [project] = await tx.insert(projects).values(projectData).returning();
+        // 2. Create the project (carry forward currency snapshot from approved estimate)
+        const projectWithCurrency = {
+          ...projectData,
+          quoteCurrency: estimate.quoteCurrency || "USD",
+          costCurrency: estimate.costCurrency || "USD",
+          exchangeRate: estimate.exchangeRate || null,
+        };
+        const [project] = await tx.insert(projects).values(projectWithCurrency).returning();
         
         // 3. Copy the estimate structure (epics, stages -> milestones, activities)
         // Get all epics from the estimate

@@ -70,6 +70,8 @@ interface ProjectFinancialData {
   }[];
 }
 
+const REPORT_CURRENCIES = ["USD","CAD","EUR","GBP","AUD","NZD","CHF","JPY","MXN","BRL","INR","SGD","SEK","NOK","DKK"] as const;
+
 function FinancialReports() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState({
@@ -80,6 +82,10 @@ function FinancialReports() {
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [selectedPM, setSelectedPM] = useState("all");
   const [quickFilter, setQuickFilter] = useState<string | null>(null);
+  // Currency conversion state for report display
+  const [displayCurrency, setDisplayCurrency] = useState<string>("USD");
+  const [displayRate, setDisplayRate] = useState<number>(1);
+  const [displayRateLoading, setDisplayRateLoading] = useState(false);
 
   // Fetch clients for filter
   const { data: clients = [] } = useQuery<Client[]>({
@@ -125,6 +131,43 @@ function FinancialReports() {
       return response.json();
     }
   });
+
+  // Fetch live exchange rate when display currency changes
+  const handleDisplayCurrencyChange = async (currency: string) => {
+    setDisplayCurrency(currency);
+    if (currency === "USD") {
+      setDisplayRate(1);
+      return;
+    }
+    setDisplayRateLoading(true);
+    try {
+      const res = await fetch(`/api/exchange-rates/current?from=USD&to=${currency}`, {
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDisplayRate(data.rate || 1);
+      } else {
+        console.warn(`[financial-reports] Exchange rate fetch failed for USD→${currency}: HTTP ${res.status}`);
+        setDisplayRate(1);
+      }
+    } catch (err) {
+      console.warn(`[financial-reports] Exchange rate fetch error for USD→${currency}:`, err);
+      setDisplayRate(1);
+    } finally {
+      setDisplayRateLoading(false);
+    }
+  };
+
+  // Convert a USD amount to the selected display currency
+  const toDisplay = (usdAmount: number) => usdAmount * displayRate;
+  const fmtDisplay = (usdAmount: number) => {
+    const converted = toDisplay(usdAmount);
+    if (displayCurrency === "JPY") {
+      return `${displayCurrency} ${Math.round(converted).toLocaleString()}`;
+    }
+    return `${displayCurrency} ${(converted / 1000).toFixed(1)}k`;
+  };
 
   const summary: FinancialSummary = financialData?.summary || {
     totalEstimated: 0,
@@ -276,7 +319,24 @@ function FinancialReports() {
               Comprehensive financial analysis across all projects
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <div className="flex items-center gap-1.5 mr-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">View in</Label>
+              <Select value={displayCurrency} onValueChange={handleDisplayCurrencyChange} disabled={displayRateLoading}>
+                <SelectTrigger className="w-24 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REPORT_CURRENCIES.map(c => (
+                    <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {displayCurrency !== "USD" && !displayRateLoading && (
+                <span className="text-xs text-muted-foreground">@ {displayRate.toFixed(4)}</span>
+              )}
+              {displayRateLoading && <span className="text-xs text-muted-foreground">loading...</span>}
+            </div>
             <Button 
               onClick={handleExportCSV}
               variant="outline"
@@ -305,7 +365,7 @@ function FinancialReports() {
               <Calculator className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${(summary.totalEstimated / 1000).toFixed(1)}k</div>
+              <div className="text-2xl font-bold">{fmtDisplay(summary.totalEstimated)}</div>
               <p className="text-xs text-muted-foreground">All project estimates</p>
             </CardContent>
           </Card>
@@ -316,7 +376,7 @@ function FinancialReports() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${(summary.totalContracted / 1000).toFixed(1)}k</div>
+              <div className="text-2xl font-bold">{fmtDisplay(summary.totalContracted)}</div>
               <p className="text-xs text-muted-foreground">SOW amounts</p>
             </CardContent>
           </Card>
@@ -327,7 +387,7 @@ function FinancialReports() {
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${(summary.totalActualCost / 1000).toFixed(1)}k</div>
+              <div className="text-2xl font-bold">{fmtDisplay(summary.totalActualCost)}</div>
               <p className="text-xs text-muted-foreground">Time + expenses</p>
             </CardContent>
           </Card>
@@ -338,7 +398,7 @@ function FinancialReports() {
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${(summary.totalBilled / 1000).toFixed(1)}k</div>
+              <div className="text-2xl font-bold">{fmtDisplay(summary.totalBilled)}</div>
               <p className="text-xs text-muted-foreground">Invoiced amounts</p>
             </CardContent>
           </Card>
@@ -354,7 +414,7 @@ function FinancialReports() {
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${summary.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                ${(Math.abs(summary.totalProfit) / 1000).toFixed(1)}k
+                {fmtDisplay(Math.abs(summary.totalProfit))}
               </div>
               <p className="text-xs text-muted-foreground">
                 {summary.totalProfit >= 0 ? 'Total profit' : 'Total loss'}
@@ -406,7 +466,7 @@ function FinancialReports() {
               <DollarSign className="h-4 w-4 text-yellow-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">${(summary.unbilledAmount / 1000).toFixed(1)}k</div>
+              <div className="text-2xl font-bold text-yellow-600">{fmtDisplay(summary.unbilledAmount)}</div>
               <p className="text-xs text-muted-foreground">Ready to invoice</p>
             </CardContent>
           </Card>
@@ -417,7 +477,7 @@ function FinancialReports() {
               <AlertTriangle className="h-4 w-4 text-orange-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">${(summary.overdueAmount / 1000).toFixed(1)}k</div>
+              <div className="text-2xl font-bold text-orange-600">{fmtDisplay(summary.overdueAmount)}</div>
               <p className="text-xs text-muted-foreground">Past due date</p>
             </CardContent>
           </Card>

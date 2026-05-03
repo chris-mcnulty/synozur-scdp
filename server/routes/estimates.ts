@@ -5886,6 +5886,118 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
+  // ============================================================================
+  // EXCHANGE RATE ENDPOINTS
+  // ============================================================================
+
+  // GET current live exchange rate between two currencies
+  app.get("/api/exchange-rates/current", requireAuth, async (req, res) => {
+    try {
+      const from = (req.query.from as string || "USD").toUpperCase();
+      const to = (req.query.to as string || "USD").toUpperCase();
+      const { getExchangeRate } = await import("../exchange-rates");
+      const rate = await getExchangeRate(from, to);
+      res.json({ from, to, rate });
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to fetch exchange rate", error: error.message });
+    }
+  });
+
+  // POST lock exchange rate for an estimate (freeze it)
+  app.post("/api/estimates/:id/lock-rate", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const precheck = await storage.getEstimate(req.params.id);
+      if (!precheck) return res.status(404).json({ message: "Estimate not found" });
+      if (tenantId && precheck.tenantId && precheck.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { rate: manualRate } = req.body;
+      if (manualRate !== undefined && manualRate !== null) {
+        const parsed = Number(manualRate);
+        if (!isFinite(parsed) || parsed <= 0) {
+          return res.status(400).json({ message: "Exchange rate must be a positive finite number" });
+        }
+      }
+
+      const { lockEstimateRate } = await import("../currency-service");
+      const updated = await lockEstimateRate(req.params.id, manualRate ?? null);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to lock exchange rate", error: error.message });
+    }
+  });
+
+  // POST refresh/unlock exchange rate (admin only)
+  app.post("/api/estimates/:id/refresh-rate", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const precheck = await storage.getEstimate(req.params.id);
+      if (!precheck) return res.status(404).json({ message: "Estimate not found" });
+      if (tenantId && precheck.tenantId && precheck.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { refreshEstimateRate } = await import("../currency-service");
+      const updated = await refreshEstimateRate(req.params.id);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to refresh exchange rate", error: error.message });
+    }
+  });
+
+  // PATCH update quote currency for an estimate
+  app.patch("/api/estimates/:id/currency", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const { quoteCurrency, costCurrency } = req.body;
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+      if (tenantId && estimate.tenantId && estimate.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { VALID_CURRENCY_SET: VALID_CURRENCIES } = await import("../../shared/currencies");
+      const { getCurrentRate } = await import("../currency-service");
+
+      const newQuote = quoteCurrency ? quoteCurrency.toUpperCase() : (estimate.quoteCurrency || "USD");
+      const newCost = costCurrency ? costCurrency.toUpperCase() : (estimate.costCurrency || "USD");
+
+      if (!VALID_CURRENCIES.has(newQuote)) {
+        return res.status(400).json({ message: `Invalid quote currency: ${newQuote}` });
+      }
+      if (!VALID_CURRENCIES.has(newCost)) {
+        return res.status(400).json({ message: `Invalid cost currency: ${newCost}` });
+      }
+
+      let exchangeRate: string;
+      let exchangeRateSource = "live";
+
+      if (newQuote !== newCost) {
+        const rate = await getCurrentRate(newQuote, newCost);
+        if (!isFinite(rate) || rate <= 0) {
+          return res.status(502).json({ message: `Could not obtain a valid exchange rate for ${newQuote} → ${newCost}` });
+        }
+        exchangeRate = String(rate);
+      } else {
+        exchangeRate = "1";
+      }
+
+      const updated = await storage.updateEstimate(req.params.id, {
+        quoteCurrency: newQuote,
+        costCurrency: newCost,
+        exchangeRate,
+        exchangeRateLockedAt: null,
+        exchangeRateSource,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to update currency", error: error.message });
+    }
+  });
+
   // Revert estimate from approved to draft (so it can be reapproved)
   app.post("/api/estimates/:id/revert-approval", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {

@@ -4381,7 +4381,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         }
       }
 
-      // Create invoice batch linked to milestone
+      // Fetch project for currency snapshot and clientId
+      const [project] = await db.select({
+        clientId: projects.clientId,
+        quoteCurrency: projects.quoteCurrency,
+        costCurrency: projects.costCurrency,
+        exchangeRate: projects.exchangeRate,
+      }).from(projects).where(eq(projects.id, milestone.projectId));
+
+      // Create invoice batch linked to milestone (snapshot currency from project)
       const batch = await storage.createInvoiceBatch({
         batchId,
         startDate,
@@ -4398,13 +4406,13 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         createdBy: userId,
         tenantId: tenantId || null,
         glInvoiceNumber,
+        quoteCurrency: project?.quoteCurrency || "USD",
+        costCurrency: project?.costCurrency || "USD",
+        exchangeRate: project?.exchangeRate ?? null,
       });
       
       // Automatically create an invoice line for the milestone amount
       // This allows milestone-based invoicing without time entries
-      const [project] = await db.select({ clientId: projects.clientId })
-        .from(projects)
-        .where(eq(projects.id, milestone.projectId));
       
       await db.insert(invoiceLines).values({
         batchId,
@@ -6621,9 +6629,19 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       console.log("Creating SOW with data:", req.body);
       console.log("Project ID:", req.params.id);
 
+      // Look up project to snapshot its currency at SOW creation time
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
       const insertData = insertSowSchema.parse({
         ...req.body,
-        projectId: req.params.id
+        projectId: req.params.id,
+        // Currency snapshot from the project — not caller-supplied
+        quoteCurrency: project.quoteCurrency ?? "USD",
+        costCurrency: project.costCurrency ?? "USD",
+        exchangeRate: project.exchangeRate ?? null,
       });
 
       // VALIDATION: Prevent multiple initial SOWs per project
