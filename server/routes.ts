@@ -1114,6 +1114,76 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Batch hours summary for all active projects — used by dashboard project list
+  app.get("/api/projects/hours-summary-batch", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+
+      // Pull all estimates per project (id, status, budgetedHours from sum of line items)
+      type EstRow = { project_id: string; estimate_id: string; status: string; budgeted_hours: string };
+      const estRows = await db.execute<EstRow>(sql`
+        SELECT
+          e.project_id AS project_id,
+          e.id AS estimate_id,
+          e.status AS status,
+          COALESCE(SUM(CAST(li.adjusted_hours AS NUMERIC)), 0) AS budgeted_hours
+        FROM estimates e
+        LEFT JOIN estimate_line_items li ON li.estimate_id = e.id
+        WHERE e.project_id IS NOT NULL
+          ${tenantId ? sql`AND e.tenant_id = ${tenantId}` : sql``}
+        GROUP BY e.project_id, e.id, e.status, e.version
+        ORDER BY e.project_id, (e.status = 'approved') DESC, e.version DESC
+      `);
+
+      const budgetedByProject = new Map<string, number>();
+      for (const row of estRows.rows) {
+        // First row per project wins (approved first, then most recent)
+        if (!budgetedByProject.has(row.project_id)) {
+          budgetedByProject.set(row.project_id, Number(row.budgeted_hours));
+        }
+      }
+
+      // Actual hours per project from time entries
+      type ActualRow = { project_id: string; actual_hours: string };
+      const actualRows = await db.execute<ActualRow>(sql`
+        SELECT te.project_id AS project_id,
+               COALESCE(SUM(CAST(te.hours AS NUMERIC)), 0) AS actual_hours
+        FROM time_entries te
+        ${tenantId ? sql`JOIN projects p ON p.id = te.project_id AND p.tenant_id = ${tenantId}` : sql``}
+        GROUP BY te.project_id
+      `);
+
+      const actualByProject = new Map<string, number>();
+      for (const row of actualRows.rows) {
+        actualByProject.set(row.project_id, Number(row.actual_hours));
+      }
+
+      const projectIdSet = new Set<string>();
+      budgetedByProject.forEach((_v, k) => projectIdSet.add(k));
+      actualByProject.forEach((_v, k) => projectIdSet.add(k));
+      const summaries = Array.from(projectIdSet).map((projectId) => {
+        const budgetedHours = budgetedByProject.get(projectId) ?? 0;
+        const actualHours = actualByProject.get(projectId) ?? 0;
+        const remainingHours = Math.max(0, budgetedHours - actualHours);
+        const hoursVariance = actualHours - budgetedHours;
+        const hoursConsumedPct = budgetedHours > 0 ? Math.round((actualHours / budgetedHours) * 100) : 0;
+        return {
+          projectId,
+          budgetedHours: Math.round(budgetedHours * 10) / 10,
+          actualHours: Math.round(actualHours * 10) / 10,
+          remainingHours: Math.round(remainingHours * 10) / 10,
+          hoursVariance: Math.round(hoursVariance * 10) / 10,
+          hoursConsumedPct,
+        };
+      });
+
+      res.json(summaries);
+    } catch (error) {
+      console.error("Error getting batch hours summary:", error);
+      res.status(500).json({ message: "Failed to get batch hours summary" });
+    }
+  });
+
   // User-scoped slippage alerts (role-aware: team members see own alerts; PMs/portfolio see more)
   app.get("/api/dashboard/slippage-alerts", requireAuth, async (req, res) => {
     try {

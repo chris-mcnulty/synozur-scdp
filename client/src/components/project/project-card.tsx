@@ -7,6 +7,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { SlippageBadge } from "@/components/dashboard/slippage-badge";
 import type { ProjectWithClient, ProjectSlippageMetrics } from "@/lib/types";
 
+export interface ProjectHoursSummary {
+  budgetedHours: number;
+  actualHours: number;
+  remainingHours: number;
+  hoursVariance: number;
+  hoursConsumedPct: number;
+}
+
 interface ProjectCardProps {
   project: ProjectWithClient & {
     pm: string;
@@ -16,8 +24,16 @@ interface ProjectCardProps {
     dueDate: string;
   };
   slippage?: Pick<ProjectSlippageMetrics, "slippageLevel" | "slippageScore">;
+  hours?: ProjectHoursSummary;
   onView: (projectId: string) => void;
   onEdit: (projectId: string) => void;
+}
+
+function getHoursBadgeClass(consumedPct: number, budgeted: number) {
+  if (budgeted <= 0) return "bg-muted text-muted-foreground";
+  if (consumedPct >= 100) return "bg-destructive/10 text-destructive";
+  if (consumedPct >= 85) return "bg-chart-3/10 text-chart-3";
+  return "bg-chart-4/10 text-chart-4";
 }
 
 function getProjectIcon(index: number) {
@@ -46,7 +62,7 @@ function getStatusBadgeVariant(status: string) {
   }
 }
 
-export function ProjectCard({ project, slippage, onView, onEdit }: ProjectCardProps) {
+export function ProjectCard({ project, slippage, hours, onView, onEdit }: ProjectCardProps) {
   const { canViewPricing } = useAuth();
   
   return (
@@ -85,6 +101,29 @@ export function ProjectCard({ project, slippage, onView, onEdit }: ProjectCardPr
             {project.burnPercentage}%
           </span>
         </div>
+      </td>
+      <td className="px-6 py-4">
+        {hours ? (
+          <div className="flex flex-col gap-1" data-testid={`project-hours-${project.id}`}>
+            <Badge
+              className={getHoursBadgeClass(hours.hoursConsumedPct, hours.budgetedHours)}
+              data-testid={`project-hours-badge-${project.id}`}
+            >
+              {hours.budgetedHours > 0
+                ? `${hours.actualHours.toLocaleString()} / ${hours.budgetedHours.toLocaleString()} hrs (${hours.hoursConsumedPct}%)`
+                : `${hours.actualHours.toLocaleString()} hrs`}
+            </Badge>
+            {hours.budgetedHours > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {hours.hoursVariance > 0
+                  ? `${hours.hoursVariance.toLocaleString()} hrs over`
+                  : `${hours.remainingHours.toLocaleString()} hrs left`}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground" data-testid={`project-hours-empty-${project.id}`}>—</span>
+        )}
       </td>
       <td className="px-6 py-4">
         <Badge

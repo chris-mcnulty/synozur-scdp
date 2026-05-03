@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { ProjectCard } from "@/components/project/project-card";
+import { ProjectCard, type ProjectHoursSummary } from "@/components/project/project-card";
 import { SlippageBadge } from "@/components/dashboard/slippage-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,6 +90,16 @@ export default function Dashboard() {
   const slippageMap = canViewSlippage
     ? new Map((slippageData?.projects ?? []).map((p) => [p.projectId, p]))
     : new Map();
+
+  const { data: hoursData } = useQuery<Array<ProjectHoursSummary & { projectId: string }>>({
+    queryKey: ["/api/projects/hours-summary-batch"],
+    staleTime: 60 * 1000,
+    enabled: canViewSlippage,
+  });
+
+  const hoursMap = new Map<string, ProjectHoursSummary>(
+    (hoursData ?? []).map((h) => [h.projectId, h])
+  );
 
   const { data: tenantsData } = useQuery<TenantsResponse>({
     queryKey: ["/api/auth/tenants"],
@@ -353,6 +363,9 @@ export default function Dashboard() {
                       Burned
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Hours
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -369,7 +382,7 @@ export default function Dashboard() {
                 <tbody className="divide-y divide-border">
                   {projectsLoading ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-4 text-center text-muted-foreground">
+                      <td colSpan={10} className="px-6 py-4 text-center text-muted-foreground">
                         Loading projects...
                       </td>
                     </tr>
@@ -394,13 +407,14 @@ export default function Dashboard() {
                             dueDate: project.endDate ? new Date(project.endDate).toLocaleDateString() : 'Not set'
                           }}
                           slippage={slippageMap.get(project.id)}
+                          hours={hoursMap.get(project.id)}
                           onView={handleViewProject}
                           onEdit={handleEditProject}
                         />
                       ))
                   ) : (
                     <tr>
-                      <td colSpan={9} className="px-6 py-4 text-center text-muted-foreground">
+                      <td colSpan={10} className="px-6 py-4 text-center text-muted-foreground">
                         No active projects found
                       </td>
                     </tr>
