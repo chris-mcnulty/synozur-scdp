@@ -41,10 +41,18 @@ function getEmailHeader(branding?: TenantBranding): string {
   return '';
 }
 
+interface EmailAttachment {
+  content: string; // base64-encoded
+  filename: string;
+  type: string;
+  disposition?: string;
+}
+
 interface SendEmailOptions {
   to: EmailRecipient;
   subject: string;
   body: string;
+  attachments?: EmailAttachment[];
 }
 
 export class EmailNotificationService {
@@ -52,11 +60,11 @@ export class EmailNotificationService {
    * Send an email using SendGrid API
    * From address is configured in the SendGrid connection (donotreply@synozur.com)
    */
-  async sendEmail({ to, subject, body }: SendEmailOptions): Promise<void> {
+  async sendEmail({ to, subject, body, attachments }: SendEmailOptions): Promise<void> {
     try {
       const { client, fromEmail } = await getUncachableSendGridClient();
-      
-      const msg = {
+
+      const msg: Record<string, unknown> = {
         to: to.email,
         from: {
           email: fromEmail,
@@ -65,8 +73,16 @@ export class EmailNotificationService {
         subject,
         html: body
       };
+      if (attachments && attachments.length > 0) {
+        msg.attachments = attachments.map(a => ({
+          content: a.content,
+          filename: a.filename,
+          type: a.type,
+          disposition: a.disposition ?? 'attachment',
+        }));
+      }
 
-      await client.send(msg);
+      await client.send(msg as unknown as Parameters<typeof client.send>[0]);
       
       console.log(`[EMAIL] Sent email via SendGrid to ${to.email}: ${subject}`);
     } catch (error) {
@@ -488,6 +504,62 @@ export class EmailNotificationService {
       </html>
     `;
     await this.sendEmail({ to: submitter, subject, body });
+  }
+
+  /**
+   * Confirmation email when an estimate has been marked as sent to a client.
+   * Includes the version number from the auto-snapshot so the recipient has
+   * a stable reference ID to cite in replies.
+   */
+  async notifyEstimateSent(
+    recipient: EmailRecipient,
+    estimateName: string,
+    versionNumber: number,
+    sentDate: string,
+    clientName?: string,
+    branding?: TenantBranding,
+    estimateUrl?: string,
+    pdfAttachment?: { content: Buffer; filename: string }
+  ): Promise<void> {
+    const versionLabel = `Estimate v${versionNumber} — sent ${sentDate}`;
+    const subject = `${estimateName} (${versionLabel})`;
+    const header = getEmailHeader(branding);
+    const viewButton = estimateUrl ? `
+      <p style="margin: 20px 0;">
+        <a href="${escapeHtml(estimateUrl)}" style="background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Estimate</a>
+      </p>
+    ` : '';
+    const clientLine = clientName
+      ? `<strong>Client:</strong> ${escapeHtml(clientName)}<br>`
+      : '';
+    const body = `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
+          <h2 style="color: #7C3AED;">Estimate Sent</h2>
+          <p>Hi ${escapeHtml(recipient.name)},</p>
+          <p>An estimate has been marked as sent. A version snapshot has been recorded for the audit trail.</p>
+          <div style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
+            <strong>Estimate:</strong> ${escapeHtml(estimateName)}<br>
+            ${clientLine}
+            <strong>Version:</strong> v${versionNumber}<br>
+            <strong>Sent:</strong> ${escapeHtml(sentDate)}
+          </div>
+          <p>Please reference <strong>${escapeHtml(versionLabel)}</strong> when discussing this estimate with the client.</p>
+          ${viewButton}
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
+        </body>
+      </html>
+    `;
+    const attachments: EmailAttachment[] | undefined = pdfAttachment
+      ? [{
+          content: pdfAttachment.content.toString('base64'),
+          filename: pdfAttachment.filename,
+          type: 'application/pdf',
+          disposition: 'attachment',
+        }]
+      : undefined;
+    await this.sendEmail({ to: recipient, subject, body, attachments });
   }
 }
 

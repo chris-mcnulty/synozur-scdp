@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage, db, generateSubSOWPdf, generateEstimateProposalPdf } from "../storage";
 import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients, estimateChannels, clientTeams, projectChannels, estimateVersions } from "@shared/schema";
 import { EstimateVersionService } from "../services/estimate-version-service";
+import { emailService } from "../services/email-notification.js";
 import { eq, sql, inArray, max, and, isNull } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 import { RateResolver } from "../rate-resolver";
@@ -3900,11 +3901,23 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const epicLabel = estimate.epicLabel || "Epic";
       const stageLabel = estimate.stageLabel || "Stage";
 
+      // Resolve latest version snapshot for header/filename references
+      let latestVersionForHeader: Awaited<ReturnType<typeof EstimateVersionService.getLatestVersion>> | null = null;
+      try {
+        latestVersionForHeader = await EstimateVersionService.getLatestVersion(req.params.id);
+      } catch {
+        // best-effort
+      }
+
       // Generate text output
       let textOutput = "";
-      
+
       // Header
       textOutput += `ESTIMATE: ${estimate.name}\n`;
+      if (latestVersionForHeader) {
+        const snapDate = new Date(latestVersionForHeader.snapshottedAt).toISOString().split("T")[0];
+        textOutput += `VERSION: v${latestVersionForHeader.versionNumber} — snapshot ${snapDate}\n`;
+      }
       textOutput += `CLIENT: ${client?.name || 'Unknown'}\n`;
       textOutput += `DATE: ${estimate.estimateDate || new Date().toISOString().split('T')[0]}\n`;
       if (estimate.validUntil) {
@@ -4001,22 +4014,19 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       }
 
       // Append version footer
-      try {
-        const latestVersion = await EstimateVersionService.getLatestVersion(req.params.id);
-        if (latestVersion) {
-          const snapDate = new Date(latestVersion.snapshottedAt).toISOString().split("T")[0];
-          textOutput += `\n${"=".repeat(80)}\n`;
-          textOutput += `Estimate v${latestVersion.versionNumber} | Generated ${new Date().toISOString().split("T")[0]} | Snapshot taken ${snapDate}\n`;
-        } else {
-          textOutput += `\n${"=".repeat(80)}\n`;
-          textOutput += `Generated ${new Date().toISOString().split("T")[0]}\n`;
-        }
-      } catch {
-        // version footer is best-effort
+      if (latestVersionForHeader) {
+        const snapDate = new Date(latestVersionForHeader.snapshottedAt).toISOString().split("T")[0];
+        textOutput += `\n${"=".repeat(80)}\n`;
+        textOutput += `Estimate v${latestVersionForHeader.versionNumber} | Generated ${new Date().toISOString().split("T")[0]} | Snapshot taken ${snapDate}\n`;
+      } else {
+        textOutput += `\n${"=".repeat(80)}\n`;
+        textOutput += `Generated ${new Date().toISOString().split("T")[0]}\n`;
       }
 
+      const safeTextName = estimate.name.replace(/[^a-z0-9]/gi, '_');
+      const textVSuffix = latestVersionForHeader ? `_v${latestVersionForHeader.versionNumber}` : "";
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="${estimate.name.replace(/[^a-z0-9]/gi, '_')}-ai-export.txt"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${safeTextName}${textVSuffix}.txt"`);
       res.send(textOutput);
     } catch (error) {
       console.error("Text export error:", error);
@@ -5515,12 +5525,135 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         // Auto-snapshot when estimate is marked as sent (awaited — snapshot is a required invariant)
         if (updateData.status === "sent") {
           const userId = (req as any).user?.id ?? null;
+          let sentSnapshot: Awaited<ReturnType<typeof EstimateVersionService.snapshot>> | null = null;
           try {
-            await EstimateVersionService.snapshot(req.params.id, "sent", userId, "Auto-snapshot on send");
+            sentSnapshot = await EstimateVersionService.snapshot(req.params.id, "sent", userId, "Auto-snapshot on send");
           } catch (snapErr: unknown) {
             const msg = snapErr instanceof Error ? snapErr.message : String(snapErr);
             console.error("[VERSIONS] Auto-snapshot on send failed:", msg);
             return res.status(500).json({ message: "Estimate was updated but auto-snapshot failed. Please try again.", detail: msg });
+          }
+
+          // Fire-and-forget client-facing email referencing the version snapshot.
+          // The body and PDF attachment filename both include
+          // "Estimate vN — sent YYYY-MM-DD" so the client has a stable
+          // reference ID to cite in replies.
+          if (sentSnapshot) {
+            const snapshotForEmail = sentSnapshot;
+            (async () => {
+              try {
+                const sentDate = new Date(snapshotForEmail.snapshottedAt).toISOString().split("T")[0];
+                const client = estimate.clientId ? await storage.getClient(estimate.clientId) : null;
+
+                // Resolve recipient — prefer client billingContact, fall back to secondaryContactEmail.
+                // If neither is a valid email, fall back to the sender for confirmation.
+                const isEmail = (s: string | null | undefined) =>
+                  !!s && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+                const sender = (req as any).user as { id?: string; email?: string; name?: string } | undefined;
+
+                let recipientEmail: string | null = null;
+                let recipientName = client?.name ?? "";
+                if (isEmail(client?.billingContact)) {
+                  recipientEmail = client!.billingContact!;
+                  recipientName = client?.contactName || client?.name || recipientEmail;
+                } else if (isEmail(client?.secondaryContactEmail)) {
+                  recipientEmail = client!.secondaryContactEmail!;
+                  recipientName = client?.secondaryContactName || client?.name || recipientEmail;
+                } else if (sender?.email) {
+                  recipientEmail = sender.email;
+                  recipientName = sender.name || sender.email;
+                }
+                if (!recipientEmail) {
+                  console.warn("[ESTIMATE-SEND] No recipient email available; skipping send email.");
+                  return;
+                }
+
+                let branding: { emailHeaderUrl?: string | null; companyName?: string | null } | undefined;
+                if (estimate.tenantId) {
+                  const [tenantRow] = await db
+                    .select({ name: tenants.name, emailHeaderUrl: tenants.emailHeaderUrl })
+                    .from(tenants)
+                    .where(eq(tenants.id, estimate.tenantId));
+                  if (tenantRow) {
+                    branding = { emailHeaderUrl: tenantRow.emailHeaderUrl, companyName: tenantRow.name };
+                  }
+                }
+
+                // Build absolute estimate URL (broken relative links are unusable in mail clients).
+                const appUrl =
+                  process.env.APP_PUBLIC_URL
+                  || process.env.APP_URL
+                  || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : '')
+                  || 'https://constellation.synozur.com';
+                const estimateUrl = `${appUrl.replace(/\/$/, '')}/estimates/${estimate.id}`;
+
+                // Generate the proposal PDF so the outbound email carries a
+                // versioned attachment (e.g. ProjectName_v2.pdf). Fall back to
+                // sending the email without an attachment if PDF generation fails.
+                let pdfAttachment: { content: Buffer; filename: string } | undefined;
+                try {
+                  const [lineItems, epics] = await Promise.all([
+                    storage.getEstimateLineItems(estimate.id),
+                    storage.getEstimateEpics(estimate.id),
+                  ]);
+                  const epicMap = new Map(epics.map((e) => [e.id, e.name]));
+                  const grouped = new Map<string, Array<{ description: string; adjustedHours: number; totalAmount: number }>>();
+                  for (const li of lineItems) {
+                    const key = li.epicId ? (epicMap.get(li.epicId) ?? "General") : "General";
+                    if (!grouped.has(key)) grouped.set(key, []);
+                    grouped.get(key)!.push({
+                      description: li.description,
+                      adjustedHours: Number(li.adjustedHours || 0),
+                      totalAmount: Number(li.totalAmount || 0),
+                    });
+                  }
+                  const lineItemsByEpic = Array.from(grouped.entries()).map(([epicName, items]) => ({
+                    epicName,
+                    items,
+                    epicHours: items.reduce((s, i) => s + i.adjustedHours, 0),
+                    epicAmount: items.reduce((s, i) => s + i.totalAmount, 0),
+                  }));
+                  const totalHours = lineItems.reduce((s, li) => s + Number(li.adjustedHours || 0), 0);
+                  const totalFees = lineItems.reduce((s, li) => s + Number(li.totalAmount || 0), 0);
+
+                  const pdfBuffer = await generateEstimateProposalPdf({
+                    estimateName: estimate.name,
+                    clientName: client?.name ?? "Unknown Client",
+                    estimateDate: estimate.estimateDate,
+                    validUntil: estimate.validUntil,
+                    totalHours,
+                    totalFees,
+                    presentedTotal: estimate.presentedTotal ? Number(estimate.presentedTotal) : null,
+                    lineItemsByEpic,
+                    generatedDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+                    versionNumber: snapshotForEmail.versionNumber,
+                    versionDate: sentDate,
+                    tenantName: branding?.companyName || "Constellation",
+                  });
+
+                  const safeName = estimate.name.replace(/[^a-zA-Z0-9]/g, "_");
+                  pdfAttachment = {
+                    content: pdfBuffer,
+                    filename: `${safeName}_v${snapshotForEmail.versionNumber}.pdf`,
+                  };
+                } catch (pdfErr) {
+                  console.error("[ESTIMATE-SEND] PDF generation for email attachment failed:", pdfErr);
+                }
+
+                await emailService.notifyEstimateSent(
+                  { email: recipientEmail, name: recipientName || recipientEmail },
+                  estimate.name,
+                  snapshotForEmail.versionNumber,
+                  sentDate,
+                  client?.name,
+                  branding,
+                  estimateUrl,
+                  pdfAttachment
+                );
+              } catch (mailErr) {
+                console.error("[ESTIMATE-SEND] Send email failed (non-blocking):", mailErr);
+              }
+            })();
           }
         }
       }
