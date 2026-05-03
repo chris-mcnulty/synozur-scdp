@@ -60,6 +60,9 @@ interface TenantSettings {
   invoiceDefaultDiscountValue: string | null;
   requireTimeApproval: boolean;
   autoCreateInvoiceOnMilestoneInvoiced: boolean;
+  digestDefaultDay: number;
+  digestDefaultTime: string;
+  defaultTimezone: string | null;
   speContainerIdDev: string | null;
   speContainerIdProd: string | null;
   speStorageEnabled: boolean;
@@ -123,6 +126,23 @@ const financialSchema = z.object({
 });
 
 type FinancialFormData = z.infer<typeof financialSchema>;
+
+const notificationsSchema = z.object({
+  digestDefaultDay: z.coerce.number().int().min(1).max(7),
+  digestDefaultTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+});
+
+type NotificationsFormData = z.infer<typeof notificationsSchema>;
+
+const DIGEST_DAY_OPTIONS = [
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+  { value: "7", label: "Sunday" },
+];
 
 interface VocabularyCatalogTerm {
   id: string;
@@ -2900,6 +2920,41 @@ export default function OrganizationSettings() {
     updateFinancialMutation.mutate(data);
   };
 
+  const notificationsForm = useForm<NotificationsFormData>({
+    resolver: zodResolver(notificationsSchema),
+    defaultValues: {
+      digestDefaultDay: 1,
+      digestDefaultTime: "08:00",
+    },
+    values: {
+      digestDefaultDay: tenantSettings?.digestDefaultDay ?? 1,
+      digestDefaultTime: tenantSettings?.digestDefaultTime ?? "08:00",
+    },
+  });
+
+  const updateNotificationsMutation = useMutation({
+    mutationFn: async (data: NotificationsFormData) => {
+      await apiRequest("/api/tenant/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          digestDefaultDay: data.digestDefaultDay,
+          digestDefaultTime: data.digestDefaultTime,
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      toast({ title: "Settings saved", description: "Digest schedule has been updated for this organization." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save notification settings.", variant: "destructive" });
+    },
+  });
+
+  const handleNotificationsSubmit = (data: NotificationsFormData) => {
+    updateNotificationsMutation.mutate(data);
+  };
+
   const { data: catalogTerms = [], isLoading: isLoadingCatalog } = useQuery<VocabularyCatalogTerm[]>({
     queryKey: ["/api/vocabulary/catalog"],
   });
@@ -3009,6 +3064,10 @@ export default function OrganizationSettings() {
               <TabsTrigger value="integrations" className="flex items-center gap-2">
                 <Link2 className="w-4 h-4" />
                 <span>Integrations</span>
+              </TabsTrigger>
+              <TabsTrigger value="notifications" className="flex items-center gap-2" data-testid="tab-notifications">
+                <Mail className="w-4 h-4" />
+                <span>Notifications</span>
               </TabsTrigger>
               <TabsTrigger value="vocabulary" className="flex items-center gap-2">
                 <Languages className="w-4 h-4" />
@@ -3809,6 +3868,90 @@ export default function OrganizationSettings() {
                   </Card>
 
                   {tenantSettings && <DocumentStorageCard tenantSettings={tenantSettings} />}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="notifications" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Mail className="h-5 w-5" />
+                    Weekly Digest Schedule
+                  </CardTitle>
+                  <CardDescription>
+                    Choose the default day and delivery time for the weekly digest email sent to your team. Times use this organization's timezone ({tenantSettings?.defaultTimezone || "America/New_York"}). Individual users can override these defaults from their notification preferences.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Form {...notificationsForm}>
+                    <form onSubmit={notificationsForm.handleSubmit(handleNotificationsSubmit)} className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={notificationsForm.control}
+                          name="digestDefaultDay"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Digest Day</FormLabel>
+                              <Select
+                                value={String(field.value)}
+                                onValueChange={(v) => field.onChange(Number(v))}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-digest-day">
+                                    <SelectValue placeholder="Select a day" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {DIGEST_DAY_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                Day of the week the digest is sent to users without a personal override.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={notificationsForm.control}
+                          name="digestDefaultTime"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Delivery Time</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="time"
+                                  {...field}
+                                  data-testid="input-digest-time"
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                Local time of day the digest is sent.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="submit"
+                          disabled={updateNotificationsMutation.isPending}
+                          data-testid="button-save-notifications"
+                        >
+                          <Save className="w-4 h-4 mr-2" />
+                          {updateNotificationsMutation.isPending ? "Saving..." : "Save Notification Settings"}
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
                 </CardContent>
               </Card>
             </TabsContent>

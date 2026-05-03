@@ -67,6 +67,8 @@ const tenantSettingsUpdateSchema = z.object({
   expenseRemindersEnabled: z.boolean().optional(),
   expenseReminderTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format").optional(),
   expenseReminderDay: z.number().int().min(0).max(6).optional(),
+  digestDefaultDay: z.number().int().min(1).max(7).optional(),
+  digestDefaultTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format").optional(),
   requireTimeApproval: z.boolean().optional(),
   defaultTimezone: z.string().max(50).optional(),
   showChangelogOnLogin: z.boolean().optional(),
@@ -123,6 +125,8 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseRemindersEnabled: tenant.expenseRemindersEnabled ?? false,
         expenseReminderTime: tenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: tenant.expenseReminderDay ?? 1,
+        digestDefaultDay: (tenant as any).digestDefaultDay ?? 1,
+        digestDefaultTime: (tenant as any).digestDefaultTime ?? "08:00",
         requireTimeApproval: tenant.requireTimeApproval ?? false,
         autoCreateInvoiceOnMilestoneInvoiced: tenant.autoCreateInvoiceOnMilestoneInvoiced ?? true,
         defaultTimezone: tenant.defaultTimezone ?? "America/New_York",
@@ -567,7 +571,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, requireTimeApproval, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue, autoCreateInvoiceOnMilestoneInvoiced } = validationResult.data;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, digestDefaultDay, digestDefaultTime, requireTimeApproval, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue, autoCreateInvoiceOnMilestoneInvoiced } = validationResult.data;
 
       const updateData: any = {
         name,
@@ -584,6 +588,8 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseRemindersEnabled,
         expenseReminderTime,
         expenseReminderDay,
+        digestDefaultDay,
+        digestDefaultTime,
         requireTimeApproval,
         defaultTimezone,
         showChangelogOnLogin,
@@ -604,6 +610,11 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         await updateTenantExpenseSchedule(tenantId);
       }
 
+      if (digestDefaultDay !== undefined || digestDefaultTime !== undefined) {
+        const { updateTenantDigestSchedule } = await import('../services/weekly-digest-scheduler.js');
+        await updateTenantDigestSchedule(tenantId);
+      }
+
       res.json({
         id: updatedTenant.id,
         name: updatedTenant.name,
@@ -620,6 +631,8 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         expenseRemindersEnabled: updatedTenant.expenseRemindersEnabled ?? false,
         expenseReminderTime: updatedTenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: updatedTenant.expenseReminderDay ?? 1,
+        digestDefaultDay: (updatedTenant as any).digestDefaultDay ?? 1,
+        digestDefaultTime: (updatedTenant as any).digestDefaultTime ?? "08:00",
         requireTimeApproval: updatedTenant.requireTimeApproval ?? false,
         autoCreateInvoiceOnMilestoneInvoiced: updatedTenant.autoCreateInvoiceOnMilestoneInvoiced ?? true,
         defaultTimezone: updatedTenant.defaultTimezone ?? "America/New_York",

@@ -156,6 +156,8 @@ export const tenants = pgTable("tenants", {
   expenseReminderTime: varchar("expense_reminder_time", { length: 5 }).default("08:00"),
   expenseReminderDay: integer("expense_reminder_day").default(1),
   requireTimeApproval: boolean("require_time_approval").default(false),
+  digestDefaultDay: integer("digest_default_day").notNull().default(1), // 1=Monday … 7=Sunday
+  digestDefaultTime: varchar("digest_default_time", { length: 5 }).notNull().default("08:00"), // HH:MM
 
   // Teams Proactive Alert Settings
   teamsAlertsEnabled: boolean("teams_alerts_enabled").default(false),
