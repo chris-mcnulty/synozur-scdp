@@ -8,7 +8,8 @@ export type JobType =
   | 'pdf.invoice.generate'
   | 'ai.statusReport.generate'
   | 'ai.executiveNarrative.generate'
-  | 'teams.provision';
+  | 'teams.provision'
+  | 'planner.task.pull';
 
 export interface SubmitOptions {
   maxAttempts?: number;

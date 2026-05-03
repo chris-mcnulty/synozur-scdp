@@ -50,6 +50,13 @@
       "when": 1778025600000,
       "tag": "0007_auto_create_invoice_on_milestone",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1746316800000,
+      "tag": "0008_planner_sync_robustness",
+      "breakpoints": true
     }
   ]
 }

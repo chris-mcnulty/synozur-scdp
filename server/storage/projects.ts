@@ -1520,17 +1520,30 @@ export const projectsMethods: ThisType<IStorage> = {
   },
 
   async createProjectAllocation(allocation: InsertProjectAllocation): Promise<ProjectAllocation> {
+    // Task #126 — Stamp lastEditedAt for LWW unless caller explicitly opts out
+    // (sync writers pass `_syncWrite: true` so they don't masquerade as human edits).
+    const { _syncWrite, _editedBy, ...payload } = (allocation as any) || {};
+    if (!_syncWrite && (payload as any).lastEditedAt === undefined) {
+      (payload as any).lastEditedAt = new Date();
+      if (_editedBy) (payload as any).lastEditedBy = _editedBy;
+    }
     const [created] = await db
       .insert(projectAllocations)
-      .values(allocation)
+      .values(payload)
       .returning();
     return created;
   },
 
   async updateProjectAllocation(id: string, updates: any): Promise<any> {
+    // Task #126 — Stamp lastEditedAt unless this is a sync writer.
+    const { _syncWrite, _editedBy, ...payload } = updates || {};
+    if (!_syncWrite && (payload as any).lastEditedAt === undefined) {
+      (payload as any).lastEditedAt = new Date();
+      if (_editedBy) (payload as any).lastEditedBy = _editedBy;
+    }
     const [updated] = await db
       .update(projectAllocations)
-      .set(updates)
+      .set(payload)
       .where(and(eq(projectAllocations.id, id), eq(projectAllocations.isBaseline, false)))
       .returning();
     if (!updated) throw new Error("Allocation not found or is a baseline record");
@@ -1549,19 +1562,26 @@ export const projectsMethods: ThisType<IStorage> = {
   async bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]> {
     return await db.transaction(async (tx) => {
       const results = [];
+      const now = new Date();
       for (const update of updates) {
-        if (update.id) {
+        // Task #126 — Stamp lastEditedAt for human bulk edits (default).
+        const { _syncWrite, _editedBy, ...payload } = update || {};
+        if (!_syncWrite && (payload as any).lastEditedAt === undefined) {
+          (payload as any).lastEditedAt = now;
+          if (_editedBy) (payload as any).lastEditedBy = _editedBy;
+        }
+        if (payload.id) {
           const [updated] = await tx
             .update(projectAllocations)
-            .set(update)
-            .where(and(eq(projectAllocations.id, update.id), eq(projectAllocations.isBaseline, false)))
+            .set(payload)
+            .where(and(eq(projectAllocations.id, payload.id), eq(projectAllocations.isBaseline, false)))
             .returning();
           if (updated) results.push(updated);
         } else {
           // Create new allocation
           const [created] = await tx
             .insert(projectAllocations)
-            .values({ ...update, projectId })
+            .values({ ...payload, projectId })
             .returning();
           results.push(created);
         }

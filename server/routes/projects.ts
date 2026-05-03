@@ -386,6 +386,9 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         tenantId: req.user?.tenantId || null // Multi-tenancy dual-write
       };
       const validatedData = insertProjectAllocationSchema.parse(allocationData);
+      // Task #126 — track last human edit for LWW conflict resolution.
+      (validatedData as any).lastEditedAt = new Date();
+      (validatedData as any).lastEditedBy = req.user?.id || null;
       const created = await storage.createProjectAllocation(validatedData);
       
       // Auto-create or reactivate engagement when a person is assigned
@@ -445,6 +448,9 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         }
       }
       
+      // Task #126 — track last human edit for LWW conflict resolution.
+      updateData.lastEditedAt = new Date();
+      updateData.lastEditedBy = user.id;
       const updated = await storage.updateProjectAllocation(req.params.id, updateData);
       
       // Auto-create or reactivate engagement when a person is assigned
@@ -514,7 +520,14 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
   app.post("/api/projects/:projectId/allocations/bulk-update", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
-      const updated = await storage.bulkUpdateProjectAllocations(req.params.projectId, req.body.allocations);
+      // Task #126 — stamp lastEditedAt on every record in the batch (human edits).
+      const now = new Date();
+      const stamped = (req.body.allocations || []).map((a: any) => ({
+        ...a,
+        lastEditedAt: now,
+        lastEditedBy: req.user?.id,
+      }));
+      const updated = await storage.bulkUpdateProjectAllocations(req.params.projectId, stamped);
       
       // Auto-create or reactivate engagements for all assigned users
       const personIds = new Set<string>();

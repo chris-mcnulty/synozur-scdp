@@ -809,7 +809,19 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         syncDirection: syncDirection || 'bidirectional',
         connectedBy: user.id
       });
-      
+
+      // Task #126 — Best-effort: provision a Graph webhook subscription for the
+      // plan so inbound changes flow in real-time. Failure is non-fatal — the
+      // scheduled-sync fallback still runs.
+      try {
+        const { ensureSubscription } = await import('../services/planner-subscription-manager.js');
+        ensureSubscription(connection.id).catch((e: any) =>
+          console.warn('[PLANNER] ensureSubscription on create failed:', e?.message)
+        );
+      } catch (e: any) {
+        console.warn('[PLANNER] subscription manager import failed:', e?.message);
+      }
+
       res.json(connection);
     } catch (error: any) {
       console.error("[PLANNER] Failed to create connection:", error);
@@ -831,6 +843,26 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       if (autoAddMembers !== undefined) updates.autoAddMembers = autoAddMembers;
       
       const updated = await storage.updateProjectPlannerConnection(connection.id, updates);
+
+      // Task #126 — Subscription lifecycle on syncEnabled toggle.
+      try {
+        const { ensureSubscription, deleteSubscription } = await import('../services/planner-subscription-manager.js');
+        if (syncEnabled === true) {
+          ensureSubscription(connection.id).catch((e: any) =>
+            console.warn('[PLANNER] ensureSubscription on enable failed:', e?.message)
+          );
+        } else if (syncEnabled === false) {
+          const subs = await storage.getPlannerSubscriptionsByConnection(connection.id);
+          for (const sub of subs.filter((s: any) => s.status === 'active')) {
+            deleteSubscription(sub).catch((e: any) =>
+              console.warn('[PLANNER] deleteSubscription on disable failed:', e?.message)
+            );
+          }
+        }
+      } catch (e: any) {
+        console.warn('[PLANNER] subscription manager import failed:', e?.message);
+      }
+
       res.json(updated);
     } catch (error: any) {
       console.error("[PLANNER] Failed to update connection:", error);
@@ -840,6 +872,23 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
 
   app.delete("/api/projects/:projectId/planner-connection", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
+      // Task #126 — Tear down Graph subscriptions before deleting the row so
+      // we don't leak active subscriptions in the tenant's Graph subscriptions list.
+      try {
+        const conn = await storage.getProjectPlannerConnection(req.params.projectId);
+        if (conn) {
+          const { deleteSubscription } = await import('../services/planner-subscription-manager.js');
+          const subs = await storage.getPlannerSubscriptionsByConnection(conn.id);
+          for (const sub of subs.filter((s: any) => s.status === 'active')) {
+            await deleteSubscription(sub).catch((e: any) =>
+              console.warn('[PLANNER] deleteSubscription on disconnect failed:', e?.message)
+            );
+          }
+        }
+      } catch (e: any) {
+        console.warn('[PLANNER] subscription teardown failed:', e?.message);
+      }
+
       await storage.deleteProjectPlannerConnection(req.params.projectId);
       res.status(204).send();
     } catch (error: any) {
@@ -850,134 +899,31 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
 
   app.post("/api/projects/:projectId/planner-sync", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
-      const { plannerService } = await import('../services/planner-service');
       const { projectId } = req.params;
-      
+
       const connection = await storage.getProjectPlannerConnection(projectId);
       if (!connection) {
         return res.status(404).json({ message: "Planner connection not found" });
       }
-      
+
       if (!connection.syncEnabled) {
         return res.status(400).json({ message: "Sync is disabled for this connection" });
       }
-      
-      const allocations = await storage.getProjectAllocations(projectId);
-      const existingSyncs = await storage.getPlannerTaskSyncsByConnection(connection.id);
-      
-      const buckets = await plannerService.listBuckets(connection.planId);
-      
-      const projectEpicsList = await storage.getProjectEpics(projectId);
-      for (const epic of projectEpicsList) {
-        const stages = await storage.getProjectStages(epic.id);
-        for (const stage of stages) {
-          try {
-            await plannerService.getOrCreateBucket(connection.planId, stage.name);
-          } catch (bucketErr: any) {
-            console.warn('[PLANNER] Failed to pre-create bucket for stage:', stage.name, bucketErr.message);
-          }
-        }
-      }
-      
-      let created = 0;
-      let updated = 0;
-      let errors: string[] = [];
-      
-      for (const allocation of allocations) {
-        try {
-          const syncRecord = existingSyncs.find(s => s.allocationId === allocation.id);
-          
-          let taskTitle = allocation.taskDescription || '';
-          if (!taskTitle && allocation.workstream) {
-            taskTitle = typeof allocation.workstream === 'string' ? allocation.workstream : allocation.workstream.name;
-          }
-          if (!taskTitle) {
-            taskTitle = `Week ${allocation.weekNumber} Task`;
-          }
-          
-          const assigneeName = allocation.person?.name || allocation.resourceName || '';
-          if (assigneeName) {
-            taskTitle = `${taskTitle} — ${assigneeName}`;
-          }
 
-          let bucketId: string | undefined;
-          const stageName = allocation.stage?.name || allocation.epicName || '';
-          if (stageName) {
-            try {
-              const bucket = await plannerService.getOrCreateBucket(connection.planId, stageName);
-              bucketId = bucket.id;
-            } catch (bucketErr: any) {
-              console.warn('[PLANNER] Could not get/create bucket:', bucketErr.message);
-            }
-          }
-
-          let azureUserId: string | undefined;
-          if (allocation.personId) {
-            const mapping = await storage.getUserAzureMapping(allocation.personId);
-            azureUserId = mapping?.azureUserId || undefined;
-          }
-
-          if (syncRecord?.plannerTaskId) {
-            try {
-              await plannerService.updateTask(syncRecord.plannerTaskId, {
-                title: taskTitle,
-                startDateTime: allocation.plannedStartDate ? new Date(allocation.plannedStartDate).toISOString() : undefined,
-                dueDateTime: allocation.plannedEndDate ? new Date(allocation.plannedEndDate).toISOString() : undefined,
-                percentComplete: allocation.status === 'completed' ? 100 : (allocation.status === 'in_progress' ? 50 : 0),
-                bucketId,
-                assignments: azureUserId ? { [azureUserId]: { '@odata.type': '#microsoft.graph.plannerAssignment', orderHint: ' !' } } : undefined,
-              });
-              
-              await storage.updatePlannerTaskSync(syncRecord.id, {
-                lastSyncAt: new Date(),
-                syncStatus: 'synced',
-              });
-              
-              updated++;
-            } catch (updateErr: any) {
-              errors.push(`Failed to update task for allocation ${allocation.id}: ${updateErr.message}`);
-            }
-          } else {
-            try {
-              const task = await plannerService.createTask({
-                planId: connection.planId,
-                title: taskTitle,
-                startDateTime: allocation.plannedStartDate ? new Date(allocation.plannedStartDate).toISOString() : undefined,
-                dueDateTime: allocation.plannedEndDate ? new Date(allocation.plannedEndDate).toISOString() : undefined,
-                percentComplete: allocation.status === 'completed' ? 100 : (allocation.status === 'in_progress' ? 50 : 0),
-                bucketId,
-                assignments: azureUserId ? { [azureUserId]: { '@odata.type': '#microsoft.graph.plannerAssignment', orderHint: ' !' } } : undefined,
-              });
-              
-              await storage.createPlannerTaskSync({
-                connectionId: connection.id,
-                allocationId: allocation.id,
-                plannerTaskId: task.id,
-                lastSyncAt: new Date(),
-                syncStatus: 'synced',
-              });
-              
-              created++;
-            } catch (createErr: any) {
-              errors.push(`Failed to create task for allocation ${allocation.id}: ${createErr.message}`);
-            }
-          }
-        } catch (allocErr: any) {
-          errors.push(`Error processing allocation ${allocation.id}: ${allocErr.message}`);
-        }
-      }
-      
-      await storage.updateProjectPlannerConnection(connection.id, {
-        lastSyncAt: new Date(),
+      // Task #126 — "Run sync now" must use the hardened scheduler path so
+      // strict LWW, If-Match retries, audit, and admin alerting all apply.
+      // The legacy unconditional-push body below is kept disabled for
+      // reference but never executes.
+      const { syncProjectToPlanner } = await import('../services/planner-sync-scheduler.js');
+      const result = await syncProjectToPlanner(projectId, connection);
+      return res.json({
+        success: result.errors.length === 0,
+        created: result.created,
+        updated: result.updated,
+        total: result.created + result.updated,
+        errors: result.errors.length > 0 ? result.errors : undefined,
       });
-      
-      res.json({
-        success: true,
-        created,
-        updated,
-        total: allocations.length,
-        errors: errors.length > 0 ? errors : undefined,
-      });
+
     } catch (error: any) {
       console.error("[PLANNER] Sync failed:", error);
       res.status(500).json({ message: "Planner sync failed: " + error.message });
@@ -1193,6 +1139,304 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
     } catch (error: any) {
       console.error("[PLANNER] Failed to unlink estimate channel:", error);
       res.status(500).json({ message: "Failed to unlink estimate channel: " + error.message });
+    }
+  });
+
+  // ─── Task #126: Graph Webhook Receiver ─────────────────────────────────────
+  // PUBLIC endpoint (no auth) — Microsoft Graph posts notifications here.
+  // Validation: when a `validationToken` query param is present, return its
+  // raw value as text/plain within 10 seconds (Graph's subscription handshake).
+  // For real notifications: verify clientState against plannerSubscriptions and
+  // enqueue `planner.task.pull` jobs for affected tasks.
+  app.post("/api/webhooks/planner", async (req, res) => {
+    // Subscription handshake
+    const validationToken = req.query.validationToken;
+    if (typeof validationToken === 'string' && validationToken.length > 0) {
+      res.setHeader('Content-Type', 'text/plain');
+      return res.status(200).send(validationToken);
+    }
+
+    try {
+      const notifications = (req.body && Array.isArray(req.body.value)) ? req.body.value : [];
+      if (notifications.length === 0) {
+        return res.status(202).end();
+      }
+
+      const { getSubscriptionByGraphId } = await import('../services/planner-subscription-manager.js');
+      const { recordPlannerAudit } = await import('../services/planner-sync-audit.js');
+      const { jobQueueService } = await import('../services/job-queue-service.js');
+
+      let enqueued = 0;
+      for (const notif of notifications) {
+        const subscriptionId = notif?.subscriptionId;
+        const clientState = notif?.clientState;
+        const resource = notif?.resource;
+        if (!subscriptionId) continue;
+
+        const sub = await getSubscriptionByGraphId(subscriptionId);
+        if (!sub) {
+          console.warn('[PLANNER-WEBHOOK] Unknown subscription:', subscriptionId);
+          continue;
+        }
+        if (sub.clientState !== clientState) {
+          // Task #126 — clientState mismatch is treated as a security failure.
+          // Reject the entire batch with 401 so the (forged) sender does not
+          // get treated as a valid Graph notification.
+          console.warn('[PLANNER-WEBHOOK] clientState mismatch — rejecting with 401');
+          await recordPlannerAudit({
+            tenantId: sub.tenantId,
+            connectionId: sub.connectionId,
+            action: 'webhook_received',
+            outcome: 'error',
+            trigger: 'webhook',
+            errorCode: 'forbidden',
+            errorMessage: 'clientState mismatch',
+          }).catch(() => {});
+          return res.status(401).json({ message: 'clientState mismatch' });
+        }
+
+        // Extract Planner task ID from resource path. Examples Graph may send:
+        //   /planner/tasks/{taskId}
+        //   /planner/plans/{planId}/tasks/{taskId}
+        const taskMatch = typeof resource === 'string' ? resource.match(/planner\/tasks\/([A-Za-z0-9_-]+)/) : null;
+        if (taskMatch) {
+          const plannerTaskId = taskMatch[1];
+          await jobQueueService.submit('planner.task.pull', {
+            connectionId: sub.connectionId,
+            plannerTaskId,
+            changeType: notif.changeType,
+          }, { tenantId: sub.tenantId || undefined });
+          enqueued++;
+
+          await recordPlannerAudit({
+            tenantId: sub.tenantId,
+            connectionId: sub.connectionId,
+            plannerTaskId,
+            action: 'webhook_received',
+            outcome: 'success',
+            trigger: 'webhook',
+            details: { changeType: notif.changeType },
+          });
+          continue;
+        }
+
+        // Plan-level notification (e.g. /planner/plans/{planId}). We don't know
+        // which task changed, so list every task in the plan via Graph and
+        // enqueue a per-task pull for each. pullPlannerTask is idempotent via
+        // LWW, so spurious pulls are safe; this also lets us discover NEW
+        // remote tasks that don't yet have a local sync row (the per-task
+        // pull job will handle that case downstream).
+        const planMatch = typeof resource === 'string' ? resource.match(/planner\/plans\/([A-Za-z0-9_-]+)/) : null;
+        let fannedOut = 0;
+        let fanOutError: string | null = null;
+        if (planMatch) {
+          const planId = planMatch[1];
+          try {
+            const { plannerService } = await import('../services/planner-service.js');
+            const remoteTasks = await plannerService.listTasks(planId);
+            for (const t of remoteTasks) {
+              if (!t?.id) continue;
+              await jobQueueService.submit('planner.task.pull', {
+                connectionId: sub.connectionId,
+                plannerTaskId: t.id,
+                changeType: notif.changeType,
+              }, { tenantId: sub.tenantId || undefined });
+              fannedOut++;
+              enqueued++;
+            }
+          } catch (listErr: any) {
+            fanOutError = listErr?.message?.slice(0, 500) || 'listTasks failed';
+            // Fallback: enqueue pulls for known sync rows so we don't drop
+            // the notification entirely on a transient Graph hiccup.
+            const knownSyncs = await storage.getPlannerTaskSyncsByConnection(sub.connectionId);
+            for (const s of knownSyncs) {
+              if (!s.taskId) continue;
+              await jobQueueService.submit('planner.task.pull', {
+                connectionId: sub.connectionId,
+                plannerTaskId: s.taskId,
+                changeType: notif.changeType,
+              }, { tenantId: sub.tenantId || undefined });
+              fannedOut++;
+              enqueued++;
+            }
+          }
+        }
+        await recordPlannerAudit({
+          tenantId: sub.tenantId,
+          connectionId: sub.connectionId,
+          action: 'webhook_received',
+          outcome: fanOutError ? 'partial' : 'success',
+          trigger: 'webhook',
+          errorMessage: fanOutError,
+          details: { resource, changeType: notif.changeType, fanOut: fannedOut, mode: fanOutError ? 'fallback_known_syncs' : 'list_plan_tasks' },
+        });
+      }
+
+      // Graph requires 202 within 30s, regardless of processing outcome.
+      res.status(202).json({ enqueued });
+    } catch (err: any) {
+      console.error('[PLANNER-WEBHOOK] Receiver error:', err);
+      // Still respond 202 so Graph doesn't retry forever — we've logged it.
+      res.status(202).end();
+    }
+  });
+
+  // ─── Task #126: Sync Health endpoints ──────────────────────────────────────
+  // Per-project sync health (project members + admins)
+  app.get("/api/projects/:projectId/planner-sync-health", deps.requireAuth, async (req, res) => {
+    try {
+      // Task #126 — Authz: project members + tenant admins only. We scope by
+      // matching the project's tenant against the caller's active tenant.
+      // This prevents leaking connection / audit data across tenants.
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: 'Project not found' });
+      }
+      const callerTenantId = (req.user as any)?.activeTenantId
+        || (req.user as any)?.primaryTenantId
+        || (req.user as any)?.tenantId;
+      const callerRole = String((req.user as any)?.role || '').toLowerCase();
+      const isPrivilegedRole = ['admin', 'global_admin', 'pm', 'portfolio-manager', 'executive'].includes(callerRole);
+      if (!callerTenantId || (project as any).tenantId !== callerTenantId) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+      if (!isPrivilegedRole) {
+        // Plain members must be linked to the project (member or PM).
+        const callerUserId = (req.user as any)?.id;
+        const isPm = (project as any).pmId === callerUserId
+          || (project as any).pm === callerUserId
+          || (project as any).projectManagerId === callerUserId;
+        let isMember = false;
+        try {
+          const members = (storage as any).getProjectMembers
+            ? await (storage as any).getProjectMembers(req.params.projectId)
+            : [];
+          isMember = Array.isArray(members) && members.some((m: any) => m.userId === callerUserId);
+        } catch { /* no member API → fall through */ }
+        if (!isPm && !isMember) {
+          return res.status(403).json({ message: 'Forbidden — not a project member' });
+        }
+      }
+
+      const conn = await storage.getProjectPlannerConnection(req.params.projectId);
+      if (!conn) {
+        return res.json({ connected: false });
+      }
+      const subs = await storage.getPlannerSubscriptionsByConnection(conn.id);
+      const audit = await storage.getPlannerSyncAuditByConnection(conn.id, 25);
+      res.json({
+        connected: true,
+        connection: {
+          id: conn.id,
+          syncEnabled: conn.syncEnabled,
+          syncSuspended: (conn as any).syncSuspended || false,
+          syncSuspendedReason: (conn as any).syncSuspendedReason || null,
+          consecutiveErrors: (conn as any).consecutiveErrors || 0,
+          lastErrorCode: (conn as any).lastErrorCode || null,
+          lastSyncAt: conn.lastSyncAt,
+          lastSyncStatus: conn.lastSyncStatus,
+          lastSyncError: conn.lastSyncError,
+          lastAlertAt: (conn as any).lastAlertAt || null,
+        },
+        subscriptions: subs.map((s: any) => ({
+          id: s.id,
+          status: s.status,
+          expirationDateTime: s.expirationDateTime,
+          lastRenewedAt: s.lastRenewedAt,
+          lastRenewalError: s.lastRenewalError,
+          consecutiveRenewalErrors: s.consecutiveRenewalErrors,
+        })),
+        audit: audit.map((a: any) => ({
+          id: a.id, action: a.action, outcome: a.outcome, trigger: a.trigger,
+          errorCode: a.errorCode, errorMessage: a.errorMessage,
+          details: a.details, createdAt: a.createdAt,
+        })),
+      });
+    } catch (err: any) {
+      console.error('[PLANNER-HEALTH] Error:', err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Tenant-wide admin Sync Health view
+  app.get("/api/admin/planner-sync-health", deps.requireAuth, deps.requireRole(["admin", "global_admin"]), async (req, res) => {
+    try {
+      const tenantId = (req.user as any)?.tenantId
+        || (req.user as any)?.activeTenantId
+        || (req.user as any)?.primaryTenantId;
+      if (!tenantId) return res.json({ connections: [], audit: [] });
+
+      // Pull all connections for this tenant. projectPlannerConnections has no
+      // tenant_id column, so we scope via projects.tenant_id.
+      const { projectPlannerConnections: ppc, projects: pj } = await import('@shared/schema');
+      const allConns = await db.select({
+        id: ppc.id,
+        projectId: ppc.projectId,
+        planTitle: ppc.planTitle,
+        syncEnabled: ppc.syncEnabled,
+        syncSuspended: (ppc as any).syncSuspended,
+        syncSuspendedReason: (ppc as any).syncSuspendedReason,
+        consecutiveErrors: (ppc as any).consecutiveErrors,
+        lastErrorCode: (ppc as any).lastErrorCode,
+        lastSyncAt: ppc.lastSyncAt,
+        lastSyncStatus: ppc.lastSyncStatus,
+        lastAlertAt: (ppc as any).lastAlertAt,
+      })
+        .from(ppc)
+        .innerJoin(pj, eq(ppc.projectId, pj.id))
+        .where(eq(pj.tenantId, tenantId));
+
+      const audit = await storage.getPlannerSyncAuditByTenant(tenantId, 200);
+      res.json({
+        connections: allConns.map((c: any) => ({
+          id: c.id,
+          projectId: c.projectId,
+          planTitle: c.planTitle,
+          syncEnabled: c.syncEnabled,
+          syncSuspended: c.syncSuspended || false,
+          syncSuspendedReason: c.syncSuspendedReason || null,
+          consecutiveErrors: c.consecutiveErrors || 0,
+          lastErrorCode: c.lastErrorCode || null,
+          lastSyncAt: c.lastSyncAt,
+          lastSyncStatus: c.lastSyncStatus,
+          lastAlertAt: c.lastAlertAt,
+        })),
+        audit: audit.map((a: any) => ({
+          id: a.id, connectionId: a.connectionId, plannerTaskId: a.plannerTaskId,
+          action: a.action, outcome: a.outcome, trigger: a.trigger,
+          errorCode: a.errorCode, errorMessage: a.errorMessage,
+          createdAt: a.createdAt,
+        })),
+      });
+    } catch (err: any) {
+      console.error('[PLANNER-HEALTH-ADMIN] Error:', err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Resume a suspended connection (admin only)
+  app.post("/api/projects/:projectId/planner-connection/resume", deps.requireAuth, deps.requireRole(["admin", "global_admin"]), async (req, res) => {
+    try {
+      const conn = await storage.getProjectPlannerConnection(req.params.projectId);
+      if (!conn) return res.status(404).json({ message: "Connection not found" });
+      const updated = await storage.updateProjectPlannerConnection(conn.id, {
+        syncSuspended: false,
+        syncSuspendedReason: null,
+        consecutiveErrors: 0,
+        lastErrorCode: null,
+      } as any);
+      const { recordPlannerAudit } = await import('../services/planner-sync-audit.js');
+      await recordPlannerAudit({
+        tenantId: (conn as any).tenantId ?? null,
+        connectionId: conn.id,
+        action: 'resume',
+        outcome: 'success',
+        trigger: 'manual',
+      });
+      res.json(updated);
+    } catch (err: any) {
+      console.error('[PLANNER-RESUME] Error:', err);
+      res.status(500).json({ message: err.message });
     }
   });
 

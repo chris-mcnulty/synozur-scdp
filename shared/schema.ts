@@ -1006,9 +1006,14 @@ export const projectAllocations = pgTable("project_allocations", {
   priorPlannedStartDate: date("prior_planned_start_date"), // Preserved before a cascade shift
   priorPlannedEndDate: date("prior_planned_end_date"),     // Preserved before a cascade shift
   cascadeSourceMilestoneId: varchar("cascade_source_milestone_id"), // FK to the milestone that triggered the cascade
+  // Task #126 — Planner LWW: track last human edit for conflict resolution
+  // Updated only by interactive user edits, NOT by inbound sync writes.
+  lastEditedAt: timestamp("last_edited_at"),
+  lastEditedBy: varchar("last_edited_by").references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_project_allocations_tenant").on(table.tenantId),
+  lastEditedIdx: index("idx_project_allocations_last_edited").on(table.lastEditedAt),
 }));
 
 export const projectBaselines = pgTable("project_baselines", {
@@ -2931,7 +2936,14 @@ export const projectPlannerConnections = pgTable("project_planner_connections", 
   lastSyncAt: timestamp("last_sync_at"),
   lastSyncStatus: text("last_sync_status"), // success, error, partial
   lastSyncError: text("last_sync_error"),
-  
+
+  // Task #126 — Sync robustness: connection-level error tracking & auto-suspend
+  consecutiveErrors: integer("consecutive_errors").notNull().default(0),
+  lastErrorCode: text("last_error_code"), // auth_expired, forbidden, plan_not_found, rate_limited, etag_mismatch, network, unknown
+  lastAlertAt: timestamp("last_alert_at"), // Last time admin was alerted (for cooldown)
+  syncSuspended: boolean("sync_suspended").notNull().default(false), // Manually suspend (e.g. after auth expired)
+  syncSuspendedReason: text("sync_suspended_reason"),
+
   // Metadata
   connectedBy: varchar("connected_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -2961,13 +2973,28 @@ export const plannerTaskSync = pgTable("planner_task_sync", {
   
   // Sync tracking
   lastSyncedAt: timestamp("last_synced_at").notNull().default(sql`now()`),
-  syncStatus: text("sync_status").notNull().default('synced'), // synced, pending_outbound, pending_inbound, conflict, error, import_failed
+  syncStatus: text("sync_status").notNull().default('synced'), // synced, pending_outbound, pending_inbound, conflict, error, import_failed, suspended
   syncError: text("sync_error"),
-  
+
   // Version tracking for conflict detection
   localVersion: integer("local_version").notNull().default(1),
   remoteEtag: text("remote_etag"), // Planner's etag for optimistic concurrency
-  
+
+  // Task #126 — Last-write-wins fields
+  remoteLastModified: timestamp("remote_last_modified"), // Planner task.lastModifiedDateTime as of last sync
+  lastConflictResolution: jsonb("last_conflict_resolution").$type<{
+    at: string;
+    winner: 'local' | 'remote' | 'equal';
+    reason: string;
+    localEditedAt: string | null;
+    remoteModifiedAt: string | null;
+    fields?: string[];
+  } | null>(),
+  // Per-task error tracking for resilience
+  consecutiveErrors: integer("consecutive_errors").notNull().default(0),
+  lastErrorAt: timestamp("last_error_at"),
+  lastErrorCode: text("last_error_code"),
+
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -2977,6 +3004,78 @@ export const insertPlannerTaskSyncSchema = createInsertSchema(plannerTaskSync).o
 });
 export type InsertPlannerTaskSync = z.infer<typeof insertPlannerTaskSyncSchema>;
 export type PlannerTaskSync = typeof plannerTaskSync.$inferSelect;
+
+// Task #126 — Graph webhook subscriptions for inbound Planner changes.
+// One row per active subscription on a Planner plan/group/task resource.
+export const plannerSubscriptions = pgTable("planner_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  connectionId: varchar("connection_id").notNull().references(() => projectPlannerConnections.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Microsoft Graph subscription details
+  subscriptionId: varchar("subscription_id", { length: 255 }).notNull(), // ID returned by Graph
+  resource: text("resource").notNull(), // e.g. /planner/plans/{id} or /groups/{id}/planner/plans/{id}
+  changeType: text("change_type").notNull().default('updated,deleted'),
+  notificationUrl: text("notification_url").notNull(),
+  clientState: text("client_state").notNull(), // Secret used to verify inbound notifications
+  expirationDateTime: timestamp("expiration_date_time").notNull(),
+
+  // Renewal/health tracking
+  status: text("status").notNull().default('active'), // active, expired, error, removed
+  lastRenewedAt: timestamp("last_renewed_at"),
+  lastRenewalError: text("last_renewal_error"),
+  consecutiveRenewalErrors: integer("consecutive_renewal_errors").notNull().default(0),
+
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueSubId: uniqueIndex("idx_planner_subs_subscription_id").on(table.subscriptionId),
+  connectionIdx: index("idx_planner_subs_connection").on(table.connectionId),
+  expirationIdx: index("idx_planner_subs_expiration").on(table.expirationDateTime),
+}));
+
+export const insertPlannerSubscriptionSchema = createInsertSchema(plannerSubscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPlannerSubscription = z.infer<typeof insertPlannerSubscriptionSchema>;
+export type PlannerSubscription = typeof plannerSubscriptions.$inferSelect;
+
+// Task #126 — Audit log for every Planner sync action (outbound write, inbound pull,
+// conflict resolution, suspend, alert). Used by Sync Health UI.
+export const plannerSyncAudit = pgTable("planner_sync_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+  connectionId: varchar("connection_id").references(() => projectPlannerConnections.id, { onDelete: 'cascade' }),
+  taskSyncId: varchar("task_sync_id").references(() => plannerTaskSync.id, { onDelete: 'set null' }),
+  allocationId: varchar("allocation_id").references(() => projectAllocations.id, { onDelete: 'set null' }),
+  plannerTaskId: varchar("planner_task_id", { length: 255 }),
+
+  // Action: outbound_create, outbound_update, inbound_pull, conflict_resolved,
+  // suspend, resume, alert_sent, webhook_received, subscription_created,
+  // subscription_renewed, subscription_expired
+  action: text("action").notNull(),
+  outcome: text("outcome").notNull(), // success, error, skipped, conflict
+  trigger: text("trigger"), // scheduled, manual, webhook, retry
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  details: jsonb("details").$type<Record<string, any> | null>(),
+
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_planner_audit_tenant").on(table.tenantId),
+  connectionIdx: index("idx_planner_audit_connection").on(table.connectionId),
+  createdIdx: index("idx_planner_audit_created").on(table.createdAt),
+  actionIdx: index("idx_planner_audit_action").on(table.action),
+}));
+
+export const insertPlannerSyncAuditSchema = createInsertSchema(plannerSyncAudit).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPlannerSyncAudit = z.infer<typeof insertPlannerSyncAuditSchema>;
+export type PlannerSyncAudit = typeof plannerSyncAudit.$inferSelect;
 
 // User-to-Azure AD mapping - maps Constellation users to Azure AD users for task assignment
 export const userAzureMappings = pgTable("user_azure_mappings", {
@@ -3973,6 +4072,7 @@ export const notificationTypeEnum = z.enum([
   'expense_reminder',
   'general',
   'client_signoff',
+  'planner_sync_failure',
 ]);
 export type NotificationType = z.infer<typeof notificationTypeEnum>;
 

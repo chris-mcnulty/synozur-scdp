@@ -912,6 +912,11 @@ export interface IStorage {
   updatePlannerTaskSync(id: string, updates: Partial<InsertPlannerTaskSync>): Promise<PlannerTaskSync>;
   deletePlannerTaskSync(id: string): Promise<void>;
   deletePlannerTaskSyncByAllocation(allocationId: string): Promise<void>;
+  // Task #126
+  getPlannerTaskSyncByAllocation(allocationId: string): Promise<PlannerTaskSync | undefined>;
+  getPlannerSubscriptionsByConnection(connectionId: string): Promise<any[]>;
+  getPlannerSyncAuditByConnection(connectionId: string, limit?: number): Promise<any[]>;
+  getPlannerSyncAuditByTenant(tenantId: string, limit?: number): Promise<any[]>;
   
   getUserAzureMapping(userId: string): Promise<UserAzureMapping | undefined>;
   getUserAzureMappingByAzureId(azureUserId: string): Promise<UserAzureMapping | undefined>;

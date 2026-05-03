@@ -283,6 +283,19 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       }).catch((importError: any) => {
         log(`⚠️ Failed to import Planner sync scheduler: ${importError.message}`);
       });
+
+      // Task #126 — Start the Planner Graph subscription renewal scheduler
+      log('🔄 Starting Planner subscription renewal scheduler...');
+      import('./services/planner-subscription-manager.js').then(({ startSubscriptionRenewalScheduler }) => {
+        try {
+          startSubscriptionRenewalScheduler();
+          log('✅ Planner subscription renewal scheduler started');
+        } catch (err: any) {
+          log(`⚠️ Subscription renewal scheduler failed to start: ${err.message}`);
+        }
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import subscription renewal scheduler: ${importError.message}`);
+      });
       
       // Start the plan expiration scheduler
       log('🔄 Starting plan expiration scheduler...');

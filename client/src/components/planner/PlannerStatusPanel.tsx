@@ -13,7 +13,9 @@ import {
   CheckCircle,
   AlertCircle,
   Clock,
-  Loader2
+  Loader2,
+  ShieldAlert,
+  PlayCircle,
 } from "lucide-react";
 import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
@@ -63,6 +65,40 @@ interface SyncStatus {
   }>;
 }
 
+interface SyncHealth {
+  connected: boolean;
+  connection?: {
+    id: string;
+    syncEnabled: boolean;
+    syncSuspended: boolean;
+    syncSuspendedReason: string | null;
+    consecutiveErrors: number;
+    lastErrorCode: string | null;
+    lastSyncAt: string | null;
+    lastSyncStatus: string | null;
+    lastSyncError: string | null;
+    lastAlertAt: string | null;
+  };
+  subscriptions?: Array<{
+    id: string;
+    status: string;
+    expirationDateTime: string;
+    lastRenewedAt: string | null;
+    lastRenewalError: string | null;
+    consecutiveRenewalErrors: number;
+  }>;
+  audit?: Array<{
+    id: string;
+    action: string;
+    outcome: string;
+    trigger: string | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+    details: any;
+    createdAt: string;
+  }>;
+}
+
 export function PlannerStatusPanel({ projectId, projectName, clientName, clientTeamId, clientId }: PlannerStatusPanelProps) {
   const { toast } = useToast();
   const [showConnectDialog, setShowConnectDialog] = useState(false);
@@ -70,6 +106,22 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
 
   const { data: syncStatus, isLoading } = useQuery<SyncStatus>({
     queryKey: ["/api/projects", projectId, "planner-sync-status"]
+  });
+
+  // Task #126 — Sync health (errors, subscriptions, audit log)
+  const { data: syncHealth } = useQuery<SyncHealth>({
+    queryKey: ["/api/projects", projectId, "planner-sync-health"],
+    enabled: !!syncStatus?.connected,
+  });
+
+  const resumeMutation = useMutation({
+    mutationFn: async () => apiRequest(`/api/projects/${projectId}/planner-connection/resume`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-health"] });
+      toast({ title: "Sync resumed" });
+    },
+    onError: (err: any) => toast({ title: "Failed to resume", description: err.message, variant: "destructive" }),
   });
 
   const syncMutation = useMutation({
@@ -260,6 +312,48 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
               </span>
             </div>
           </div>
+
+          {/* Task #126 — Sync Health panel */}
+          {syncHealth?.connection && (syncHealth.connection.syncSuspended || syncHealth.connection.consecutiveErrors > 0 || (syncHealth.connection.lastSyncStatus === 'error')) && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-2" data-testid="sync-health-alert">
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="h-4 w-4 text-destructive mt-0.5" />
+                <div className="text-sm flex-1">
+                  <div className="font-medium text-destructive">
+                    {syncHealth.connection.syncSuspended ? "Sync suspended" : "Sync issues detected"}
+                  </div>
+                  <div className="text-muted-foreground mt-1">
+                    {syncHealth.connection.syncSuspendedReason || syncHealth.connection.lastSyncError || "Errors during recent sync attempts."}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Consecutive errors: {syncHealth.connection.consecutiveErrors}
+                    {syncHealth.connection.lastErrorCode && ` · Code: ${syncHealth.connection.lastErrorCode}`}
+                  </div>
+                  {syncHealth.connection.syncSuspended && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => resumeMutation.mutate()}
+                      disabled={resumeMutation.isPending}
+                      data-testid="button-resume-sync"
+                    >
+                      {resumeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <PlayCircle className="h-3 w-3 mr-1" />}
+                      Resume sync
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {syncHealth?.subscriptions && syncHealth.subscriptions.length > 0 && (
+            <div className="text-xs text-muted-foreground">
+              Webhook: {syncHealth.subscriptions[0].status}
+              {syncHealth.subscriptions[0].expirationDateTime &&
+                ` · expires ${formatDistanceToNow(new Date(syncHealth.subscriptions[0].expirationDateTime), { addSuffix: true })}`}
+            </div>
+          )}
 
           <div className="space-y-3 pt-4 border-t">
             <div className="flex items-center justify-between">

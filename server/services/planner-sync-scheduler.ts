@@ -1,5 +1,54 @@
 import * as cron from 'node-cron';
 import { storage } from '../storage.js';
+import { resolveTaskConflict, classifyGraphError, mapStatusToPercent, mapPercentToStatus } from '@shared/planner-conflict.js';
+import { recordPlannerAudit } from './planner-sync-audit.js';
+import { maybeSendSyncFailureAlert, suspendConnection, FATAL_ERROR_CODE_SET } from './planner-sync-alerts.js';
+import { withGraphRetry, withEtagRetry } from './planner-graph-retry.js';
+import { db } from '../db.js';
+import { projectPlannerConnections, plannerTaskSync, tenantSettings } from '@shared/schema.js';
+import { and, eq } from 'drizzle-orm';
+
+/**
+ * Task #126 — Per-tenant rollout flag for the LWW resolver. Semantics:
+ *   - Existing tenants are seeded by migration with explicit row 'false', so
+ *     they keep legacy push-always behavior until an operator opts in.
+ *   - NEW tenants (no row) DEFAULT TO TRUE — they get the safer LWW
+ *     resolver out of the box.
+ * The migration enforces (a); this function enforces (b) by treating a
+ * missing row as "true".
+ */
+async function isLwwEnabledForTenant(tenantId: string | null | undefined): Promise<boolean> {
+  if (!tenantId) return true;
+  try {
+    const [row] = await db.select()
+      .from(tenantSettings)
+      .where(and(
+        eq(tenantSettings.tenantId, tenantId),
+        eq(tenantSettings.settingKey, 'plannerSyncLwwEnabled'),
+      ))
+      .limit(1);
+    if (!row) return true; // new tenants default ON
+    return String((row as any).settingValue ?? 'true').toLowerCase() !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Task #126 — `project_planner_connections` has no tenant_id column; the
+ * tenant is derived via the linked project. Cached per-call to avoid repeated
+ * lookups across many allocations on one connection.
+ */
+async function getConnectionTenantId(connection: any): Promise<string | null> {
+  if ((connection as any).__tenantId !== undefined) return (connection as any).__tenantId;
+  let tid: string | null = null;
+  try {
+    const project = connection.projectId ? await storage.getProject(connection.projectId) : null;
+    tid = (project as any)?.tenantId ?? null;
+  } catch { tid = null; }
+  (connection as any).__tenantId = tid;
+  return tid;
+}
 
 interface PlannerSyncResult {
   projectId: string;
@@ -20,7 +69,7 @@ interface PlannerSyncJobResult {
 
 let scheduledTask: cron.ScheduledTask | null = null;
 
-async function syncProjectToPlanner(
+export async function syncProjectToPlanner(
   projectId: string,
   connection: any
 ): Promise<PlannerSyncResult> {
@@ -38,6 +87,12 @@ async function syncProjectToPlanner(
   };
 
   try {
+    // Task #126 — Skip suspended connections (auto-suspended after fatal error).
+    if ((connection as any).syncSuspended) {
+      result.errors.push(`Sync suspended: ${(connection as any).syncSuspendedReason || 'unknown reason'}`);
+      return result;
+    }
+
     const allocations = await storage.getProjectAllocations(projectId);
     const existingSyncs = await storage.getPlannerTaskSyncsByConnection(connection.id);
     const buckets = await plannerService.listBuckets(connection.planId);
@@ -164,52 +219,132 @@ async function syncProjectToPlanner(
             }
           }
 
-          const task = await plannerService.getTask(syncRecord.taskId);
+          let task = await withGraphRetry(() => plannerService.getTask(syncRecord.taskId), { label: 'getTask' });
           if (task) {
-            // Guard: detect if Planner has been modified remotely since last sync.
-            // If the ETag has changed and the remote percentComplete differs from what local
-            // would push, treat the remote as authoritative for status and preserve it —
-            // the inbound phase will reconcile the local record accordingly.
-            // Also preserve remote if it is simply ahead (e.g. completed in Planner) even
-            // without a tracked ETag.
-            const remotePercentComplete = task.percentComplete ?? 0;
-            const etagChanged = !!syncRecord.remoteEtag && task['@odata.etag'] !== syncRecord.remoteEtag;
-            const remoteStatusDiffers = remotePercentComplete !== percentComplete;
+            // Task #126 — Last-write-wins resolution. Compare remote.lastModifiedDateTime
+            // against allocation.lastEditedAt and let the side with the newer human edit win.
+            // STRICT LWW: when remote wins (or equal), skip the outbound PATCH entirely so
+            // we never silently push stale local fields back to Planner.
+            const lwwEnabled = await isLwwEnabledForTenant(await getConnectionTenantId(connection));
+            let conflict = resolveTaskConflict(
+              {
+                lastEditedAt: (allocation as any).lastEditedAt ?? null,
+                status: allocation.status,
+                plannedStartDate: allocation.plannedStartDate,
+                plannedEndDate: allocation.plannedEndDate,
+              },
+              {
+                lastModifiedDateTime: (task as any).lastModifiedDateTime ?? null,
+                percentComplete: task.percentComplete ?? 0,
+                startDateTime: (task as any).startDateTime ?? null,
+                dueDateTime: (task as any).dueDateTime ?? null,
+                title: (task as any).title ?? null,
+              }
+            );
 
-            let outboundPercentComplete = percentComplete;
-            if (etagChanged && remoteStatusDiffers) {
-              // ETag changed and remote status differs — remote wins, preserve it
-              console.log(
-                `[PLANNER-SYNC] Remote change detected for allocation ${allocation.id}: ` +
-                `ETag changed, Planner has ${remotePercentComplete}% vs local ${percentComplete}%. ` +
-                `Preserving remote status.`
-              );
-              outboundPercentComplete = remotePercentComplete;
-            } else if (!etagChanged && remotePercentComplete > percentComplete) {
-              // No ETag tracking yet but Planner is ahead — still preserve remote
-              console.log(
-                `[PLANNER-SYNC] Planner is ahead for allocation ${allocation.id}: ` +
-                `${remotePercentComplete}% > local ${percentComplete}%. Preserving remote status.`
-              );
-              outboundPercentComplete = remotePercentComplete;
+            // Rollout flag off → revert to legacy 'always push outbound'.
+            if (!lwwEnabled) {
+              conflict = { ...conflict, winner: 'local', reason: 'lww_disabled_rollout' } as any;
             }
 
-            await plannerService.updateTask(syncRecord.taskId, task['@odata.etag'] || '', {
-              title: taskTitle,
-              bucketId: bucket.id,
-              startDateTime: updateStartDateTime,
-              dueDateTime: updateDueDateTime,
-              percentComplete: outboundPercentComplete,
-              assigneeIds
+            const remotePercent = task.percentComplete ?? 0;
+            if (conflict.winner === 'remote') {
+              // Remote wins — apply inbound to local, do NOT push outbound.
+              const remoteStatus = mapPercentToStatus(remotePercent);
+              if (remoteStatus !== allocation.status) {
+                try {
+                  // _syncWrite: true ensures the storage layer does NOT stamp
+                  // lastEditedAt — sync writes must never masquerade as human edits.
+                  await storage.updateProjectAllocation(allocation.id, {
+                    status: remoteStatus,
+                    completedDate: remoteStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
+                    startedDate: remoteStatus === 'in_progress' && !allocation.startedDate
+                      ? new Date().toISOString().slice(0, 10) : allocation.startedDate,
+                    _syncWrite: true,
+                  } as any);
+                  console.log(`[PLANNER-SYNC] LWW: remote wins for allocation ${allocation.id} → ${remoteStatus}`);
+                } catch (inboundErr: any) {
+                  console.warn('[PLANNER-SYNC] Failed to apply inbound LWW update:', inboundErr.message);
+                }
+              }
+            }
+
+            await recordPlannerAudit({
+              tenantId: await getConnectionTenantId(connection),
+              connectionId: connection.id,
+              taskSyncId: syncRecord.id,
+              allocationId: allocation.id,
+              plannerTaskId: syncRecord.taskId,
+              action: 'conflict_resolved',
+              outcome: conflict.winner === 'equal' ? 'skipped' : 'success',
+              trigger: 'scheduled',
+              details: conflict as any,
             });
 
-            try {
-              const taskDetails = await plannerService.getTaskDetails(syncRecord.taskId);
-              if (taskDetails) {
-                await plannerService.updateTaskDetails(syncRecord.taskId, taskDetails['@odata.etag'] || '', taskNotes);
+            // STRICT LWW: only push outbound when local strictly won. Otherwise the
+            // local state is what we just pulled in, and another PATCH would just be
+            // a no-op race risk.
+            if (conflict.winner === 'local') {
+              const doUpdate = async () => plannerService.updateTask(syncRecord.taskId, (task as any)['@odata.etag'] || '', {
+                title: taskTitle,
+                bucketId: bucket.id,
+                startDateTime: updateStartDateTime,
+                dueDateTime: updateDueDateTime,
+                percentComplete,
+                assigneeIds,
+              });
+              await withEtagRetry(
+                doUpdate,
+                async () => {
+                  // 412: someone else updated the task between our fetch and PATCH.
+                  // Re-fetch, re-resolve LWW, retry once with the new etag.
+                  const fresh = await withGraphRetry(() => plannerService.getTask(syncRecord.taskId), { label: 'getTask-refetch' });
+                  task = fresh;
+                  if (!fresh) return null as any;
+                  const reConflict = resolveTaskConflict(
+                    {
+                      lastEditedAt: (allocation as any).lastEditedAt ?? null,
+                      status: allocation.status,
+                      plannedStartDate: allocation.plannedStartDate,
+                      plannedEndDate: allocation.plannedEndDate,
+                    },
+                    {
+                      lastModifiedDateTime: (fresh as any).lastModifiedDateTime ?? null,
+                      percentComplete: fresh.percentComplete ?? 0,
+                      startDateTime: (fresh as any).startDateTime ?? null,
+                      dueDateTime: (fresh as any).dueDateTime ?? null,
+                      title: (fresh as any).title ?? null,
+                    }
+                  );
+                  if (reConflict.winner !== 'local') {
+                    console.log(`[PLANNER-SYNC] LWW after 412: remote now wins, abandoning outbound PATCH`);
+                    return null as any;
+                  }
+                  return plannerService.updateTask(syncRecord.taskId, (fresh as any)['@odata.etag'] || '', {
+                    title: taskTitle,
+                    bucketId: bucket.id,
+                    startDateTime: updateStartDateTime,
+                    dueDateTime: updateDueDateTime,
+                    percentComplete,
+                    assigneeIds,
+                  });
+                },
+                { label: 'updateTask' }
+              );
+
+              try {
+                const taskDetails = await withGraphRetry(() => plannerService.getTaskDetails(syncRecord.taskId), { label: 'getTaskDetails' });
+                if (taskDetails) {
+                  await withGraphRetry(
+                    () => plannerService.updateTaskDetails(syncRecord.taskId, taskDetails['@odata.etag'] || '', taskNotes),
+                    { label: 'updateTaskDetails' },
+                  );
+                }
+              } catch (notesErr: any) {
+                console.warn('[PLANNER-SYNC] Failed to update task notes:', notesErr.message);
               }
-            } catch (notesErr: any) {
-              console.warn('[PLANNER-SYNC] Failed to update task notes:', notesErr.message);
+            } else {
+              console.log(`[PLANNER-SYNC] LWW: outbound PATCH skipped for ${syncRecord.taskId} (winner=${conflict.winner}, reason=${conflict.reason})`);
             }
 
             await storage.updatePlannerTaskSync(syncRecord.id, {
@@ -219,8 +354,20 @@ async function syncProjectToPlanner(
               lastSyncedAt: new Date(),
               syncStatus: 'synced',
               localVersion: syncRecord.localVersion + 1,
-              remoteEtag: task['@odata.etag']
-            });
+              remoteEtag: (task as any)['@odata.etag'],
+              remoteLastModified: (task as any).lastModifiedDateTime ? new Date((task as any).lastModifiedDateTime) : null,
+              lastConflictResolution: {
+                at: new Date().toISOString(),
+                winner: conflict.winner,
+                reason: conflict.reason,
+                localEditedAt: conflict.localEditedAt,
+                remoteModifiedAt: conflict.remoteModifiedAt,
+                fields: conflict.fields,
+              },
+              consecutiveErrors: 0,
+              lastErrorAt: null,
+              lastErrorCode: null,
+            } as any);
             result.updated++;
           } else {
             console.warn(`[PLANNER-SYNC] Task ${syncRecord.taskId} not found in Planner, recreating...`);
@@ -309,25 +456,341 @@ async function syncProjectToPlanner(
         const friendlyError = `Assignment for "${personName}" (${taskDesc.substring(0, 50)}${taskDesc.length > 50 ? '...' : ''}) with dates ${dates}: ${allocErr.message}`;
         result.errors.push(friendlyError);
         console.error(`[PLANNER-SYNC] ${friendlyError} (Allocation ID: ${allocation.id})`);
+
+        // Task #126 — Track per-task errors for resilience
+        try {
+          const cls = classifyGraphError(allocErr);
+          const existing = await storage.getPlannerTaskSyncByAllocation(allocation.id).catch(() => null);
+          if (existing?.id) {
+            await storage.updatePlannerTaskSync(existing.id, {
+              syncStatus: 'error',
+              syncError: allocErr.message?.slice(0, 500),
+              consecutiveErrors: (existing.consecutiveErrors || 0) + 1,
+              lastErrorAt: new Date(),
+              lastErrorCode: cls.code,
+            } as any);
+          }
+          await recordPlannerAudit({
+            tenantId: await getConnectionTenantId(connection),
+            connectionId: connection.id,
+            taskSyncId: existing?.id ?? null,
+            allocationId: allocation.id,
+            plannerTaskId: existing?.taskId ?? null,
+            action: existing ? 'outbound_update' : 'outbound_create',
+            outcome: 'error',
+            trigger: 'scheduled',
+            errorCode: cls.code,
+            errorMessage: allocErr.message?.slice(0, 500) || null,
+          });
+        } catch (auditErr: any) {
+          console.warn('[PLANNER-SYNC] Audit on alloc error failed:', auditErr.message);
+        }
       }
     }
 
-    await storage.updateProjectPlannerConnection(connection.id, {
-      lastSyncAt: new Date(),
-      lastSyncStatus: result.errors.length > 0 ? 'partial' : 'success',
-      lastSyncError: result.errors.length > 0 ? result.errors.join('; ') : null
-    });
+    // Connection-level success/partial — reset error counter on full success;
+    // on partial failure increment consecutive_errors and run alerting/suspension
+    // logic so per-task failures aren't silently lost.
+    const fullSuccess = result.errors.length === 0;
+    if (fullSuccess) {
+      await storage.updateProjectPlannerConnection(connection.id, {
+        lastSyncAt: new Date(),
+        lastSyncStatus: 'success',
+        lastSyncError: null,
+        consecutiveErrors: 0,
+        lastErrorCode: null,
+      } as any);
+    } else {
+      // Determine the most-severe per-task error code by sampling the first
+      // failing allocation's classification (best-effort).
+      const newConsecutive = ((connection as any).consecutiveErrors || 0) + 1;
+      // Heuristic: if any error message looks fatal, treat as fatal.
+      const errBlob = result.errors.join(' | ');
+      const fakeErr: any = new Error(errBlob);
+      if (/401|unauthor/i.test(errBlob)) fakeErr.statusCode = 401;
+      else if (/403|forbidden/i.test(errBlob)) fakeErr.statusCode = 403;
+      else if (/404|not found/i.test(errBlob)) fakeErr.statusCode = 404;
+      const partialCls = classifyGraphError(fakeErr);
+      const isFatal = FATAL_ERROR_CODE_SET.has(partialCls.code);
+
+      await storage.updateProjectPlannerConnection(connection.id, {
+        lastSyncAt: new Date(),
+        lastSyncStatus: 'partial',
+        lastSyncError: result.errors.slice(0, 5).join('; '),
+        consecutiveErrors: newConsecutive,
+        lastErrorCode: partialCls.code,
+      } as any);
+
+      try {
+        await maybeSendSyncFailureAlert({
+          connectionId: connection.id,
+          tenantId: await getConnectionTenantId(connection),
+          projectId: connection.projectId,
+          projectName: result.projectName || connection.projectId,
+          errorCode: partialCls.code,
+          errorMessage: result.errors[0] || 'Partial sync failure',
+          consecutiveErrors: newConsecutive,
+          forceImmediate: isFatal && newConsecutive === 1,
+        });
+      } catch (alertErr: any) {
+        console.warn('[PLANNER-SYNC] Partial-failure alert dispatch failed:', alertErr.message);
+      }
+
+      if (isFatal) {
+        try {
+          await suspendConnection({
+            connectionId: connection.id,
+            tenantId: await getConnectionTenantId(connection),
+            reason: `Auto-suspended after partial sync failure: ${partialCls.code}`,
+            errorCode: partialCls.code,
+          });
+        } catch { /* best-effort */ }
+      }
+    }
 
   } catch (err: any) {
+    // Task #126 — Connection-level failure: increment counter, audit, alert, maybe suspend.
     result.errors.push(err.message);
+    const cls = classifyGraphError(err);
+    const newConsecutive = ((connection as any).consecutiveErrors || 0) + 1;
+    const isFatal = FATAL_ERROR_CODE_SET.has(cls.code);
+
     await storage.updateProjectPlannerConnection(connection.id, {
       lastSyncAt: new Date(),
       lastSyncStatus: 'error',
-      lastSyncError: err.message
+      lastSyncError: err.message,
+      consecutiveErrors: newConsecutive,
+      lastErrorCode: cls.code,
+    } as any);
+
+    await recordPlannerAudit({
+      tenantId: await getConnectionTenantId(connection),
+      connectionId: connection.id,
+      action: 'outbound_update',
+      outcome: 'error',
+      trigger: 'scheduled',
+      errorCode: cls.code,
+      errorMessage: err.message?.slice(0, 500) || null,
+      details: { consecutiveErrors: newConsecutive },
     });
+
+    try {
+      await maybeSendSyncFailureAlert({
+        connectionId: connection.id,
+        tenantId: await getConnectionTenantId(connection),
+        projectId: connection.projectId,
+        projectName: result.projectName || connection.projectId,
+        errorCode: cls.code,
+        errorMessage: err.message?.slice(0, 500) || 'Unknown error',
+        consecutiveErrors: newConsecutive,
+        forceImmediate: isFatal && newConsecutive === 1,
+      });
+    } catch (alertErr: any) {
+      console.warn('[PLANNER-SYNC] Alert dispatch failed:', alertErr.message);
+    }
+
+    if (isFatal) {
+      try {
+        await suspendConnection({
+          connectionId: connection.id,
+          tenantId: await getConnectionTenantId(connection),
+          reason: `Auto-suspended after fatal error: ${cls.code}`,
+          errorCode: cls.code,
+        });
+      } catch (susErr: any) {
+        console.warn('[PLANNER-SYNC] Suspend failed:', susErr.message);
+      }
+    }
   }
 
   return result;
+}
+
+/**
+ * Task #126 — Pull a single Planner task and apply LWW resolution to the local
+ * allocation. Used by the webhook-triggered `planner.task.pull` job and by
+ * the manual sync-now action when targeting a specific task.
+ */
+export async function pullPlannerTask(
+  connectionId: string,
+  plannerTaskId: string,
+  trigger: 'webhook' | 'manual' | 'scheduled' = 'webhook'
+): Promise<{ status: string; winner?: string; reason?: string }> {
+  const { plannerService } = await import('./planner-service.js');
+  const [conn] = await db.select()
+    .from(projectPlannerConnections)
+    .where(eq(projectPlannerConnections.id, connectionId))
+    .limit(1);
+  if (!conn) {
+    return { status: 'connection_missing' };
+  }
+  if ((conn as any).syncSuspended) {
+    return { status: 'suspended' };
+  }
+
+  const sync = await storage.getPlannerTaskSyncByTaskId(plannerTaskId);
+  if (!sync) {
+    await recordPlannerAudit({
+      tenantId: (conn as any).tenantId ?? null,
+      connectionId,
+      plannerTaskId,
+      action: 'inbound_pull',
+      outcome: 'skipped',
+      trigger,
+      details: { reason: 'no_local_sync_record' },
+    });
+    return { status: 'no_local_sync_record' };
+  }
+  if (!sync.allocationId) {
+    return { status: 'no_allocation' };
+  }
+  const allocation = await storage.getProjectAllocation(sync.allocationId);
+  if (!allocation) {
+    return { status: 'allocation_missing' };
+  }
+
+  // Task #126 — Resolve tenant via project (no tenant_id column on connection)
+  // and pre-fetch project for alert recipient/PM lookups.
+  const tenantIdForConn = await getConnectionTenantId(conn);
+  const projectForConn = conn.projectId ? await storage.getProject(conn.projectId).catch(() => null) : null;
+
+  let task: any;
+  try {
+    task = await plannerService.getTask(plannerTaskId);
+  } catch (err: any) {
+    const cls = classifyGraphError(err);
+
+    // Per-task error counter
+    await storage.updatePlannerTaskSync(sync.id, {
+      syncStatus: 'error',
+      syncError: err.message?.slice(0, 500),
+      consecutiveErrors: (sync.consecutiveErrors || 0) + 1,
+      lastErrorAt: new Date(),
+      lastErrorCode: cls.code,
+    } as any);
+
+    // Connection-level error counter + alert + auto-suspend on fatal codes,
+    // mirroring the outbound scheduler path so inbound failures are observable.
+    const newConsecutive = ((conn as any).consecutiveErrors || 0) + 1;
+    const isFatal = FATAL_ERROR_CODE_SET.has(cls.code);
+    try {
+      await storage.updateProjectPlannerConnection(connectionId, {
+        consecutiveErrors: newConsecutive,
+        lastErrorCode: cls.code,
+        lastErrorAt: new Date(),
+        ...(isFatal ? { syncSuspended: true, syncSuspendedReason: `Inbound pull: ${cls.code}` } : {}),
+      } as any);
+    } catch { /* best-effort */ }
+
+    await recordPlannerAudit({
+      tenantId: tenantIdForConn,
+      connectionId,
+      taskSyncId: sync.id,
+      allocationId: allocation.id,
+      plannerTaskId,
+      action: 'inbound_pull',
+      outcome: 'error',
+      trigger,
+      errorCode: cls.code,
+      errorMessage: err.message?.slice(0, 500) || null,
+    });
+
+    try {
+      await maybeSendSyncFailureAlert({
+        connectionId,
+        tenantId: tenantIdForConn,
+        projectId: conn.projectId,
+        projectName: (projectForConn as any)?.name || conn.projectId,
+        errorCode: cls.code,
+        errorMessage: err.message?.slice(0, 500) || '',
+        consecutiveErrors: newConsecutive,
+        forceImmediate: isFatal,
+      });
+    } catch { /* best-effort */ }
+    if (isFatal) {
+      try {
+        await suspendConnection({
+          connectionId,
+          tenantId: tenantIdForConn,
+          reason: `Inbound pull fatal: ${cls.code}`,
+          errorCode: cls.code,
+        });
+      } catch { /* ignore */ }
+    }
+
+    if (cls.code === 'plan_not_found' && (err.statusCode === 404 || err.status === 404)) {
+      try {
+        if (allocation.status !== 'cancelled' && allocation.status !== 'completed') {
+          await storage.updateProjectAllocation(allocation.id, { status: 'cancelled', _syncWrite: true } as any);
+        }
+        await storage.updatePlannerTaskSync(sync.id, { syncStatus: 'error', syncError: 'Remote task deleted' } as any);
+      } catch { /* ignore */ }
+      return { status: 'remote_deleted' };
+    }
+    throw err;
+  }
+
+  const conflict = resolveTaskConflict(
+    {
+      lastEditedAt: (allocation as any).lastEditedAt ?? null,
+      status: allocation.status,
+      plannedStartDate: allocation.plannedStartDate,
+      plannedEndDate: allocation.plannedEndDate,
+    },
+    {
+      lastModifiedDateTime: task.lastModifiedDateTime ?? null,
+      percentComplete: task.percentComplete ?? 0,
+      startDateTime: task.startDateTime ?? null,
+      dueDateTime: task.dueDateTime ?? null,
+      title: task.title ?? null,
+    }
+  );
+
+  if (conflict.winner === 'remote') {
+    const remoteStatus = mapPercentToStatus(task.percentComplete ?? 0);
+    if (remoteStatus !== allocation.status) {
+      // _syncWrite: true → don't bump lastEditedAt; this is a sync write, not a human edit.
+      await storage.updateProjectAllocation(allocation.id, {
+        status: remoteStatus,
+        completedDate: remoteStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
+        startedDate: remoteStatus === 'in_progress' && !allocation.startedDate
+          ? new Date().toISOString().slice(0, 10) : allocation.startedDate,
+        _syncWrite: true,
+      } as any);
+    }
+  }
+
+  await storage.updatePlannerTaskSync(sync.id, {
+    lastSyncedAt: new Date(),
+    syncStatus: 'synced',
+    remoteEtag: task['@odata.etag'],
+    remoteLastModified: task.lastModifiedDateTime ? new Date(task.lastModifiedDateTime) : null,
+    lastConflictResolution: {
+      at: new Date().toISOString(),
+      winner: conflict.winner,
+      reason: conflict.reason,
+      localEditedAt: conflict.localEditedAt,
+      remoteModifiedAt: conflict.remoteModifiedAt,
+      fields: conflict.fields,
+    },
+    consecutiveErrors: 0,
+    lastErrorAt: null,
+    lastErrorCode: null,
+  } as any);
+
+  await recordPlannerAudit({
+    tenantId: (conn as any).tenantId ?? null,
+    connectionId,
+    taskSyncId: sync.id,
+    allocationId: allocation.id,
+    plannerTaskId,
+    action: 'inbound_pull',
+    outcome: 'success',
+    trigger,
+    details: conflict as any,
+  });
+
+  return { status: 'pulled', winner: conflict.winner, reason: conflict.reason };
 }
 
 export async function runPlannerSyncJob(

@@ -960,7 +960,7 @@ class PlannerService {
       return response.value || [];
     } catch (error: any) {
       console.error('[PLANNER] Error listing tasks:', error.message);
-      throw new Error(`Failed to list tasks: ${error.message}`);
+      throw Object.assign(new Error(`Failed to list tasks: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -981,7 +981,7 @@ class PlannerService {
         return null;
       }
       console.error('[PLANNER] Error getting task:', error.message);
-      throw new Error(`Failed to get task: ${error.message}`);
+      throw Object.assign(new Error(`Failed to get task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -995,7 +995,7 @@ class PlannerService {
       return { ...task, details };
     } catch (error: any) {
       console.error('[PLANNER] Error getting task with details:', error.message);
-      throw new Error(`Failed to get task: ${error.message}`);
+      throw Object.assign(new Error(`Failed to get task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -1046,7 +1046,7 @@ class PlannerService {
         .post(taskBody);
     } catch (error: any) {
       console.error('[PLANNER] Error creating task:', error.message);
-      throw new Error(`Failed to create task: ${error.message}`);
+      throw Object.assign(new Error(`Failed to create task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -1092,7 +1092,7 @@ class PlannerService {
         .patch(updateBody);
     } catch (error: any) {
       console.error('[PLANNER] Error updating task:', error.message);
-      throw new Error(`Failed to update task: ${error.message}`);
+      throw Object.assign(new Error(`Failed to update task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -1105,7 +1105,7 @@ class PlannerService {
         .patch({ description });
     } catch (error: any) {
       console.error('[PLANNER] Error updating task details:', error.message);
-      throw new Error(`Failed to update task details: ${error.message}`);
+      throw Object.assign(new Error(`Failed to update task details: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 

@@ -84,6 +84,23 @@ function registerHandlers() {
   register('ai.statusReport.generate', handleAiStatusReportGenerate);
   register('ai.executiveNarrative.generate', handleAiExecutiveNarrativeGenerate);
   register('teams.provision', handleTeamsProvision);
+  register('planner.task.pull', handlePlannerTaskPull);
+}
+
+// ─── Planner Inbound Pull (Task #126) ────────────────────────────────────────
+// Triggered by the Graph webhook receiver; pulls the latest state of a single
+// Planner task and applies LWW resolution to the local allocation.
+async function handlePlannerTaskPull(job: BackgroundJob): Promise<Record<string, any>> {
+  const { connectionId, plannerTaskId } = job.payload as {
+    connectionId: string;
+    plannerTaskId: string;
+  };
+  if (!connectionId || !plannerTaskId) {
+    throw new Error('planner.task.pull requires connectionId and plannerTaskId');
+  }
+  const { pullPlannerTask } = await import('./planner-sync-scheduler.js');
+  const result = await pullPlannerTask(connectionId, plannerTaskId, 'webhook');
+  return result;
 }
 
 // ─── PDF Invoice Generation ───────────────────────────────────────────────────

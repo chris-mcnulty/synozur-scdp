@@ -36,6 +36,7 @@ import OrganizationSettings from "@/pages/organization-settings";
 import ScheduledJobs from "@/pages/scheduled-jobs";
 import BackgroundJobs from "@/pages/background-jobs";
 import AgentCardHealth from "@/pages/agent-card-health";
+import AdminPlannerSyncHealthPage from "@/pages/admin/planner-sync-health";
 import { AdminSharePoint } from "@/pages/admin-sharepoint";
 import PlatformTenants from "@/pages/platform-tenants";
 import PlatformServicePlans from "@/pages/platform-service-plans";
@@ -361,6 +362,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={["admin"]}>
             <AgentCardHealth />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/admin/planner-sync-health">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin"]}>
+            <AdminPlannerSyncHealthPage />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
