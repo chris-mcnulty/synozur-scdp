@@ -142,6 +142,10 @@ export default function ScheduledJobsPage() {
     queryKey: ['/api/admin/scheduled-jobs/stats'],
   });
 
+  const { data: digestStats } = useQuery<{ weeks: Record<string, { sent: number; skipped: number; failed: number }> }>({
+    queryKey: ['/api/admin/digests/stats'],
+  });
+
   const runExpenseRemindersMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest('/api/admin/expense-reminders/run', { method: 'POST' });
@@ -220,6 +224,7 @@ export default function ScheduledJobsPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/runs'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/digests/stats'] });
     },
     onError: (error: any) => {
       toast({
@@ -381,6 +386,41 @@ export default function ScheduledJobsPage() {
                       ) : (
                         <div className="p-4 bg-muted/50 rounded-lg text-center text-sm text-muted-foreground">
                           No runs recorded yet
+                        </div>
+                      )}
+
+                      {job.id === 'weekly_digest' && digestStats && Object.keys(digestStats.weeks).length > 0 && (
+                        <div className="space-y-2">
+                          <div className="text-xs font-medium text-muted-foreground">Last 4 Weeks Delivery</div>
+                          <div className="space-y-1">
+                            {Object.keys(digestStats.weeks)
+                              .sort()
+                              .slice(-4)
+                              .map((week) => {
+                                const w = digestStats.weeks[week];
+                                const total = w.sent + w.skipped + w.failed;
+                                const sentPct = total > 0 ? (w.sent / total) * 100 : 0;
+                                const skippedPct = total > 0 ? (w.skipped / total) * 100 : 0;
+                                const failedPct = total > 0 ? (w.failed / total) * 100 : 0;
+                                return (
+                                  <div key={week} className="space-y-1" data-testid={`digest-week-${week}`}>
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="font-mono text-muted-foreground">{week}</span>
+                                      <span className="space-x-2">
+                                        <span className="text-green-600">{w.sent} sent</span>
+                                        {w.skipped > 0 && <span className="text-muted-foreground">{w.skipped} skipped</span>}
+                                        {w.failed > 0 && <span className="text-red-600">{w.failed} failed</span>}
+                                      </span>
+                                    </div>
+                                    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                      {sentPct > 0 && <div className="bg-green-500" style={{ width: `${sentPct}%` }} />}
+                                      {skippedPct > 0 && <div className="bg-muted-foreground/40" style={{ width: `${skippedPct}%` }} />}
+                                      {failedPct > 0 && <div className="bg-red-500" style={{ width: `${failedPct}%` }} />}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
                         </div>
                       )}
 
