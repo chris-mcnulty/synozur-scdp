@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive } from "lucide-react";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive, AlertTriangle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -31,6 +32,52 @@ interface ProjectWithBillableInfo extends ProjectWithClient {
   stageTermId?: string | null;
   activityTermId?: string | null;
   workstreamTermId?: string | null;
+}
+
+function BillingBadge({ project }: { project: ProjectWithBillableInfo }) {
+  const billing = project.paymentMilestoneBilling;
+  if (!billing) return null;
+  const { overdueCount, unInvoicedCount } = billing;
+  if (!overdueCount && !unInvoicedCount) return null;
+
+  const isOverdue = overdueCount > 0;
+  const parts: string[] = [];
+  if (overdueCount > 0) parts.push(`${overdueCount} overdue`);
+  if (unInvoicedCount > 0) parts.push(`${unInvoicedCount} un-invoiced`);
+  const label = parts.join(' · ');
+  const tooltipParts: string[] = [];
+  if (overdueCount > 0) {
+    tooltipParts.push(`${overdueCount} payment milestone${overdueCount === 1 ? '' : 's'} past target date and still planned`);
+  }
+  if (unInvoicedCount > 0) {
+    tooltipParts.push(`${unInvoicedCount} payment milestone${unInvoicedCount === 1 ? '' : 's'} not yet invoiced`);
+  }
+  const tooltip = tooltipParts.join('; ');
+  const classes = isOverdue
+    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
+    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50';
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href={`/projects/${project.id}?tab=contracts&subtab=payment-milestones`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${classes}`}
+              data-testid={`billing-badge-${project.id}`}
+            >
+              <AlertTriangle className="h-3 w-3" />
+              {label}
+            </span>
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export default function Projects() {
@@ -513,6 +560,7 @@ export default function Projects() {
                                     }`}>
                                       {project.status}
                                     </span>
+                                    <BillingBadge project={project} />
                                   </div>
                                   <p className="text-sm text-muted-foreground">
                                     {project.code} {project.pm ? `• ${project.pm}` : ""}
@@ -619,7 +667,7 @@ export default function Projects() {
                         <p className="text-sm text-muted-foreground">{project.code}</p>
                       </div>
                       <div className="col-span-2 text-sm">{project.client.name}</div>
-                      <div className="col-span-1">
+                      <div className="col-span-1 flex items-center gap-1 flex-wrap">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                           project.status === 'active' 
                             ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
@@ -629,6 +677,7 @@ export default function Projects() {
                         }`}>
                           {project.status}
                         </span>
+                        <BillingBadge project={project} />
                       </div>
                       <div className="col-span-2 text-right font-medium">
                         ${(project.totalBudget || 0).toLocaleString()}
@@ -716,12 +765,15 @@ export default function Projects() {
                           {project.code}
                         </p>
                       </div>
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        project.status === 'active' 
-                          ? 'bg-chart-4/10 text-chart-4' 
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {project.status}
+                      <div className="flex flex-col items-end gap-1">
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          project.status === 'active' 
+                            ? 'bg-chart-4/10 text-chart-4' 
+                            : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {project.status}
+                        </div>
+                        <BillingBadge project={project} />
                       </div>
                     </div>
                   </CardHeader>

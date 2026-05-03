@@ -129,8 +129,8 @@ export interface IStorage {
   updateClient(id: string, client: Partial<InsertClient>): Promise<Client>;
   
   // Projects
-  getProjects(tenantId?: string | null): Promise<(Project & { client: Client })[]>;
-  getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]; total: number; hasMore: boolean }>;
+  getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]>;
+  getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]; total: number; hasMore: boolean }>;
   getProject(id: string): Promise<(Project & { client: Client }) | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;

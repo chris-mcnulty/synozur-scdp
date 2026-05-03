@@ -1126,6 +1126,25 @@ export default function ProjectDetail() {
     const tab = params.get('tab');
     return tab && validTabs.includes(tab) ? tab : 'overview';
   }, [searchString]);
+
+  const selectedContractsSubtab = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    const sub = params.get('subtab');
+    const valid = ['sows', 'budget-history', 'payment-milestones', 'sub-sow', 'rate-overrides', 'retainer'];
+    return sub && valid.includes(sub) ? sub : 'sows';
+  }, [searchString]);
+
+  const handleContractsSubtabChange = (newSub: string) => {
+    const params = new URLSearchParams(searchString);
+    if (newSub === 'sows') {
+      params.delete('subtab');
+    } else {
+      params.set('subtab', newSub);
+    }
+    const queryString = params.toString();
+    const basePath = isEmbed ? `/embed/projects/${id}` : `/projects/${id}`;
+    navigate(`${basePath}${queryString ? `?${queryString}` : ''}`, { replace: true });
+  };
   
   // Check for edit parameter to auto-open edit dialog
   const shouldOpenEditDialog = useMemo(() => {
@@ -5010,7 +5029,7 @@ export default function ProjectDetail() {
 
           {/* Contracts Tab - SOWs, Budget History, Payment Milestones */}
           <TabsContent value="contracts" className="space-y-6">
-            <Tabs defaultValue="sows" className="w-full">
+            <Tabs value={selectedContractsSubtab} onValueChange={handleContractsSubtabChange} className="w-full">
               <TabsList className="mb-4">
                 <TabsTrigger value="sows" data-testid="tab-contracts-sows">SOWs & Change Orders</TabsTrigger>
                 <TabsTrigger value="budget-history" data-testid="tab-contracts-budget">Budget History</TabsTrigger>

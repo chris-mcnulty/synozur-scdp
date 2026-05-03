@@ -69,7 +69,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { convertDecimalFieldsToNumbers } from "./helpers";
 
 export const projectsMethods: ThisType<IStorage> = {
-  async getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]> {
+  async getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]> {
     const pmAlias = alias(users, 'pm_user');
     // Select only the columns needed for pmName resolution instead of pmAlias.* to
     // avoid breaking when the users table has columns not yet migrated in the DB.
@@ -124,6 +124,34 @@ export const projectsMethods: ThisType<IStorage> = {
       burnedByProject.set(row.project_id, Math.round(Number(row.total_burned)));
     }
 
+    // Query 3: payment milestone billing health summary per project.
+    // overdue = isPaymentMilestone, invoiceStatus = 'planned', targetDate < today
+    // unInvoiced = isPaymentMilestone, invoiceStatus is null OR invoiceStatus = 'planned'
+    type BillingRow = { project_id: string; overdue_count: string; uninvoiced_count: string };
+    const billingRows = await db.execute<BillingRow>(sql`
+      SELECT
+        project_id,
+        COUNT(*) FILTER (
+          WHERE invoice_status = 'planned'
+            AND target_date IS NOT NULL
+            AND target_date < CURRENT_DATE
+        ) AS overdue_count,
+        COUNT(*) FILTER (
+          WHERE invoice_status IS NULL OR invoice_status = 'planned'
+        ) AS uninvoiced_count
+      FROM project_milestones
+      WHERE is_payment_milestone = true
+        AND project_id IN (${idList})
+      GROUP BY project_id
+    `);
+    const billingByProject = new Map<string, { overdueCount: number; unInvoicedCount: number }>();
+    for (const row of billingRows.rows) {
+      billingByProject.set(row.project_id, {
+        overdueCount: Number(row.overdue_count) || 0,
+        unInvoicedCount: Number(row.uninvoiced_count) || 0,
+      });
+    }
+
     return projectRows.map((row) => {
       const project = row.projects;
 
@@ -165,6 +193,8 @@ export const projectsMethods: ThisType<IStorage> = {
       const pmFullName = `${row.pm_first || ''} ${row.pm_last || ''}`.trim();
       const pmName = pmFullName || row.pm_email || null;
 
+      const billing = billingByProject.get(project.id) || { overdueCount: 0, unInvoicedCount: 0 };
+
       return {
         ...project,
         client,
@@ -172,11 +202,12 @@ export const projectsMethods: ThisType<IStorage> = {
         totalBudget,
         burnedAmount,
         utilizationRate,
+        paymentMilestoneBilling: billing,
       };
     });
   },
 
-  async getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]; total: number; hasMore: boolean }> {
+  async getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]; total: number; hasMore: boolean }> {
     const pmAlias = alias(users, 'pm_user');
     const conditions: any[] = [];
     if (params.tenantId) conditions.push(eq(projects.tenantId, params.tenantId));
@@ -259,6 +290,32 @@ export const projectsMethods: ThisType<IStorage> = {
       for (const r of burnedData) burnedMap.set(r.projectId, Math.round(Number(r.totalBurned)));
     }
 
+    let billingMap = new Map<string, { overdueCount: number; unInvoicedCount: number }>();
+    if (projectIds.length > 0) {
+      const billingData = await db.execute<{ project_id: string; overdue_count: string; uninvoiced_count: string }>(sql`
+        SELECT
+          project_id,
+          COUNT(*) FILTER (
+            WHERE invoice_status = 'planned'
+              AND target_date IS NOT NULL
+              AND target_date < CURRENT_DATE
+          ) AS overdue_count,
+          COUNT(*) FILTER (
+            WHERE invoice_status IS NULL OR invoice_status = 'planned'
+          ) AS uninvoiced_count
+        FROM project_milestones
+        WHERE is_payment_milestone = true
+          AND project_id IN (${sql.join(projectIds.map(id => sql`${id}`), sql`,`)})
+        GROUP BY project_id
+      `);
+      for (const r of billingData.rows) {
+        billingMap.set(r.project_id, {
+          overdueCount: Number(r.overdue_count) || 0,
+          unInvoicedCount: Number(r.uninvoiced_count) || 0,
+        });
+      }
+    }
+
     const items = projectRows.map(row => {
       const project = row.projects;
       const client = row.clients || defaultClient;
@@ -267,7 +324,8 @@ export const projectsMethods: ThisType<IStorage> = {
       const totalBudget = budgetMap.get(project.id) || 0;
       const burnedAmount = burnedMap.get(project.id) || 0;
       const utilizationRate = totalBudget > 0 ? Math.round((burnedAmount / totalBudget) * 100) : 0;
-      return { ...project, client, pmName, totalBudget, burnedAmount, utilizationRate };
+      const paymentMilestoneBilling = billingMap.get(project.id) || { overdueCount: 0, unInvoicedCount: 0 };
+      return { ...project, client, pmName, totalBudget, burnedAmount, utilizationRate, paymentMilestoneBilling };
     });
 
     return { items, total, hasMore: params.offset + params.limit < total };

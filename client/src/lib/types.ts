@@ -29,6 +29,10 @@ export interface ProjectWithClient {
   totalBudget?: number;
   burnedAmount?: number;
   utilizationRate?: number;
+  paymentMilestoneBilling?: {
+    overdueCount: number;
+    unInvoicedCount: number;
+  };
   client: {
     id: string;
     name: string;
