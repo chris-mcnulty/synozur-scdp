@@ -103,6 +103,7 @@ import { calendarMappingsMethods } from "./calendar-mappings";
 import { notificationsMethods } from "./notifications";
 import { a2aTasksMethods } from "./a2a";
 import { signoffsMethods } from "./signoffs";
+import { galaxyMethods } from "./galaxy";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
@@ -1098,6 +1099,34 @@ export interface IStorage {
   recordClientSignoff(data: InsertClientSignoff): Promise<ClientSignoff>;
   getClientSignoffs(entityType: string, entityId: string): Promise<ClientSignoff[]>;
   getClientSignoff(id: string): Promise<ClientSignoff | undefined>;
+
+  // Galaxy client portal API
+  createGalaxyApp(data: any): Promise<any>;
+  getGalaxyApp(id: string): Promise<any>;
+  getGalaxyAppsForTenant(tenantId: string): Promise<any[]>;
+  updateGalaxyApp(id: string, patch: any): Promise<any>;
+  disableGalaxyApp(id: string): Promise<void>;
+  upsertGalaxyAppGrant(data: any): Promise<any>;
+  getGalaxyAppGrant(appId: string, clientUserId: string): Promise<any>;
+  revokeGalaxyAppGrant(id: string): Promise<void>;
+  touchGalaxyGrantUsed(id: string): Promise<void>;
+  createGalaxyAuthCode(data: any): Promise<any>;
+  consumeGalaxyAuthCode(code: string): Promise<any>;
+  writeGalaxyAudit(data: {
+    route: string; method: string; status: number;
+    tenantId?: string | null; appId?: string | null; clientUserId?: string | null;
+    durationMs?: number; requestId?: string;
+    origin?: string | null; ipAddress?: string | null;
+    scopeMissing?: string | null; errorCode?: string | null;
+  }): Promise<void>;
+  getGalaxyAudit(tenantId: string, opts?: { appId?: string; limit?: number }): Promise<any[]>;
+  pruneGalaxyAudit(olderThan: Date): Promise<void>;
+  createGalaxyWebhookDelivery(data: any): Promise<any>;
+  getGalaxyWebhookDeliveries(tenantId: string, opts?: { appId?: string; limit?: number }): Promise<any[]>;
+  getPendingGalaxyWebhookDeliveries(now: Date, limit?: number): Promise<any[]>;
+  updateGalaxyWebhookDelivery(id: string, patch: any): Promise<void>;
+  incrementGalaxyRateBucket(bucketKey: string, ttlSeconds: number): Promise<number>;
+  pruneGalaxyRateBuckets(): Promise<void>;
 }
 
 export class DatabaseStorage {
@@ -1122,6 +1151,7 @@ Object.assign(
   notificationsMethods,
   a2aTasksMethods,
   signoffsMethods,
+  galaxyMethods,
 );
 
 export const storage: IStorage = new DatabaseStorage();

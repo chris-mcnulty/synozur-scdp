@@ -52,8 +52,12 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      // Never log oauth/token bodies (contain bearer + refresh tokens)
+      const isSensitive = path.startsWith("/api/galaxy/") && (
+        path.endsWith("/oauth/token") || path.endsWith("/oauth/authorize") || path.endsWith("/oauth/revoke")
+      );
       // Sanitize API response logging in production to prevent data leakage
-      if (capturedJsonResponse && process.env.NODE_ENV !== 'production') {
+      if (capturedJsonResponse && process.env.NODE_ENV !== 'production' && !isSensitive) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 

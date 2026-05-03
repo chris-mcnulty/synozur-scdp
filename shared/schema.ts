@@ -3198,6 +3198,10 @@ export const raiddEntries = pgTable("raidd_entries", {
   convertedFromId: varchar("converted_from_id"),
   supersededById: varchar("superseded_by_id"),
   tags: jsonb("tags").$type<string[]>(),
+  // When false (default), this entry is internal-only and MUST NOT be exposed
+  // to client portal users via the Galaxy API or any embed surface. Authors
+  // must explicitly opt-in to client visibility.
+  clientVisible: boolean("client_visible").notNull().default(false),
   createdBy: varchar("created_by").references(() => users.id),
   updatedBy: varchar("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -4201,3 +4205,8 @@ export const insertClientSignoffSchema = createInsertSchema(clientSignoffs).omit
 });
 export type InsertClientSignoff = z.infer<typeof insertClientSignoffSchema>;
 export type ClientSignoff = typeof clientSignoffs.$inferSelect;
+
+// ============================================================================
+// GALAXY CLIENT PORTAL API
+// ============================================================================
+export * from "./galaxy-schema";

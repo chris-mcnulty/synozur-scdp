@@ -34,6 +34,7 @@ import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
 import OrganizationSettings from "@/pages/organization-settings";
 import ScheduledJobs from "@/pages/scheduled-jobs";
+import GalaxyAdminPage from "@/pages/admin/galaxy";
 import BackgroundJobs from "@/pages/background-jobs";
 import AgentCardHealth from "@/pages/agent-card-health";
 import AdminPlannerSyncHealthPage from "@/pages/admin/planner-sync-health";
@@ -348,6 +349,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={["admin"]}>
             <ScheduledJobs />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/admin/galaxy">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin"]}>
+            <GalaxyAdminPage />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
