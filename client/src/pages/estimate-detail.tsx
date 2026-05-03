@@ -7381,7 +7381,7 @@ function VersionHistoryPanel({
                       </div>
                       <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(v.snapshottedAt).toLocaleString()}</span>
-                        {v.snapshottedByName && <span>by {v.snapshottedByName}</span>}
+                        {v.snapshottedByName && <span data-testid={`text-version-saved-by-${v.versionNumber}`}>Saved by {v.snapshottedByName}</span>}
                         {sn.lineItemCount != null && <span>{sn.lineItemCount} line items</span>}
                         {sn.totalHours != null && <span>{fmtH(sn.totalHours)}</span>}
                         {sn.totalValue != null && <span>{fmt$(sn.totalValue)}</span>}
