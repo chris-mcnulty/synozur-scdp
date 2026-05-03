@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,10 +82,23 @@ function BillingBadge({ project }: { project: ProjectWithBillableInfo }) {
 
 export default function Projects() {
   const [, navigate] = useLocation();
+  const urlQueryString = useSearch();
   const [searchTerm, setSearchTerm] = useState(() => {
+    const urlSearch = new URLSearchParams(urlQueryString).get("search");
+    if (urlSearch) return urlSearch;
     return localStorage.getItem("projects_search") || "";
   });
   const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
+
+  // React to URL search-param changes after mount (deep links from global search)
+  useEffect(() => {
+    const urlSearch = new URLSearchParams(urlQueryString).get("search");
+    if (urlSearch !== null && urlSearch !== searchTerm) {
+      setSearchTerm(urlSearch);
+      setDebouncedSearch(urlSearch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQueryString]);
   const [statusFilter, setStatusFilter] = useState(() => {
     return localStorage.getItem("projects_status_filter") || "active";
   });

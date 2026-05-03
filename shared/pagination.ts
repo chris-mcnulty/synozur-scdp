@@ -31,6 +31,7 @@ export const timeEntryFiltersSchema = paginationSchema.extend({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   billable: z.enum(["true", "false"]).optional(),
+  // search inherited from paginationSchema
 });
 
 export const userFiltersSchema = paginationSchema.extend({

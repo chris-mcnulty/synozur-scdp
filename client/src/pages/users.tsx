@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -204,8 +205,22 @@ function RoleCapabilitiesSection({ userId }: { userId: string }) {
 const USERS_QUERY_KEY = "/api/users";
 
 export default function Users() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const urlQueryString = useSearch();
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const urlSearch = new URLSearchParams(urlQueryString).get("search");
+    return urlSearch || "";
+  });
+  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
+
+  // React to URL search-param changes after mount (deep links from global search)
+  useEffect(() => {
+    const urlSearch = new URLSearchParams(urlQueryString).get("search");
+    if (urlSearch !== null && urlSearch !== searchTerm) {
+      setSearchTerm(urlSearch);
+      setDebouncedSearch(urlSearch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQueryString]);
   const [tenantFilter, setTenantFilter] = useState("all");
   const [orgFilter, setOrgFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");

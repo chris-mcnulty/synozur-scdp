@@ -47,6 +47,7 @@ import { registerJobRoutes } from "./routes/jobs.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
+import { registerSearchRoutes } from "./routes/search.js";
 import { registerGalaxyV1Routes } from "./routes/galaxy/v1/index.js";
 
 // Initialize SharePoint storage with database access
@@ -550,6 +551,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerNotificationRoutes(app, { requireAuth });
     registerWebhookRoutes(app);
     registerEmbedRoutes(app, { requireAuth, requireRole });
+    registerSearchRoutes(app, { requireAuth });
     registerGalaxyV1Routes(app, { requireAuth, requireRole });
     const { startGalaxyWebhookWorker } = await import("./services/galaxy-webhook-delivery.js");
     startGalaxyWebhookWorker();

@@ -31,14 +31,15 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       const { timeEntryFiltersSchema } = await import("@shared/pagination");
       const parsed = timeEntryFiltersSchema.parse(req.query);
 
-      const filters: { tenantId?: string; personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; billable?: boolean; limit: number; offset: number } = {
+      const filters: { tenantId?: string; personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; billable?: boolean; search?: string; limit: number; offset: number } = {
         limit: parsed.limit,
         offset: parsed.offset,
       };
 
       if (req.user?.tenantId) filters.tenantId = req.user.tenantId;
 
-      const { personId, projectId, clientId, startDate, endDate, billable } = parsed;
+      const { personId, projectId, clientId, startDate, endDate, billable, search } = parsed;
+      if (search) filters.search = search;
 
       if (projectId && ['admin', 'billing-admin', 'pm', 'executive'].includes(req.user!.role)) {
         filters.projectId = projectId;

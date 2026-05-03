@@ -11,6 +11,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, setSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { MobileNav } from "./mobile-nav";
+import { GlobalSearch } from "./global-search";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -120,7 +121,12 @@ export function Header() {
           <MobileNav />
           <SynozurTextLogo />
         </div>
-        
+
+        {/* Global Search */}
+        <div className="flex-1 flex justify-center px-4">
+          <GlobalSearch />
+        </div>
+
         {/* User Menu */}
         <div className="flex items-center space-x-4">
           <TenantSwitcher />

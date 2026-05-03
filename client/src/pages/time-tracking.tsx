@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,15 +84,29 @@ type TimeEntryWithRelations = TimeEntry & {
 };
 
 export default function TimeTracking() {
+  const urlQueryString = useSearch();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [filters, setFilters] = useState({
-    projectId: "",
-    clientId: "",
-    startDate: "",
-    endDate: ""
+  const [filters, setFilters] = useState(() => {
+    const initialSearch = new URLSearchParams(urlQueryString).get("search") || "";
+    return {
+      projectId: "",
+      clientId: "",
+      startDate: "",
+      endDate: "",
+      search: initialSearch,
+    };
   });
+
+  // React to URL search-param changes after mount (deep links from global search)
+  useEffect(() => {
+    const urlSearch = new URLSearchParams(urlQueryString).get("search");
+    if (urlSearch !== null && urlSearch !== filters.search) {
+      setFilters(prev => ({ ...prev, search: urlSearch }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQueryString]);
   const [editingEntry, setEditingEntry] = useState<TimeEntryWithRelations | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<TimeEntryWithRelations | null>(null);
   const [editProjectId, setEditProjectId] = useState<string>("");
@@ -444,6 +459,7 @@ export default function TimeTracking() {
       if (filters.clientId) params.append('clientId', filters.clientId);
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
+      if (filters.search) params.append('search', filters.search);
       params.append('limit', String(tePagination.pageSize));
       params.append('offset', String(tePagination.page * tePagination.pageSize));
       const response = await fetch(`/api/time-entries?${params.toString()}`, {

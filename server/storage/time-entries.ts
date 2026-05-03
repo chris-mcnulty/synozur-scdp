@@ -72,7 +72,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     });
   },
 
-  async getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }> {
+  async getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; search?: string; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }> {
     const defaultPerson = (personId: string) => ({
       id: personId, email: 'unknown@example.com', name: 'Unknown User',
       firstName: null, lastName: null, initials: null, title: null, role: 'employee',
@@ -89,6 +89,16 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
     if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
     if (filters.billable !== undefined) conditions.push(eq(timeEntries.billable, filters.billable));
+    if (filters.search) {
+      const term = `%${filters.search}%`;
+      conditions.push(or(
+        sql`${timeEntries.description} ILIKE ${term}`,
+        sql`${timeEntries.phase} ILIKE ${term}`,
+        sql`${projects.name} ILIKE ${term}`,
+        sql`${projects.code} ILIKE ${term}`,
+        sql`${clients.name} ILIKE ${term}`
+      ));
+    }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
