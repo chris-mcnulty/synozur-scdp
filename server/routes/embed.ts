@@ -55,9 +55,85 @@ function getClientIp(req: Request): string | null {
 
 export function registerEmbedRoutes(
   app: Express,
-  deps: { requireAuth: any }
+  deps: { requireAuth: any; requireRole?: (roles: string[]) => any }
 ) {
-  const { requireAuth } = deps;
+  const { requireAuth, requireRole } = deps;
+
+  // GET /api/embed/signoffs — Admin/PM audit log of all client sign-offs in tenant
+  const adminGuards = requireRole
+    ? [requireAuth, requireRole(["admin", "pm"])]
+    : [requireAuth];
+  app.get("/api/embed/signoffs", ...adminGuards, async (req: Request, res: Response) => {
+    try {
+      const user = req.user!;
+      const tenantId = (user as any).activeTenantId || user.tenantId || (user as any).primaryTenantId;
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const { entityType, startDate, endDate, clientId, projectId, format } = req.query as Record<string, string | undefined>;
+
+      const filters: any = {};
+      if (entityType && entityType !== "all") filters.entityType = entityType;
+      if (startDate) {
+        const d = new Date(startDate);
+        if (!Number.isNaN(d.getTime())) filters.startDate = d;
+      }
+      if (endDate) {
+        const d = new Date(endDate);
+        if (!Number.isNaN(d.getTime())) {
+          d.setHours(23, 59, 59, 999);
+          filters.endDate = d;
+        }
+      }
+      if (clientId && clientId !== "all") filters.clientId = clientId;
+      if (projectId && projectId !== "all") filters.projectId = projectId;
+
+      const rows = await storage.getAllClientSignoffs(tenantId, filters);
+
+      if (format === "csv") {
+        const header = [
+          "Signed At",
+          "Entity Type",
+          "Entity Name",
+          "Action",
+          "Client",
+          "Project",
+          "Signer Name",
+          "Signer Email",
+          "Comment",
+          "IP Address",
+        ];
+        const escape = (val: unknown) => {
+          if (val === null || val === undefined) return "";
+          const s = String(val).replace(/"/g, '""');
+          return /[",\n\r]/.test(s) ? `"${s}"` : s;
+        };
+        const lines = [header.join(",")];
+        for (const r of rows) {
+          lines.push([
+            r.signedAt ? new Date(r.signedAt).toISOString() : "",
+            r.entityType,
+            r.entityName ?? "",
+            r.action,
+            r.clientName ?? "",
+            r.projectName ?? "",
+            r.clientUserName ?? r.signerName ?? "",
+            r.clientUserEmail ?? r.signerEmail ?? "",
+            r.comment ?? "",
+            r.ipAddress ?? "",
+          ].map(escape).join(","));
+        }
+        const csv = lines.join("\r\n");
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="signoffs-${new Date().toISOString().slice(0, 10)}.csv"`);
+        return res.send(csv);
+      }
+
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[embed] admin signoffs error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // GET /api/embed/signoffs/:entityType/:entityId
   app.get(

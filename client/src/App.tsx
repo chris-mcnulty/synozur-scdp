@@ -38,6 +38,7 @@ import GalaxyAdminPage from "@/pages/admin/galaxy";
 import BackgroundJobs from "@/pages/background-jobs";
 import AgentCardHealth from "@/pages/agent-card-health";
 import AdminPlannerSyncHealthPage from "@/pages/admin/planner-sync-health";
+import AdminSignoffsPage from "@/pages/admin/signoffs";
 import { AdminSharePoint } from "@/pages/admin-sharepoint";
 import PlatformTenants from "@/pages/platform-tenants";
 import PlatformServicePlans from "@/pages/platform-service-plans";
@@ -370,6 +371,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={["admin"]}>
             <AgentCardHealth />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/admin/signoffs">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "pm"]}>
+            <AdminSignoffsPage />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>

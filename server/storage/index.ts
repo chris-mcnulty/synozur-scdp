@@ -1107,6 +1107,10 @@ export interface IStorage {
   getClientSignoffs(entityType: string, entityId: string): Promise<ClientSignoff[]>;
   getClientSignoffsByEntities(entityType: string, entityIds: string[], tenantId: string): Promise<Record<string, ClientSignoff[]>>;
   getClientSignoff(id: string): Promise<ClientSignoff | undefined>;
+  getAllClientSignoffs(
+    tenantId: string,
+    filters?: import("./signoffs").ClientSignoffFilters
+  ): Promise<import("./signoffs").ClientSignoffAuditRow[]>;
 
   // Galaxy client portal API
   createGalaxyApp(data: any): Promise<any>;

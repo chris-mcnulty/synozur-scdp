@@ -549,7 +549,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerJobRoutes(app, { requireAuth, requireRole });
     registerNotificationRoutes(app, { requireAuth });
     registerWebhookRoutes(app);
-    registerEmbedRoutes(app, { requireAuth });
+    registerEmbedRoutes(app, { requireAuth, requireRole });
     registerGalaxyV1Routes(app, { requireAuth, requireRole });
     const { startGalaxyWebhookWorker } = await import("./services/galaxy-webhook-delivery.js");
     startGalaxyWebhookWorker();
