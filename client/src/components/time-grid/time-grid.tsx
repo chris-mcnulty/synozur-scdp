@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1146,8 +1147,33 @@ function GridTable(props: {
   const [dragFromRow, setDragFromRow] = useState<number | null>(null);
   const dragToRowRef = useRef<number | null>(null);
 
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (i) => {
+      const r = rows[i];
+      return r?.submissionStatus === "rejected" && r?.rejectionNote ? 60 : 32;
+    },
+    overscan: 10,
+  });
+
+  // Keep the active cell visible as the user navigates with the keyboard.
+  useEffect(() => {
+    if (rows.length === 0) return;
+    if (active.row < 0 || active.row >= rows.length) return;
+    rowVirtualizer.scrollToIndex(active.row, { align: "auto" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active.row, rows.length]);
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom =
+    virtualItems.length > 0 ? totalSize - virtualItems[virtualItems.length - 1].end : 0;
+
   return (
-    <div className="border rounded overflow-x-auto bg-card">
+    <div ref={parentRef} className="border rounded overflow-auto bg-card max-h-[70vh]">
       <table className="w-full text-sm">
         <thead className="bg-muted sticky top-0 z-10">
           <tr>
@@ -1162,7 +1188,13 @@ function GridTable(props: {
           {rows.length === 0 && (
             <tr><td colSpan={COLUMNS.length + 2} className="p-6 text-center text-muted-foreground text-sm">No rows. {editable ? "Click \"Add row\" to start logging time." : "Submitted entries will appear here."}</td></tr>
           )}
-          {rows.map((row, ri) => {
+          {paddingTop > 0 && (
+            <tr aria-hidden="true"><td colSpan={COLUMNS.length + 2} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>
+          )}
+          {virtualItems.map((vi) => {
+            const ri = vi.index;
+            const row = rows[ri];
+            if (!row) return null;
             const isRejected = row.submissionStatus === "rejected";
             return (
               <Fragment key={row.id}>
@@ -1277,6 +1309,9 @@ function GridTable(props: {
               </Fragment>
             );
           })}
+          {paddingBottom > 0 && (
+            <tr aria-hidden="true"><td colSpan={COLUMNS.length + 2} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>
+          )}
         </tbody>
       </table>
       {/* Rejection notes banner under each rejected row */}
