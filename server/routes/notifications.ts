@@ -233,17 +233,29 @@ export function registerNotificationRoutes(app: Express, deps: NotificationRoute
           weekLabel: digestSends.weekLabel,
           status: digestSends.status,
           count: sql<number>`cast(count(*) as integer)`,
+          opened: sql<number>`cast(count(*) filter (where ${digestSends.openedAt} is not null) as integer)`,
         })
         .from(digestSends)
         .where(and(eq(digestSends.tenantId, tenantId), gte(digestSends.sentAt, fourWeeksAgo)))
         .groupBy(digestSends.weekLabel, digestSends.status)
         .orderBy(digestSends.weekLabel);
 
-      const byWeek: Record<string, { sent: number; skipped: number; failed: number }> = {};
+      type WeekStats = { sent: number; skipped: number; failed: number; opened: number; openRate: number };
+      const byWeek: Record<string, WeekStats> = {};
       for (const row of rows) {
-        if (!byWeek[row.weekLabel]) byWeek[row.weekLabel] = { sent: 0, skipped: 0, failed: 0 };
-        const s = row.status as 'sent' | 'skipped' | 'failed';
-        if (s in byWeek[row.weekLabel]) byWeek[row.weekLabel][s] += row.count;
+        const wk = byWeek[row.weekLabel] ?? (byWeek[row.weekLabel] = { sent: 0, skipped: 0, failed: 0, opened: 0, openRate: 0 });
+        if (row.status === 'sent') {
+          wk.sent += row.count;
+          wk.opened += row.opened || 0;
+        } else if (row.status === 'skipped') {
+          wk.skipped += row.count;
+        } else if (row.status === 'failed') {
+          wk.failed += row.count;
+        }
+      }
+      for (const wk of Object.keys(byWeek)) {
+        const w = byWeek[wk];
+        w.openRate = w.sent > 0 ? Math.round((w.opened / w.sent) * 1000) / 10 : 0;
       }
       res.json({ weeks: byWeek });
     } catch (err: any) {

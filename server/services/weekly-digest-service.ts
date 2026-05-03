@@ -609,15 +609,27 @@ export async function sendDigestForUser(userId: string, tenantId: string, asOf: 
   const subject = `Your Weekly Digest — ${fmt(digest.weekStart)}`;
 
   try {
+    const { randomUUID } = await import('crypto');
+    const digestSendId = randomUUID();
     const { client, fromEmail } = await getUncachableSendGridClient();
-    await client.send({
+    const [response] = await client.send({
       to: digest.user.email,
       from: { email: fromEmail, name: branding.companyName || 'Constellation' },
       subject,
       html: htmlBody,
       text: textBody,
+      customArgs: {
+        digestSendId,
+        digestType: 'weekly',
+        tenantId,
+      },
+      trackingSettings: {
+        openTracking: { enable: true },
+      },
     });
-    await db.insert(digestSends).values({ userId, tenantId, weekLabel, status: 'sent' }).onConflictDoNothing();
+    const headers = (response?.headers ?? {}) as Record<string, string | undefined>;
+    const sgMessageId = headers['x-message-id'] ?? null;
+    await db.insert(digestSends).values({ id: digestSendId, userId, tenantId, weekLabel, status: 'sent', sgMessageId }).onConflictDoNothing();
     console.log(`[WEEKLY-DIGEST] Sent to ${digest.user.email} for ${weekLabel}`);
     return { status: 'sent' };
   } catch (err: any) {

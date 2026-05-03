@@ -45,6 +45,7 @@ import { registerCopilotStudioRoutes } from "./routes/copilot-studio.js";
 import { registerCalendarSuggestionsRoutes } from "./routes/calendar-suggestions.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
+import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { registerGalaxyV1Routes } from "./routes/galaxy/v1/index.js";
 
@@ -547,6 +548,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });
     registerJobRoutes(app, { requireAuth, requireRole });
     registerNotificationRoutes(app, { requireAuth });
+    registerWebhookRoutes(app);
     registerEmbedRoutes(app, { requireAuth });
     registerGalaxyV1Routes(app, { requireAuth, requireRole });
     const { startGalaxyWebhookWorker } = await import("./services/galaxy-webhook-delivery.js");

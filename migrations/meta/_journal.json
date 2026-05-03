@@ -64,6 +64,13 @@
       "when": 1778198400000,
       "tag": "0009_galaxy_client_portal_api",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778889600000,
+      "tag": "0010_digest_open_tracking",
+      "breakpoints": true
     }
   ]
 }

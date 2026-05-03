@@ -4167,15 +4167,21 @@ export const digestSends = pgTable("digest_sends", {
   status: varchar("status", { length: 20 }).notNull().default("sent"), // sent | failed | skipped
   errorMessage: text("error_message"),
   sentAt: timestamp("sent_at").notNull().default(sql`now()`),
+  sgMessageId: varchar("sg_message_id", { length: 255 }),
+  openedAt: timestamp("opened_at"),
+  openCount: integer("open_count").notNull().default(0),
 }, (table) => ({
   uniqueUserWeek: uniqueIndex("uq_digest_sends_user_week").on(table.userId, table.tenantId, table.weekLabel),
   tenantWeekIdx: index("idx_digest_sends_tenant_week").on(table.tenantId, table.weekLabel),
   sentAtIdx: index("idx_digest_sends_sent_at").on(table.sentAt),
+  sgMessageIdIdx: index("idx_digest_sends_sg_message_id").on(table.sgMessageId),
 }));
 
 export const insertDigestSendSchema = createInsertSchema(digestSends).omit({
   id: true,
   sentAt: true,
+  openedAt: true,
+  openCount: true,
 });
 export type InsertDigestSend = z.infer<typeof insertDigestSendSchema>;
 export type DigestSend = typeof digestSends.$inferSelect;
