@@ -105,6 +105,7 @@ import { notificationsMethods } from "./notifications";
 import { a2aTasksMethods } from "./a2a";
 import { signoffsMethods } from "./signoffs";
 import { galaxyMethods } from "./galaxy";
+import { agentMethods } from "./agent";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
@@ -1112,6 +1113,19 @@ export interface IStorage {
     filters?: import("./signoffs").ClientSignoffFilters
   ): Promise<import("./signoffs").ClientSignoffAuditRow[]>;
 
+  // AI Project Manager Agent (Task #143)
+  createAgentConversation(data: import("@shared/schema").InsertAgentConversation): Promise<import("@shared/schema").AgentConversation>;
+  getAgentConversation(id: string): Promise<import("@shared/schema").AgentConversation | undefined>;
+  getAgentConversationsForProject(projectId: string, userId?: string): Promise<import("@shared/schema").AgentConversation[]>;
+  touchAgentConversation(id: string, title?: string): Promise<void>;
+  createAgentMessage(data: import("@shared/schema").InsertAgentMessage): Promise<import("@shared/schema").AgentMessage>;
+  getAgentMessages(conversationId: string): Promise<import("@shared/schema").AgentMessage[]>;
+  createAgentAction(data: import("@shared/schema").InsertAgentAction): Promise<import("@shared/schema").AgentAction>;
+  getAgentAction(id: string): Promise<import("@shared/schema").AgentAction | undefined>;
+  getAgentActionsForConversation(conversationId: string): Promise<import("@shared/schema").AgentAction[]>;
+  getAgentActionsForProject(projectId: string, limit?: number): Promise<import("@shared/schema").AgentAction[]>;
+  updateAgentAction(id: string, patch: Partial<import("@shared/schema").AgentAction>): Promise<import("@shared/schema").AgentAction>;
+
   // Galaxy client portal API
   createGalaxyApp(data: any): Promise<any>;
   getGalaxyApp(id: string): Promise<any>;
@@ -1164,6 +1178,7 @@ Object.assign(
   a2aTasksMethods,
   signoffsMethods,
   galaxyMethods,
+  agentMethods,
 );
 
 export const storage: IStorage = new DatabaseStorage();

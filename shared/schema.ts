@@ -3490,6 +3490,7 @@ export const projectDeliverables = pgTable("project_deliverables", {
   ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
   epicId: varchar("epic_id"),
   stageId: varchar("stage_id"),
+  parentDeliverableId: varchar("parent_deliverable_id"), // set when this row was created by splitting another deliverable
   status: varchar("status", { length: 20 }).notNull().default('not-started'),
   targetDate: date("target_date"),
   deliveredDate: date("delivered_date"),
@@ -3502,6 +3503,7 @@ export const projectDeliverables = pgTable("project_deliverables", {
   tenantIdx: index("idx_project_deliverables_tenant").on(table.tenantId),
   projectIdx: index("idx_project_deliverables_project").on(table.projectId),
   statusIdx: index("idx_project_deliverables_status").on(table.status),
+  parentIdx: index("idx_project_deliverables_parent").on(table.parentDeliverableId),
 }));
 
 export const projectDeliverablesRelations = relations(projectDeliverables, ({ one }) => ({
@@ -3573,6 +3575,7 @@ export const AI_FEATURES = {
   TIME_ENTRY_REWRITE: 'time_entry_rewrite',
   CUSTOM: 'custom',
   OTHER: 'other',
+  PROJECT_AGENT: 'project_agent',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -4256,6 +4259,72 @@ export const insertClientSignoffSchema = createInsertSchema(clientSignoffs).omit
 });
 export type InsertClientSignoff = z.infer<typeof insertClientSignoffSchema>;
 export type ClientSignoff = typeof clientSignoffs.$inferSelect;
+
+// ============================================================================
+// AI PROJECT MANAGER AGENT (Task #143)
+// ============================================================================
+
+export const agentConversations = pgTable("agent_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text("title"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  projectIdx: index("idx_agent_conversations_project").on(table.projectId),
+  userIdx: index("idx_agent_conversations_user").on(table.userId),
+}));
+
+export const agentMessages = pgTable("agent_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").notNull().references(() => agentConversations.id, { onDelete: 'cascade' }),
+  role: varchar("role", { length: 20 }).notNull(), // user | assistant | system | tool
+  content: text("content").notNull(),
+  toolCalls: jsonb("tool_calls").$type<Array<{ id: string; name: string; args: any }>>(),
+  toolCallId: varchar("tool_call_id"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  conversationIdx: index("idx_agent_messages_conversation").on(table.conversationId),
+}));
+
+export const agentActions = pgTable("agent_actions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  conversationId: varchar("conversation_id").notNull().references(() => agentConversations.id, { onDelete: 'cascade' }),
+  messageId: varchar("message_id").references(() => agentMessages.id, { onDelete: 'set null' }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tool: varchar("tool", { length: 80 }).notNull(),
+  userPrompt: text("user_prompt"), // originating user message text for audit
+  args: jsonb("args").notNull().$type<Record<string, any>>(),
+  previewDiff: jsonb("preview_diff").$type<Record<string, any>>(),
+  status: varchar("status", { length: 20 }).notNull().default('proposed'), // proposed | applied | rejected | failed
+  result: jsonb("result").$type<Record<string, any>>(),
+  errorMessage: text("error_message"),
+  appliedAt: timestamp("applied_at"),
+  appliedBy: varchar("applied_by").references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  projectIdx: index("idx_agent_actions_project").on(table.projectId),
+  conversationIdx: index("idx_agent_actions_conversation").on(table.conversationId),
+  statusIdx: index("idx_agent_actions_status").on(table.status),
+}));
+
+export const insertAgentConversationSchema = createInsertSchema(agentConversations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAgentConversation = z.infer<typeof insertAgentConversationSchema>;
+export type AgentConversation = typeof agentConversations.$inferSelect;
+
+export const insertAgentMessageSchema = createInsertSchema(agentMessages).omit({ id: true, createdAt: true }).extend({
+  toolCalls: z.array(z.object({ id: z.string(), name: z.string(), args: z.any() })).nullable().optional(),
+});
+export type InsertAgentMessage = z.infer<typeof insertAgentMessageSchema>;
+export type AgentMessage = typeof agentMessages.$inferSelect;
+
+export const insertAgentActionSchema = createInsertSchema(agentActions).omit({ id: true, createdAt: true, appliedAt: true });
+export type InsertAgentAction = z.infer<typeof insertAgentActionSchema>;
+export type AgentAction = typeof agentActions.$inferSelect;
 
 // ============================================================================
 // GALAXY CLIENT PORTAL API

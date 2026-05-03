@@ -38,6 +38,7 @@ import { registerTeamsAutomationRoutes } from "./routes/teams-automation.js";
 import { registerClientRoutes } from "./routes/clients.js";
 import { registerTimeEntryRoutes } from "./routes/time-entries.js";
 import { registerAiRoutes } from "./routes/ai.js";
+import { registerProjectAgentRoutes } from "./routes/project-agent.js";
 import { registerRaiddRoutes } from "./routes/raidd.js";
 import { registerResourcePlanningRoutes } from "./routes/resource-planning.js";
 import { registerSupportRoutes } from "./routes/support.js";
@@ -544,6 +545,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerClientRoutes(app, { requireAuth, requireRole, sharePointFileStorage });
     registerTimeEntryRoutes(app, { requireAuth, requireRole });
     registerAiRoutes(app, { requireAuth, requireRole, requirePlatformAdmin });
+    registerProjectAgentRoutes(app, { requireAuth, requireRole });
     registerRaiddRoutes(app, { requireAuth, requireRole });
     registerSupportRoutes(app, { requireAuth, requireRole });
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });

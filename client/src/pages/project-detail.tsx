@@ -117,6 +117,7 @@ import { TimeEntryManagementDialog } from "@/components/time-entry-management-di
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
 import { SubSOWGenerator } from "@/components/sub-sow-generator";
 import { StatusReportDialog } from "@/components/status-report-dialog";
+import { ProjectAgentSheet } from "@/components/project-agent-sheet";
 import { format, startOfMonth, parseISO } from "date-fns";
 import {
   DndContext,
@@ -1359,6 +1360,7 @@ export default function ProjectDetail() {
   
   // Status report dialog state
   const [showStatusReport, setShowStatusReport] = useState(false);
+  const [showAgentSheet, setShowAgentSheet] = useState(false);
   const [showSharePointStatusReport, setShowSharePointStatusReport] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showLogTimeDialog, setShowLogTimeDialog] = useState(false);
@@ -3228,6 +3230,12 @@ export default function ProjectDetail() {
                   <Sparkles className="w-4 h-4 mr-2" />
                   Status Report
                 </Button>
+                {['admin', 'pm', 'portfolio-manager'].includes(user?.role || '') && (
+                  <Button variant="outline" size="sm" onClick={() => setShowAgentSheet(true)} data-testid="button-ai-assistant">
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    AI Assistant
+                  </Button>
+                )}
                 {hasLinkedChannel && ['admin', 'pm', 'portfolio-manager'].includes(user?.role || '') && (
                   <Button variant="outline" size="sm" onClick={() => setShowSharePointStatusReport(true)} data-testid="button-publish-sharepoint-status-report">
                     <Globe className="w-4 h-4 mr-2" />
@@ -9188,6 +9196,14 @@ export default function ProjectDetail() {
           onOpenChange={setShowStatusReport}
           projectId={id || ""}
           projectName={analytics?.project?.name || ""}
+        />
+
+        {/* AI Project Manager Agent */}
+        <ProjectAgentSheet
+          projectId={id || ""}
+          projectName={analytics?.project?.name || ""}
+          open={showAgentSheet}
+          onOpenChange={setShowAgentSheet}
         />
 
         {/* SharePoint Status Report Dialog */}

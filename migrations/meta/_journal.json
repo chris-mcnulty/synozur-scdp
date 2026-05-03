@@ -85,6 +85,13 @@
       "when": 1779062400000,
       "tag": "0012_raidd_client_visible_default_true",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779235200000,
+      "tag": "0013_agent_tables",
+      "breakpoints": true
     }
   ]
 }
