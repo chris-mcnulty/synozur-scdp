@@ -5491,7 +5491,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       }
       
       // Backfill: create a v1 snapshot of the PRE-edit state before any content mutation is applied.
-      if (!updateData.status) {
+      // Run for any payload that modifies fields beyond just `status` (status-only transitions
+      // are handled by their own auto-snapshot paths on send/approve).
+      const isStatusOnlyChange = Object.keys(req.body).length > 0
+        && Object.keys(req.body).every(key => key === "status");
+      if (!isStatusOnlyChange) {
         await backfillVersionIfNeeded(req.params.id, req);
       }
 
