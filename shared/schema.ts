@@ -4134,6 +4134,42 @@ export const insertUserNotificationPreferenceSchema = createInsertSchema(userNot
 export type InsertUserNotificationPreference = z.infer<typeof insertUserNotificationPreferenceSchema>;
 export type UserNotificationPreference = typeof userNotificationPreferences.$inferSelect;
 
+// Web Push subscriptions for browser notifications
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  // A single browser endpoint can be registered for the same user across
+  // multiple tenants — the unique constraint scopes the endpoint to the
+  // (user, tenant) pair so a multi-tenant user can opt in per workspace.
+  endpointIdx: uniqueIndex("idx_push_subs_endpoint")
+    .on(table.endpoint, table.userId, table.tenantId),
+  userIdx: index("idx_push_subs_user").on(table.userId, table.tenantId),
+}));
+
+export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPushSubscription = z.infer<typeof insertPushSubscriptionSchema>;
+export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
+
+// Server-only VAPID keypair store. Never exposed via any HTTP route.
+export const vapidKeys = pgTable("vapid_keys", {
+  id: varchar("id").primaryKey().default(sql`'singleton'`),
+  publicKey: text("public_key").notNull(),
+  privateKey: text("private_key").notNull(),
+  subject: text("subject").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+export type VapidKeyRow = typeof vapidKeys.$inferSelect;
+
 // ============================================================================
 // A2A TASK PERSISTENCE — durable store for Google A2A task records
 // ============================================================================

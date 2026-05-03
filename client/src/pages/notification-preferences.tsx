@@ -10,9 +10,16 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Bell, Save, Mail, Send, Loader2 } from "lucide-react";
+import { Bell, Save, Mail, Send, Loader2, Globe } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
+import {
+  isPushSupported,
+  getNotificationPermission,
+  subscribeToPush,
+  unsubscribeFromPush,
+  isSubscribedForCurrentTenant,
+} from "@/lib/push-notifications";
 
 type PrefRow = {
   notificationType: string;
@@ -145,6 +152,61 @@ export default function NotificationPreferencesPage() {
     weeklyDigestTime: "08:00",
   });
   const [digestDirty, setDigestDirty] = useState(false);
+
+  const pushSupported = isPushSupported();
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
+    getNotificationPermission()
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (pushSupported) {
+      // Reconciles the browser's PushSubscription with the server's
+      // tenant-scoped subscription record so the toggle reflects this
+      // workspace's opt-in state, not just the device's.
+      isSubscribedForCurrentTenant().then((sub) => {
+        if (!cancelled) setPushSubscribed(sub);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [pushSupported]);
+
+  const handlePushToggle = async (enable: boolean) => {
+    if (!pushSupported) return;
+    setPushBusy(true);
+    try {
+      if (enable) {
+        const result = await subscribeToPush();
+        setPushPermission(getNotificationPermission());
+        if (result.ok) {
+          setPushSubscribed(true);
+          toast({ title: "Browser notifications enabled" });
+        } else {
+          toast({
+            title: "Couldn't enable browser notifications",
+            description: result.reason,
+            variant: "destructive",
+          });
+        }
+      } else {
+        await unsubscribeFromPush();
+        setPushSubscribed(false);
+        toast({ title: "Browser notifications disabled" });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Browser notifications error",
+        description: err?.message || "Unexpected error",
+        variant: "destructive",
+      });
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   useEffect(() => {
     const base: Record<string, { inApp: boolean; email: boolean; teams: boolean }> = {};
@@ -324,6 +386,49 @@ export default function NotificationPreferencesPage() {
         })}
 
         <Separator className="my-6" />
+
+        {/* Browser Push Notifications */}
+        <Card className="mb-4">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-primary" />
+              <div>
+                <CardTitle className="text-base">Browser Notifications</CardTitle>
+                <CardDescription className="text-xs mt-0.5">
+                  Get critical alerts like expense approvals and project health warnings even when Constellation isn't the active tab.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="push-enabled" className="font-medium">
+                  Enable browser notifications
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {!pushSupported
+                    ? "Your browser doesn't support push notifications."
+                    : pushPermission === "denied"
+                      ? "Notifications are blocked in your browser settings. Allow notifications for this site to enable."
+                      : pushSubscribed
+                        ? "Push notifications are active on this device."
+                        : "You'll be asked for permission, then this device will receive push alerts."}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {pushBusy && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+                <Switch
+                  id="push-enabled"
+                  checked={pushSubscribed}
+                  disabled={!pushSupported || pushBusy || pushPermission === "denied"}
+                  onCheckedChange={handlePushToggle}
+                  data-testid="switch-browser-notifications"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Weekly Digest */}
         <Card className="mb-4">

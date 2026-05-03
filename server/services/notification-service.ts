@@ -129,6 +129,27 @@ export async function notify(params: NotifyParams): Promise<void> {
         console.error('[NOTIFY] Teams send failed (non-blocking):', teamsErr);
       }
     }
+
+    // Web Push fan-out — fires alongside in-app delivery. Browser push is its
+    // own delivery channel: opting in is signalled by the presence of an
+    // active push subscription (managed via the toggle on
+    // /notifications/preferences), independent of the in-app/email/teams
+    // checkboxes. sendPushToUser short-circuits when the user has no
+    // subscriptions, so this is a cheap call when push is unused.
+    try {
+      const { sendPushToUser, ensurePushConfigured } = await import('./push-notification-service.js');
+      if (await ensurePushConfigured()) {
+        await sendPushToUser(params.userId, params.tenantId, {
+          title: params.title,
+          body: params.body,
+          link: params.link,
+          type: typeof params.type === 'string' ? params.type : undefined,
+          entityRef: params.entityRef,
+        });
+      }
+    } catch (pushErr) {
+      console.error('[NOTIFY] Push send failed (non-blocking):', pushErr);
+    }
   } catch (err) {
     console.error('[NOTIFY] Failed to process notification (non-blocking):', err);
   }

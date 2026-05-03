@@ -78,9 +78,10 @@ import {
   type ProjectStatusReport, type InsertProjectStatusReport,
   agentCardHealthChecks, type AgentCardHealthCheck, type InsertAgentCardHealthCheck,
   userCalendarMappings, type UserCalendarMapping, type InsertUserCalendarMapping,
-  notifications, userNotificationPreferences,
+  notifications, userNotificationPreferences, pushSubscriptions,
   type Notification, type InsertNotification,
   type UserNotificationPreference, type InsertUserNotificationPreference,
+  type PushSubscriptionRow, type InsertPushSubscription,
   a2aTasks, type A2ATaskRow, type InsertA2ATask,
   clientSignoffs, type ClientSignoff, type InsertClientSignoff,
 } from "@shared/schema";
@@ -1090,6 +1091,12 @@ export interface IStorage {
   // User Notification Preferences
   getUserNotificationPreferences(userId: string, tenantId: string): Promise<UserNotificationPreference[]>;
   upsertUserNotificationPreference(data: InsertUserNotificationPreference): Promise<UserNotificationPreference>;
+
+  // Web Push subscriptions
+  upsertPushSubscription(data: InsertPushSubscription): Promise<PushSubscriptionRow>;
+  getPushSubscriptionsForUser(userId: string, tenantId: string): Promise<PushSubscriptionRow[]>;
+  deletePushSubscriptionByEndpoint(endpoint: string, userId: string, tenantId: string): Promise<void>;
+  deletePushSubscriptionById(id: string): Promise<void>;
 
   // A2A Task persistence
   createA2ATask(task: InsertA2ATask): Promise<A2ATaskRow>;

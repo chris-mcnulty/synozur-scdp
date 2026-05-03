@@ -1,10 +1,13 @@
 import {
   notifications,
   userNotificationPreferences,
+  pushSubscriptions,
   type Notification,
   type InsertNotification,
   type UserNotificationPreference,
   type InsertUserNotificationPreference,
+  type PushSubscriptionRow,
+  type InsertPushSubscription,
 } from "@shared/schema";
 import { db } from "../db";
 import type { IStorage } from "./index";
@@ -154,5 +157,60 @@ export const notificationsMethods: ThisType<IStorage> = {
       })
       .returning();
     return row;
+  },
+
+  async upsertPushSubscription(data: InsertPushSubscription): Promise<PushSubscriptionRow> {
+    const [row] = await db
+      .insert(pushSubscriptions)
+      .values(data)
+      .onConflictDoUpdate({
+        target: [
+          pushSubscriptions.endpoint,
+          pushSubscriptions.userId,
+          pushSubscriptions.tenantId,
+        ],
+        set: {
+          p256dh: data.p256dh,
+          auth: data.auth,
+          userAgent: data.userAgent ?? null,
+        },
+      })
+      .returning();
+    return row;
+  },
+
+  async getPushSubscriptionsForUser(
+    userId: string,
+    tenantId: string
+  ): Promise<PushSubscriptionRow[]> {
+    return db
+      .select()
+      .from(pushSubscriptions)
+      .where(
+        and(
+          eq(pushSubscriptions.userId, userId),
+          eq(pushSubscriptions.tenantId, tenantId)
+        )
+      );
+  },
+
+  async deletePushSubscriptionByEndpoint(
+    endpoint: string,
+    userId: string,
+    tenantId: string
+  ): Promise<void> {
+    await db
+      .delete(pushSubscriptions)
+      .where(
+        and(
+          eq(pushSubscriptions.endpoint, endpoint),
+          eq(pushSubscriptions.userId, userId),
+          eq(pushSubscriptions.tenantId, tenantId)
+        )
+      );
+  },
+
+  async deletePushSubscriptionById(id: string): Promise<void> {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, id));
   },
 };

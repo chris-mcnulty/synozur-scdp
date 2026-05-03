@@ -220,6 +220,118 @@ export function registerNotificationRoutes(app: Express, deps: NotificationRoute
     }
   });
 
+  // ============================================================================
+  // Web Push subscriptions
+  // ============================================================================
+
+  app.get("/api/push/vapid-public-key", requireAuth, async (_req, res) => {
+    try {
+      const { getVapidPublicKey } = await import("../services/push-notification-service.js");
+      const publicKey = await getVapidPublicKey();
+      if (!publicKey) {
+        return res.status(503).json({ error: "Push notifications not configured" });
+      }
+      res.json({ publicKey });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch push key" });
+    }
+  });
+
+  // Allowlist of trusted Web Push provider hostnames. We refuse to store
+  // arbitrary endpoints to prevent the server being used as an SSRF relay
+  // when notify() later POSTs to the subscription endpoint.
+  const PUSH_ENDPOINT_HOSTS: RegExp[] = [
+    /(^|\.)googleapis\.com$/i,                  // FCM (Chrome/Edge)
+    /(^|\.)push\.services\.mozilla\.com$/i,     // Mozilla autopush (Firefox)
+    /(^|\.)autopush\.services\.mozilla\.com$/i,
+    /(^|\.)notify\.windows\.com$/i,             // WNS (Edge legacy/Windows)
+    /(^|\.)push\.apple\.com$/i,                 // Apple Web Push (Safari)
+  ];
+
+  function isAllowedPushEndpoint(endpoint: string): boolean {
+    let url: URL;
+    try {
+      url = new URL(endpoint);
+    } catch {
+      return false;
+    }
+    if (url.protocol !== "https:") return false;
+    return PUSH_ENDPOINT_HOSTS.some((rx) => rx.test(url.hostname));
+  }
+
+  const pushSubSchema = z.object({
+    endpoint: z
+      .string()
+      .url()
+      .refine(isAllowedPushEndpoint, {
+        message: "Endpoint host is not on the allowed Web Push provider list",
+      }),
+    p256dh: z.string().min(1).max(512),
+    auth: z.string().min(1).max(256),
+    userAgent: z.string().max(512).optional(),
+  });
+
+  app.post("/api/push/subscriptions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      const tenantId = req.user?.tenantId;
+      if (!userId || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+      const parsed = pushSubSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid subscription", details: parsed.error });
+      }
+      const row = await storage.upsertPushSubscription({
+        userId,
+        tenantId,
+        endpoint: parsed.data.endpoint,
+        p256dh: parsed.data.p256dh,
+        auth: parsed.data.auth,
+        userAgent: parsed.data.userAgent ?? null,
+      });
+      res.json({ id: row.id });
+    } catch (err: any) {
+      console.error("[PUSH] Failed to save subscription:", err);
+      res.status(500).json({ error: "Failed to save subscription" });
+    }
+  });
+
+  app.delete("/api/push/subscriptions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      const tenantId = req.user?.tenantId;
+      if (!userId || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+      const endpoint = req.body?.endpoint;
+      if (typeof endpoint !== "string" || !endpoint) {
+        return res.status(400).json({ error: "endpoint is required" });
+      }
+      // Scope deletion to the active tenant so a multi-tenant user disabling
+      // push in one workspace does not silently disable it in others where
+      // the same browser endpoint is registered under a different
+      // (endpoint, userId, tenantId) row.
+      await storage.deletePushSubscriptionByEndpoint(endpoint, userId, tenantId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to delete subscription" });
+    }
+  });
+
+  app.get("/api/push/subscriptions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      const tenantId = req.user?.tenantId;
+      if (!userId || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+      const rows = await storage.getPushSubscriptionsForUser(userId, tenantId);
+      // Return endpoints so the UI can reconcile its tenant-scoped
+      // subscribed state with the browser's PushManager subscription.
+      res.json({
+        count: rows.length,
+        endpoints: rows.map((r) => r.endpoint),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch subscriptions" });
+    }
+  });
+
   app.get("/api/admin/digests/stats", requireAuth, async (req, res) => {
     try {
       const tenantId = req.user?.tenantId;
