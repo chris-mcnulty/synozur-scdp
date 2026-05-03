@@ -213,7 +213,52 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   // Project Milestones endpoints (Delivery Tracking)
   app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
     try {
+      const user = req.user!;
+      const sessionTenantId = (user as any).activeTenantId || user.primaryTenantId || user.tenantId;
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      // Tenant boundary enforcement (do not trust client-supplied tenantId)
+      if (sessionTenantId && project.tenantId && project.tenantId !== sessionTenantId) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Client-role users can only see milestones for projects belonging to their linked client
+      if (user.role === 'client') {
+        if (!project.clientId) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+        const [stakeholderLink] = await db
+          .select({ id: tenantUsers.id })
+          .from(tenantUsers)
+          .where(and(
+            eq(tenantUsers.userId, user.id),
+            eq(tenantUsers.role, 'client'),
+            eq(tenantUsers.status, 'active'),
+            eq(tenantUsers.clientId, project.clientId),
+          ))
+          .limit(1);
+        if (!stakeholderLink) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+
       const milestones = await storage.getProjectMilestones(req.params.projectId);
+
+      // For client-role users, strip the amount field unless the tenant explicitly opts in
+      if (user.role === 'client') {
+        const showAmounts = sessionTenantId
+          ? (await storage.getTenantSettingValue(sessionTenantId, 'showAmountsToClients', 'false')) === 'true'
+          : false;
+        const sanitized = (milestones as any[]).map((m) => {
+          if (!showAmounts) {
+            const { amount: _amount, ...rest } = m;
+            return rest;
+          }
+          return m;
+        });
+        return res.json(sanitized);
+      }
+
       res.json(milestones);
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch project milestones:", error);
@@ -3651,9 +3696,45 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   // Project Payment Milestones endpoints (Financial Schedule)
   app.get("/api/projects/:projectId/payment-milestones", requireAuth, async (req, res) => {
     try {
+      const user = req.user!;
+      const sessionTenantId = (user as any).activeTenantId || user.primaryTenantId || user.tenantId;
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      if (sessionTenantId && project.tenantId && project.tenantId !== sessionTenantId) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      if (user.role === 'client') {
+        if (!project.clientId) return res.status(403).json({ message: "Forbidden" });
+        const [stakeholderLink] = await db
+          .select({ id: tenantUsers.id })
+          .from(tenantUsers)
+          .where(and(
+            eq(tenantUsers.userId, user.id),
+            eq(tenantUsers.role, 'client'),
+            eq(tenantUsers.status, 'active'),
+            eq(tenantUsers.clientId, project.clientId),
+          ))
+          .limit(1);
+        if (!stakeholderLink) return res.status(403).json({ message: "Forbidden" });
+      }
+
       // Get all milestones and filter for payment milestones
       const allMilestones = await storage.getProjectMilestones(req.params.projectId);
-      const paymentMilestones = allMilestones.filter((m: any) => m.isPaymentMilestone === true);
+      let paymentMilestones = allMilestones.filter((m: any) => m.isPaymentMilestone === true);
+
+      if (user.role === 'client') {
+        const showAmounts = sessionTenantId
+          ? (await storage.getTenantSettingValue(sessionTenantId, 'showAmountsToClients', 'false')) === 'true'
+          : false;
+        if (!showAmounts) {
+          paymentMilestones = paymentMilestones.map((m: any) => {
+            const { amount: _amount, ...rest } = m;
+            return rest;
+          });
+        }
+      }
+
       res.json(paymentMilestones);
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch payment milestones:", error);

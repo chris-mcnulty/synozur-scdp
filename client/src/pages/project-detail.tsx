@@ -1119,7 +1119,8 @@ export default function ProjectDetail() {
   const [location, navigate] = useLocation();
   const searchString = useSearch();
   
-  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd', 'deliverables', 'status-reports', 'milestones'];
+  const baseValidTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd', 'deliverables', 'status-reports', 'milestones'];
+  const validTabs = user?.role === 'client' ? [...baseValidTabs, 'milestones-client'] : baseValidTabs;
   
   const selectedTab = useMemo(() => {
     const params = new URLSearchParams(searchString);
@@ -1399,6 +1400,9 @@ export default function ProjectDetail() {
   
   // Check if user can manage time entries
   const canManageTimeEntries = user ? ['admin', 'billing-admin'].includes(user.role) : false;
+
+  // Client-role users get a dedicated read-only Milestones tab in the portal
+  const isClientRole = user?.role === 'client';
 
   const { data: analytics, isLoading } = useQuery<ProjectAnalytics>({
     queryKey: [`/api/projects/${id}/analytics`],
@@ -3627,6 +3631,9 @@ export default function ProjectDetail() {
                 <TabsTrigger value="raidd" data-testid="tab-raidd">RAIDD</TabsTrigger>
                 <TabsTrigger value="deliverables" data-testid="tab-deliverables">Deliverables</TabsTrigger>
                 <TabsTrigger value="status-reports" data-testid="tab-status-reports">Status Reports</TabsTrigger>
+                {isClientRole && (
+                  <TabsTrigger value="milestones-client" data-testid="tab-milestones-client">Milestones</TabsTrigger>
+                )}
               </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -6477,7 +6484,123 @@ export default function ProjectDetail() {
           <TabsContent value="status-reports" className="space-y-6">
             <StatusReportsTab projectId={id || ''} />
           </TabsContent>
-          
+
+          {isClientRole && (
+            <TabsContent value="milestones-client" className="space-y-6">
+              <Card data-testid="card-client-payment-milestones">
+                <CardHeader>
+                  <CardTitle>Payment Milestones</CardTitle>
+                  <CardDescription>
+                    Read-only view of billing milestones for this project. Use these dates to plan cash flow.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {paymentMilestonesLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-4 w-1/2" />
+                    </div>
+                  ) : paymentMilestones.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No payment milestones have been scheduled yet.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Milestone</TableHead>
+                          <TableHead>Target Date</TableHead>
+                          {paymentMilestones.some((pm: any) => pm.amount !== undefined) && (
+                            <TableHead>Amount</TableHead>
+                          )}
+                          <TableHead>Invoice Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[...paymentMilestones]
+                          .sort((a: any, b: any) => {
+                            if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+                            if (a.targetDate && b.targetDate) return a.targetDate.localeCompare(b.targetDate);
+                            return 0;
+                          })
+                          .map((pm: any) => (
+                            <TableRow key={pm.id} data-testid={`client-payment-milestone-row-${pm.id}`}>
+                              <TableCell className="font-medium">{pm.name}</TableCell>
+                              <TableCell>{pm.targetDate ? safeFormatDate(pm.targetDate, 'MMM d, yyyy') : '-'}</TableCell>
+                              {paymentMilestones.some((m: any) => m.amount !== undefined) && (
+                                <TableCell>
+                                  {pm.amount !== undefined && pm.amount !== null
+                                    ? `$${Number(pm.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    : '—'}
+                                </TableCell>
+                              )}
+                              <TableCell>
+                                <Badge
+                                  variant={pm.invoiceStatus === 'paid' ? 'default' : pm.invoiceStatus === 'invoiced' ? 'secondary' : 'outline'}
+                                  data-testid={`client-pm-status-${pm.id}`}
+                                >
+                                  {pm.invoiceStatus === 'paid' ? 'Paid' : pm.invoiceStatus === 'invoiced' ? 'Invoiced' : 'Planned'}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-client-delivery-gates">
+                <CardHeader>
+                  <CardTitle>Delivery Gates</CardTitle>
+                  <CardDescription>
+                    Key delivery checkpoints for the project. These do not trigger billing on their own.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const deliveryGates = (milestones || []).filter((m: any) => !m.isPaymentMilestone);
+                    if (deliveryGates.length === 0) {
+                      return <p className="text-sm text-muted-foreground">No delivery gates have been scheduled yet.</p>;
+                    }
+                    return (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Milestone</TableHead>
+                            <TableHead>Target Date</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {[...deliveryGates]
+                            .sort((a: any, b: any) => {
+                              if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+                              if (a.targetDate && b.targetDate) return a.targetDate.localeCompare(b.targetDate);
+                              return 0;
+                            })
+                            .map((m: any) => (
+                              <TableRow key={m.id} data-testid={`client-delivery-gate-row-${m.id}`}>
+                                <TableCell className="font-medium">{m.name}</TableCell>
+                                <TableCell>{m.targetDate ? safeFormatDate(m.targetDate, 'MMM d, yyyy') : '-'}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" data-testid={`client-dg-status-${m.id}`}>
+                                    {m.status === 'completed' ? 'Completed'
+                                      : m.status === 'in-progress' ? 'In Progress'
+                                      : m.status === 'cancelled' ? 'Cancelled'
+                                      : 'Not Started'}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
             </Tabs>
           </div>
         </div>
