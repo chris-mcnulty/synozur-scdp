@@ -236,6 +236,17 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       import('./scripts/add-pagination-indexes').then(({ addPaginationIndexes }) => {
         addPaginationIndexes();
       }).catch(() => {});
+
+      // Warm the in-process cache so the first request after a restart doesn't
+      // pay the cold-start latency tax. Non-blocking — failures are logged.
+      log('🔄 Warming cache (system settings, vocabulary, tenants)...');
+      import('./lib/cache-warmup').then(({ warmCache }) => {
+        warmCache().catch((warmupError: any) => {
+          log(`⚠️ Cache warm-up failed: ${warmupError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import cache warm-up: ${importError.message}`);
+      });
       
       // Start the time reminder scheduler after database is confirmed working
       log('🔄 Starting time reminder scheduler...');
