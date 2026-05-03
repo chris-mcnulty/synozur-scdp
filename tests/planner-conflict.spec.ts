@@ -1,12 +1,11 @@
 /**
  * Task #126 — Regression + unit tests for the LWW conflict resolver.
  *
- * NOTE: This project does not (currently) have a configured test runner like
- * vitest or jest. These specs are written in a runner-agnostic style: the
- * `describe`/`it` helpers are minimal local fakes that execute synchronously
- * when the file is run with `tsx` or `node --import tsx/esm`. They double as
- * living documentation for the LWW behaviour and can be promoted to a real
- * test suite later by simply removing the helper shim.
+ * Migrated to the shared harness in ./_harness.ts so a failing test here
+ * propagates a non-zero exit code through the unified `npm test` runner
+ * (tests/run.ts). Previously this file used its own setTimeout-based shim
+ * that called `process.exit(0)` on success, which could mask failures from
+ * other suites loaded earlier in the same run.
  */
 import {
   resolveTaskConflict,
@@ -14,35 +13,7 @@ import {
   mapStatusToPercent,
   classifyGraphError,
 } from '../shared/planner-conflict.js';
-
-type AnyFn = () => void | Promise<void>;
-const failures: string[] = [];
-let passed = 0;
-
-function describe(name: string, fn: AnyFn) {
-  console.log(`\n# ${name}`);
-  Promise.resolve(fn()).catch((e) => failures.push(`${name}: ${e?.message || e}`));
-}
-function it(name: string, fn: AnyFn) {
-  try {
-    Promise.resolve(fn())
-      .then(() => { passed++; console.log(`  ✓ ${name}`); })
-      .catch((e) => { failures.push(`${name}: ${e?.message || e}`); console.log(`  ✗ ${name}: ${e?.message || e}`); });
-  } catch (e: any) {
-    failures.push(`${name}: ${e?.message || e}`);
-    console.log(`  ✗ ${name}: ${e?.message || e}`);
-  }
-}
-function expect<T>(actual: T) {
-  return {
-    toBe(v: T) { if (actual !== v) throw new Error(`expected ${JSON.stringify(actual)} === ${JSON.stringify(v)}`); },
-    toEqual(v: T) { if (JSON.stringify(actual) !== JSON.stringify(v)) throw new Error(`expected deep eq ${JSON.stringify(actual)} === ${JSON.stringify(v)}`); },
-    toContain(v: any) {
-      const arr = actual as any;
-      if (!arr.includes(v)) throw new Error(`expected ${JSON.stringify(actual)} to include ${JSON.stringify(v)}`);
-    },
-  };
-}
+import { describe, it, expect } from './_harness.js';
 
 describe('mapPercentToStatus', () => {
   it('maps 0 → open', () => expect(mapPercentToStatus(0)).toBe('open'));
@@ -154,14 +125,3 @@ describe('classifyGraphError', () => {
     expect(c.retryable).toBe(true);
   });
 });
-
-setTimeout(() => {
-  console.log(`\n${passed} passed, ${failures.length} failed`);
-  if (failures.length > 0) {
-    console.log('FAILURES:');
-    for (const f of failures) console.log(' -', f);
-    process.exit(1);
-  } else {
-    process.exit(0);
-  }
-}, 100);

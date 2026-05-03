@@ -4,7 +4,9 @@
  * - Enqueues a galaxy_webhook_deliveries row per event/app
  * - Periodic worker picks up due rows, signs payload with HMAC-SHA256
  *   using the app's webhook secret, POSTs to webhookUrl
- * - Exponential backoff: 30s, 2m, 10m, 1h, 6h, 24h (6 attempts)
+ * - Exponential backoff between retries: 30s, 2m, 10m, 1h, 6h, 24h.
+ *   Six retry slots means seven total attempts (one initial + six retries)
+ *   before the delivery is marked failed.
  * - Surfaces failures via notifications when 10 consecutive deliveries fail
  */
 import crypto from "crypto";
@@ -76,7 +78,10 @@ export async function enqueueGalaxyEvent(params: {
         data: params.data,
       },
       nextAttemptAt: new Date(),
-      maxAttempts: BACKOFF_SECONDS.length,
+      // 1 initial attempt + BACKOFF_SECONDS.length (=6) retries = 7 attempts.
+      // This makes every documented retry slot — including the final 24h
+      // backoff — actually reachable before we give up.
+      maxAttempts: BACKOFF_SECONDS.length + 1,
     });
   }
 }
@@ -166,7 +171,10 @@ async function attemptDelivery(d: GalaxyWebhookDelivery): Promise<void> {
     return;
   }
 
-  const delaySec = BACKOFF_SECONDS[Math.min(attempts, BACKOFF_SECONDS.length - 1)];
+  // attempts is the count of attempts *including* this one. The first retry
+  // (after the initial attempt fails) should use BACKOFF_SECONDS[0] = 30s,
+  // matching the documented schedule of 30s, 2m, 10m, 1h, 6h, 24h.
+  const delaySec = BACKOFF_SECONDS[Math.min(attempts - 1, BACKOFF_SECONDS.length - 1)];
   await storage.updateGalaxyWebhookDelivery(d.id, {
     status: "pending",
     attempts,
