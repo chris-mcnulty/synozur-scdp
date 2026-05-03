@@ -198,135 +198,167 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
         }
       }
       
-      const timeConditions: any[] = [];
+      const filteredProjectIds = filteredProjects.map(p => p.id);
+      const estimateIds = filteredProjects
+        .map(p => p.estimateId)
+        .filter((id): id is string => !!id);
+
+      const isSalariedExpr = sql<boolean>`(COALESCE(${users.isSalaried}, false) OR COALESCE(${roles.isAlwaysSalaried}, false))`;
+      const effectiveCostRateExpr = sql<string>`COALESCE(${timeEntries.costRate}, ${users.defaultCostRate}, 75)`;
+
+      const timeAggConditions: any[] = [];
       if (tenantId) {
-        timeConditions.push(eq(timeEntries.tenantId, tenantId));
+        timeAggConditions.push(eq(timeEntries.tenantId, tenantId));
       }
-      const timeData = await db.select({
+      if (filteredProjectIds.length > 0) {
+        timeAggConditions.push(inArray(timeEntries.projectId, filteredProjectIds));
+      }
+
+      const timeAgg = filteredProjectIds.length === 0 ? [] : await db.select({
         projectId: timeEntries.projectId,
-        personId: timeEntries.personId,
-        hours: timeEntries.hours,
-        date: timeEntries.date,
-        personName: users.name,
-        roleName: roles.name,
-        entryCostRate: timeEntries.costRate,
-        userCostRate: users.defaultCostRate,
-        isSalaried: users.isSalaried,
-        roleIsAlwaysSalaried: roles.isAlwaysSalaried
+        totalHours: sql<string>`COALESCE(SUM(${timeEntries.hours}), 0)`.as('total_hours'),
+        billableLaborCost: sql<string>`COALESCE(SUM(CASE WHEN ${isSalariedExpr} THEN 0 ELSE ${timeEntries.hours} * ${effectiveCostRateExpr} END), 0)`.as('billable_labor_cost'),
+        entryCount: sql<number>`COUNT(*)`.as('entry_count')
       })
       .from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(roles, eq(users.roleId, roles.id))
-      .where(timeConditions.length > 0 ? and(...timeConditions) : undefined);
-      
-      const expenseConditions: any[] = [];
-      if (tenantId) {
-        expenseConditions.push(eq(expenses.tenantId, tenantId));
+      .where(timeAggConditions.length > 0 ? and(...timeAggConditions) : undefined)
+      .groupBy(timeEntries.projectId);
+
+      const timeAggMap = new Map<string, { hours: number; laborCost: number; entryCount: number }>();
+      for (const row of timeAgg) {
+        timeAggMap.set(row.projectId, {
+          hours: Number(row.totalHours || 0),
+          laborCost: Number(row.billableLaborCost || 0),
+          entryCount: Number(row.entryCount || 0)
+        });
       }
-      const expenseData = await db.select({
+
+      const teamAgg = filteredProjectIds.length === 0 ? [] : await db.select({
+        projectId: timeEntries.projectId,
+        personId: timeEntries.personId,
+        personName: users.name,
+        hours: sql<string>`COALESCE(SUM(${timeEntries.hours}), 0)`.as('hours'),
+        cost: sql<string>`COALESCE(SUM(${timeEntries.hours} * ${effectiveCostRateExpr}), 0)`.as('cost')
+      })
+      .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
+      .leftJoin(roles, eq(users.roleId, roles.id))
+      .where(timeAggConditions.length > 0 ? and(...timeAggConditions) : undefined)
+      .groupBy(timeEntries.projectId, timeEntries.personId, users.name);
+
+      const teamByProject = new Map<string, { personId: string; personName: string; hours: number; cost: number; billed: number }[]>();
+      for (const row of teamAgg) {
+        const list = teamByProject.get(row.projectId) || [];
+        list.push({
+          personId: row.personId || 'unknown',
+          personName: row.personName || 'Unknown',
+          hours: Number(row.hours || 0),
+          cost: Number(row.cost || 0),
+          billed: 0
+        });
+        teamByProject.set(row.projectId, list);
+      }
+
+      const expenseAggConditions: any[] = [eq(expenses.approvalStatus, 'approved')];
+      if (tenantId) {
+        expenseAggConditions.push(eq(expenses.tenantId, tenantId));
+      }
+      if (filteredProjectIds.length > 0) {
+        expenseAggConditions.push(inArray(expenses.projectId, filteredProjectIds));
+      }
+
+      const expenseAgg = filteredProjectIds.length === 0 ? [] : await db.select({
         projectId: expenses.projectId,
-        amount: expenses.amount,
-        approvalStatus: expenses.approvalStatus,
-        date: expenses.date
+        totalAmount: sql<string>`COALESCE(SUM(${expenses.amount}), 0)`.as('total_amount'),
+        expenseCount: sql<number>`COUNT(*)`.as('expense_count')
       })
       .from(expenses)
-      .where(expenseConditions.length > 0 ? and(...expenseConditions) : undefined);
-      
-      const estimateConditions: any[] = [];
-      if (tenantId) {
-        estimateConditions.push(eq(estimates.tenantId, tenantId));
+      .where(and(...expenseAggConditions))
+      .groupBy(expenses.projectId);
+
+      const expenseAggMap = new Map<string, { amount: number; count: number }>();
+      for (const row of expenseAgg) {
+        if (!row.projectId) continue;
+        expenseAggMap.set(row.projectId, {
+          amount: Number(row.totalAmount || 0),
+          count: Number(row.expenseCount || 0)
+        });
       }
-      const estimateData = await db.select({
+
+      const milestoneAgg = filteredProjectIds.length === 0 ? [] : await db.select({
+        projectId: projectMilestones.projectId,
+        total: sql<number>`COUNT(*)`.as('total'),
+        completed: sql<number>`SUM(CASE WHEN ${projectMilestones.status} IN ('completed', 'invoiced') THEN 1 ELSE 0 END)`.as('completed')
+      })
+      .from(projectMilestones)
+      .where(inArray(projectMilestones.projectId, filteredProjectIds))
+      .groupBy(projectMilestones.projectId);
+
+      const milestoneAggMap = new Map<string, { total: number; completed: number }>();
+      for (const row of milestoneAgg) {
+        milestoneAggMap.set(row.projectId, {
+          total: Number(row.total || 0),
+          completed: Number(row.completed || 0)
+        });
+      }
+
+      const estimateData = estimateIds.length === 0 ? [] : await db.select({
         id: estimates.id,
         totalFees: estimates.totalFees,
-        totalCost: estimates.totalCost,
-        totalMargin: estimates.totalMargin
+        totalHours: estimates.totalHours
       })
       .from(estimates)
-      .where(estimateConditions.length > 0 ? and(...estimateConditions) : undefined);
-      
-      const milestoneData = await db.select({
-        projectId: projectMilestones.projectId,
-        status: projectMilestones.status
-      })
-      .from(projectMilestones);
-      
+      .where(inArray(estimates.id, estimateIds));
+
+      const estimateMap = new Map<string, { totalFees: number; totalHours: number }>();
+      for (const e of estimateData) {
+        estimateMap.set(e.id, {
+          totalFees: Number(e.totalFees || 0),
+          totalHours: Number(e.totalHours || 0)
+        });
+      }
+
       const projectFinancials = filteredProjects.map(project => {
         const billedAmount = projectRevenueMap.get(project.id) || 0;
-        
-        const projectTimeEntries = timeData.filter(t => t.projectId === project.id);
-        let laborCost = 0;
-        projectTimeEntries.forEach(entry => {
-          const isSalaried = entry.isSalaried === true || entry.roleIsAlwaysSalaried === true;
-          if (isSalaried) return;
-          
-          const hours = Number(entry.hours || 0);
-          const costRate = Number(entry.entryCostRate || entry.userCostRate || 75);
-          laborCost += hours * costRate;
-        });
-        
-        const projectExpenses = expenseData.filter(e => 
-          e.projectId === project.id && 
-          e.approvalStatus === 'approved'
-        );
-        const expenseCost = projectExpenses.reduce((sum, exp) => 
-          sum + Number(exp.amount || 0), 0
-        );
-        
+
+        const timeStats = timeAggMap.get(project.id) || { hours: 0, laborCost: 0, entryCount: 0 };
+        const burnedHours = timeStats.hours;
+        const laborCost = timeStats.laborCost;
+
+        const expenseStats = expenseAggMap.get(project.id) || { amount: 0, count: 0 };
+        const expenseCost = expenseStats.amount;
+
         const actualCost = laborCost + expenseCost;
-        
-        const estimate = estimateData.find(e => e.id === project.estimateId);
-        const originalEstimate = estimate ? Number(estimate.totalFees || 0) : 0;
-        const estimatedCost = estimate ? Number(estimate.totalCost || 0) : 0;
-        
+
+        const estimate = project.estimateId ? estimateMap.get(project.estimateId) : undefined;
+        const originalEstimate = estimate ? estimate.totalFees : 0;
+        const budgetedHours = estimate ? estimate.totalHours : 0;
+
         const sowAmount = Number(project.budget || 0);
-        
         const currentEstimate = sowAmount > 0 ? sowAmount : originalEstimate;
-        
+
         const profit = billedAmount - actualCost;
         const profitMargin = billedAmount > 0 ? (profit / billedAmount) * 100 : 0;
-        
         const budgetUtilization = currentEstimate > 0 ? (actualCost / currentEstimate) * 100 : 0;
-        
         const unbilledAmount = Math.max(0, currentEstimate - billedAmount);
-        
         const variance = currentEstimate - billedAmount;
-        
-        const projectMilestonesData = milestoneData.filter(m => m.projectId === project.id);
-        const totalMilestones = projectMilestonesData.length;
-        const completedMilestones = projectMilestonesData.filter(m => 
-          m.status === 'completed' || m.status === 'invoiced'
-        ).length;
-        const completionPercentage = totalMilestones > 0 
-          ? Math.round((completedMilestones / totalMilestones) * 100) 
+
+        const milestones = milestoneAggMap.get(project.id) || { total: 0, completed: 0 };
+        const completionPercentage = milestones.total > 0
+          ? Math.round((milestones.completed / milestones.total) * 100)
           : 0;
-        
+
         let healthScore: 'green' | 'yellow' | 'red' = 'green';
         if (budgetUtilization > 100 || profitMargin < 0) {
           healthScore = 'red';
         } else if (budgetUtilization > 80 || profitMargin < 15) {
           healthScore = 'yellow';
         }
-        
+
         const trend: 'up' | 'down' | 'stable' = 'stable';
-        
-        const teamMap = new Map<string, { personId: string; personName: string; hours: number; cost: number; billed: number }>();
-        projectTimeEntries.forEach(entry => {
-          const personId = entry.personId || 'unknown';
-          const existing = teamMap.get(personId) || { 
-            personId, 
-            personName: entry.personName || 'Unknown', 
-            hours: 0, 
-            cost: 0, 
-            billed: 0 
-          };
-          const hours = Number(entry.hours || 0);
-          const costRate = Number(entry.entryCostRate || entry.userCostRate || 75);
-          existing.hours += hours;
-          existing.cost += hours * costRate;
-          teamMap.set(personId, existing);
-        });
-        
+
         return {
           projectId: project.id,
           projectName: project.name,
@@ -343,17 +375,19 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
           profitMargin: Math.round(profitMargin * 10) / 10,
           budgetUtilization: Math.round(budgetUtilization * 10) / 10,
           completionPercentage,
-          timeEntries: projectTimeEntries.length,
-          expenses: projectExpenses.length,
+          burnedHours,
+          budgetedHours,
+          timeEntries: timeStats.entryCount,
+          expenses: expenseStats.count,
           adjustments: 0,
           lastActivity: project.createdAt ? new Date(project.createdAt).toISOString() : new Date().toISOString(),
           healthScore,
           trend,
           milestones: {
-            total: totalMilestones,
-            completed: completedMilestones
+            total: milestones.total,
+            completed: milestones.completed
           },
-          teamBreakdown: Array.from(teamMap.values()),
+          teamBreakdown: teamByProject.get(project.id) || [],
           monthlyData: []
         };
       });
