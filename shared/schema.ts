@@ -4079,6 +4079,12 @@ export const notificationTypeEnum = z.enum([
   'general',
   'client_signoff',
   'planner_sync_failure',
+  'timesheet_submitted',
+  'timesheet_approved',
+  'timesheet_rejected',
+  'invoice_sent',
+  'invoice_paid',
+  'raidd_assigned',
 ]);
 export type NotificationType = z.infer<typeof notificationTypeEnum>;
 

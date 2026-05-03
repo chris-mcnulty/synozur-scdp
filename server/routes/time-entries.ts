@@ -4,6 +4,7 @@ import { storage, db } from "../storage";
 import { insertTimeEntrySchema, timeEntries, projectWorkstreams } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getAllSessions } from "../session-store";
+import { notify } from "../services/notification-service.js";
 
 interface TimeEntryRouteDeps {
   requireAuth: any;
@@ -1040,7 +1041,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
           if (tenant?.requireTimeApproval) {
             const allUsers = await storage.getUsers(tenantId);
             const approvers = allUsers.filter(u =>
-              u.email && u.isActive && ["admin", "billing-admin", "pm"].includes(u.role)
+              u.isActive && ["admin", "billing-admin", "pm"].includes(u.role)
             );
             if (approvers.length > 0) {
               const submitter = await storage.getUser(userId);
@@ -1056,16 +1057,34 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
                 : 'this week';
               const branding = { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl };
               const inboxUrl = `${process.env.APP_BASE_URL || ''}/approvals/time`;
-              const { emailService } = await import('../services/email-notification.js');
-              await emailService.notifyTimeEntriesSubmitted(
-                { name: submitter?.name || 'User', email: submitter?.email || '' },
-                approvers.map(a => ({ name: a.name, email: a.email! })),
-                updated.length,
-                weekLabel,
-                projectNames,
-                branding,
-                inboxUrl
-              );
+              const projectsLabel = projectNames.length > 0 ? ` for ${projectNames.join(', ')}` : '';
+              const submitterName = submitter?.name || 'A user';
+
+              for (const approver of approvers) {
+                const approverEmail = approver.email;
+                const approverName = approver.name;
+                await notify({
+                  userId: approver.id,
+                  tenantId,
+                  type: 'timesheet_submitted',
+                  title: `Timesheet Awaiting Approval`,
+                  body: `${submitterName} submitted ${updated.length} time ${updated.length === 1 ? 'entry' : 'entries'} (${weekLabel})${projectsLabel}.`,
+                  entityRef: `time_submission:${userId}:${weekDates[0] || ''}`,
+                  link: `/approvals/time`,
+                  emailFn: approverEmail ? async () => {
+                    const { emailService } = await import('../services/email-notification.js');
+                    await emailService.notifyTimeEntriesSubmitted(
+                      { name: submitterName, email: submitter?.email || '' },
+                      [{ name: approverName, email: approverEmail }],
+                      updated.length,
+                      weekLabel,
+                      projectNames,
+                      branding,
+                      inboxUrl
+                    );
+                  } : undefined,
+                });
+              }
             }
           }
         }
@@ -1161,20 +1180,35 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
         const timeUrl = `${process.env.APP_BASE_URL || ''}/time`;
-        const { emailService } = await import('../services/email-notification.js');
+        const approverName = approver?.name || 'Manager';
+        const approverEmail = approver?.email || '';
         for (const [submitterId, entries] of submitterMap) {
+          if (!tenantId) continue;
           const submitter = await storage.getUser(submitterId);
-          if (!submitter?.email) continue;
           const dates = entries.map(e => e.date).sort();
           const weekLabel = `${dates[0]} – ${dates[dates.length - 1]}`;
-          await emailService.notifyTimeEntriesApproved(
-            { name: submitter.name, email: submitter.email },
-            { name: approver?.name || 'Manager', email: approver?.email || '' },
-            entries.length,
-            weekLabel,
-            branding,
-            timeUrl
-          );
+          const submitterEmail = submitter?.email;
+          const submitterName = submitter?.name || 'User';
+          await notify({
+            userId: submitterId,
+            tenantId,
+            type: 'timesheet_approved',
+            title: `Time Entries Approved`,
+            body: `${approverName} approved ${entries.length} time ${entries.length === 1 ? 'entry' : 'entries'} (${weekLabel}).`,
+            entityRef: `time_approval:${submitterId}:${dates[0] || ''}`,
+            link: `/time`,
+            emailFn: submitterEmail ? async () => {
+              const { emailService } = await import('../services/email-notification.js');
+              await emailService.notifyTimeEntriesApproved(
+                { name: submitterName, email: submitterEmail },
+                { name: approverName, email: approverEmail },
+                entries.length,
+                weekLabel,
+                branding,
+                timeUrl
+              );
+            } : undefined,
+          });
         }
       } catch (notifyErr) {
         console.error("[TIME_APPROVAL] Failed to send approve notification:", notifyErr);
@@ -1235,21 +1269,37 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
         const timeUrl = `${process.env.APP_BASE_URL || ''}/time`;
-        const { emailService } = await import('../services/email-notification.js');
+        const rejecterName = rejecter?.name || 'Manager';
+        const rejecterEmail = rejecter?.email || '';
+        const rejectionNote = note.trim();
         for (const [submitterId, entries] of submitterMap) {
+          if (!tenantId) continue;
           const submitter = await storage.getUser(submitterId);
-          if (!submitter?.email) continue;
           const dates = entries.map(e => e.date).sort();
           const weekLabel = `${dates[0]} – ${dates[dates.length - 1]}`;
-          await emailService.notifyTimeEntriesRejected(
-            { name: submitter.name, email: submitter.email },
-            { name: rejecter?.name || 'Manager', email: rejecter?.email || '' },
-            entries.length,
-            weekLabel,
-            note.trim(),
-            branding,
-            timeUrl
-          );
+          const submitterEmail = submitter?.email;
+          const submitterName = submitter?.name || 'User';
+          await notify({
+            userId: submitterId,
+            tenantId,
+            type: 'timesheet_rejected',
+            title: `Time Entries Require Revision`,
+            body: `${rejecterName} rejected ${entries.length} time ${entries.length === 1 ? 'entry' : 'entries'} (${weekLabel}). Reason: ${rejectionNote}`,
+            entityRef: `time_rejection:${submitterId}:${dates[0] || ''}`,
+            link: `/time`,
+            emailFn: submitterEmail ? async () => {
+              const { emailService } = await import('../services/email-notification.js');
+              await emailService.notifyTimeEntriesRejected(
+                { name: submitterName, email: submitterEmail },
+                { name: rejecterName, email: rejecterEmail },
+                entries.length,
+                weekLabel,
+                rejectionNote,
+                branding,
+                timeUrl
+              );
+            } : undefined,
+          });
         }
       } catch (notifyErr) {
         console.error("[TIME_APPROVAL] Failed to send reject notification:", notifyErr);

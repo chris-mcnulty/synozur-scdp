@@ -6,6 +6,7 @@ import { eq, sql, inArray, and, gte, lte, isNull } from "drizzle-orm";
 import { receiptStorage } from "../services/receipt-storage.js";
 import { invoicePDFStorage } from "../services/invoice-pdf-storage.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "../services/hubspot-client.js";
+import { notify } from "../services/notification-service.js";
 
 interface InvoiceRouteDeps {
   requireAuth: any;
@@ -750,6 +751,29 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         syncInvoiceToCrm(batchId, tenantId, 'invoice_finalized').catch((e) => {
           console.error('[CRM] Background invoice finalize sync failed:', e.message);
         });
+
+        try {
+          const finalizer = await storage.getUser(userId);
+          const recipients = await storage.getFinancialAlertRecipients(tenantId);
+          const glLabel = updatedBatch?.glInvoiceNumber || batchId;
+          const totalLabel = updatedBatch?.totalAmount
+            ? ` totaling $${Number(updatedBatch.totalAmount).toFixed(2)}`
+            : '';
+          for (const recipient of recipients) {
+            if (recipient.id === userId) continue;
+            await notify({
+              userId: recipient.id,
+              tenantId,
+              type: 'invoice_sent',
+              title: `Invoice ${glLabel} Sent`,
+              body: `${finalizer?.name || 'A user'} finalized (sent) invoice batch ${glLabel}${totalLabel}.`,
+              entityRef: `invoice_batch:${batchId}`,
+              link: `/billing/batches/${batchId}`,
+            });
+          }
+        } catch (notifyErr) {
+          console.error('[INVOICE] Failed to send finalize notification:', notifyErr);
+        }
       }
 
       res.json({
@@ -1839,6 +1863,32 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         }).catch((e) => {
           console.error('[CRM] Background payment sync failed:', e.message);
         });
+
+        if (validatedData.paymentStatus === 'paid') {
+          try {
+            const updater = await storage.getUser(userId);
+            const recipients = await storage.getFinancialAlertRecipients(tenantId);
+            const glLabel = updatedBatch?.glInvoiceNumber || batchId;
+            const amountLabel = validatedData.paymentAmount
+              ? ` ($${Number(validatedData.paymentAmount).toFixed(2)})`
+              : '';
+            const dateLabel = validatedData.paymentDate ? ` on ${validatedData.paymentDate}` : '';
+            for (const recipient of recipients) {
+              if (recipient.id === userId) continue;
+              await notify({
+                userId: recipient.id,
+                tenantId,
+                type: 'invoice_paid',
+                title: `Invoice ${glLabel} Paid`,
+                body: `${updater?.name || 'A user'} marked invoice ${glLabel} as paid${amountLabel}${dateLabel}.`,
+                entityRef: `invoice_batch:${batchId}`,
+                link: `/billing/batches/${batchId}`,
+              });
+            }
+          } catch (notifyErr) {
+            console.error('[INVOICE] Failed to send paid notification:', notifyErr);
+          }
+        }
       }
 
       res.json(updatedBatch);

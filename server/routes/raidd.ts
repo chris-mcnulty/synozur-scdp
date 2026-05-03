@@ -1,6 +1,35 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { insertRaiddEntrySchema, insertGroundingDocumentSchema, GROUNDING_DOC_CATEGORY_LABELS } from "@shared/schema";
+import { insertRaiddEntrySchema, insertGroundingDocumentSchema, GROUNDING_DOC_CATEGORY_LABELS, type RaiddEntry } from "@shared/schema";
+import { notify } from "../services/notification-service.js";
+
+const RAIDD_TYPE_LABELS: Record<string, string> = {
+  risk: 'Risk',
+  issue: 'Issue',
+  decision: 'Decision',
+  dependency: 'Dependency',
+  action_item: 'Action Item',
+};
+
+async function notifyRaiddAssigned(entry: RaiddEntry, actorId: string): Promise<void> {
+  try {
+    if (!entry.assigneeId || !entry.tenantId) return;
+    if (entry.assigneeId === actorId) return;
+    const actor = await storage.getUser(actorId);
+    const typeLabel = RAIDD_TYPE_LABELS[entry.type] || 'Item';
+    await notify({
+      userId: entry.assigneeId,
+      tenantId: entry.tenantId,
+      type: 'raidd_assigned',
+      title: `${typeLabel} Assigned: ${entry.title || ''}`.trim(),
+      body: `${actor?.name || 'A user'} assigned this ${typeLabel.toLowerCase()} to you.`,
+      entityRef: `raidd_entry:${entry.id}`,
+      link: entry.projectId ? `/projects/${entry.projectId}/raidd` : `/raidd`,
+    });
+  } catch (err) {
+    console.error('[RAIDD] Failed to send assignment notification:', err);
+  }
+}
 
 interface RaiddRouteDeps {
   requireAuth: any;
@@ -49,6 +78,9 @@ export function registerRaiddRoutes(app: Express, deps: RaiddRouteDeps) {
       };
       const parsed = insertRaiddEntrySchema.parse(body);
       const entry = await storage.createRaiddEntry(parsed);
+      if (entry.assigneeId) {
+        await notifyRaiddAssigned(entry, req.user!.id);
+      }
       res.status(201).json(entry);
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -98,6 +130,9 @@ export function registerRaiddRoutes(app: Express, deps: RaiddRouteDeps) {
       }
       const updates = { ...parsed, updatedBy: req.user!.id };
       const updated = await storage.updateRaiddEntry(req.params.id, updates);
+      if (updated.assigneeId && updated.assigneeId !== entry.assigneeId) {
+        await notifyRaiddAssigned(updated, req.user!.id);
+      }
       res.json(updated);
     } catch (error: any) {
       if (error.name === 'ZodError') {

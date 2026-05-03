@@ -36,6 +36,12 @@ const DEFAULT_PREFS: Record<string, { inApp: boolean; email: boolean; teams: boo
   project_budget_alert:     { inApp: true, email: true,  teams: false },
   time_reminder:            { inApp: true, email: true,  teams: false },
   expense_reminder:         { inApp: true, email: true,  teams: false },
+  timesheet_submitted:      { inApp: true, email: true,  teams: false },
+  timesheet_approved:       { inApp: true, email: true,  teams: false },
+  timesheet_rejected:       { inApp: true, email: true,  teams: false },
+  invoice_sent:             { inApp: true, email: false, teams: false },
+  invoice_paid:             { inApp: true, email: false, teams: false },
+  raidd_assigned:           { inApp: true, email: true,  teams: false },
   general:                  { inApp: true, email: false, teams: false },
 };
 
