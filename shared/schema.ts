@@ -4050,6 +4050,8 @@ export const backgroundJobs = pgTable("background_jobs", {
   createdAtIdx: index("idx_background_jobs_created_at").on(table.createdAt),
   tenantIdx: index("idx_background_jobs_tenant").on(table.tenantId),
   typeIdx: index("idx_background_jobs_type").on(table.type),
+  // Supports the prune query (status='succeeded'/'failed' AND finished_at < cutoff)
+  statusFinishedAtIdx: index("idx_background_jobs_status_finished_at").on(table.status, table.finishedAt),
 }));
 
 export const insertBackgroundJobSchema = createInsertSchema(backgroundJobs).omit({

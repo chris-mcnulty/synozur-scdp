@@ -27,6 +27,11 @@ export async function addPaginationIndexes() {
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_sows_project_status ON sows(project_id, status);
     `);
+    // Supports the background-job prune query: status + finished_at range scans
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_background_jobs_status_finished_at
+        ON background_jobs(status, finished_at);
+    `);
     console.log("[startup] Pagination indexes ensured");
   } catch (err: any) {
     console.warn("[startup] Failed to create some pagination indexes:", err.message);

@@ -8,8 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Loader2, RefreshCw, RotateCcw, XCircle, CheckCircle, Clock, AlertCircle, Play, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw, XCircle, CheckCircle, Clock, AlertCircle, Play, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { formatDistanceToNow } from "date-fns";
+import { useAuth } from "@/hooks/use-auth";
 
 interface BackgroundJob {
   id: string;
@@ -198,6 +210,81 @@ function formatDuration(job: BackgroundJob): string {
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
+function PurgeOldJobsButton() {
+  const { toast } = useToast();
+  const { isPlatformAdmin } = useAuth();
+  const [open, setOpen] = useState(false);
+
+  const { data: config } = useQuery<{ succeededRetentionDays: number; failedRetentionDays: number }>({
+    queryKey: ["/api/admin/background-jobs/prune-config"],
+    enabled: isPlatformAdmin,
+  });
+
+  const purgeMutation = useMutation({
+    mutationFn: () => apiRequest("/api/admin/background-jobs/prune", { method: "POST" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/background-jobs"] });
+      const total = data?.totalDeleted ?? 0;
+      toast({
+        title: "Old jobs purged",
+        description: `Deleted ${data?.succeededDeleted ?? 0} succeeded and ${data?.failedDeleted ?? 0} failed jobs (${total} total).`,
+      });
+      setOpen(false);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Purge failed",
+        description: err?.message || "Could not purge old jobs.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const succeededDays = config?.succeededRetentionDays ?? 30;
+  const failedDays = config?.failedRetentionDays ?? 60;
+
+  if (!isPlatformAdmin) return null;
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" size="sm" data-testid="button-purge-old-jobs">
+          <Trash2 className="h-4 w-4 mr-2" />
+          Purge old jobs
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Purge old background jobs?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete succeeded jobs older than{" "}
+            <strong>{succeededDays} days</strong> and failed jobs older than{" "}
+            <strong>{failedDays} days</strong>. Queued and running jobs are not affected.
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={purgeMutation.isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              purgeMutation.mutate();
+            }}
+            disabled={purgeMutation.isPending}
+            data-testid="button-confirm-purge"
+          >
+            {purgeMutation.isPending ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Purging…</>
+            ) : (
+              "Purge"
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export default function BackgroundJobs() {
   const { toast } = useToast();
   const [filterType, setFilterType] = useState<string>("all");
@@ -234,10 +321,13 @@ export default function BackgroundJobs() {
               Monitor PDF generation, AI operations, and Teams provisioning tasks
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <PurgeOldJobsButton />
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Summary cards */}

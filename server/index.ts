@@ -370,6 +370,15 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import background job worker: ${importError.message}`);
       });
 
+      // Start the background-job prune scheduler (deletes old succeeded/failed jobs)
+      log('🔄 Starting background job prune scheduler...');
+      import('./services/job-prune-scheduler.js').then(async ({ startJobPruneScheduler }) => {
+        await startJobPruneScheduler();
+        log('✅ Background job prune scheduler started');
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import background job prune scheduler: ${importError.message}`);
+      });
+
       // Check for missed jobs after a short delay to allow schedulers to initialize
       setTimeout(async () => {
         log('🔄 Checking for missed scheduled jobs...');

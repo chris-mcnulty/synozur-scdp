@@ -128,6 +128,37 @@ class JobQueueService {
     }
   }
 
+  async pruneOldJobs(opts: { succeededRetentionDays?: number; failedRetentionDays?: number } = {}): Promise<{ succeededDeleted: number; failedDeleted: number }> {
+    const succeededDays = opts.succeededRetentionDays ?? 30;
+    const failedDays = opts.failedRetentionDays ?? 60;
+    const now = Date.now();
+    const succeededCutoff = new Date(now - succeededDays * 24 * 60 * 60 * 1000);
+    const failedCutoff = new Date(now - failedDays * 24 * 60 * 60 * 1000);
+
+    // Use raw DELETEs and read the driver-reported rowCount so we never
+    // materialize deleted rows in memory — important when pruning very
+    // large backlogs (potentially millions of rows).
+    const succeededRes: any = await db.execute(sql`
+      DELETE FROM background_jobs
+      WHERE status = 'succeeded'
+        AND finished_at IS NOT NULL
+        AND finished_at < ${succeededCutoff}
+    `);
+    const failedRes: any = await db.execute(sql`
+      DELETE FROM background_jobs
+      WHERE status = 'failed'
+        AND finished_at IS NOT NULL
+        AND finished_at < ${failedCutoff}
+    `);
+
+    const succeededDeleted = Number(succeededRes?.rowCount ?? succeededRes?.count ?? 0) || 0;
+    const failedDeleted = Number(failedRes?.rowCount ?? failedRes?.count ?? 0) || 0;
+
+    console.log(`[JOB-PRUNE] Deleted ${succeededDeleted} succeeded jobs older than ${succeededDays}d and ${failedDeleted} failed jobs older than ${failedDays}d`);
+
+    return { succeededDeleted, failedDeleted };
+  }
+
   private mapRow(row: any): BackgroundJob {
     return {
       id: row.id,

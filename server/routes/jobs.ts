@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { jobQueueService } from '../services/job-queue-service';
+import { runJobPrune, getPruneRetention, getCurrentIntervalHours } from '../services/job-prune-scheduler';
 
 interface JobRouteDeps {
   requireAuth: any;
@@ -105,6 +106,58 @@ export function registerJobRoutes(app: Express, deps: JobRouteDeps) {
       res.json({ message: 'Job cancelled' });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to cancel job' });
+    }
+  });
+
+  // Authorize platform admins (global_admin / constellation_admin) regardless of
+  // their tenant role — purge is a cross-tenant maintenance action.
+  const requirePlatformAdmin = (req: Request, res: Response, next: any) => {
+    const user = req.user as any;
+    if (!user) return res.status(401).json({ message: 'Authentication required' });
+    const role = user?.platformRole;
+    if (role !== 'global_admin' && role !== 'constellation_admin') {
+      return res.status(403).json({ message: 'Platform admin required' });
+    }
+    next();
+  };
+
+  // Get current prune retention configuration (platform admin only)
+  app.get('/api/admin/background-jobs/prune-config', requireAuth, requirePlatformAdmin, async (_req: Request, res: Response) => {
+    try {
+      const retention = await getPruneRetention();
+      res.json({ ...retention, intervalHours: getCurrentIntervalHours() });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to load prune config' });
+    }
+  });
+
+  // Manually trigger a prune of old succeeded/failed jobs (platform admin only)
+  app.post('/api/admin/background-jobs/prune', requireAuth, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+
+      const body = req.body || {};
+      const succeededOverride = body.succeededRetentionDays != null ? Number(body.succeededRetentionDays) : undefined;
+      const failedOverride = body.failedRetentionDays != null ? Number(body.failedRetentionDays) : undefined;
+
+      let result;
+      if (succeededOverride != null || failedOverride != null) {
+        const retention = await getPruneRetention();
+        result = await jobQueueService.pruneOldJobs({
+          succeededRetentionDays: Number.isFinite(succeededOverride) && (succeededOverride as number) > 0
+            ? succeededOverride
+            : retention.succeededRetentionDays,
+          failedRetentionDays: Number.isFinite(failedOverride) && (failedOverride as number) > 0
+            ? failedOverride
+            : retention.failedRetentionDays,
+        });
+      } else {
+        const r = await runJobPrune('manual');
+        result = { succeededDeleted: r.succeededDeleted, failedDeleted: r.failedDeleted };
+      }
+
+      res.json({ ...result, totalDeleted: result.succeededDeleted + result.failedDeleted });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to prune background jobs' });
     }
   });
 }

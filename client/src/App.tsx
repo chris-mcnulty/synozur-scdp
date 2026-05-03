@@ -82,13 +82,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 
 // Permission wrapper component for tenant roles
-function PermissionGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
-  const { hasAnyRole } = useAuth();
-  
-  if (!hasAnyRole(allowedRoles)) {
+function PermissionGuard({ children, allowedRoles, allowPlatformAdmin = false }: { children: React.ReactNode; allowedRoles: string[]; allowPlatformAdmin?: boolean }) {
+  const { hasAnyRole, isPlatformAdmin } = useAuth();
+
+  if (!hasAnyRole(allowedRoles) && !(allowPlatformAdmin && isPlatformAdmin)) {
     return <Redirect to="/dashboard" />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -362,7 +362,7 @@ function Router() {
       </Route>
       <Route path="/admin/background-jobs">
         {user ? (
-          <PermissionGuard allowedRoles={["admin"]}>
+          <PermissionGuard allowedRoles={["admin"]} allowPlatformAdmin>
             <BackgroundJobs />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
