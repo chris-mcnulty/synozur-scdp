@@ -734,6 +734,83 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     }
   });
 
+  // Revert a previous cascade date shift: restore allocations whose cascadeSourceMilestoneId matches
+  // back to their priorPlannedStartDate / priorPlannedEndDate values, and clear those audit fields.
+  app.post("/api/projects/:projectId/milestones/:milestoneId/revert-cascade", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { projectId, milestoneId } = req.params;
+      const preview = req.query.preview === "true";
+
+      const milestone = await storage.getProjectMilestone(milestoneId);
+      if (!milestone) return res.status(404).json({ message: "Milestone not found" });
+      if (milestone.projectId !== projectId) return res.status(400).json({ message: "Milestone does not belong to this project" });
+
+      type EnrichedAllocation = {
+        id: string;
+        plannedStartDate: string | null;
+        plannedEndDate: string | null;
+        priorPlannedStartDate: string | null;
+        priorPlannedEndDate: string | null;
+        cascadeSourceMilestoneId: string | null;
+        roleInstanceLabel: string | null;
+        resourceName?: string | null;
+        person?: { name?: string | null } | null;
+        role?: { name?: string | null } | null;
+      };
+
+      const allAllocations = (await storage.getProjectAllocations(projectId)) as EnrichedAllocation[];
+      const affected: EnrichedAllocation[] = allAllocations.filter((a) =>
+        a.cascadeSourceMilestoneId === milestoneId &&
+        (a.priorPlannedStartDate !== null || a.priorPlannedEndDate !== null)
+      );
+
+      if (affected.length === 0) {
+        return res.status(400).json({ message: "No cascade history found for this milestone" });
+      }
+
+      const previewItems = affected.map((a) => ({
+        id: a.id,
+        personName: a.person?.name ?? a.resourceName ?? null,
+        roleName: a.role?.name ?? null,
+        roleInstanceLabel: a.roleInstanceLabel ?? null,
+        currentPlannedStartDate: a.plannedStartDate,
+        currentPlannedEndDate: a.plannedEndDate,
+        priorPlannedStartDate: a.priorPlannedStartDate,
+        priorPlannedEndDate: a.priorPlannedEndDate,
+      }));
+
+      if (preview) {
+        return res.json({ affectedCount: affected.length, allocations: previewItems });
+      }
+
+      await db.transaction(async (tx) => {
+        for (const a of affected) {
+          await tx
+            .update(projectAllocations)
+            .set({
+              plannedStartDate: a.priorPlannedStartDate,
+              plannedEndDate: a.priorPlannedEndDate,
+              priorPlannedStartDate: null,
+              priorPlannedEndDate: null,
+              cascadeSourceMilestoneId: null,
+            })
+            .where(and(
+              eq(projectAllocations.id, a.id),
+              eq(projectAllocations.projectId, projectId),
+              eq(projectAllocations.cascadeSourceMilestoneId, milestoneId),
+            ));
+        }
+      });
+
+      console.log(`[TELEMETRY] revert-cascade projectId=${projectId} milestoneId=${milestoneId} reverted=${affected.length} by=${req.user?.id}`);
+
+      res.json({ affectedCount: affected.length, reverted: true, allocations: previewItems });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to revert cascade:", error);
+      res.status(500).json({ message: "Failed to revert cascade" });
+    }
+  });
+
   // Bulk assign roles: accept [{allocationId, personId, roleInstanceLabel?}] and execute atomically with full validation
   app.post("/api/projects/:projectId/allocations/bulk-assign-roles", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {

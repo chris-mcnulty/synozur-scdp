@@ -1211,6 +1211,9 @@ export default function ProjectDetail() {
     newEndDate: string;
     newStartDate?: string;
   } | null>(null);
+  const [showCascadeHistoryDialog, setShowCascadeHistoryDialog] = useState(false);
+  const [revertPreviewMilestoneId, setRevertPreviewMilestoneId] = useState<string | null>(null);
+  const [pendingRevertMilestoneId, setPendingRevertMilestoneId] = useState<string | null>(null);
   const [showBulkAssignRolesDialog, setShowBulkAssignRolesDialog] = useState(false);
   const [bulkAssignSelections, setBulkAssignSelections] = useState<Record<string, string>>({});
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -2056,6 +2059,25 @@ export default function ProjectDetail() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to cascade dates", variant: "destructive" });
+    }
+  });
+
+  const revertCascadeMutation = useMutation({
+    mutationFn: async ({ milestoneId }: { milestoneId: string }) => {
+      return apiRequest(`/api/projects/${id}/milestones/${milestoneId}/revert-cascade`, {
+        method: "POST",
+        body: JSON.stringify({})
+      }) as Promise<{ affectedCount: number; reverted: boolean }>;
+    },
+    onSuccess: (data) => {
+      toast({ title: "Cascade reverted", description: `Restored ${data.affectedCount} allocation${data.affectedCount !== 1 ? 's' : ''} to their prior dates.` });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      setRevertPreviewMilestoneId(null);
+      setPendingRevertMilestoneId(null);
+      setShowCascadeHistoryDialog(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to revert cascade", variant: "destructive" });
     }
   });
 
@@ -4414,6 +4436,32 @@ export default function ProjectDetail() {
                         </Button>
                       </>
                     ) : null;
+                  })()}
+                  {(() => {
+                    type CascadeAlloc = {
+                      cascadeSourceMilestoneId?: string | null;
+                      priorPlannedStartDate?: string | null;
+                      priorPlannedEndDate?: string | null;
+                    };
+                    const cascadeMilestoneIds = Array.from(new Set(
+                      (allocations as CascadeAlloc[])
+                        .filter((a) => !!a.cascadeSourceMilestoneId && (!!a.priorPlannedStartDate || !!a.priorPlannedEndDate))
+                        .map((a) => a.cascadeSourceMilestoneId as string)
+                    ));
+                    if (cascadeMilestoneIds.length === 0) return null;
+                    return (
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowCascadeHistoryDialog(true)}
+                        data-testid="button-cascade-history"
+                      >
+                        <Clock className="w-4 h-4 mr-2" />
+                        Cascade History
+                        <Badge variant="secondary" className="ml-2 text-xs px-1.5 py-0 h-4">
+                          {cascadeMilestoneIds.length}
+                        </Badge>
+                      </Button>
+                    );
                   })()}
                   <Button 
                     onClick={() => setShowAssignmentDialog(true)}
@@ -6878,6 +6926,192 @@ export default function ProjectDetail() {
                 ) : (
                   <>Cascade Date Shift</>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cascade History / Undo Cascade Dialog */}
+        <Dialog open={showCascadeHistoryDialog} onOpenChange={(open) => {
+          if (!open && !revertCascadeMutation.isPending) {
+            setShowCascadeHistoryDialog(false);
+            setRevertPreviewMilestoneId(null);
+            setPendingRevertMilestoneId(null);
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-primary" />
+                Cascade History
+              </DialogTitle>
+              <DialogDescription>
+                Review past cascade date shifts grouped by milestone. Reverting restores the affected allocations to their original planned dates.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto">
+              {(() => {
+                type CascadeAllocation = {
+                  id: string;
+                  plannedStartDate: string | null;
+                  plannedEndDate: string | null;
+                  priorPlannedStartDate: string | null;
+                  priorPlannedEndDate: string | null;
+                  cascadeSourceMilestoneId: string | null;
+                  roleInstanceLabel: string | null;
+                  resourceName?: string | null;
+                  person?: { name?: string | null } | null;
+                  role?: { name?: string | null } | null;
+                };
+                type MilestoneRef = { id: string; name?: string | null };
+
+                const groups: Record<string, CascadeAllocation[]> = {};
+                for (const a of (allocations as CascadeAllocation[])) {
+                  if (a.cascadeSourceMilestoneId && (a.priorPlannedStartDate || a.priorPlannedEndDate)) {
+                    const key = a.cascadeSourceMilestoneId;
+                    (groups[key] ||= []).push(a);
+                  }
+                }
+                const entries = Object.entries(groups);
+                if (entries.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>No cascade history found</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-3">
+                    {entries.map(([msId, group]) => {
+                      const ms = (milestones as MilestoneRef[]).find((m) => m.id === msId);
+                      const isExpanded = revertPreviewMilestoneId === msId;
+                      const isPendingConfirm = pendingRevertMilestoneId === msId;
+                      const isReverting = revertCascadeMutation.isPending && revertCascadeMutation.variables?.milestoneId === msId;
+                      return (
+                        <div key={msId} className="border rounded-md p-3" data-testid={`cascade-history-group-${msId}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="font-medium text-sm truncate">
+                                {ms?.name || "Milestone"}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {group.length} allocation{group.length !== 1 ? 's' : ''} affected
+                              </div>
+                            </div>
+                            <div className="flex gap-2 shrink-0">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setRevertPreviewMilestoneId(isExpanded ? null : msId)}
+                                data-testid={`button-preview-revert-${msId}`}
+                              >
+                                {isExpanded ? "Hide" : "Preview Revert"}
+                              </Button>
+                              {isPendingConfirm ? (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={isReverting}
+                                    onClick={() => setPendingRevertMilestoneId(null)}
+                                    data-testid={`button-cancel-revert-${msId}`}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    disabled={isReverting}
+                                    onClick={() => {
+                                      setPendingRevertMilestoneId(null);
+                                      revertCascadeMutation.mutate({ milestoneId: msId });
+                                    }}
+                                    data-testid={`button-confirm-revert-${msId}`}
+                                  >
+                                    {isReverting ? (
+                                      <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Reverting...</>
+                                    ) : (
+                                      "Confirm Revert"
+                                    )}
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  disabled={revertCascadeMutation.isPending}
+                                  onClick={() => {
+                                    setRevertPreviewMilestoneId(msId);
+                                    setPendingRevertMilestoneId(msId);
+                                  }}
+                                  data-testid={`button-undo-cascade-${msId}`}
+                                >
+                                  Undo Cascade
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          {isPendingConfirm && (
+                            <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                              This will restore {group.length} allocation{group.length !== 1 ? 's' : ''} to their prior planned dates and clear the cascade history for this milestone. This cannot be undone.
+                            </div>
+                          )}
+                          {isExpanded && (
+                            <div className="mt-3 border-t pt-3">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Resource</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead>Current Dates</TableHead>
+                                    <TableHead>Will Revert To</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {group.map((a) => (
+                                    <TableRow key={a.id} data-testid={`row-revert-${a.id}`}>
+                                      <TableCell className="text-sm">{a.person?.name || a.resourceName || "—"}</TableCell>
+                                      <TableCell className="text-sm">
+                                        {a.role?.name || "—"}
+                                        {a.roleInstanceLabel && (
+                                          <Badge variant="outline" className="ml-1 text-xs">{a.roleInstanceLabel}</Badge>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="text-xs text-muted-foreground">
+                                        {a.plannedStartDate || "—"}
+                                        {a.plannedStartDate && a.plannedEndDate ? " → " : ""}
+                                        {a.plannedEndDate || ""}
+                                      </TableCell>
+                                      <TableCell className="text-xs font-medium">
+                                        {a.priorPlannedStartDate || "—"}
+                                        {a.priorPlannedStartDate && a.priorPlannedEndDate ? " → " : ""}
+                                        {a.priorPlannedEndDate || ""}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCascadeHistoryDialog(false);
+                  setRevertPreviewMilestoneId(null);
+                }}
+                disabled={revertCascadeMutation.isPending}
+                data-testid="button-close-cascade-history"
+              >
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>
