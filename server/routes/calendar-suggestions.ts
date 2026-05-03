@@ -94,6 +94,8 @@ export function registerCalendarSuggestionsRoutes(
               }
             : null,
           attendees,
+          attendeeCount: (event.attendees ?? []).length,
+          bodyPreview: (event.bodyPreview ?? "").trim().slice(0, 500),
           seriesMasterId: event.seriesMasterId ?? null,
           type: event.type ?? "singleInstance",
           projectId: mapping.projectId,

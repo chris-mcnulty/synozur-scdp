@@ -24,6 +24,8 @@ interface CalendarSuggestion {
   date: string;
   organizer: { name: string | null; email: string } | null;
   attendees: { name: string | null; email: string }[];
+  attendeeCount: number;
+  bodyPreview: string;
   seriesMasterId: string | null;
   type: string;
   projectId: string | null;
@@ -72,6 +74,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   // changingEvents tracks rows where the user clicked "Change" on an auto-mapped
   // suggestion — keeps the project picker visible even when suggestion.projectId exists.
   const [changingEvents, setChangingEvents] = useState<Set<string>>(new Set());
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -282,7 +285,9 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                   const showPicker = isChanging || !resolvedProject;
 
                   const organizerName = suggestion.organizer?.name || suggestion.organizer?.email || null;
-                  const attendeeCount = suggestion.attendees.length;
+                  const attendeeCount = suggestion.attendeeCount ?? suggestion.attendees.length;
+                  const isExpanded = expandedEvents.has(suggestion.eventId);
+                  const hasDetails = Boolean(suggestion.bodyPreview) || Boolean(organizerName) || attendeeCount > 0;
                   const externalAttendees = suggestion.attendees.filter(
                     a => a.email && !a.email.endsWith(suggestion.organizer?.email?.split('@')[1] ?? '__none__')
                   );
@@ -303,7 +308,67 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                             {suggestion.timeRange}
                             <span className="ml-1">({suggestion.hours}h)</span>
                           </div>
+                          {hasDetails && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                setExpandedEvents(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(suggestion.eventId)) next.delete(suggestion.eventId);
+                                  else next.add(suggestion.eventId);
+                                  return next;
+                                });
+                              }}
+                              data-testid={`button-toggle-details-${suggestion.eventId}`}
+                              aria-expanded={isExpanded}
+                              aria-label={isExpanded ? "Hide event details" : "Show event details"}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-3 h-3" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3" />
+                              )}
+                              <span className="ml-0.5">Details</span>
+                            </Button>
+                          )}
                         </div>
+
+                        {isExpanded && (
+                          <div className="mt-2 rounded-md border border-border/50 bg-muted/30 p-2 space-y-1.5">
+                            {organizerName && (
+                              <div className="text-xs">
+                                <span className="text-muted-foreground">Organizer: </span>
+                                <span className="font-medium">{organizerName}</span>
+                                {suggestion.organizer?.email && suggestion.organizer.email !== organizerName && (
+                                  <span className="text-muted-foreground"> ({suggestion.organizer.email})</span>
+                                )}
+                              </div>
+                            )}
+                            {attendeeCount > 0 && (
+                              <div className="text-xs">
+                                <span className="text-muted-foreground">Attendees: </span>
+                                <span className="font-medium">{attendeeCount}</span>
+                                {suggestion.attendees.length > 0 && (
+                                  <span className="text-muted-foreground">
+                                    {" — "}
+                                    {suggestion.attendees.slice(0, 5).map(a => a.name || a.email).join(", ")}
+                                    {suggestion.attendees.length > 5 && `, +${suggestion.attendees.length - 5} more`}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {suggestion.bodyPreview && (
+                              <div className="text-xs">
+                                <div className="text-muted-foreground mb-0.5">Description:</div>
+                                <p className="whitespace-pre-wrap break-words line-clamp-4 text-foreground/90">
+                                  {suggestion.bodyPreview}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {/* Row 2: Organizer + attendees */}
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
