@@ -783,6 +783,10 @@ export function registerGalaxyV1Routes(
   });
 
   // ─── Document download (re-validates visibility, streams from SharePoint) ─
+  // Re-runs the same tenant + clientId checks as the /documents listing
+  // before issuing any SharePoint call, then proxies the file body straight
+  // through to the client. We stream rather than buffer so large files don't
+  // pin server memory.
   app.get(`${base}/documents/:id/download`, galaxyAuth(["documents:read"]), async (req, res) => {
     const g = req.galaxy!;
     const [doc] = await db.select().from(documentMetadata).where(eq(documentMetadata.id, req.params.id));
@@ -795,17 +799,78 @@ export function registerGalaxyV1Routes(
     if (!proj || proj.tenantId !== g.tenantId || !passesClientFilter(g, proj.clientId)) {
       return res.status(404).json({ error: "not_found" });
     }
+    const { SharePointFileStorage } = await import("../../../services/sharepoint-file-storage.js");
+    const sp = new SharePointFileStorage();
+    let info: Awaited<ReturnType<typeof sp.getFileDownloadInfo>>;
     try {
-      const { SharePointFileStorage } = await import("../../../services/sharepoint-file-storage.js");
-      const sp = new SharePointFileStorage();
-      const result = await sp.getFileContent(doc.itemId, g.tenantId);
-      if (!result) return res.status(404).json({ error: "not_found" });
-      res.setHeader("Content-Type", (result.metadata as any)?.contentType || "application/octet-stream");
-      res.setHeader("Content-Disposition", `attachment; filename="${doc.fileName.replace(/"/g, "")}"`);
-      res.end(result.buffer);
+      info = await sp.getFileDownloadInfo(doc.itemId, g.tenantId);
     } catch (err: any) {
-      console.error("[GALAXY] document download failed", err);
-      res.status(502).json({ error: "download_failed", message: err?.message });
+      console.error("[GALAXY] sharepoint getFileDownloadInfo failed", err);
+      return res.status(502).json({ error: "download_failed", message: err?.message });
+    }
+
+    // Tie the upstream fetch to the response lifecycle so a client disconnect
+    // explicitly aborts the SharePoint read instead of relying on stream
+    // back-pressure / GC to cancel it.
+    const ac = new AbortController();
+    const onCloseAbort = () => ac.abort();
+    res.on("close", onCloseAbort);
+
+    try {
+      const upstream = await fetch(info.downloadUrl, { signal: ac.signal });
+      if (!upstream.ok || !upstream.body) {
+        console.error("[GALAXY] sharepoint download returned non-OK", upstream.status, upstream.statusText);
+        res.off("close", onCloseAbort);
+        return res.status(502).json({ error: "download_failed", message: `upstream ${upstream.status}` });
+      }
+
+      res.setHeader("Content-Type", info.mimeType || "application/octet-stream");
+      const safeName = (doc.fileName || info.fileName || "download").replace(/[\r\n"]/g, "_");
+      const utf8Name = encodeURIComponent(safeName);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeName}"; filename*=UTF-8''${utf8Name}`,
+      );
+      const upstreamLen = upstream.headers.get("content-length");
+      if (upstreamLen) {
+        res.setHeader("Content-Length", upstreamLen);
+      } else if (info.size) {
+        res.setHeader("Content-Length", String(info.size));
+      }
+
+      // Pipe the web stream from fetch into the express response. Node's
+      // Readable.fromWeb expects the WHATWG ReadableStream type from
+      // node:stream/web; the global `fetch`'s `body` is the same runtime
+      // object but typed via lib.dom — re-type once here rather than scatter
+      // casts through the streaming path.
+      const { Readable } = await import("stream");
+      const { pipeline } = await import("stream/promises");
+      const { ReadableStream: NodeReadableStream } = await import("stream/web");
+      const webBody = upstream.body as unknown as InstanceType<typeof NodeReadableStream>;
+      const nodeStream: import("stream").Readable = Readable.fromWeb(webBody);
+      const onCloseDestroy = () => {
+        if (!nodeStream.destroyed) nodeStream.destroy();
+      };
+      res.on("close", onCloseDestroy);
+      try {
+        await pipeline(nodeStream, res);
+      } finally {
+        res.off("close", onCloseDestroy);
+      }
+    } catch (err: any) {
+      // Don't log a noisy stack when the abort is from the client disconnecting.
+      if (ac.signal.aborted) {
+        if (!res.writableEnded) { try { res.end(); } catch { /* noop */ } }
+      } else {
+        console.error("[GALAXY] document download failed", err);
+        if (!res.headersSent) {
+          res.status(502).json({ error: "download_failed", message: err?.message });
+        } else {
+          try { res.end(); } catch { /* noop */ }
+        }
+      }
+    } finally {
+      res.off("close", onCloseAbort);
     }
   });
 

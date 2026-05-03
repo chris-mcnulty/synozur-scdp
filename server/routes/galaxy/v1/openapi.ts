@@ -189,6 +189,12 @@ export function buildOpenApiSpec() {
       "/projects/{id}/documents": path("documents:read", "List documents shared with the client",
         listResp({ $ref: "#/components/schemas/Document" }),
         [{ name: "id", in: "path", required: true, schema: { type: "string" } }]),
+      "/documents/{id}/download": path("documents:read", "Stream a shared document file",
+        { "200": {
+            description: "File stream. Content-Type reflects the stored file's MIME type and Content-Disposition is set to attachment.",
+            content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+        } },
+        [{ name: "id", in: "path", required: true, schema: { type: "string" } }]),
       "/estimates/{id}": path("estimates:read", "Get an estimate (sent or approved)",
         { "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/Estimate" } } } } },
         [{ name: "id", in: "path", required: true, schema: { type: "string" } }]),

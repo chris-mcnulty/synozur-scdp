@@ -297,6 +297,28 @@ export class SharePointFileStorage {
   }
 
   /**
+   * Get a short-lived pre-authenticated download URL plus file metadata for
+   * a given fileId. Lets callers stream the file body directly to a client
+   * without buffering it in process memory (important for large files).
+   */
+  async getFileDownloadInfo(fileId: string, tenantId?: string): Promise<{
+    downloadUrl: string;
+    fileName: string;
+    mimeType: string;
+    size: number;
+  }> {
+    const { containerId: resolvedContainerId, azureTenantId } = await this.getContainerForTenant(tenantId);
+    if (!resolvedContainerId) {
+      throw new Error('SHAREPOINT_CONTAINER_ID not configured');
+    }
+    const client = this.resolveGraphClient(azureTenantId);
+    // Intentionally let errors propagate so callers can distinguish a true
+    // "not found" (no row in document_metadata, already filtered upstream)
+    // from Graph/config/transient backend failures that should surface as 5xx.
+    return client.getFileDownloadInfo(resolvedContainerId, fileId);
+  }
+
+  /**
    * List files with optional filtering
    */
   async listFiles(filter?: { documentType?: string; clientId?: string; projectId?: string }, tenantId?: string): Promise<StoredFile[]> {

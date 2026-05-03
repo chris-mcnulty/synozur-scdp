@@ -1051,6 +1051,42 @@ export class GraphClient {
   }
 
   /**
+   * Get a short-lived pre-authenticated download URL plus file metadata,
+   * without buffering the file content. Use this when you need to stream a
+   * file body straight to a client (e.g. proxying a download through an API
+   * route) instead of loading the whole payload into memory.
+   */
+  async getFileDownloadInfo(driveIdOrContainerId: string, itemId: string): Promise<{
+    downloadUrl: string;
+    fileName: string;
+    mimeType: string;
+    size: number;
+  }> {
+    const containerId = driveIdOrContainerId;
+    if (!itemId || typeof itemId !== 'string' || itemId.trim().length === 0) {
+      throw new Error('Invalid item ID: must be a non-empty string');
+    }
+    return this.withRetry(async () => {
+      const driveId = await this.getContainerDriveId(containerId);
+      const drivePath = this.driveEndpoint(driveId);
+      const driveItem = await this.makeGraphRequest<DriveItem>('GET', `${drivePath}/items/${itemId}`);
+      if (!driveItem.file) {
+        throw new Error('Item is not a file');
+      }
+      const downloadUrl = driveItem['@microsoft.graph.downloadUrl'];
+      if (!downloadUrl) {
+        throw new Error('No download URL available for this file');
+      }
+      return {
+        downloadUrl,
+        fileName: this.sanitizeFileNameForDownload(driveItem.name),
+        mimeType: driveItem.file.mimeType || 'application/octet-stream',
+        size: driveItem.size || 0,
+      };
+    }, `getFileDownloadInfo(${itemId})`);
+  }
+
+  /**
    * Sanitize file name for safe download (less restrictive than upload)
    */
   private sanitizeFileNameForDownload(fileName: string): string {
