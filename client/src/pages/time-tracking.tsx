@@ -28,6 +28,8 @@ import { formatProjectLabel } from "@/lib/project-utils";
 import { TimeEntryDescriptionField } from "@/components/time-entry-description-field";
 import { CalendarSuggestionsPanel } from "@/components/calendar-suggestions-panel";
 import { CalendarSuggestionAdoptionCard } from "@/components/calendar-suggestion-adoption-card";
+import { TimeGrid } from "@/components/time-grid/time-grid";
+import { LayoutGrid, FileEdit } from "lucide-react";
 
 const timeEntryFormSchema = insertTimeEntrySchema.omit({
   personId: true,
@@ -94,6 +96,10 @@ export default function TimeTracking() {
   const [deletingEntry, setDeletingEntry] = useState<TimeEntryWithRelations | null>(null);
   const [editProjectId, setEditProjectId] = useState<string>("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"form" | "grid">(() => {
+    if (typeof window === "undefined") return "form";
+    return (localStorage.getItem("timeTrackingView") as "form" | "grid") || "form";
+  });
   const [editDatePickerOpen, setEditDatePickerOpen] = useState(false);
   const [selectedForSubmit, setSelectedForSubmit] = useState<Set<string>>(new Set());
   const { toast } = useToast();
@@ -813,6 +819,24 @@ export default function TimeTracking() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
+            <div className="inline-flex rounded-md border p-0.5 bg-muted">
+              <Button
+                size="sm"
+                variant={viewMode === "form" ? "default" : "ghost"}
+                onClick={() => { setViewMode("form"); localStorage.setItem("timeTrackingView", "form"); }}
+                data-testid="button-view-form"
+              >
+                <FileEdit className="w-4 h-4 mr-1" /> Form
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === "grid" ? "default" : "ghost"}
+                onClick={() => { setViewMode("grid"); localStorage.setItem("timeTrackingView", "grid"); }}
+                data-testid="button-view-grid"
+              >
+                <LayoutGrid className="w-4 h-4 mr-1" /> Grid
+              </Button>
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" data-testid="button-download-template">
@@ -973,6 +997,10 @@ export default function TimeTracking() {
         {/* Calendar Suggestion Adoption Stats */}
         <CalendarSuggestionAdoptionCard canViewTenant={currentUser?.role === "admin"} />
 
+        {viewMode === "grid" && currentUser && projects && (
+          <TimeGrid currentUser={currentUser} projects={projects} />
+        )}
+        {viewMode === "form" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Time Entry Form - Mobile Optimized */}
           <Card className="lg:col-span-1" data-testid="time-entry-form">
@@ -1623,6 +1651,7 @@ export default function TimeTracking() {
             </CardContent>
           </Card>
         </div>
+        )}
 
         {/* Edit Dialog */}
         <Dialog open={!!editingEntry} onOpenChange={() => setEditingEntry(null)}>

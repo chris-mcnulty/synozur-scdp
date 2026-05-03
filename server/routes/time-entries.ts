@@ -191,7 +191,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         }
       }
 
-      const allowedFields = ['date', 'hours', 'description', 'billable', 'projectId', 'milestoneId', 'workstreamId', 'phase'];
+      const allowedFields = ['date', 'hours', 'description', 'billable', 'projectId', 'milestoneId', 'workstreamId', 'phase', 'allocationId', 'projectStageId'];
       const updateData: any = {};
 
       if ((isAdmin || (isPM && existingEntry.projectId)) && req.body.personId !== undefined) {
@@ -216,8 +216,19 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       }
 
       if (req.user?.role === "employee") {
-        delete updateData.projectId;
+        // Employees may not reassign entries to a different person, but they
+        // may change the project/allocation on their own draft or rejected
+        // entries (the row-level permission check above already restricts to
+        // their own non-locked entries).
         delete updateData.personId;
+        const editableStatuses = ["draft", "rejected"];
+        if (
+          updateData.projectId !== undefined &&
+          !editableStatuses.includes(existingEntry.submissionStatus || "draft")
+        ) {
+          delete updateData.projectId;
+          delete updateData.allocationId;
+        }
       }
 
       delete updateData.locked;
@@ -566,6 +577,156 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
     } catch (error) {
       console.error("Error generating template:", error);
       res.status(500).json({ message: "Failed to generate template" });
+    }
+  });
+
+  // Self-service draft import: any authenticated user may import rows
+  // assigned to themselves, always created with submissionStatus='draft'.
+  app.post("/api/me/time-entries/import", deps.requireAuth, async (req, res) => {
+    try {
+      const multer = await import("multer");
+      const upload = multer.default({
+        storage: multer.default.memoryStorage(),
+        limits: { fileSize: 10 * 1024 * 1024 },
+        fileFilter: (_req, file, cb) => {
+          const ok = /\.(xlsx|xls|csv)$/i.test(file.originalname) ||
+            ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv"].includes(file.mimetype);
+          if (ok) cb(null, true);
+          else cb(new Error("Only Excel/CSV files are allowed"));
+        },
+      });
+      upload.single("file")(req, res, async (uploadError) => {
+        if (uploadError) return res.status(400).json({ message: uploadError.message || "File upload failed" });
+        if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+        try {
+          const tenantId = req.user?.tenantId || req.user?.primaryTenantId || null;
+          const projects = await storage.getProjects(tenantId || undefined);
+          const projectMap = new Map<string, string>();
+          projects.forEach((p) => {
+            projectMap.set(p.name.toLowerCase(), p.id);
+            if (p.code) projectMap.set(p.code.toLowerCase(), p.id);
+          });
+          const callerEmail = (req.user?.email || "").trim().toLowerCase();
+          const callerName = (req.user?.name || "").trim().toLowerCase();
+
+          // Parse via xlsx for both CSV and XLSX so quoted fields, embedded
+          // commas, and Excel date serials are handled identically to the
+          // existing /api/time-entries/import flow.
+          const xlsx = await import("xlsx");
+          const isCsv = /\.csv$/i.test(req.file.originalname) || req.file.mimetype === "text/csv";
+          const workbook = isCsv
+            ? xlsx.read(req.file.buffer.toString("utf8").replace(/^\uFEFF/, ""), { type: "string", cellDates: true })
+            : xlsx.read(req.file.buffer, { type: "buffer", cellDates: true });
+          const ws = workbook.Sheets[workbook.SheetNames[0]];
+          // Normalise headers to the canonical names expected below by the
+          // row processor.
+          const raw: Record<string, any>[] = xlsx.utils.sheet_to_json(ws, { raw: false, dateNF: "yyyy-mm-dd" });
+          const rows: Record<string, any>[] = raw.map((r) => {
+            const out: Record<string, any> = {};
+            for (const k of Object.keys(r)) {
+              const lk = k.trim().toLowerCase();
+              if (lk === "date") out.Date = r[k];
+              else if (lk === "project name" || lk === "project") out["Project Name"] = r[k];
+              else if (lk === "description") out.Description = r[k];
+              else if (lk === "hours") out.Hours = r[k];
+              else if (lk === "billable") out.Billable = r[k];
+              else if (lk === "phase") out.Phase = r[k];
+              else if (lk === "milestone") out.Milestone = r[k];
+              else if (lk === "resource name" || lk === "resource") out["Resource Name"] = r[k];
+              else if (lk === "id" || lk === "entry id") out.Id = r[k];
+              else out[k] = r[k];
+            }
+            return out;
+          });
+
+          const imported: any[] = [];
+          const updated: any[] = [];
+          const errors: string[] = [];
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            try {
+              let date = row.Date;
+              if (date instanceof Date) {
+                date = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+              }
+              const projectName = String(row["Project Name"] || row.Project || "").trim().toLowerCase();
+              const projectId = projectMap.get(projectName);
+              if (!projectId) {
+                errors.push(`Row ${i + 2}: project "${row["Project Name"] || row.Project}" not found`);
+                continue;
+              }
+              // Reject rows assigned to a different resource (self-service
+              // import is only allowed to create entries for the caller).
+              const resource = String(row["Resource Name"] || "").trim().toLowerCase();
+              if (resource && resource !== callerEmail && resource !== callerName) {
+                errors.push(`Row ${i + 2}: Resource Name "${row["Resource Name"]}" does not match the signed-in user`);
+                continue;
+              }
+              const billable = typeof row.Billable === "boolean" ? row.Billable : String(row.Billable || "").toUpperCase() === "TRUE";
+              // Resolve milestone: accept either a milestone id or a
+              // milestone name within the chosen project.
+              let milestoneId: string | undefined;
+              const rawMilestone = String(row.Milestone || "").trim();
+              if (rawMilestone) {
+                const milestones = await storage.getProjectMilestones?.(projectId).catch(() => []);
+                const match = (milestones || []).find(
+                  (m: { id: string; name: string }) => m.id === rawMilestone || m.name?.toLowerCase() === rawMilestone.toLowerCase(),
+                );
+                if (match) milestoneId = match.id;
+              }
+              const payload = {
+                date,
+                projectId,
+                description: row.Description || "",
+                hours: String(row.Hours || 0),
+                billable,
+                phase: row.Phase || "",
+                milestoneId,
+                personId: req.user!.id,
+                tenantId: tenantId || undefined,
+              };
+              // Round-trip: if an Id is supplied and refers to one of the
+              // caller's editable (draft/rejected, unlocked) entries, update
+              // it in place instead of creating a duplicate.
+              const supplied = String(row.Id || "").trim();
+              if (supplied) {
+                const existing = await storage.getTimeEntry(supplied);
+                if (!existing || existing.personId !== req.user!.id) {
+                  errors.push(`Row ${i + 2}: Id "${supplied}" not found or not yours`);
+                  continue;
+                }
+                if (existing.locked || (existing.submissionStatus && !["draft", "rejected"].includes(existing.submissionStatus))) {
+                  errors.push(`Row ${i + 2}: entry "${supplied}" is no longer editable`);
+                  continue;
+                }
+                const validated = insertTimeEntrySchema.partial().parse(payload);
+                const entry = await storage.updateTimeEntry(supplied, validated);
+                updated.push(entry);
+              } else {
+                const validated = insertTimeEntrySchema.parse(payload);
+                const entry = await storage.createTimeEntry(validated);
+                imported.push(entry);
+              }
+            } catch (e: any) {
+              errors.push(`Row ${i + 2}: ${e?.message || "invalid data"}`);
+            }
+          }
+          res.json({
+            success: imported.length + updated.length > 0,
+            imported: imported.length,
+            updated: updated.length,
+            errors,
+            warnings: [],
+            message: `Imported ${imported.length} new and updated ${updated.length} draft entries${errors.length ? ` (${errors.length} failed)` : ""}`,
+          });
+        } catch (e: any) {
+          console.error("[SELF-IMPORT] Error:", e);
+          res.status(400).json({ message: "Invalid file format or data" });
+        }
+      });
+    } catch (e: any) {
+      console.error("[SELF-IMPORT] Error:", e);
+      res.status(500).json({ message: "Failed to import" });
     }
   });
 
