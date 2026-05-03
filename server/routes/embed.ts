@@ -349,6 +349,12 @@ export function registerEmbedRoutes(
           }
         }
 
+        const existing = await storage.getClientSignoffs("status_report", report.id);
+        const priorAck = existing.find((s) => s.action === "acknowledged");
+        if (priorAck) {
+          return res.status(200).json(priorAck);
+        }
+
         const signoff = await storage.recordClientSignoff({
           tenantId,
           entityType: "status_report",
