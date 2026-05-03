@@ -34,13 +34,19 @@ import { getCached, invalidate } from "../lib/cache";
 const TTL_ROLES = 5 * 60 * 1000;
 
 export const usersMethods: ThisType<IStorage> = {
-  async getUsersPaginated(tenantId: string | undefined, options: { includeInactive?: boolean; includeStakeholders?: boolean; search?: string; role?: string; limit: number; offset: number }): Promise<{ items: User[]; total: number; hasMore: boolean }> {
-    const { includeInactive = false, includeStakeholders = false, search, role, limit, offset } = options;
+  async getUsersPaginated(tenantId: string | undefined, options: { includeInactive?: boolean; includeStakeholders?: boolean; search?: string; role?: string; status?: string; limit: number; offset: number }): Promise<{ items: User[]; total: number; hasMore: boolean }> {
+    const { includeInactive = false, includeStakeholders = false, search, role, status, limit, offset } = options;
     const conditions: any[] = [];
 
     if (tenantId) {
       conditions.push(eq(tenantUsers.tenantId, tenantId));
-      if (!includeInactive) {
+      if (status) {
+        if (status === 'active') {
+          conditions.push(eq(users.isActive, true));
+        } else if (status === 'inactive') {
+          conditions.push(eq(users.isActive, false));
+        }
+      } else if (!includeInactive) {
         conditions.push(eq(tenantUsers.status, 'active'));
         conditions.push(eq(users.isActive, true));
       }
@@ -73,11 +79,73 @@ export const usersMethods: ThisType<IStorage> = {
         .offset(offset);
 
       const items = pageRows.map(r => r.user);
-      return { items, total, hasMore: offset + limit < total };
+
+      // Only invoke the legacy/unmigrated-tenant fallback when the tenant has
+      // *no* membership rows at all. Falling back on `total === 0` would
+      // incorrectly leak users (including ones with `primaryTenantId IS NULL`)
+      // whenever a tenant-scoped search or role filter happens to yield no
+      // matches in a properly-migrated tenant.
+      if (total > 0) {
+        return { items, total, hasMore: offset + limit < total };
+      }
+      const [{ membershipCount }] = await db.select({
+        membershipCount: sql<number>`COUNT(*)`,
+      })
+        .from(tenantUsers)
+        .where(eq(tenantUsers.tenantId, tenantId));
+      if (Number(membershipCount) > 0) {
+        return { items, total, hasMore: false };
+      }
+
+      // Legacy/unmigrated-tenant fallback: mirror getUsers() behaviour by using
+      // users.primaryTenantId (or null) when the tenantUsers membership table is
+      // empty for this tenant. Without this, paginated callers would see an
+      // empty Users page on tenants whose membership rows have not yet been
+      // backfilled.
+      const fallbackParts: any[] = [
+        or(
+          eq(users.primaryTenantId, tenantId),
+          isNull(users.primaryTenantId),
+        ),
+      ];
+      if (status === 'active') {
+        fallbackParts.push(eq(users.isActive, true));
+      } else if (status === 'inactive') {
+        fallbackParts.push(eq(users.isActive, false));
+      } else if (!includeInactive) {
+        fallbackParts.push(eq(users.isActive, true));
+      }
+      if (search) {
+        const term = `%${search}%`;
+        fallbackParts.push(or(
+          sql`${users.name} ILIKE ${term}`,
+          sql`${users.email} ILIKE ${term}`,
+        ));
+      }
+      if (role) fallbackParts.push(eq(users.role, role));
+
+      const fallbackWhere = and(...fallbackParts);
+      const fallbackCount = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(users)
+        .where(fallbackWhere);
+      const fallbackTotal = Number(fallbackCount[0]?.count || 0);
+      const fallbackItems = await db.select()
+        .from(users)
+        .where(fallbackWhere)
+        .orderBy(users.name)
+        .limit(limit)
+        .offset(offset);
+      return { items: fallbackItems, total: fallbackTotal, hasMore: offset + limit < fallbackTotal };
     }
 
     const whereParts: any[] = [];
-    if (!includeInactive) whereParts.push(eq(users.isActive, true));
+    if (status === 'active') {
+      whereParts.push(eq(users.isActive, true));
+    } else if (status === 'inactive') {
+      whereParts.push(eq(users.isActive, false));
+    } else if (!includeInactive) {
+      whereParts.push(eq(users.isActive, true));
+    }
     if (search) {
       const term = `%${search}%`;
       whereParts.push(or(sql`${users.name} ILIKE ${term}`, sql`${users.email} ILIKE ${term}`));

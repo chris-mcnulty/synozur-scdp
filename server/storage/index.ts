@@ -120,7 +120,7 @@ export interface IStorage {
   deleteUser(id: string): Promise<void>;
   getUserRates(userId: string): Promise<{ billingRate: number | null; costRate: number | null; }>;  
   setUserRates(userId: string, billingRate: number | null, costRate: number | null): Promise<void>;
-  getUsersPaginated(tenantId: string | undefined, options: { includeInactive?: boolean; includeStakeholders?: boolean; search?: string; role?: string; limit: number; offset: number }): Promise<{ items: User[]; total: number; hasMore: boolean }>;
+  getUsersPaginated(tenantId: string | undefined, options: { includeInactive?: boolean; includeStakeholders?: boolean; search?: string; role?: string; status?: string; limit: number; offset: number }): Promise<{ items: User[]; total: number; hasMore: boolean }>;
   
   // Clients
   getClients(tenantId?: string | null): Promise<Client[]>;

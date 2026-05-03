@@ -16,7 +16,7 @@ import { PaginationControls, type PaginationState, type PaginationMeta } from "@
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { getRoleDisplayName } from "@/lib/auth";
+import { getRoleDisplayName, ROLES } from "@/lib/auth";
 
 // Proficiency badge styling
 function getProficiencyBadge(level: string) {
@@ -315,9 +315,18 @@ export default function Users() {
     users.flatMap((u: any) => u.clientNames || []).filter(Boolean)
   )).sort() as string[];
 
-  const availableRoles = Array.from(new Set(
-    users.map((u: any) => u.role).filter(Boolean)
-  )).sort() as string[];
+  // Static role list — the page-derived list would only include roles present
+  // in the currently loaded page, which makes server-side role filtering
+  // unusable across the full dataset.
+  const availableRoles: string[] = [
+    ROLES.ADMIN,
+    ROLES.BILLING_ADMIN,
+    ROLES.PM,
+    ROLES.PORTFOLIO_MANAGER,
+    ROLES.EXECUTIVE,
+    ROLES.EMPLOYEE,
+    ROLES.CLIENT,
+  ];
 
   // Secondary client-side filter for tenant/org (enriched fields not directly DB-filterable)
   const filteredUsers = useMemo(() => users.filter((user: any) => {

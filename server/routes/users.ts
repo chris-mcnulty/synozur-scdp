@@ -82,6 +82,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         includeStakeholders: parsed.includeStakeholders,
         search: parsed.search,
         role: parsed.role,
+        status: parsed.status,
         limit: parsed.limit,
         offset: parsed.offset,
       });

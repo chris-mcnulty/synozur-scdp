@@ -35,6 +35,7 @@ export const timeEntryFiltersSchema = paginationSchema.extend({
 
 export const userFiltersSchema = paginationSchema.extend({
   role: z.string().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
   includeInactive: boolStr(false),
   includeStakeholders: boolStr(false),
 });
