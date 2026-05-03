@@ -3125,6 +3125,12 @@ export const projectsMethods: ThisType<IStorage> = {
       message: string;
       detail?: string;
       count?: number;
+      affectedItems?: Array<{
+        id: string;
+        name: string;
+        navTab: string;
+        navParam?: { key: string; value: string };
+      }>;
     }>;
     warnings: string[];
     overallStatus: "good" | "warning" | "missing";
@@ -3142,6 +3148,26 @@ export const projectsMethods: ThisType<IStorage> = {
       db.select().from(raiddEntries).where(eq(raiddEntries.projectId, projectId)),
     ]);
 
+    // Resolve user names for the people referenced by time entries / allocations
+    const personIds = new Set<string>();
+    for (const te of timeEntryData) if (te.personId) personIds.add(te.personId);
+    for (const a of allocationData) if (a.personId) personIds.add(a.personId);
+    const userMap = new Map<string, string>();
+    if (personIds.size > 0) {
+      const userRows = await db
+        .select({ id: users.id, name: users.name })
+        .from(users)
+        .where(inArray(users.id, Array.from(personIds)));
+      for (const u of userRows) userMap.set(u.id, u.name);
+    }
+
+    const MAX_AFFECTED = 20;
+    const formatDate = (d: any): string => {
+      if (!d) return "";
+      const s = typeof d === "string" ? d : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d));
+      return s.slice(0, 10);
+    };
+
     const categories: Array<{
       key: string;
       label: string;
@@ -3149,20 +3175,35 @@ export const projectsMethods: ThisType<IStorage> = {
       message: string;
       detail?: string;
       count?: number;
+      affectedItems?: Array<{
+        id: string;
+        name: string;
+        navTab: string;
+        navParam?: { key: string; value: string };
+      }>;
     }> = [];
     const warnings: string[] = [];
 
     // ── Time Entries ──────────────────────────────────────────────────────────
     const totalEntries = timeEntryData.length;
-    const undescribed = timeEntryData.filter(te => !te.description || te.description.trim() === "").length;
+    const undescribedEntries = timeEntryData.filter(te => !te.description || te.description.trim() === "");
+    const undescribed = undescribedEntries.length;
+    const timeEntryAffected = undescribedEntries
+      .slice(0, MAX_AFFECTED)
+      .map(te => ({
+        id: te.id,
+        name: `${userMap.get(te.personId) || "Unknown"} — ${formatDate(te.date)} (${Number(te.hours)}h)`,
+        navTab: "time",
+        navParam: { key: "entryId", value: te.id },
+      }));
     if (totalEntries === 0) {
       categories.push({ key: "time_entries", label: "Time Entries", status: "missing", message: "No time entries logged for this period", detail: "The report will show no team activity. Add time entries to populate the Team Activity section.", count: 0 });
       warnings.push("No time entries recorded — the report will say 'No team activity' for this period.");
     } else if (undescribed === totalEntries) {
-      categories.push({ key: "time_entries", label: "Time Entries", status: "warning", message: `${totalEntries} time entries have no descriptions`, detail: `All ${totalEntries} entries lack descriptions — the report will say 'No descriptions logged' for all team members.`, count: undescribed });
+      categories.push({ key: "time_entries", label: "Time Entries", status: "warning", message: `${totalEntries} time entries have no descriptions`, detail: `All ${totalEntries} entries lack descriptions — the report will say 'No descriptions logged' for all team members.`, count: undescribed, affectedItems: timeEntryAffected });
       warnings.push(`${totalEntries} time entries have no description — the report will say 'No descriptions logged' for all team members.`);
     } else if (undescribed > 0) {
-      categories.push({ key: "time_entries", label: "Time Entries", status: "warning", message: `${undescribed} of ${totalEntries} time entries have no description`, detail: `${undescribed} time entr${undescribed === 1 ? "y lacks a" : "ies lack"} descriptions — those team members will show 'No descriptions logged'.`, count: undescribed });
+      categories.push({ key: "time_entries", label: "Time Entries", status: "warning", message: `${undescribed} of ${totalEntries} time entries have no description`, detail: `${undescribed} time entr${undescribed === 1 ? "y lacks a" : "ies lack"} descriptions — those team members will show 'No descriptions logged'.`, count: undescribed, affectedItems: timeEntryAffected });
       warnings.push(`${undescribed} time entr${undescribed === 1 ? "y has" : "ies have"} no description — the report will say 'No descriptions logged' for those team members.`);
     } else {
       categories.push({ key: "time_entries", label: "Time Entries", status: "good", message: `${totalEntries} time entries with descriptions`, count: totalEntries });
@@ -3170,8 +3211,27 @@ export const projectsMethods: ThisType<IStorage> = {
 
     // ── Allocations ───────────────────────────────────────────────────────────
     const totalAllocations = allocationData.length;
-    const allocsNoDates = allocationData.filter(a => !a.plannedStartDate).length;
-    const allocsNoStatus = allocationData.filter(a => !a.status || a.status === "").length;
+    const allocsNoDatesList = allocationData.filter(a => !a.plannedStartDate);
+    const allocsNoStatusList = allocationData.filter(a => !a.status || a.status === "");
+    const allocsNoDates = allocsNoDatesList.length;
+    const allocsNoStatus = allocsNoStatusList.length;
+    const allocLabel = (a: typeof allocationData[number]): string => {
+      const who = a.personId ? (userMap.get(a.personId) || "Unassigned") : (a.resourceName || "Role");
+      const task = a.taskDescription ? ` — ${a.taskDescription.slice(0, 60)}` : "";
+      return `${who}${task}`;
+    };
+    const allocAffectedMap = new Map<string, { id: string; name: string; navTab: string; navParam?: { key: string; value: string } }>();
+    for (const a of [...allocsNoDatesList, ...allocsNoStatusList].slice(0, MAX_AFFECTED * 2)) {
+      if (allocAffectedMap.has(a.id)) continue;
+      allocAffectedMap.set(a.id, {
+        id: a.id,
+        name: allocLabel(a),
+        navTab: "delivery",
+        navParam: { key: "assignmentId", value: a.id },
+      });
+      if (allocAffectedMap.size >= MAX_AFFECTED) break;
+    }
+    const allocAffected = Array.from(allocAffectedMap.values());
     if (totalAllocations === 0) {
       categories.push({ key: "allocations", label: "Team Allocations", status: "missing", message: "No team allocations defined", detail: "Without allocations the report cannot list completed, in-progress, or upcoming tasks.", count: 0 });
       warnings.push("No team allocations defined — the report cannot categorize work into completed, in-progress, or upcoming tasks.");
@@ -3189,7 +3249,7 @@ export const projectsMethods: ThisType<IStorage> = {
         warnings.push(`${allocsNoStatus} allocation${allocsNoStatus === 1 ? "" : "s"} have no status — they cannot be placed in completed/in-progress/upcoming buckets.`);
       }
       if (allocIssues.length > 0) {
-        categories.push({ key: "allocations", label: "Team Allocations", status: "warning", message: allocIssues.join("; "), detail: allocDetailParts.join(" "), count: allocsNoDates + allocsNoStatus });
+        categories.push({ key: "allocations", label: "Team Allocations", status: "warning", message: allocIssues.join("; "), detail: allocDetailParts.join(" "), count: allocsNoDates + allocsNoStatus, affectedItems: allocAffected });
       } else {
         categories.push({ key: "allocations", label: "Team Allocations", status: "good", message: `${totalAllocations} allocations with planned dates and statuses`, count: totalAllocations });
       }
@@ -3199,21 +3259,35 @@ export const projectsMethods: ThisType<IStorage> = {
     const totalMilestones = milestoneData.length;
     const today = new Date();
     const staleStatuses = ["planned", "in_progress", "at_risk"];
-    const overdueMilestones = milestoneData.filter(m =>
+    const overdueMilestonesList = milestoneData.filter(m =>
       staleStatuses.includes(m.status) &&
       m.targetDate &&
       new Date(m.targetDate) < today
-    ).length;
-    const noDateMilestones = milestoneData.filter(m => !m.targetDate).length;
+    );
+    const noDateMilestonesList = milestoneData.filter(m => !m.targetDate);
+    const overdueMilestones = overdueMilestonesList.length;
+    const noDateMilestones = noDateMilestonesList.length;
     const completedMilestones = milestoneData.filter(m => m.status === "completed").length;
+    const overdueMilestoneAffected = overdueMilestonesList.slice(0, MAX_AFFECTED).map(m => ({
+      id: m.id,
+      name: `${m.name}${m.targetDate ? ` (due ${formatDate(m.targetDate)})` : ""}`,
+      navTab: "milestones",
+      navParam: { key: "milestoneId", value: m.id },
+    }));
+    const noDateMilestoneAffected = noDateMilestonesList.slice(0, MAX_AFFECTED).map(m => ({
+      id: m.id,
+      name: m.name,
+      navTab: "milestones",
+      navParam: { key: "milestoneId", value: m.id },
+    }));
     if (totalMilestones === 0) {
       categories.push({ key: "milestones", label: "Milestones", status: "missing", message: "No milestones defined for this project", detail: "Milestone sections of the report will be empty.", count: 0 });
       warnings.push("No milestones defined — the report will not include milestone tracking.");
     } else if (overdueMilestones > 0) {
-      categories.push({ key: "milestones", label: "Milestones", status: "warning", message: `${overdueMilestones} milestone${overdueMilestones === 1 ? "" : "s"} overdue without status update`, detail: `${overdueMilestones} milestone${overdueMilestones === 1 ? " is" : "s are"} past their target date but still show as '${staleStatuses.join("/")}'. Update their status to reflect current reality.`, count: overdueMilestones });
+      categories.push({ key: "milestones", label: "Milestones", status: "warning", message: `${overdueMilestones} milestone${overdueMilestones === 1 ? "" : "s"} overdue without status update`, detail: `${overdueMilestones} milestone${overdueMilestones === 1 ? " is" : "s are"} past their target date but still show as '${staleStatuses.join("/")}'. Update their status to reflect current reality.`, count: overdueMilestones, affectedItems: overdueMilestoneAffected });
       warnings.push(`${overdueMilestones} milestone${overdueMilestones === 1 ? " is" : "s are"} past their due date but not marked complete or at-risk — the report may misrepresent project delivery status.`);
     } else if (noDateMilestones > 0) {
-      categories.push({ key: "milestones", label: "Milestones", status: "warning", message: `${noDateMilestones} milestone${noDateMilestones === 1 ? "" : "s"} without target dates`, detail: "Milestones without dates cannot be evaluated for timeline health.", count: noDateMilestones });
+      categories.push({ key: "milestones", label: "Milestones", status: "warning", message: `${noDateMilestones} milestone${noDateMilestones === 1 ? "" : "s"} without target dates`, detail: "Milestones without dates cannot be evaluated for timeline health.", count: noDateMilestones, affectedItems: noDateMilestoneAffected });
       warnings.push(`${noDateMilestones} milestone${noDateMilestones === 1 ? " has" : "s have"} no target date — the report cannot assess delivery timeline risk.`);
     } else {
       categories.push({ key: "milestones", label: "Milestones", status: "good", message: `${totalMilestones} milestones with dates and statuses`, count: totalMilestones });
@@ -3230,6 +3304,34 @@ export const projectsMethods: ThisType<IStorage> = {
       .filter(r => r.type === "risk" && openStatuses.includes(r.status) && (!r.mitigationPlan || r.mitigationPlan.trim() === ""))
       .length;
 
+    const raiddNoStatusList = raiddData.filter(r => !r.status || r.status === "");
+    const actionItemsNoDueDateList = raiddData.filter(r => r.type === "action_item" && openStatuses.includes(r.status) && !r.dueDate);
+    const risksNoMitigationList = raiddData.filter(r => r.type === "risk" && openStatuses.includes(r.status) && (!r.mitigationPlan || r.mitigationPlan.trim() === ""));
+    const raiddTypeLabel = (t: string): string => {
+      switch (t) {
+        case "risk": return "Risk";
+        case "action_item": return "Action";
+        case "issue": return "Issue";
+        case "decision": return "Decision";
+        case "dependency": return "Dependency";
+        default: return t || "Entry";
+      }
+    };
+    const raiddAffectedMap = new Map<string, { id: string; name: string; navTab: string; navParam?: { key: string; value: string } }>();
+    const pushRaidd = (r: typeof raiddData[number], reason: string) => {
+      if (raiddAffectedMap.has(r.id) || raiddAffectedMap.size >= MAX_AFFECTED) return;
+      raiddAffectedMap.set(r.id, {
+        id: r.id,
+        name: `[${raiddTypeLabel(r.type)}${r.refNumber ? ` ${r.refNumber}` : ""}] ${r.title} — ${reason}`,
+        navTab: "raidd",
+        navParam: { key: "raiddEntryId", value: r.id },
+      });
+    };
+    for (const r of risksNoMitigationList) pushRaidd(r, "no mitigation plan");
+    for (const r of actionItemsNoDueDateList) pushRaidd(r, "no due date");
+    for (const r of raiddNoStatusList) pushRaidd(r, "no status");
+    const raiddAffected = Array.from(raiddAffectedMap.values());
+
     if (raiddData.length === 0) {
       categories.push({ key: "raidd", label: "RAIDD Log", status: "missing", message: "No RAIDD entries for this project", detail: "The Risks, Actions, Issues, Decisions, and Dependencies section will be empty.", count: 0 });
       warnings.push("No RAIDD entries — the risks/issues/actions section of the report will be empty.");
@@ -3244,7 +3346,12 @@ export const projectsMethods: ThisType<IStorage> = {
         if (actionItemsNoDueDate > 0) detailParts.push(`${actionItemsNoDueDate} open action item${actionItemsNoDueDate === 1 ? "" : "s"} ${actionItemsNoDueDate === 1 ? "has" : "have"} no due date — they won't appear in overdue tracking.`);
         if (risksNoMitigation > 0) detailParts.push(`${risksNoMitigation} open risk${risksNoMitigation === 1 ? "" : "s"} ${risksNoMitigation === 1 ? "has" : "have"} no mitigation plan — the report's risk section will be incomplete.`);
         if (raiddNoStatus > 0) detailParts.push(`${raiddNoStatus} entr${raiddNoStatus === 1 ? "y has" : "ies have"} no status set.`);
-        categories.push({ key: "raidd", label: "RAIDD Log", status: "warning", message: raiddIssues.join("; "), detail: detailParts.join(" "), count: raiddIssues.length });
+        const totalRaiddAffected = new Set<string>([
+          ...risksNoMitigationList.map(r => r.id),
+          ...actionItemsNoDueDateList.map(r => r.id),
+          ...raiddNoStatusList.map(r => r.id),
+        ]).size;
+        categories.push({ key: "raidd", label: "RAIDD Log", status: "warning", message: raiddIssues.join("; "), detail: detailParts.join(" "), count: totalRaiddAffected, affectedItems: raiddAffected });
         for (const issue of raiddIssues) {
           warnings.push(`RAIDD: ${issue}.`);
         }

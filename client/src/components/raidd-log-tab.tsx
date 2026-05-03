@@ -69,6 +69,7 @@ interface RaiddEntryDetail extends RaiddEntry {
 interface RaiddLogTabProps {
   projectId: string;
   projectTeamMembers?: { id: string; name: string }[];
+  focusEntryId?: string | null;
 }
 
 const RAIDD_TYPES = [
@@ -143,7 +144,7 @@ const raiddFormSchema = z.object({
 
 type RaiddFormData = z.infer<typeof raiddFormSchema>;
 
-export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabProps) {
+export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }: RaiddLogTabProps) {
   const { toast } = useToast();
   const { isReadonly: embedReadonly } = useEmbed();
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -152,7 +153,11 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingEntry, setEditingEntry] = useState<RaiddEntry | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
-  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(focusEntryId || null);
+
+  useEffect(() => {
+    if (focusEntryId) setExpandedEntryId(focusEntryId);
+  }, [focusEntryId]);
   const [sortField, setSortField] = useState<string>("priority");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [createWithType, setCreateWithType] = useState<string | null>(null);
@@ -696,7 +701,13 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
                   return (
                     <Fragment key={entry.id}>
                       <TableRow
-                        className={`cursor-pointer transition-colors ${isExpanded ? "bg-primary/5 dark:bg-primary/10 border-b-0" : ""}`}
+                        ref={(el) => {
+                          if (focusEntryId === entry.id && el) {
+                            setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 100);
+                          }
+                        }}
+                        data-testid={`raidd-row-${entry.id}`}
+                        className={`cursor-pointer transition-colors ${isExpanded ? "bg-primary/5 dark:bg-primary/10 border-b-0" : ""} ${focusEntryId === entry.id ? "ring-2 ring-primary ring-offset-1 animate-pulse" : ""}`}
                         onClick={() => setExpandedEntryId(isExpanded ? null : entry.id)}
                       >
                         <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">

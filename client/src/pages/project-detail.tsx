@@ -1118,7 +1118,7 @@ export default function ProjectDetail() {
   const [location, navigate] = useLocation();
   const searchString = useSearch();
   
-  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd', 'deliverables', 'status-reports'];
+  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd', 'deliverables', 'status-reports', 'milestones'];
   
   const selectedTab = useMemo(() => {
     const params = new URLSearchParams(searchString);
@@ -1137,6 +1137,11 @@ export default function ProjectDetail() {
     const params = new URLSearchParams(searchString);
     return params.get('assignmentId');
   }, [searchString]);
+
+  // Highlight params from Data Readiness "affected items" deep-links
+  const highlightedTimeEntryId = useMemo(() => new URLSearchParams(searchString).get('entryId'), [searchString]);
+  const highlightedMilestoneId = useMemo(() => new URLSearchParams(searchString).get('milestoneId'), [searchString]);
+  const highlightedRaiddEntryId = useMemo(() => new URLSearchParams(searchString).get('raiddEntryId'), [searchString]);
   
   const handleTabChange = (newTab: string) => {
     const params = new URLSearchParams(searchString);
@@ -5364,7 +5369,16 @@ export default function ProjectDetail() {
                       </TableRow>
                     ) : (
                       milestones.map((milestone: any) => (
-                        <TableRow key={milestone.id} data-testid={`milestone-row-${milestone.id}`}>
+                        <TableRow
+                          key={milestone.id}
+                          data-testid={`milestone-row-${milestone.id}`}
+                          ref={(el) => {
+                            if (highlightedMilestoneId === milestone.id && el) {
+                              setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 100);
+                            }
+                          }}
+                          className={highlightedMilestoneId === milestone.id ? 'ring-2 ring-primary ring-offset-2 bg-primary/5 animate-pulse' : ''}
+                        >
                           <TableCell className="font-medium">{milestone.name}</TableCell>
                           <TableCell>
                             {milestone.isPaymentMilestone ? (
@@ -6167,7 +6181,16 @@ export default function ProjectDetail() {
                               </TableRow>
                             ) : (
                               group.entries.map((entry: any, index: number) => (
-                                <TableRow key={entry.id || index} data-testid={`time-entry-${entry.id}`}>
+                                <TableRow
+                                  key={entry.id || index}
+                                  data-testid={`time-entry-${entry.id}`}
+                                  ref={(el) => {
+                                    if (highlightedTimeEntryId === entry.id && el) {
+                                      setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 100);
+                                    }
+                                  }}
+                                  className={highlightedTimeEntryId === entry.id ? 'ring-2 ring-primary ring-offset-2 bg-primary/5 animate-pulse' : ''}
+                                >
                                   <TableCell>
                                     {safeFormatDate(entry.date, "MMM d, yyyy")}
                                   </TableCell>
@@ -6252,6 +6275,7 @@ export default function ProjectDetail() {
               projectTeamMembers={engagements
                 .filter((e: any) => e.status === 'active' && e.user)
                 .map((e: any) => ({ id: e.user.id, name: e.user.name || e.user.email }))}
+              focusEntryId={highlightedRaiddEntryId}
             />
           </TabsContent>
 

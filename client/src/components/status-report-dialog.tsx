@@ -17,6 +17,7 @@ import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronRight
 } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { useLocation } from "wouter";
 
 interface StatusReportDialogProps {
   open: boolean;
@@ -106,7 +107,15 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   })();
 
   const { data: qualityReport, isLoading: isQualityLoading } = useQuery<{
-    categories: Array<{ key: string; label: string; status: "good" | "warning" | "missing"; message: string; detail?: string; count?: number }>;
+    categories: Array<{
+      key: string;
+      label: string;
+      status: "good" | "warning" | "missing";
+      message: string;
+      detail?: string;
+      count?: number;
+      affectedItems?: Array<{ id: string; name: string; navTab: string; navParam?: { key: string; value: string } }>;
+    }>;
     warnings: string[];
     overallStatus: "good" | "warning" | "missing";
   }>({
@@ -475,6 +484,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                 projectId={projectId}
                 expandedKey={expandedQualityKey}
                 onToggleExpand={(key) => setExpandedQualityKey(k => k === key ? null : key)}
+                onCloseDialog={() => onOpenChange(false)}
               />
 
               <div className="grid grid-cols-2 gap-3">
@@ -629,9 +639,24 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   );
 }
 
+interface AffectedItem {
+  id: string;
+  name: string;
+  navTab: string;
+  navParam?: { key: string; value: string };
+}
+
 interface DataReadinessPanelProps {
   qualityReport?: {
-    categories: Array<{ key: string; label: string; status: "good" | "warning" | "missing"; message: string; detail?: string; count?: number }>;
+    categories: Array<{
+      key: string;
+      label: string;
+      status: "good" | "warning" | "missing";
+      message: string;
+      detail?: string;
+      count?: number;
+      affectedItems?: AffectedItem[];
+    }>;
     warnings: string[];
     overallStatus: "good" | "warning" | "missing";
   };
@@ -639,6 +664,7 @@ interface DataReadinessPanelProps {
   projectId: string;
   expandedKey: string | null;
   onToggleExpand: (key: string) => void;
+  onCloseDialog: () => void;
 }
 
 const STATUS_ICON = {
@@ -671,7 +697,15 @@ const OVERALL_LABEL = {
   missing: "Critical data missing",
 };
 
-function DataReadinessPanel({ qualityReport, isLoading, projectId, expandedKey, onToggleExpand }: DataReadinessPanelProps) {
+function DataReadinessPanel({ qualityReport, isLoading, projectId, expandedKey, onToggleExpand, onCloseDialog }: DataReadinessPanelProps) {
+  const [, navigate] = useLocation();
+  const goToItem = (item: AffectedItem) => {
+    const params = new URLSearchParams();
+    params.set("tab", item.navTab);
+    if (item.navParam) params.set(item.navParam.key, item.navParam.value);
+    onCloseDialog();
+    navigate(`/projects/${projectId}?${params.toString()}`);
+  };
   if (isLoading) {
     return (
       <div className="rounded-lg border border-border px-3 py-2.5 flex items-center gap-2 text-sm text-muted-foreground">
@@ -714,19 +748,42 @@ function DataReadinessPanel({ qualityReport, isLoading, projectId, expandedKey, 
             </button>
             {expandedKey === cat.key && cat.detail && (
               <div className="ml-5 mt-1 text-muted-foreground leading-snug">
-                {cat.detail}
-                {cat.key === "time_entries" && (
-                  <a href={`/projects/${projectId}?tab=time`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to Time Entries →</a>
+                <div>{cat.detail}</div>
+                {cat.affectedItems && cat.affectedItems.length > 0 && (
+                  <div className="mt-2 space-y-0.5">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground/80 font-medium">
+                      Affected items {cat.count && cat.count > cat.affectedItems.length ? `(showing ${cat.affectedItems.length} of ${cat.count})` : `(${cat.affectedItems.length})`}
+                    </div>
+                    <ul className="space-y-0.5">
+                      {cat.affectedItems.map(item => (
+                        <li key={item.id}>
+                          <button
+                            type="button"
+                            onClick={() => goToItem(item)}
+                            data-testid={`affected-item-${cat.key}-${item.id}`}
+                            className="text-left underline underline-offset-2 hover:opacity-80 hover:text-foreground transition-colors break-words"
+                          >
+                            {item.name}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
-                {cat.key === "allocations" && (
-                  <a href={`/projects/${projectId}?tab=allocations`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to Allocations →</a>
-                )}
-                {cat.key === "milestones" && (
-                  <a href={`/projects/${projectId}?tab=milestones`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to Milestones →</a>
-                )}
-                {cat.key === "raidd" && (
-                  <a href={`/projects/${projectId}?tab=raidd`} className="ml-1 underline underline-offset-2 hover:opacity-80">Go to RAIDD Log →</a>
-                )}
+                <div className="mt-2">
+                  {cat.key === "time_entries" && (
+                    <button type="button" onClick={() => { onCloseDialog(); navigate(`/projects/${projectId}?tab=time`); }} className="underline underline-offset-2 hover:opacity-80">Go to Time Entries →</button>
+                  )}
+                  {cat.key === "allocations" && (
+                    <button type="button" onClick={() => { onCloseDialog(); navigate(`/projects/${projectId}?tab=delivery`); }} className="underline underline-offset-2 hover:opacity-80">Go to Allocations →</button>
+                  )}
+                  {cat.key === "milestones" && (
+                    <button type="button" onClick={() => { onCloseDialog(); navigate(`/projects/${projectId}?tab=milestones`); }} className="underline underline-offset-2 hover:opacity-80">Go to Milestones →</button>
+                  )}
+                  {cat.key === "raidd" && (
+                    <button type="button" onClick={() => { onCloseDialog(); navigate(`/projects/${projectId}?tab=raidd`); }} className="underline underline-offset-2 hover:opacity-80">Go to RAIDD Log →</button>
+                  )}
+                </div>
               </div>
             )}
           </div>
