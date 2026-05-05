@@ -5072,7 +5072,12 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   // Get the Teams channel linked to an estimate
   app.get("/api/estimates/:id/channel", requireAuth, async (req, res) => {
     try {
-      const tenantId = req.user?.tenantId;
+      // Tenant resolution must match the write-side order in planner.ts
+      // (activeTenantId first); otherwise channels persisted in the active
+      // tenant become invisible after a tenant switch and the panel keeps
+      // showing "Set Up Teams Channel" even when one already exists.
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       const estimateId = req.params.id;
 
       const [channel] = await db.select()
@@ -5093,7 +5098,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   // Link an existing channel to an estimate (or add Constellation tab)
   app.post("/api/estimates/:id/channel", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
-      const tenantId = req.user?.tenantId;
+      const user = req.user as any;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       const estimateId = req.params.id;
       const { teamId, teamName, channelId, channelName, channelWebUrl, addConstellationTab } = req.body;
 
