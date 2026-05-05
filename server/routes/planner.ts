@@ -367,19 +367,29 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         }
       }
 
+      let projectChannelLinked = false;
+      let projectChannelLinkError: string | null = null;
       if (projectId) {
         try {
           const user = req.user as any;
-          const tenantId = user?.activeTenantId;
+          // Use the standard tenant resolution order. Previously this only checked
+          // activeTenantId, so when a session was missing it the row was silently
+          // skipped — the channel was created in Teams but never linked to the
+          // project, and the UI kept showing "No Teams channel linked".
+          const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
 
-          if (tenantId) {
+          if (!tenantId) {
+            projectChannelLinkError = "No tenant context on session; channel was created in Teams but not linked to the project.";
+            console.error(`[PLANNER] ${projectChannelLinkError}`);
+          } else {
             const [project] = await db.select({ id: projects.id })
               .from(projects)
               .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
               .limit(1);
 
             if (!project) {
-              console.warn(`[PLANNER] Project ${projectId} not found in tenant ${tenantId}, skipping channel link`);
+              projectChannelLinkError = `Project ${projectId} not found in tenant ${tenantId}; channel was created in Teams but not linked.`;
+              console.error(`[PLANNER] ${projectChannelLinkError}`);
             } else {
               await db.insert(projectChannels).values({
                 projectId,
@@ -397,11 +407,13 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
                   updatedAt: sql`now()`,
                 },
               });
-              console.log(`[PLANNER] Linked channel ${channel.id} to project ${projectId}`);
+              projectChannelLinked = true;
+              console.log(`[PLANNER] Linked channel ${channel.id} to project ${projectId} in tenant ${tenantId}`);
             }
           }
         } catch (linkError: any) {
-          console.warn("[PLANNER] Failed to persist project-channel link (non-blocking):", linkError.message);
+          projectChannelLinkError = linkError.message;
+          console.error("[PLANNER] Failed to persist project-channel link:", linkError.message);
         }
       }
       
@@ -425,6 +437,8 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         constellationTabAdded: !!constellationTab,
         constellationTabId: constellationTab?.id || null,
         foldersProvisioned: folderResults,
+        projectChannelLinked: projectId ? projectChannelLinked : null,
+        projectChannelLinkError: projectId ? projectChannelLinkError : null,
       });
 
       // Fire SharePoint news post + quick links in background after response is sent.

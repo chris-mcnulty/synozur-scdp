@@ -196,7 +196,9 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   app.get("/api/projects/:id/channel", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const tenantId = user?.primaryTenantId || user?.activeTenantId;
+      // Tenant resolution must match the write-side order in planner.ts (activeTenantId first)
+      // otherwise channels persisted in the active tenant become invisible after a tenant switch.
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       const { id } = req.params;
       const [channel] = await db
         .select()

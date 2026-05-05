@@ -110,7 +110,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock
+  Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock, Hash
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -404,11 +404,21 @@ function TeamsChannelPanel({
   const [showSetup, setShowSetup] = useState(false);
   const [channelName, setChannelName] = useState(projectName || "");
   const [teamPickMode, setTeamPickMode] = useState<"existing" | "create">("existing");
+  const [channelMode, setChannelMode] = useState<"create" | "link">("create");
   const [teamSearch, setTeamSearch] = useState("");
+  const [debouncedTeamSearch, setDebouncedTeamSearch] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
   const [newTeamName, setNewTeamName] = useState("");
-  const [allTeams, setAllTeams] = useState<{ id: string; displayName: string }[]>([]);
+  const [selectedExistingChannel, setSelectedExistingChannel] = useState<{ id: string; displayName: string; webUrl?: string | null } | null>(null);
   const [provisioning, setProvisioning] = useState(false);
+
+  // Debounce the team search so we hit the server-side ?search filter rather than
+  // depending on a 50-row first-page snapshot (the picker used to silently miss
+  // teams that weren't in the first page Graph returned).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedTeamSearch(teamSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [teamSearch]);
 
   const pushToSharePointMutation = useMutation({
     mutationFn: async (channelWebUrl: string | null) => {
@@ -424,7 +434,7 @@ function TeamsChannelPanel({
         }),
       });
     },
-    onSuccess: (result: any) => {
+    onSuccess: () => {
       toast({
         title: "SharePoint page published",
         description: "Project overview news post has been created on the team site.",
@@ -455,30 +465,51 @@ function TeamsChannelPanel({
     retry: false,
   });
 
-  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[] }>({
-    queryKey: ["/api/planner/teams"],
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[]; nextLink?: string }>({
+    queryKey: ["/api/planner/teams", { search: debouncedTeamSearch, pageSize: 100 }],
+    queryFn: async () => {
+      const params = new URLSearchParams({ pageSize: "100" });
+      if (debouncedTeamSearch) params.set("search", debouncedTeamSearch);
+      return apiRequest(`/api/planner/teams?${params.toString()}`);
+    },
     enabled: showSetup && !clientTeamId && plannerStatus?.connected === true,
     retry: false,
   });
 
-  useEffect(() => {
-    if (teamsData?.teams) setAllTeams(teamsData.teams);
-  }, [teamsData]);
+  const teams = teamsData?.teams ?? [];
 
-  const filteredTeams = allTeams.filter(t =>
-    !teamSearch.trim() || t.displayName.toLowerCase().includes(teamSearch.toLowerCase())
-  );
+  // Resolve the team whose existing channels we'd list when "link existing" mode is active.
+  const resolvedTeamForChannels = clientTeamId
+    ? clientTeamId
+    : (teamPickMode === "existing" ? selectedTeam?.id : null);
+
+  const { data: existingChannelsData, isLoading: existingChannelsLoading } = useQuery<Array<{ id: string; displayName: string; webUrl?: string | null; membershipType?: string }>>({
+    queryKey: ["/api/planner/teams", resolvedTeamForChannels, "channels"],
+    enabled: showSetup && channelMode === "link" && !!resolvedTeamForChannels && !isCrossTenant,
+    retry: false,
+  });
 
   const handleProvision = async () => {
     setProvisioning(true);
     try {
-      let resolvedTeamId = clientTeamId;
+      // Resolve the parent team (use client-linked team if present, otherwise
+      // pick or create one). "Link existing channel" mode requires an existing
+      // team — you cannot link a channel inside a team that doesn't exist yet.
+      let resolvedTeamId: string | null | undefined = clientTeamId;
 
       if (!resolvedTeamId) {
         if (teamPickMode === "existing") {
           if (!selectedTeam) return;
           resolvedTeamId = selectedTeam.id;
         } else {
+          if (channelMode === "link") {
+            toast({
+              title: "Pick an existing team",
+              description: "Linking an existing channel requires choosing the team it lives in.",
+              variant: "destructive",
+            });
+            return;
+          }
           if (!newTeamName.trim()) return;
           const created = await apiRequest("/api/planner/teams", {
             method: "POST",
@@ -491,17 +522,48 @@ function TeamsChannelPanel({
         }
       }
 
-      await apiRequest(`/api/planner/teams/${resolvedTeamId}/channels`, {
+      if (channelMode === "link") {
+        if (!selectedExistingChannel) {
+          toast({ title: "Pick a channel to link", variant: "destructive" });
+          return;
+        }
+        await apiRequest(`/api/projects/${projectId}/channel`, {
+          method: "POST",
+          body: JSON.stringify({
+            teamId: resolvedTeamId,
+            channelId: selectedExistingChannel.id,
+            channelName: selectedExistingChannel.displayName,
+            channelWebUrl: selectedExistingChannel.webUrl || null,
+          }),
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "channel"] });
+        toast({ title: "Linked existing Teams channel to this project." });
+        setShowSetup(false);
+        return;
+      }
+
+      const result = await apiRequest(`/api/planner/teams/${resolvedTeamId}/channels`, {
         method: "POST",
         body: JSON.stringify({
           displayName: channelName.trim() || projectName || "Project",
           projectId,
           projectName,
         }),
-      });
+      }) as { projectChannelLinked?: boolean | null; projectChannelLinkError?: string | null };
 
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "channel"] });
-      toast({ title: "Teams channel created and linked to this project." });
+
+      // Surface the new server-side link warning so the user isn't told the
+      // channel was linked when in fact only the Teams channel was created.
+      if (result?.projectChannelLinked === false && result?.projectChannelLinkError) {
+        toast({
+          title: "Channel created, but not linked to project",
+          description: result.projectChannelLinkError,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Teams channel created and linked to this project." });
+      }
       setShowSetup(false);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to create channel";
@@ -512,9 +574,11 @@ function TeamsChannelPanel({
   };
 
   const canProvision = provisioning === false && (
-    clientTeamId
-      ? channelName.trim().length > 0
-      : teamPickMode === "existing" ? !!selectedTeam : newTeamName.trim().length > 0
+    channelMode === "link"
+      ? !!resolvedTeamForChannels && !!selectedExistingChannel
+      : clientTeamId
+        ? channelName.trim().length > 0
+        : teamPickMode === "existing" ? !!selectedTeam && channelName.trim().length > 0 : newTeamName.trim().length > 0 && channelName.trim().length > 0
   );
 
   if (isLoading) return null;
@@ -563,7 +627,13 @@ function TeamsChannelPanel({
                         </button>
                         <button
                           className={`flex-1 px-3 py-1.5 border-l ${teamPickMode === "create" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
-                          onClick={() => setTeamPickMode("create")}
+                          onClick={() => {
+                            setTeamPickMode("create");
+                            // "Link existing channel" requires an existing team, so
+                            // creating a new team forces channelMode back to "create".
+                            setChannelMode("create");
+                            setSelectedExistingChannel(null);
+                          }}
                         >
                           Create New Team
                         </button>
@@ -574,7 +644,7 @@ function TeamsChannelPanel({
                           <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
-                              placeholder="Filter teams..."
+                              placeholder="Search teams..."
                               value={teamSearch}
                               onChange={(e) => setTeamSearch(e.target.value)}
                               className="pl-9 h-8 text-sm"
@@ -584,20 +654,30 @@ function TeamsChannelPanel({
                             <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
                           ) : (
                             <div className="max-h-40 overflow-y-auto border rounded-md">
-                              {filteredTeams.map(team => (
+                              {teams.map(team => (
                                 <div
                                   key={team.id}
                                   className={`flex items-center p-2.5 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedTeam?.id === team.id ? "bg-primary/10" : ""}`}
-                                  onClick={() => setSelectedTeam(team)}
+                                  onClick={() => {
+                                    setSelectedTeam(team);
+                                    setSelectedExistingChannel(null);
+                                  }}
                                 >
                                   <MicrosoftTeamsIcon className="h-4 w-4 mr-2 shrink-0" />
                                   <span className="text-sm">{team.displayName}</span>
                                 </div>
                               ))}
-                              {filteredTeams.length === 0 && (
-                                <p className="text-sm text-muted-foreground p-3 text-center">No teams found</p>
+                              {teams.length === 0 && (
+                                <p className="text-sm text-muted-foreground p-3 text-center">
+                                  {debouncedTeamSearch ? `No teams match "${debouncedTeamSearch}"` : "No teams found"}
+                                </p>
                               )}
                             </div>
+                          )}
+                          {teamsData?.nextLink && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Showing first 100 teams. Refine the search above if you don't see yours.
+                            </p>
                           )}
                         </div>
                       ) : (
@@ -619,21 +699,74 @@ function TeamsChannelPanel({
                 </>
               )}
 
-              {/* Channel name (always shown) */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Channel name</label>
-                <Input
-                  value={channelName}
-                  onChange={(e) => setChannelName(e.target.value)}
-                  placeholder="Project channel name"
-                  className="h-8 text-sm"
-                />
-              </div>
+              {/* Channel mode toggle: only meaningful once a parent team is known
+                  (preset client team, or "Use Existing Team" with a selection). */}
+              {!!resolvedTeamForChannels && (
+                <div className="flex rounded-md border overflow-hidden text-sm">
+                  <button
+                    className={`flex-1 px-3 py-1.5 ${channelMode === "create" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => { setChannelMode("create"); setSelectedExistingChannel(null); }}
+                  >
+                    Create New Channel
+                  </button>
+                  <button
+                    className={`flex-1 px-3 py-1.5 border-l ${channelMode === "link" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted/50"}`}
+                    onClick={() => setChannelMode("link")}
+                  >
+                    Link Existing Channel
+                  </button>
+                </div>
+              )}
+
+              {channelMode === "create" ? (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Channel name</label>
+                  <Input
+                    value={channelName}
+                    onChange={(e) => setChannelName(e.target.value)}
+                    placeholder="Project channel name"
+                    className="h-8 text-sm"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Pick a channel to link to this project</label>
+                  {!resolvedTeamForChannels ? (
+                    <p className="text-xs text-muted-foreground">Select an existing team above first.</p>
+                  ) : existingChannelsLoading ? (
+                    <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto border rounded-md">
+                      {(existingChannelsData ?? []).map(ch => (
+                        <div
+                          key={ch.id}
+                          className={`flex items-center p-2.5 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedExistingChannel?.id === ch.id ? "bg-primary/10" : ""}`}
+                          onClick={() => setSelectedExistingChannel({ id: ch.id, displayName: ch.displayName, webUrl: ch.webUrl })}
+                        >
+                          <Hash className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
+                          <span className="text-sm flex-1 truncate">{ch.displayName}</span>
+                          {ch.membershipType && ch.membershipType !== "standard" && (
+                            <Badge variant="outline" className="ml-2 text-[10px]">{ch.membershipType}</Badge>
+                          )}
+                        </div>
+                      ))}
+                      {(existingChannelsData ?? []).length === 0 && (
+                        <p className="text-sm text-muted-foreground p-3 text-center">No channels found in this team.</p>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Links the chosen channel to this project without creating anything new in Teams.
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleProvision} disabled={!canProvision}>
                   {provisioning ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
-                  {!clientTeamId && teamPickMode === "create" ? "Create Team & Channel" : "Create Channel"}
+                  {channelMode === "link"
+                    ? "Link Channel"
+                    : !clientTeamId && teamPickMode === "create" ? "Create Team & Channel" : "Create Channel"}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setShowSetup(false)}>Cancel</Button>
               </div>
