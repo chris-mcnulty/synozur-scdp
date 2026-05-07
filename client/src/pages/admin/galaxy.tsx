@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Copy, Trash2, RotateCw, Plus, ExternalLink } from "lucide-react";
 import { GALAXY_SCOPES } from "@shared/schema";
 import { Layout } from "@/components/layout/layout";
@@ -29,6 +30,15 @@ interface GalaxyApp {
   createdAt: string;
   disabledAt: string | null;
   rotatedAt: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  clientShortName: string | null;
+}
+
+interface ClientOption {
+  id: string;
+  name: string;
+  shortName?: string | null;
 }
 
 interface GalaxyAudit {
@@ -86,8 +96,14 @@ function RegisterAppDialog() {
   const [webhookUrl, setWhUrl] = useState("");
   const [origins, setOrigins] = useState("");
   const [scopes, setScopes] = useState<string[]>([...GALAXY_SCOPES]);
+  const [scopedClientId, setScopedClientId] = useState<string>("__none__");
 
   const { toast } = useToast();
+
+  const clientsQuery = useQuery<ClientOption[]>({
+    queryKey: ["/api/clients"],
+    enabled: open && !created,
+  });
 
   const create = useMutation({
     mutationFn: async () => {
@@ -98,6 +114,7 @@ function RegisterAppDialog() {
         webhookUrl: webhookUrl || undefined,
         originAllowList: origins.split(/\s+/).filter(Boolean),
         allowedScopes: scopes,
+        clientId: scopedClientId === "__none__" ? null : scopedClientId,
       };
       return apiRequest("/api/admin/galaxy/apps", { method: "POST", body: JSON.stringify(body) });
     },
@@ -109,7 +126,7 @@ function RegisterAppDialog() {
   });
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setCreated(null); setName(""); setDescription(""); setRedirectUris(""); setWhUrl(""); setOrigins(""); } }}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setCreated(null); setName(""); setDescription(""); setRedirectUris(""); setWhUrl(""); setOrigins(""); setScopedClientId("__none__"); } }}>
       <DialogTrigger asChild>
         <Button data-testid="btn-register-app"><Plus className="h-4 w-4 mr-2" />Register app</Button>
       </DialogTrigger>
@@ -142,6 +159,23 @@ function RegisterAppDialog() {
           <div className="space-y-3">
             <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} data-testid="input-app-name" /></div>
             <div><Label>Description</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} /></div>
+            <div>
+              <Label>Restrict to client (optional)</Label>
+              <Select value={scopedClientId} onValueChange={setScopedClientId}>
+                <SelectTrigger data-testid="select-app-client"><SelectValue placeholder="Tenant-wide (any client)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Tenant-wide (any client)</SelectItem>
+                  {clientsQuery.data?.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.shortName ? `${c.shortName} — ${c.name}` : c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                When set, tokens issued by this app may only act on behalf of portal users belonging to the selected client. Other clients' portal users will be rejected at consent time.
+              </p>
+            </div>
             <div><Label>Redirect URIs (whitespace separated)</Label><Textarea value={redirectUris} onChange={(e) => setRedirectUris(e.target.value)} placeholder="https://portal.example.com/oauth/callback" /></div>
             <div><Label>Webhook URL (optional)</Label><Input value={webhookUrl} onChange={(e) => setWhUrl(e.target.value)} placeholder="https://example.com/webhook" /></div>
             <div><Label>Allowed origins (whitespace separated)</Label><Input value={origins} onChange={(e) => setOrigins(e.target.value)} placeholder="https://portal.example.com" /></div>
@@ -196,6 +230,13 @@ function AppRow({ a }: { a: GalaxyApp }) {
           <div>
             <CardTitle className="flex items-center gap-2">
               {a.name}
+              {a.clientId ? (
+                <Badge variant="secondary" data-testid={`badge-client-${a.id}`}>
+                  Client: {a.clientShortName || a.clientName || a.clientId.slice(0, 8)}
+                </Badge>
+              ) : (
+                <Badge variant="outline">Tenant-wide</Badge>
+              )}
               {a.disabledAt && <Badge variant="destructive">Disabled</Badge>}
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">{a.id}</p>

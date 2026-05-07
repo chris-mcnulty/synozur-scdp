@@ -23,6 +23,7 @@ export const galaxyMethods: ThisType<IStorage> = {
     allowedScopes: string[]; redirectUris: string[]; originAllowList?: string[];
     webhookUrl?: string | null; webhookSecret?: string | null; description?: string | null;
     rateLimitPerMin?: number; tokenRateLimitPerMin?: number; createdBy?: string | null;
+    clientId?: string | null;
   }): Promise<GalaxyApp> {
     const [row] = await db.insert(galaxyApps).values(data as any).returning();
     return row;
@@ -35,6 +36,21 @@ export const galaxyMethods: ThisType<IStorage> = {
 
   async getGalaxyAppsForTenant(tenantId: string): Promise<GalaxyApp[]> {
     return db.select().from(galaxyApps).where(eq(galaxyApps.tenantId, tenantId)).orderBy(desc(galaxyApps.createdAt));
+  },
+
+  async getGalaxyAppsForTenantWithClient(tenantId: string): Promise<Array<GalaxyApp & { clientName: string | null; clientShortName: string | null }>> {
+    const { clients } = await import("@shared/schema");
+    const rows = await db
+      .select({
+        app: galaxyApps,
+        clientName: clients.name,
+        clientShortName: clients.shortName,
+      })
+      .from(galaxyApps)
+      .leftJoin(clients, eq(galaxyApps.clientId, clients.id))
+      .where(eq(galaxyApps.tenantId, tenantId))
+      .orderBy(desc(galaxyApps.createdAt));
+    return rows.map((r) => ({ ...r.app, clientName: r.clientName, clientShortName: r.clientShortName }));
   },
 
   async updateGalaxyApp(id: string, patch: Partial<GalaxyApp>): Promise<GalaxyApp | undefined> {

@@ -1130,6 +1130,7 @@ export interface IStorage {
   createGalaxyApp(data: any): Promise<any>;
   getGalaxyApp(id: string): Promise<any>;
   getGalaxyAppsForTenant(tenantId: string): Promise<any[]>;
+  getGalaxyAppsForTenantWithClient(tenantId: string): Promise<any[]>;
   updateGalaxyApp(id: string, patch: any): Promise<any>;
   disableGalaxyApp(id: string): Promise<void>;
   upsertGalaxyAppGrant(data: any): Promise<any>;

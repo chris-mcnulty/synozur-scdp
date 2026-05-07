@@ -407,6 +407,11 @@ export function registerGalaxyV1Routes(
     if (!portalClientId) {
       return res.status(403).json({ error: "not_a_client_portal_user" });
     }
+    // App-level client scoping: when galaxyApp.clientId is set, only portal
+    // users belonging to that client may consent.
+    if (galaxyApp.clientId && portalClientId !== galaxyApp.clientId) {
+      return res.status(403).json({ error: "client_scope_mismatch" });
+    }
     const requested = parseScopeString(scope);
     const granted = intersectScopes(
       requested.length > 0 ? requested : galaxyApp.allowedScopes,
@@ -480,6 +485,9 @@ export function registerGalaxyV1Routes(
         // unscoped one.
         return res.status(403).json({ error: "client_user_unbound" });
       }
+      if (galaxyApp.clientId && clientId !== galaxyApp.clientId) {
+        return res.status(403).json({ error: "client_scope_mismatch" });
+      }
       const access = mintAccessToken(galaxyApp, {
         clientUserId: ac.clientUserId,
         clientId,
@@ -530,6 +538,9 @@ export function registerGalaxyV1Routes(
       if (!grant || grant.revokedAt || (grant.refreshTokenExpiresAt && grant.refreshTokenExpiresAt < new Date())) {
         return res.status(400).json({ error: "invalid_grant" });
       }
+      if (galaxyApp.clientId && grant.clientId !== galaxyApp.clientId) {
+        return res.status(403).json({ error: "client_scope_mismatch" });
+      }
       const requested = parseScopeString(scope);
       const grantedScopes = intersectScopes(
         requested.length > 0 ? requested : (grant.scopes as string[]),
@@ -570,6 +581,9 @@ export function registerGalaxyV1Routes(
       if (!galaxyApp || galaxyApp.disabledAt) return res.status(401).json({ error: "invalid_client" });
       if (!timingSafeEqualHex(galaxyApp.clientSecretHash, hashSecret(client_secret))) {
         return res.status(401).json({ error: "invalid_client" });
+      }
+      if (galaxyApp.clientId && target_client_id !== galaxyApp.clientId) {
+        return res.status(403).json({ error: "client_scope_mismatch" });
       }
       // Verify there is an active consent for this app+client pair.
       const activeGrants = await db
@@ -1003,8 +1017,8 @@ export function registerGalaxyV1Routes(
 
   app.get(`${adminBase}/apps`, deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId!;
-    const apps = await storage.getGalaxyAppsForTenant(tenantId);
-    res.json(apps.map((a) => ({
+    const apps = await storage.getGalaxyAppsForTenantWithClient(tenantId);
+    res.json(apps.map((a: any) => ({
       id: a.id,
       name: a.name,
       description: a.description,
@@ -1017,6 +1031,9 @@ export function registerGalaxyV1Routes(
       createdAt: a.createdAt,
       disabledAt: a.disabledAt,
       rotatedAt: a.rotatedAt,
+      clientId: a.clientId,
+      clientName: a.clientName,
+      clientShortName: a.clientShortName,
     })));
   });
 
@@ -1024,11 +1041,22 @@ export function registerGalaxyV1Routes(
     const tenantId = req.user!.tenantId!;
     const parsed = galaxyAppRegistrationSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "invalid_request", details: parsed.error.format() });
+    // If a client scope is requested, verify it belongs to this tenant.
+    if (parsed.data.clientId) {
+      const { clients } = await import("@shared/schema");
+      const [c] = await db
+        .select({ id: clients.id })
+        .from(clients)
+        .where(and(eq(clients.id, parsed.data.clientId), eq(clients.tenantId, tenantId)))
+        .limit(1);
+      if (!c) return res.status(400).json({ error: "invalid_client_scope", message: "Client not found in this tenant" });
+    }
     const clientSecret = generateSecret("gxs", 32);
     const webhookSecret = generateSecret("gxw", 32);
     const jwtSigningKey = generateSecret("gxj", 32);
     const created = await storage.createGalaxyApp({
       tenantId,
+      clientId: parsed.data.clientId ?? null,
       name: parsed.data.name,
       description: parsed.data.description ?? null,
       redirectUris: parsed.data.redirectUris,

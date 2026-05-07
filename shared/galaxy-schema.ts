@@ -40,6 +40,11 @@ export type GalaxyWebhookEvent = typeof GALAXY_WEBHOOK_EVENTS[number];
 export const galaxyApps = pgTable("galaxy_apps", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  // Optional: when set, this app's tokens may only act on behalf of this
+  // client. Authorize/token endpoints reject any consenting portal user whose
+  // client binding does not match. When NULL, the app is tenant-wide and any
+  // portal user in the tenant may grant consent.
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   clientSecretHash: text("client_secret_hash").notNull(), // sha256(secret)
@@ -167,5 +172,6 @@ export const galaxyAppRegistrationSchema = z.object({
   originAllowList: z.array(z.string()).default([]),
   rateLimitPerMin: z.number().int().min(1).max(60000).default(5000),
   tokenRateLimitPerMin: z.number().int().min(1).max(60000).default(600),
+  clientId: z.string().uuid().optional().nullable(),
 });
 export type GalaxyAppRegistrationInput = z.infer<typeof galaxyAppRegistrationSchema>;
