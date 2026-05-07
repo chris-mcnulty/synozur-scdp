@@ -50,6 +50,7 @@ import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerGalaxyV1Routes } from "./routes/galaxy/v1/index.js";
+import { enqueueGalaxyEvent } from "./services/galaxy-webhook-delivery.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -7350,7 +7351,41 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   // Update milestone
   app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
+      // Capture pre-update status so we only fire the Galaxy webhook on a
+      // genuine open→completed transition (not on every PATCH that happens
+      // to leave status="completed").
+      const before = await storage.getProjectMilestone(req.params.id);
       const milestone = await storage.updateProjectMilestone(req.params.id, req.body);
+
+      if (
+        milestone &&
+        before &&
+        before.status !== "completed" &&
+        milestone.status === "completed" &&
+        milestone.projectId
+      ) {
+        (async () => {
+          try {
+            const proj = await storage.getProject(milestone.projectId);
+            if (!proj?.tenantId || !proj?.clientId) return;
+            await enqueueGalaxyEvent({
+              tenantId: proj.tenantId,
+              event: "milestone.completed",
+              clientId: proj.clientId,
+              data: {
+                milestoneId: milestone.id,
+                projectId: milestone.projectId,
+                name: milestone.name,
+                completedDate: milestone.completedDate ?? null,
+                isPaymentMilestone: !!(milestone as any).isPaymentMilestone,
+              },
+            });
+          } catch (err) {
+            console.error("[GALAXY] milestone.completed enqueue failed:", err);
+          }
+        })();
+      }
+
       res.json(milestone);
     } catch (error) {
       res.status(500).json({ message: "Failed to update milestone" });

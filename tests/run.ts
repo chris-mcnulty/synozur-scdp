@@ -12,6 +12,7 @@
 import "./galaxy-auth.spec.js";
 import "./galaxy-webhook-delivery.spec.js";
 import "./galaxy-routes.spec.js";
+import "./galaxy-enqueue.spec.js";
 import "./planner-conflict.spec.js";
 import { run } from "./_harness.js";
 

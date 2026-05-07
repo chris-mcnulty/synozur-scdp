@@ -4,6 +4,7 @@ import { storage, db, generateSubSOWPdf, generateEstimateProposalPdf } from "../
 import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules, clients, estimateChannels, clientTeams, projectChannels, estimateVersions } from "@shared/schema";
 import { EstimateVersionService } from "../services/estimate-version-service";
 import { emailService } from "../services/email-notification.js";
+import { enqueueGalaxyEvent } from "../services/galaxy-webhook-delivery.js";
 import { eq, sql, inArray, max, and, isNull } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 import { RateResolver } from "../rate-resolver";
@@ -5558,6 +5559,23 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             const msg = snapErr instanceof Error ? snapErr.message : String(snapErr);
             console.error("[VERSIONS] Auto-snapshot on send failed:", msg);
             return res.status(500).json({ message: "Estimate was updated but auto-snapshot failed. Please try again.", detail: msg });
+          }
+
+          // Notify Galaxy client portal apps (per-client fan-out via the
+          // tenant's app grants). Fire-and-forget — webhook failures must
+          // never block the staff-facing send flow.
+          if (sentSnapshot && estimate.tenantId && estimate.clientId) {
+            enqueueGalaxyEvent({
+              tenantId: estimate.tenantId,
+              event: "estimate.sent",
+              clientId: estimate.clientId,
+              data: {
+                estimateId: estimate.id,
+                snapshotId: sentSnapshot.id,
+                version: sentSnapshot.versionNumber,
+                projectId: estimate.projectId ?? null,
+              },
+            }).catch((e) => console.error("[GALAXY] estimate.sent enqueue failed:", e));
           }
 
           // Fire-and-forget client-facing email referencing the version snapshot.

@@ -39,6 +39,7 @@ import {
   ActivitySquare,
   Workflow,
   Network,
+  Plug,
   TrendingUp,
   Bell,
 } from "lucide-react";
@@ -301,6 +302,7 @@ export function Sidebar() {
                 <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
                 <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />
                 <SidebarItem href="/m365-integration" icon={<Network />} label="M365 Integration Map" />
+                <SidebarItem href="/admin/galaxy" icon={<Plug />} label="Galaxy API" requiredRoles={["admin"]} />
                 {isPlatformAdmin && (
                   <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary Catalog" />
                 )}
