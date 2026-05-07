@@ -8,8 +8,9 @@ const COST_PER_1K_TOKENS: Record<string, { promptMicrodollars: number; completio
   'gpt-4o-mini': { promptMicrodollars: 150, completionMicrodollars: 600 },
   'gpt-4-turbo': { promptMicrodollars: 10000, completionMicrodollars: 30000 },
   'gpt-4': { promptMicrodollars: 30000, completionMicrodollars: 60000 },
-  'claude-sonnet-4': { promptMicrodollars: 3000, completionMicrodollars: 15000 },
-  'claude-opus-4': { promptMicrodollars: 15000, completionMicrodollars: 75000 },
+  'claude-sonnet-4-5': { promptMicrodollars: 3000, completionMicrodollars: 15000 },
+  'claude-opus-4-1': { promptMicrodollars: 15000, completionMicrodollars: 75000 },
+  'claude-haiku-4-5': { promptMicrodollars: 1000, completionMicrodollars: 5000 },
   'claude-3.5-sonnet': { promptMicrodollars: 3000, completionMicrodollars: 15000 },
   'claude-3-haiku': { promptMicrodollars: 250, completionMicrodollars: 1250 },
 };

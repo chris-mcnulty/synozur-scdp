@@ -3581,11 +3581,11 @@ export const AI_FEATURES = {
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
 
 export const AI_MODELS: Record<string, readonly string[]> = {
-  replit_ai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4', 'claude-opus-4'],
+  replit_ai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
   azure_openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4'],
   azure_foundry: ['gpt-5.4', 'gpt-5.2', 'gpt-4o'],
   openai: ['gpt-5', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
-  anthropic: ['claude-sonnet-4', 'claude-opus-4', 'claude-3.5-sonnet', 'claude-3-haiku'],
+  anthropic: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5', 'claude-3.5-sonnet', 'claude-3-haiku'],
 } as const;
 
 export const AI_MODEL_INFO: Record<string, {
@@ -3604,8 +3604,9 @@ export const AI_MODEL_INFO: Record<string, {
   'gpt-4o-mini': { name: 'GPT-4o Mini', description: 'Cost-effective for simple tasks', costTier: 'low', providers: ['replit_ai', 'openai', 'azure_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.00015, costPer1kCompletion: 0.0006 },
   'gpt-4-turbo': { name: 'GPT-4 Turbo', description: 'Enhanced GPT-4 with vision', costTier: 'medium', providers: ['openai', 'azure_openai'], contextWindow: 128000, costPer1kPrompt: 0.01, costPer1kCompletion: 0.03 },
   'gpt-4': { name: 'GPT-4', description: 'Original GPT-4 model', costTier: 'medium', providers: ['openai', 'azure_openai'], contextWindow: 8192, costPer1kPrompt: 0.03, costPer1kCompletion: 0.06 },
-  'claude-sonnet-4': { name: 'Claude Sonnet 4', description: 'Fast balanced Anthropic model', costTier: 'medium', providers: ['replit_ai', 'anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
-  'claude-opus-4': { name: 'Claude Opus 4', description: 'Most capable Anthropic model', costTier: 'high', providers: ['replit_ai', 'anthropic'], contextWindow: 200000, costPer1kPrompt: 0.015, costPer1kCompletion: 0.075 },
+  'claude-sonnet-4-5': { name: 'Claude Sonnet 4.5', description: 'Fast balanced Anthropic model (current)', costTier: 'medium', providers: ['replit_ai', 'anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
+  'claude-opus-4-1': { name: 'Claude Opus 4.1', description: 'Most capable Anthropic model (current)', costTier: 'high', providers: ['replit_ai', 'anthropic'], contextWindow: 200000, costPer1kPrompt: 0.015, costPer1kCompletion: 0.075 },
+  'claude-haiku-4-5': { name: 'Claude Haiku 4.5', description: 'Fast and cost-effective Anthropic model', costTier: 'low', providers: ['replit_ai', 'anthropic'], contextWindow: 200000, costPer1kPrompt: 0.001, costPer1kCompletion: 0.005 },
   'claude-3.5-sonnet': { name: 'Claude 3.5 Sonnet', description: 'Previous gen balanced model', costTier: 'medium', providers: ['anthropic'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015 },
   'claude-3-haiku': { name: 'Claude 3 Haiku', description: 'Fast and cost-effective', costTier: 'low', providers: ['anthropic'], contextWindow: 200000, costPer1kPrompt: 0.00025, costPer1kCompletion: 0.00125 },
 };
