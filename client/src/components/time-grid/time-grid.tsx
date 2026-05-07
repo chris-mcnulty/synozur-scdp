@@ -1458,7 +1458,16 @@ function GridTable(props: {
                         } else {
                           startRange({ row: ri, col: ci });
                           setActive({ row: ri, col: ci });
-                          setEditing(null);
+                          // Don't close the editor when the mousedown originates
+                          // from the cell that is already being edited.  React
+                          // propagates synthetic events through portals (e.g.
+                          // Radix Popover) back up to ancestor elements, so
+                          // clicking a project-picker item would otherwise fire
+                          // setEditing(null) and unmount the editor before the
+                          // item's onClick could run.
+                          if (!editing || editing.row !== ri || editing.col !== ci) {
+                            setEditing(null);
+                          }
                         }
                       }}
                       onMouseEnter={(e) => {
