@@ -4555,8 +4555,12 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
   app.post("/api/payment-milestones", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      // Create a milestone with isPaymentMilestone flag set to true
+      // Create a milestone with isPaymentMilestone flag set to true.
+      // Default invoiceStatus to 'planned' so the milestone is immediately
+      // eligible for billing batch creation (the billing UI filters on
+      // invoiceStatus === 'planned'). Caller can override via req.body.
       const milestoneData = {
+        invoiceStatus: 'planned',
         ...req.body,
         isPaymentMilestone: true
       };
