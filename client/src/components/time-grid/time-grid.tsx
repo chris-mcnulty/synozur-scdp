@@ -609,14 +609,16 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   // to the canonical drafts array via row id.
   const visibleRows = tab === "drafts" ? sortedDrafts : sortedSubmitted;
 
-  // Cycle a column header through asc → desc → none, preserving the active
-  // row by id so the cursor stays on the same logical row after sort changes.
+  // Cycle a column header through asc → desc → none, preserving both the
+  // active cell and the range-selection anchor by row id so multi-row
+  // selections stay anchored to the same logical rows after sort changes.
   const cycleSort = (col: ColKey) => {
     const isDrafts = tab === "drafts";
     const currentSort = isDrafts ? draftsSort : submittedSort;
     const currentRows = isDrafts ? drafts : submittedRows;
     const currentSorted = isDrafts ? sortedDrafts : sortedSubmitted;
-    const anchorId = currentSorted[active.row]?.id ?? null;
+    const activeId = currentSorted[active.row]?.id ?? null;
+    const rangeStartId = rangeStart ? currentSorted[rangeStart.row]?.id ?? null : null;
     let nextSort: SortState;
     if (!currentSort || currentSort.col !== col) nextSort = { col, dir: "asc" };
     else if (currentSort.dir === "asc") nextSort = { col, dir: "desc" };
@@ -624,11 +626,19 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     if (isDrafts) setDraftsSort(nextSort);
     else setSubmittedSort(nextSort);
     const newSorted = applySort(currentRows, nextSort);
-    if (anchorId) {
-      const newIdx = newSorted.findIndex((r) => r.id === anchorId);
+    if (activeId) {
+      const newIdx = newSorted.findIndex((r) => r.id === activeId);
       if (newIdx >= 0) setActive({ row: newIdx, col: active.col });
     }
-    setRangeStart(null);
+    if (rangeStart) {
+      if (rangeStartId) {
+        const newStartIdx = newSorted.findIndex((r) => r.id === rangeStartId);
+        if (newStartIdx >= 0) setRangeStart({ row: newStartIdx, col: rangeStart.col });
+        else setRangeStart(null);
+      } else {
+        setRangeStart(null);
+      }
+    }
     console.log("[TIME-GRID] sort", { tab, sort: nextSort });
   };
 
@@ -835,7 +845,9 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [tab, active, drafts, pushHistory]);
+    // sortedDrafts must be a dep so the closure sees the current sorted view
+    // when mapping sorted-view indices to row ids.
+  }, [tab, active, drafts, sortedDrafts, pushHistory]);
 
   function coerceValue(col: ColKey, raw: string, _currentProjectId: string): string | boolean {
     if (col === "date") return coerceDate(raw) ?? raw;
