@@ -5,11 +5,13 @@ import {
   galaxyApiAudit,
   galaxyWebhookDeliveries,
   galaxyRateBuckets,
+  galaxyApiKeys,
   type GalaxyApp,
   type GalaxyAppGrant,
   type GalaxyAuthCode,
   type GalaxyApiAudit,
   type GalaxyWebhookDelivery,
+  type GalaxyApiKey,
   users,
   clients,
 } from "@shared/schema";
@@ -17,6 +19,21 @@ import { db } from "../db";
 import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import crypto from "crypto";
 import type { IStorage } from "./index";
+
+export interface GalaxyApiKeyRow {
+  id: string;
+  tenantId: string;
+  appId: string;
+  clientId: string;
+  clientName: string | null;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  expiresAt: Date | null;
+  revokedAt: Date | null;
+  lastUsedAt: Date | null;
+  createdAt: Date;
+}
 
 export interface GalaxyGrantRow {
   id: string;

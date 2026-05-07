@@ -148,6 +148,29 @@ export const galaxyRateBuckets = pgTable("galaxy_rate_buckets", {
   expiresAt: timestamp("expires_at").notNull(),
 });
 
+// Static API keys for machine-to-machine callers (no OAuth dance required)
+export const galaxyApiKeys = pgTable("galaxy_api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  appId: varchar("app_id").notNull().references(() => galaxyApps.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyPrefix: varchar("key_prefix", { length: 16 }).notNull(),
+  scopes: jsonb("scopes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  expiresAt: timestamp("expires_at"),
+  revokedAt: timestamp("revoked_at"),
+  lastUsedAt: timestamp("last_used_at"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_galaxy_api_keys_tenant").on(table.tenantId),
+  appIdx: index("idx_galaxy_api_keys_app").on(table.appId),
+  keyHashIdx: uniqueIndex("uq_galaxy_api_keys_hash").on(table.keyHash),
+}));
+
+export type GalaxyApiKey = typeof galaxyApiKeys.$inferSelect;
+
 export const insertGalaxyAppSchema = createInsertSchema(galaxyApps).omit({
   id: true,
   clientSecretHash: true,
