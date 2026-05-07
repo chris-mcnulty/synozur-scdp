@@ -473,31 +473,25 @@ export function registerTeamsAutomationRoutes(app: Express, deps: TeamsAutomatio
 
         // Notify Galaxy client portal apps. Per-client fan-out — only apps
         // with an active grant for this project's client receive the event.
-        // Fire-and-forget; webhook failures must not block publish.
-        if (tenantId) {
-          // Resolve the project's clientId so the Galaxy fan-out can scope
-          // delivery. Skip the webhook (rather than fail) if the project
-          // can't be loaded — the row was already saved successfully.
-          (async () => {
-            try {
-              const proj = await storage.getProject(projectId);
-              if (!proj?.clientId) return;
-              await enqueueGalaxyEvent({
-                tenantId,
-                event: "status_report.published",
-                clientId: proj.clientId,
-                data: {
-                  statusReportId: report.id,
-                  projectId,
-                  reportPeriod,
-                  ragStatus,
-                  publishedAt: report.publishedAt,
-                },
-              });
-            } catch (err) {
-              console.error("[GALAXY] status_report.published enqueue failed:", err);
-            }
-          })();
+        // Fire-and-forget; webhook failures must not block publish. Reuse
+        // the `project` already loaded + tenant-validated above so we don't
+        // run an extra DB round-trip and can't diverge from the validated
+        // record.
+        if (tenantId && project.clientId) {
+          enqueueGalaxyEvent({
+            tenantId,
+            event: "status_report.published",
+            clientId: project.clientId,
+            data: {
+              statusReportId: report.id,
+              projectId,
+              reportPeriod,
+              ragStatus,
+              publishedAt: report.publishedAt,
+            },
+          }).catch((err) =>
+            console.error("[GALAXY] status_report.published enqueue failed:", err)
+          );
         }
 
         res.json({ ...report, published: !!sharepointPageUrl });

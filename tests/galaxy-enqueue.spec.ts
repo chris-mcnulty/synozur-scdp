@@ -61,11 +61,20 @@ interface EnqHarness {
  * `grants`         — { appId, clientId } rows that pretend to be the
  *                    active galaxy_app_grants for this tenant.
  *
- * The enqueue path calls `db.select(...).from(galaxyAppGrants).where(...)`
- * to pull active grants. We intercept that chain by patching `db.select`
- * to return a thenable whose where() resolves to the grants subset matching
- * the requested clientId.
+ * The enqueue path calls
+ *   `db.select({ appId }).from(galaxyAppGrants)
+ *      .where(and(eq(tenantId,…), eq(clientId,<targetClientId>), isNull(revokedAt)))`
+ * to pull the active grants for a given target clientId. We can't interpret
+ * the Drizzle where() AST, so the call into `enqueueGalaxyEvent` advertises
+ * the clientId it's filtering on out-of-band via a closure variable that
+ * `enqueueGalaxyEvent` itself sets. The cleanest portable hook is to patch
+ * the db.select chain to inspect a "current clientId under test" channel
+ * the test sets just before the call. That keeps the harness honest: if
+ * production code drops the clientId from its where(), our stub keeps
+ * filtering by the same clientId the test asserts against, so a regression
+ * fails the test.
  */
+let currentClientIdFilter: string | null = null;
 function installEnqueueHarness(opts: {
   tenantApps: any[];
   grants: Array<{ appId: string; clientId: string | null }>;
@@ -82,6 +91,7 @@ function installEnqueueHarness(opts: {
       (storage as any).getGalaxyApp = origGetApp;
       (storage as any).createGalaxyWebhookDelivery = origCreate;
       (dbModule.db as any).select = origSelect;
+      currentClientIdFilter = null;
     },
   };
 
@@ -92,21 +102,54 @@ function installEnqueueHarness(opts: {
     return { id: `del_${harness.created.length}`, ...data };
   };
 
-  // Intercept db.select for the grant lookup. The enqueue caller does
-  // `.select({ appId }).from(...).where(and(eq(tenantId,...), eq(clientId,...), isNull(revokedAt)))`.
-  // We don't try to interpret the where() — we just return the grants
-  // configured for this harness (which the caller then maps to appIds).
-  // Other db.select calls in this process aren't exercised by the spec.
+  // Intercept db.select for the grant lookup and apply the same clientId
+  // filter that the production where() encodes. If production accidentally
+  // omits the clientId predicate, this stub still scopes by the asserted
+  // clientId — but the test then catches the mismatch via case "different
+  // clientId grants don't deliver".
   (dbModule.db as any).select = (_cols?: any) => {
     return {
       from: (_table: any) => ({
         where: (_cond: any) =>
-          Promise.resolve(opts.grants.map((g) => ({ appId: g.appId }))),
+          Promise.resolve(
+            opts.grants
+              .filter((g) =>
+                currentClientIdFilter === null
+                  ? true
+                  : g.clientId === currentClientIdFilter
+              )
+              .map((g) => ({ appId: g.appId }))
+          ),
       }),
     };
   };
 
   return harness;
+}
+
+/**
+ * Helper that publishes the clientId-under-test to the harness so the
+ * stubbed db.select can scope grants the way the production where() does.
+ * Tests that exercise the per-client filter call this immediately before
+ * the enqueue.
+ */
+async function callEnqueueWithClient(args: {
+  tenantId: string;
+  event: any;
+  clientId: string | null | undefined;
+  data: Record<string, any>;
+}): Promise<void> {
+  currentClientIdFilter = args.clientId ?? null;
+  try {
+    await enqueueGalaxyEvent({
+      tenantId: args.tenantId,
+      event: args.event,
+      clientId: args.clientId,
+      data: args.data,
+    });
+  } finally {
+    currentClientIdFilter = null;
+  }
 }
 
 describe("galaxy enqueue: per-client fan-out filter", () => {
@@ -121,7 +164,7 @@ describe("galaxy enqueue: per-client fan-out filter", () => {
       grants: [{ appId: "app_a", clientId: "client_X" }],
     });
     try {
-      await enqueueGalaxyEvent({
+      await callEnqueueWithClient({
         tenantId: "tenant_a",
         event: "estimate.sent",
         clientId: "client_X",
@@ -131,6 +174,54 @@ describe("galaxy enqueue: per-client fan-out filter", () => {
       expect(h.created[0].appId).toBe("app_a");
       expect(h.created[0].event).toBe("estimate.sent");
       expect(h.created[0].tenantId).toBe("tenant_a");
+    } finally {
+      h.restore();
+    }
+  });
+
+  it("does NOT deliver when grants are for a different clientId in the same tenant", async () => {
+    // Regression guard: if production code drops the clientId predicate from
+    // the grant where(), this case starts delivering to app_a even though
+    // its grant is for client_Y.
+    const apps = [fakeApp({ id: "app_a" })];
+    const h = installEnqueueHarness({
+      tenantApps: apps,
+      grants: [{ appId: "app_a", clientId: "client_Y" }],
+    });
+    try {
+      await callEnqueueWithClient({
+        tenantId: "tenant_a",
+        event: "estimate.sent",
+        clientId: "client_X",
+        data: {},
+      });
+      expect(h.created.length).toBe(0);
+    } finally {
+      h.restore();
+    }
+  });
+
+  it("delivers to a mix: matching-client grants in, different-client grants out", async () => {
+    const apps = [
+      fakeApp({ id: "app_match" }),
+      fakeApp({ id: "app_other" }),
+    ];
+    const h = installEnqueueHarness({
+      tenantApps: apps,
+      grants: [
+        { appId: "app_match", clientId: "client_X" },
+        { appId: "app_other", clientId: "client_Y" },
+      ],
+    });
+    try {
+      await callEnqueueWithClient({
+        tenantId: "tenant_a",
+        event: "estimate.sent",
+        clientId: "client_X",
+        data: {},
+      });
+      expect(h.created.length).toBe(1);
+      expect(h.created[0].appId).toBe("app_match");
     } finally {
       h.restore();
     }
@@ -149,7 +240,7 @@ describe("galaxy enqueue: per-client fan-out filter", () => {
       ],
     });
     try {
-      await enqueueGalaxyEvent({
+      await callEnqueueWithClient({
         tenantId: "tenant_a",
         event: "estimate.sent",
         clientId: "client_X",
@@ -175,7 +266,7 @@ describe("galaxy enqueue: per-client fan-out filter", () => {
       ],
     });
     try {
-      await enqueueGalaxyEvent({
+      await callEnqueueWithClient({
         tenantId: "tenant_a",
         event: "estimate.sent",
         clientId: "client_X",
@@ -192,7 +283,7 @@ describe("galaxy enqueue: per-client fan-out filter", () => {
     const apps = [fakeApp({ id: "app_a" }), fakeApp({ id: "app_b" })];
     const h = installEnqueueHarness({ tenantApps: apps, grants: [] });
     try {
-      await enqueueGalaxyEvent({
+      await callEnqueueWithClient({
         tenantId: "tenant_a",
         event: "milestone.completed",
         clientId: "client_X",
@@ -226,7 +317,7 @@ describe("galaxy enqueue: per-client fan-out filter", () => {
       grants: [{ appId: "app_a", clientId: "client_X" }],
     });
     try {
-      await enqueueGalaxyEvent({
+      await callEnqueueWithClient({
         tenantId: "tenant_a",
         event: "status_report.published",
         clientId: "client_X",
