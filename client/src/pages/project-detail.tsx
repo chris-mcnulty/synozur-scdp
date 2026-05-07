@@ -1564,6 +1564,15 @@ export default function ProjectDetail() {
     staleTime: 2 * 60 * 1000,
   });
 
+  // Project estimates — used to distinguish "no approved estimate" vs "approved but empty"
+  const { data: projectEstimates } = useQuery<Array<{ id: string; status: string }>>({
+    queryKey: ['/api/projects', id, 'estimates'],
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+  const hasApprovedEstimate = !!projectEstimates?.some((e) => e.status === 'approved');
+  const noBudgetReason = hasApprovedEstimate ? "Approved estimate has no budgeted hours" : "No approved estimate";
+
   // Auto-open edit dialog when ?edit=true is in the URL
   useEffect(() => {
     if (shouldOpenEditDialog && analytics?.project && !isLoading && !embedReadonly) {
@@ -3409,10 +3418,14 @@ export default function ProjectDetail() {
                 <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                 <div>
                   <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                    No approved estimate — hours budget unavailable
+                    {hasApprovedEstimate
+                      ? "Approved estimate has no budgeted hours"
+                      : "No approved estimate — hours budget unavailable"}
                   </p>
                   <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-                    Approve an estimate to track Remaining Hours and Hours Variance against a budget.
+                    {hasApprovedEstimate
+                      ? "Add line items to the approved estimate to track Remaining Hours and Hours Variance against a budget."
+                      : "Approve an estimate to track Remaining Hours and Hours Variance against a budget."}
                   </p>
                 </div>
               </div>
@@ -3483,7 +3496,7 @@ export default function ProjectDetail() {
                     <p className="text-xs text-muted-foreground">
                       {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0
                         ? `of ${(hoursSummary?.budgetedHours ?? burnRate.estimatedHours).toFixed(0)} budgeted hrs`
-                        : "No approved estimate"}
+                        : noBudgetReason}
                     </p>
                   </div>
                 </div>
@@ -3535,7 +3548,7 @@ export default function ProjectDetail() {
                         {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0 ? remainingHrs.toFixed(0) : "—"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0 ? "hrs left of budget" : "No approved estimate"}
+                        {(hoursSummary?.budgetedHours ?? burnRate.estimatedHours) > 0 ? "hrs left of budget" : noBudgetReason}
                       </p>
                     </div>
                     <div className={`w-8 h-8 ${remainingBg} rounded-full flex items-center justify-center`}>
@@ -3581,7 +3594,7 @@ export default function ProjectDetail() {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {!hasBudget
-                          ? "No approved estimate"
+                          ? noBudgetReason
                           : variance > 0
                           ? "hrs over plan"
                           : variance < 0
