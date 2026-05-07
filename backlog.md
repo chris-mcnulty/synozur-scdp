@@ -1,13 +1,102 @@
 # Constellation Product Backlog
 
-**Last Updated**: April 12, 2026
-**Version**: 6.2 — Copilot Write Activities Phase 0 landed (foundation + client discovery + client create). Phases 3-5 (estimates, HubSpot linkage, Teams channel linkage) tracked below.
+**Last Updated**: May 7, 2026
+**Version**: 7.0 — v2.5 release: Galaxy Client Portal API, Notifications System, Multi-Currency Estimates, Time Grid 2.0, Estimate Version History, Client Portal Approvals & Sign-offs, Payment Milestone Billing Automation, AI Project Manager Agent, Planner LWW. Notifications System (previously deprioritized) marked ✅ Complete. Copilot Write Phases 0–5 fully shipped.
 
 ---
 
-## 🆕 In Progress — Copilot Agent Write Activities
+## ✅ Recently Completed (v2.5 — May 2026)
 
-**Status:** Phase 0 complete; Phases 1–2 shipped for clients
+### Galaxy Client Portal API ✅ COMPLETE
+- [x] External `/api/galaxy/v1/*` API for approved client-portal apps
+- [x] OAuth2 authorization-code (delegated) and client-credentials grants
+- [x] Token issuance against Microsoft Entra with `tenantId` + `clientId` claims for automatic scoping
+- [x] Per-app registration UI under Settings → Galaxy API (redirect URIs, webhook URL, allowed origins, scope ceiling)
+- [x] Hashed storage of client secret + webhook signing secret with one-time display and rotation
+- [x] Document download streaming through the portal (no direct SharePoint exposure)
+- [x] Signed webhook delivery with retry/audit
+- [x] Admin Galaxy page (`/admin/galaxy`)
+- [x] Test suites for auth, scopes, routes, webhook delivery (Task #142)
+- [x] `docs/galaxy-api.md`
+
+### Notifications System ✅ COMPLETE
+- [x] In-app notification center (bell, dropdown, full-page `/notifications`)
+- [x] Per-user preferences page (`/notification-preferences`) with channel + per-type controls
+- [x] Real-time unread count in browser tab title (Task #110)
+- [x] Opt-in browser push notifications (Task #111)
+- [x] Weekly digest emails via SendGrid (Task #101)
+- [x] Per-tenant digest schedule configuration (Task #129)
+- [x] Digest delivery stats on Scheduled Jobs page (Task #128)
+- [x] SendGrid webhook open tracking (Task #130)
+- [x] Notification hooks added to more platform events (Task #112)
+
+### Multi-Currency Estimates & Invoicing ✅ COMPLETE
+- [x] Quote currency separate from cost currency on estimates (Task #102)
+- [x] Schema migration + SOW propagation
+- [x] Quote-currency totals on invoice batches when they differ from cost currency
+- [x] Client-currency amounts on estimate PDFs and Sub-SOW exports (Task #131)
+- [x] Currency picker on expense edit form
+
+### Excel-Like Time Grid 2.0 ✅ COMPLETE
+- [x] Two-tab grid (current + prior week) with full keyboard nav (Task #125)
+- [x] Drag-fill extends a series instead of just copying values
+- [x] Virtualised rendering for large grids (Task #138)
+- [x] Clipboard parser + row state machine unit tests (Task #137)
+- [x] Project picker shows and searches by project code
+
+### Estimate Version History ✅ COMPLETE
+- [x] Backfill snapshots on first edit (Task #113)
+- [x] Snapshot on every email/send (Task #115)
+- [x] Who saved each snapshot in History panel (Task #114)
+- [x] Side-by-side compare and restore from any prior version
+
+### Client Portal Approvals & Sign-offs ✅ COMPLETE
+- [x] Client Portal Approvals & Sign-offs (Task #104)
+- [x] Sign-off status badges on estimates and milestone list views (Task #134)
+- [x] Inline status report acknowledgement (Task #136)
+- [x] Admin sign-offs audit log page (Task #135)
+- [x] Payment milestones exposed to client portal users (Task #89)
+- [x] Cascade allocation: shifted-from-milestone indicator (Task #91)
+- [x] Cascade allocation: PM "undo" for applied date shift (Task #90)
+
+### Payment Milestone Billing Automation ✅ COMPLETE
+- [x] Auto-generate invoice batch when payment milestone marked Invoiced (Task #87)
+- [x] Payment milestone billing status on portfolio dashboard (Task #88)
+- [x] Hours budget status on project list dashboard table (Task #82)
+- [x] Alert when project drops below 10% of budgeted hours (Task #83)
+- [x] Empty-state callout for projects with no approved estimate hours (Task #84)
+
+### AI Project Manager Agent ✅ COMPLETE
+- [x] Conversational PM agent (Task #143) layered on v2.4 Copilot write infrastructure
+
+### Planner Sync Robustness ✅ COMPLETE
+- [x] Last-write-wins conflict resolution (Task #126)
+- [x] Admin alerts on sync failures with actionable context
+- [x] Improved retry/backoff on Graph throttling
+
+### Operational & Performance Improvements ✅ COMPLETE
+- [x] Persistent in-memory cache via startup warm-up loader (Task #106)
+- [x] Invoice list speed-up via bulk-query approach (Task #105)
+- [x] Server-side pagination on Users page (Task #116)
+- [x] Auto-cleanup of old `background_jobs` rows (Task #121)
+- [x] Background Jobs link in admin sidebar
+- [x] Financial-comparison report rewritten to use SQL aggregation (Task #117)
+- [x] Global deep-link search across projects, users, and time entries
+- [x] Actionable data quality warnings with affected-item lists (Task #86)
+- [x] Expandable event detail in calendar suggestions panel (Task #108)
+- [x] "Visible to clients" toggle on RAIDD entries
+- [x] Sync Copilot Studio client IDs to Azure manifest (Task #52)
+
+### v2.5 Bug Fixes ✅ COMPLETE
+- [x] Teams channel setup on project detail (3 bugs)
+- [x] "Set Up Teams Channel" hidden on estimates that already have one
+- [x] TimeGrid project picker shows and searches by project code
+
+---
+
+## 🆕 Previously In Progress — Copilot Agent Write Activities
+
+**Status:** Phases 0–5 ✅ shipped (April 2026). Phase 6 (docs/rollout) partial — staging flag + USER_GUIDE write-up still open.
 **Effort:** High (6 phases total, ~8–10 weeks to full scope)
 **Design:** `/root/.claude/plans/recursive-squishing-tower.md` (planning artifact) + this backlog section
 
@@ -267,7 +356,10 @@ Estimate approval/status transitions, invoice generation, line-item-level edits 
 - [x] Team member management (add/remove from assignments) ✅ (Phase 2)
 - [x] Guest user invitation workflows ✅ (Phase 2)
 - [x] Automation audit logging ✅ (Phase 2)
-- [ ] Planner Phase 2: Bidirectional sync via Graph webhooks
+- [x] Planner sync robustness: last-write-wins + admin alerts ✅ (Task #126, v2.5)
+- [ ] Planner Phase 2: Bidirectional sync via Graph webhooks (still polling-based)
+- [ ] Planner Phase 2: Multitenant app registration
+- [ ] Teams Phase 3: SharePoint Living Updates (on-demand + scheduled news posts)
 - [ ] Project creation UI with M365 options
 
 ### Codebase Modularization
@@ -283,11 +375,12 @@ Estimate approval/status transitions, invoice generation, line-item-level edits 
 ## 📊 P2 - IMPORTANT FEATURES
 
 ### Advanced Financial Reporting
-**Status:** Partially complete — YoY and client filter done
+**Status:** Partially complete — YoY, client filter, and SQL-aggregation rewrite done
 **Effort:** Medium (4-6 weeks)
 
 - [x] Year-over-year revenue analysis ✅
 - [x] Client filter on reports ✅
+- [x] Financial-comparison report SQL aggregation rewrite (Task #117, v2.5) ✅
 - [ ] Client contribution analysis and rankings
 - [ ] Service line revenue breakdown
 - [ ] Revenue forecasting based on pipeline
@@ -323,14 +416,20 @@ Estimate approval/status transitions, invoice generation, line-item-level edits 
 - [ ] Field-level security to hide cost data from non-admin roles
 - [ ] Rate grandfathering for existing engagements
 
-### Notifications System
-**Status:** Deprioritized per Feb 2026 user feedback
-**Effort:** Medium (4-6 weeks)
+### Notifications System ✅ COMPLETE
+**Status:** Complete (May 2026, v2.5) — see "Recently Completed" above. Previously deprioritized; delivered ahead of plan.
+**Effort:** Medium (4-6 weeks) — actual
 
-- [ ] In-app notification center (bell icon, dropdown, full page)
-- [ ] Email notifications via SendGrid
-- [ ] User preferences with granular per-type controls
-- [ ] Time entry reminders, expense approvals, budget alerts, deadline reminders
+- [x] In-app notification center (bell icon, dropdown, full page)
+- [x] Email notifications via SendGrid (weekly digest with per-tenant schedule, open tracking)
+- [x] User preferences with granular per-type controls
+- [x] Browser push notifications (opt-in)
+- [x] Notification hooks for time entry reminders, expense approvals, budget alerts, deadline reminders, sign-offs, RAIDD updates
+
+**Future Enhancements (not yet started):**
+- [ ] Admin-broadcast notifications (tenant-wide announcements)
+- [ ] Mobile push notifications (native apps)
+- [ ] SMS channel via Twilio
 
 ### Estimate Adjustment Factors - System Defaults
 **Status:** Planned
@@ -503,8 +602,8 @@ Invoice PDF files stored in SharePoint/object storage are never removed when a b
 
 | Priority | Items | Est. Effort |
 |----------|-------|-------------|
-| P1 - High | 4 items | 24-32 weeks |
-| P2 - Important | 10 items | 20-32 weeks |
+| P1 - High | 3 active items (QBO, Teams Phase 3 + Planner Phase 2 webhook/multitenant, Codebase Modularization) | 18-24 weeks |
+| P2 - Important | 9 active items | 18-28 weeks |
 | P3 - AI/Automation | 2 items | 11-16 weeks |
 | P4 - Platform | 7 items | 34+ weeks |
 
@@ -528,3 +627,12 @@ Invoice PDF files stored in SharePoint/object storage are never removed when a b
 - ✅ "What's New" changelog modal
 - ✅ AI status reports with RAIDD
 - ✅ SharePoint Embedded document storage with File Repository
+- ✅ Galaxy Client Portal API (OAuth2, scoped tokens, signed webhooks, document streaming)
+- ✅ Notifications System (bell, push, weekly digests, SendGrid open tracking)
+- ✅ Multi-currency estimates and Sub-SOW propagation
+- ✅ Excel-like time grid 2.0 with virtualisation and series drag-fill
+- ✅ Estimate version history with snapshot restore
+- ✅ Client portal approvals & sign-offs with audit log
+- ✅ Payment milestone billing automation
+- ✅ AI Project Manager Agent
+- ✅ Planner sync LWW + admin alerts

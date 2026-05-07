@@ -58,6 +58,102 @@ Constellation empowers consulting organizations to deliver exceptional client va
 
 The following major features have been delivered and are live in production. See the [Changelog](/changelog) for detailed release notes.
 
+### ✅ Galaxy Client Portal API
+**Completed:** May 2026 (v2.5)
+- New external HTTP API mounted at `/api/galaxy/v1/*` for approved client-portal apps to read project artifacts and post sign-offs on behalf of client users
+- OAuth2 authorization-code (delegated) and client-credentials grants, tokens issued by Constellation's authorization server and authenticated against Microsoft Entra
+- Tenant- and client-scoped tokens — every token carries `tenantId` and `clientId` claims, all data scoped automatically
+- Per-app registration UI under **Settings → Galaxy API** (name, redirect URIs, webhook URL, allowed origins, scope ceiling)
+- Hashed storage of client secret and webhook signing secret; one-time display on creation with rotation flow
+- Document downloads streamed through the portal (no direct SharePoint exposure)
+- Signed webhook delivery for project, estimate, sign-off, and document events with retry and audit
+- Galaxy admin page (`/admin/galaxy`) for app management, scope review, and webhook delivery inspection
+- Client Portal Approvals & Sign-offs surface — payment milestones, status reports, and estimate sign-offs exposed to client users
+- Comprehensive test suites for auth, scopes, routes, and webhook delivery
+- Documentation at `docs/galaxy-api.md`
+
+### ✅ Notifications System
+**Completed:** May 2026 (v2.5)
+**Note:** Previously deprioritized after Feb 2026 user feedback; promoted and delivered alongside the Galaxy and digest work in v2.5.
+- In-app notification center with bell icon, dropdown, full-page view (`/notifications`), and per-user preferences page (`/notification-preferences`)
+- Real-time unread count surfaced in browser tab title for active sessions
+- Opt-in browser push notifications via the standard Web Push API
+- Weekly digest emails delivered through SendGrid with per-tenant schedule configuration (day/time/timezone)
+- Digest open tracking via SendGrid webhook; delivery stats surfaced on the Scheduled Jobs admin page
+- Notification hooks expanded across platform events (allocations, milestones, sign-offs, expense approvals, RAIDD updates, status report acknowledgements)
+- Granular per-type user preferences with email + in-app channels, fully tenant-scoped
+
+### ✅ Multi-Currency Estimates & Invoicing
+**Completed:** May 2026 (v2.5)
+- Estimate-level quote currency separate from cost currency, with full schema migration and SOW propagation
+- Quote-currency totals shown on invoice batches when they differ from cost currency
+- Client-currency amounts on estimate PDFs and Sub-SOW exports (Task #131)
+- Currency picker on the expense edit form
+- Foundation for international engagements without manual currency translation
+
+### ✅ Excel-Like Time Grid 2.0
+**Completed:** May 2026 (v2.5)
+- Two-tab time grid (current + prior week) with full Excel-style keyboard navigation
+- Drag-fill that extends a series instead of just copying cell values
+- Virtualised rendering for large grids (Task #138)
+- Clipboard parser with multi-row paste support and unit test coverage (Task #137)
+- Project picker now shows and searches by project code
+- State-machine row management with covering unit tests
+
+### ✅ Estimate Version History
+**Completed:** May 2026 (v2.5)
+- Automatic version snapshot on first edit (Task #113) and on every email/send (Task #115)
+- History panel showing who saved each snapshot and when (Task #114)
+- Side-by-side compare and restore from any prior version
+- Backfilled snapshots so existing estimates surface their full history
+
+### ✅ Client Portal Approvals & Sign-offs
+**Completed:** May 2026 (v2.5)
+- Sign-off badges on estimates and milestone list views (Task #134)
+- Inline status report acknowledgement (Task #136)
+- Admin sign-offs audit log page (Task #135) capturing actor, target, comment, and source
+- Payment milestones exposed to client portal users (Task #89)
+- Cascade allocations: shifted-from-milestone indicator (Task #91) and PM "undo" for an applied cascade date shift (Task #90)
+
+### ✅ Payment Milestone Billing Automation
+**Completed:** May 2026 (v2.5)
+- Auto-generate invoice batch when a payment milestone is marked Invoiced (Task #87)
+- Payment milestone billing status surfaced on the portfolio dashboard (Task #88)
+- Hours budget status on the project list dashboard (Task #82)
+- Project drops below 10% budget alert (Task #83)
+- Empty-state callout when a project has no approved estimate hours (Task #84)
+
+### ✅ AI Project Manager Agent
+**Completed:** May 2026 (v2.5)
+- New conversational agent (Task #143) layered on top of the existing Copilot Agent infrastructure for project-management workflows
+- Operates against the MCP read + write surfaces (clients, estimates, HubSpot, Teams) shipped in v2.4
+- Final iteration tuned for narrative status updates, cascade triage, and sign-off chase-down
+
+### ✅ Planner Sync Robustness & LWW
+**Completed:** May 2026 (v2.5)
+- Last-write-wins conflict resolution for bidirectional Planner sync (Task #126)
+- Admin alerts on sync failures with actionable context
+- Improved retry/backoff on Graph throttling
+- Resilience review fixes through round 4 of code review
+
+### ✅ Operational & Performance Improvements
+**Completed:** May 2026 (v2.5)
+- Persistent in-memory cache across restarts via startup warm-up loader (Task #106)
+- Invoice list speed-up using bulk-query approach (Task #105)
+- Server-side pagination on the Users page (Task #116)
+- Auto-cleanup of old `background_jobs` rows (Task #121)
+- Background Jobs link added to admin sidebar
+- Financial-comparison report rewritten to use SQL aggregation (Task #117) — major perf win on large tenants
+- Global deep-link search across projects, users, and time entries
+- Data-quality warnings now expand to show affected items (Task #86)
+- Calendar suggestion panel: expandable per-event detail (Task #108)
+- "Visible to clients" toggle on RAIDD entries
+- Copilot Studio client IDs synced into the Azure app manifest (Task #52)
+
+### ✅ Copilot Agent Write Activities (Phases 0–5)
+**Completed:** April 2026 (v2.4)
+- See Q2 priority section for full delivery detail. All write phases shipped behind the `MCP_WRITES_ENABLED` flag with idempotency, dry-run, and audit envelope.
+
 ### ✅ Multi-Tenancy Architecture
 **Completed:** February 2026 (Phases 1-4, 6)
 - UUID-based tenant IDs with full data isolation
@@ -561,12 +657,12 @@ The following major features have been delivered and are live in production. See
 - Integration with existing Status Reports: option to cross-post an approved status report as a SharePoint news post
 - Re-uses the same Graph API page publishing infrastructure built in Phase 2
 
-**Enhanced Planner Integration (Phase 2)**
-- Bidirectional sync with Microsoft Graph webhooks
-- Planner-to-Constellation change notifications
-- Conflict resolution for simultaneous edits
-- Comprehensive audit trail for all sync activities
-- Multitenant app registration (so other tenants can consent without creating their own app)
+**Enhanced Planner Integration (Phase 2)** — 🔶 *Partially shipped (v2.5)*
+- ✅ Conflict resolution with last-write-wins (Task #126, May 2026)
+- ✅ Admin alerts on sync failures with actionable context (Task #126)
+- ✅ Comprehensive audit trail for all sync activities
+- [ ] Bidirectional sync via Microsoft Graph webhooks (still polling-based today)
+- [ ] Multitenant app registration (so other tenants can consent without creating their own app)
 
 **Project Creation UX Enhancement**
 - M365 integration options in project creation dialog
@@ -613,20 +709,11 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-### 🔔 Notifications System (Deprioritized)
+### ✅ Notifications System
 
-**Status:** 📋 Planned  
-**Target Completion:** Q2–Q3 2026  
-**User Feedback:** Ranked lower in user feedback session. Deprioritized to make room for QuickBooks integration and Status Reporting, which received significantly stronger support. Will be revisited in future feedback sessions to assess evolving organizational needs.  
-**Value Proposition:** Keep users informed with timely, relevant notifications that drive action and improve operational efficiency.
-
-#### Deliverables
-- In-app notification center (bell icon, dropdown, full page view)
-- Email notifications via SendGrid (time reminders, expense approvals, budget alerts)
-- User preferences with granular per-type controls
-- Admin controls for system-wide notification management
-
-**Detailed Plan:** See `notifications-plan.md` for comprehensive implementation details
+**Status:** ✅ Complete
+**Completed:** May 2026 (v2.5)
+**Note:** Previously deprioritized in February — delivered ahead of plan in v2.5. See "Recently Completed" for the full feature inventory. Remaining ideas (admin-broadcast notifications, mobile push) are tracked in the backlog.
 
 ---
 
@@ -636,7 +723,7 @@ The following major features have been delivered and are live in production. See
 **Target Completion:** Q2 2026  
 **Value Proposition:** Complete the financial reporting suite with client contribution analysis, estimate-vs-actual accuracy metrics, and revenue forecasting — giving executives and billing admins the data they need for strategic decisions.
 
-#### ✅ Completed (February 2026)
+#### ✅ Completed (February–May 2026)
 
 **Year-over-Year Invoice Comparison**
 - Year-over-year revenue analysis with side-by-side prior/current year view
@@ -650,6 +737,7 @@ The following major features have been delivered and are live in production. See
 - Client filter on both Report and YoY Comparison views
 - Three-year data support for broader historical analysis
 - Batch type filtering and improved date handling
+- **SQL-aggregation rewrite of financial-comparison report (Task #117, May 2026)** — eliminated in-process aggregation and large memory passes, dramatic speed-up on large tenants
 
 #### Planned Features
 
@@ -1015,6 +1103,21 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
+**May 7, 2026 — Version 2.5**
+- Major release adding the **Galaxy Client Portal API** — external OAuth2 surface for client-portal apps with tenant- and client-scoped tokens, signed webhooks, document streaming, and an admin registration UI
+- **Notifications System shipped end-to-end** — bell, full-page view, per-user preferences, browser push, weekly digest emails with per-tenant schedule, SendGrid open tracking; previously-deprioritized item now marked Complete
+- **Multi-Currency Estimates & Invoicing** — quote vs cost currency, Sub-SOW propagation, client-currency totals on PDFs and invoice batches
+- **Excel-Like Time Grid 2.0** — virtualised two-tab grid, drag-fill series extension, clipboard parser unit tests, project-code search
+- **Estimate Version History** — auto-snapshot on edit/send, who-saved-when panel, backfilled snapshots
+- **Client Portal Approvals & Sign-offs** — sign-off badges, inline status-report acknowledgement, admin sign-offs audit log, payment milestones exposed
+- **Payment Milestone Billing Automation** — auto-generated invoice batches, portfolio billing-status surface, hours-budget alerts and empty-state callouts
+- **AI Project Manager Agent** (Task #143) — conversational PM agent on top of v2.4 Copilot write infrastructure
+- **Planner Sync Robustness** — last-write-wins, admin alerts, retry/backoff (closes part of Phase 2 Teams Planner work)
+- **Operational improvements** — SQL-aggregation rewrite of financial-comparison report, persistent cache, invoice-list speed-up, server-side pagination on Users, background-job auto-cleanup, global deep-link search, data-quality drill-downs
+- Notifications System moved from "Deprioritized" Q2–Q3 2026 to ✅ Complete
+- Advanced Financial Reporting "Completed" subsection extended with the financial-comparison SQL rewrite
+- Microsoft Teams Planner Integration Phase 2 marked Partially Shipped (LWW + audit trail done; webhook delivery and multitenant app registration still open)
+
 **April 1, 2026 — Version 2.0 (Nebula)**
 - Major version bump to 2.0
 - Added Nebula UX Design System to Recently Completed (Aurora backgrounds, glow utilities, stagger animations, nebula card borders, skeleton shimmer)
@@ -1036,6 +1139,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 - Updated Enhanced Status Reporting with Persistent Report Storage (v1.7)
 - Updated version references to 1.7
 
-*Last Updated: April 1, 2026*  
+*Last Updated: May 7, 2026 — Version 2.5*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
