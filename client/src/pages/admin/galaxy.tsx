@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Copy, Trash2, RotateCw, Plus, ExternalLink } from "lucide-react";
 import { GALAXY_SCOPES } from "@shared/schema";
+import { Layout } from "@/components/layout/layout";
 
 interface GalaxyApp {
   id: string;
@@ -235,7 +236,8 @@ export default function GalaxyAdminPage() {
   const webhooks = useQuery<GalaxyWebhook[]>({ queryKey: ["/api/admin/galaxy/webhooks"] });
 
   return (
-    <div className="container py-6 space-y-6">
+    <Layout>
+      <div className="container py-6 space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold">Galaxy client portal API</h1>
@@ -341,6 +343,7 @@ export default function GalaxyAdminPage() {
           </CardContent></Card>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </Layout>
   );
 }
