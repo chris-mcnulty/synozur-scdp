@@ -563,6 +563,12 @@ export function registerGalaxyV1Routes(
     }
 
     if (grantType === "client_credentials") {
+      console.log("[GALAXY-DEBUG] client_credentials raw body", {
+        client_id: req.body?.client_id,
+        target_client_id: req.body?.target_client_id,
+        scope: req.body?.scope,
+        contentType: req.headers["content-type"],
+      });
       // Service-to-service flow, but still strictly per-client. The caller
       // MUST name the target portal client via `target_client_id`, and the
       // app must already have at least one non-revoked auth-code grant for a
@@ -597,6 +603,12 @@ export function registerGalaxyV1Routes(
           isNull(galaxyAppGrants.revokedAt),
         ))
         .limit(1);
+      console.log("[GALAXY-DEBUG] client_credentials grant check", {
+        tenantId: galaxyApp.tenantId,
+        appId: galaxyApp.id,
+        target_client_id,
+        activeGrantsFound: activeGrants.length,
+      });
       if (activeGrants.length === 0) {
         return res.status(403).json({ error: "no_client_consent", code: "no_client_consent" });
       }
