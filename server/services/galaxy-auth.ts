@@ -103,6 +103,7 @@ export function mintRefreshToken(): { raw: string; hash: string; expiresAt: Date
 
 /**
  * Verify a bearer token and load the associated Galaxy app + grant context.
+ * Accepts both HS256 JWTs (OAuth flows) and static API keys (gxy_ prefix).
  * Returns null if the token is invalid, expired, or the app is disabled.
  */
 export async function verifyAccessToken(token: string): Promise<{
@@ -110,6 +111,11 @@ export async function verifyAccessToken(token: string): Promise<{
   app: GalaxyApp;
   scopes: string[];
 } | null> {
+  // API key fast path — static keys start with "gxy_"
+  if (token.startsWith("gxy_")) {
+    return verifyApiKey(token);
+  }
+  // JWT path (authorization_code / client_credentials OAuth flows)
   const decoded = jwt.decode(token) as GalaxyTokenClaims | null;
   if (!decoded || decoded.iss !== "galaxy" || !decoded.aud) return null;
   const app = await storage.getGalaxyApp(decoded.aud);
@@ -120,6 +126,36 @@ export async function verifyAccessToken(token: string): Promise<{
   } catch {
     return null;
   }
+}
+
+async function verifyApiKey(raw: string): Promise<{
+  claims: GalaxyTokenClaims;
+  app: GalaxyApp;
+  scopes: string[];
+} | null> {
+  const hash = hashSecret(raw);
+  const result = await storage.lookupGalaxyApiKeyByHash(hash);
+  if (!result) return null;
+  const { key, app } = result;
+  if (app.disabledAt) return null;
+  if (key.revokedAt) return null;
+  if (key.expiresAt && key.expiresAt < new Date()) return null;
+  // Touch last-used timestamp without blocking the response
+  storage.touchGalaxyApiKeyUsed(key.id).catch(() => {});
+  const now = Math.floor(Date.now() / 1000);
+  const claims: GalaxyTokenClaims = {
+    iss: "galaxy",
+    aud: app.id,
+    sub: `apikey:${key.id}`,
+    tid: app.tenantId,
+    cid: key.clientId,
+    scp: key.scopes.join(" "),
+    gnt: "client_credentials",
+    jti: `key:${key.id}`,
+    iat: now,
+    exp: now + 3600, // virtual — used only for rate-limit bucket keying
+  };
+  return { claims, app, scopes: key.scopes };
 }
 
 /**

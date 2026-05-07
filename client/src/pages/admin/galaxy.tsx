@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Copy, Trash2, RotateCw, Plus, ExternalLink, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Trash2, RotateCw, Plus, ExternalLink, ShieldCheck, ChevronDown, ChevronUp, Key } from "lucide-react";
 import { GALAXY_SCOPES } from "@shared/schema";
 import { Layout } from "@/components/layout/layout";
 
@@ -39,6 +39,21 @@ interface ClientOption {
   id: string;
   name: string;
   shortName?: string | null;
+}
+
+interface GalaxyApiKey {
+  id: string;
+  appId: string;
+  clientId: string;
+  clientName: string | null;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  rawKey?: string; // only present immediately after creation
 }
 
 interface GalaxyGrant {
@@ -220,6 +235,126 @@ function RegisterAppDialog() {
   );
 }
 
+function CreateApiKeyDialog({ app, clients }: { app: GalaxyApp; clients: ClientOption[] }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [clientId, setClientId] = useState<string>(app.clientId ?? "__none__");
+  const [scopes, setScopes] = useState<string[]>(app.allowedScopes);
+  const [expiresAt, setExpiresAt] = useState<string>("");
+
+  const create = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/galaxy/apps/${app.id}/api-keys`, {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          clientId,
+          scopes,
+          expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        }),
+      }),
+    onSuccess: (data: GalaxyApiKey & { rawKey: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/galaxy/apps", app.id, "api-keys"] });
+      setNewKey(data.rawKey);
+    },
+    onError: (e: any) => toast({ title: "Failed to create API key", description: e.message, variant: "destructive" }),
+  });
+
+  function handleClose(v: boolean) {
+    if (!v) { setNewKey(null); setName(""); setExpiresAt(""); setScopes(app.allowedScopes); setClientId(app.clientId ?? "__none__"); }
+    setOpen(v);
+  }
+
+  const eligibleClients = app.clientId ? clients.filter((c) => c.id === app.clientId) : clients;
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" disabled={!!app.disabledAt}>
+          <Key className="h-3 w-3 mr-1" />Create API key
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create API key — {app.name}</DialogTitle>
+        </DialogHeader>
+        {newKey ? (
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              API key created. Copy it now — it will <strong>never be shown again</strong>.
+            </p>
+            <div className="rounded-md border bg-yellow-50 dark:bg-yellow-950 p-3">
+              <CopySecret value={newKey} />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Use as: <code className="bg-muted px-1 rounded">Authorization: Bearer {newKey.slice(0, 16)}…</code>
+            </p>
+            <DialogFooter>
+              <Button onClick={() => handleClose(false)}>Done</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              API keys let remote apps call Galaxy endpoints directly — no OAuth token exchange needed. Just send <code className="bg-muted px-1 rounded text-xs">Authorization: Bearer gxy_…</code> on every request.
+            </p>
+            <div>
+              <Label>Key name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Production integration" className="mt-1" />
+            </div>
+            <div>
+              <Label>Client</Label>
+              <Select value={clientId} onValueChange={setClientId} disabled={!!app.clientId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a client…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {!app.clientId && <SelectItem value="__none__">— Select a client —</SelectItem>}
+                  {eligibleClients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.shortName ? `${c.shortName} — ${c.name}` : c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Scopes</Label>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {app.allowedScopes.map((s) => (
+                  <label key={s} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={scopes.includes(s)}
+                      onCheckedChange={(v) => setScopes(v ? [...scopes, s] : scopes.filter((x) => x !== s))}
+                    />
+                    {s}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Expires (optional)</Label>
+              <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">Leave blank for a non-expiring key.</p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
+              <Button
+                onClick={() => create.mutate()}
+                disabled={create.isPending || !name.trim() || !clientId || clientId === "__none__" || scopes.length === 0}
+              >
+                {create.isPending ? "Creating…" : "Create API key"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function GrantConsentDialog({ app, clients }: { app: GalaxyApp; clients: ClientOption[] }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -315,11 +450,18 @@ function AppRow({ a, clients }: { a: GalaxyApp; clients: ClientOption[] }) {
   const { toast } = useToast();
   const [secret, setSecret] = useState<string | null>(null);
   const [showGrants, setShowGrants] = useState(false);
+  const [showApiKeys, setShowApiKeys] = useState(false);
 
   const grants = useQuery<GalaxyGrant[]>({
     queryKey: ["/api/admin/galaxy/apps", a.id, "grants"],
     queryFn: () => apiRequest(`/api/admin/galaxy/apps/${a.id}/grants`),
     enabled: showGrants,
+  });
+
+  const apiKeys = useQuery<GalaxyApiKey[]>({
+    queryKey: ["/api/admin/galaxy/apps", a.id, "api-keys"],
+    queryFn: () => apiRequest(`/api/admin/galaxy/apps/${a.id}/api-keys`),
+    enabled: showApiKeys,
   });
 
   const rotate = useMutation({
@@ -342,6 +484,15 @@ function AppRow({ a, clients }: { a: GalaxyApp; clients: ClientOption[] }) {
     },
     onError: (e: any) => toast({ title: "Failed to revoke", description: e.message, variant: "destructive" }),
   });
+  const revokeApiKey = useMutation({
+    mutationFn: (keyId: string) =>
+      apiRequest(`/api/admin/galaxy/apps/${a.id}/api-keys/${keyId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/galaxy/apps", a.id, "api-keys"] });
+      toast({ title: "API key revoked" });
+    },
+    onError: (e: any) => toast({ title: "Failed to revoke key", description: e.message, variant: "destructive" }),
+  });
 
   return (
     <Card data-testid={`card-app-${a.id}`}>
@@ -363,6 +514,7 @@ function AppRow({ a, clients }: { a: GalaxyApp; clients: ClientOption[] }) {
             {a.description && <p className="text-sm mt-2">{a.description}</p>}
           </div>
           <div className="flex gap-2 flex-wrap justify-end">
+            <CreateApiKeyDialog app={a} clients={clients} />
             <GrantConsentDialog app={a} clients={clients} />
             <Button size="sm" variant="outline" onClick={() => rotate.mutate()} disabled={!!a.disabledAt || rotate.isPending}>
               <RotateCw className="h-3 w-3 mr-1" />Rotate secret
@@ -387,6 +539,75 @@ function AppRow({ a, clients }: { a: GalaxyApp; clients: ClientOption[] }) {
         <div><span className="text-muted-foreground">Origins:</span> {a.originAllowList.join(", ") || "any"}</div>
         <div><span className="text-muted-foreground">Scopes:</span> {a.allowedScopes.join(", ")}</div>
         <div><span className="text-muted-foreground">Rate limits:</span> {a.rateLimitPerMin}/min app · {a.tokenRateLimitPerMin}/min token</div>
+
+        {/* API keys section */}
+        <div className="pt-2 border-t">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-sm font-medium hover:text-foreground text-muted-foreground"
+            onClick={() => setShowApiKeys((v) => !v)}
+          >
+            <Key className="h-4 w-4" />
+            API keys
+            {showApiKeys ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </button>
+          {showApiKeys && (
+            <div className="mt-2">
+              {apiKeys.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+              {apiKeys.data?.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">
+                  No API keys yet. Use "Create API key" to issue a static credential for machine-to-machine callers.
+                </p>
+              )}
+              {apiKeys.data && apiKeys.data.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Client</TableHead>
+                      <TableHead className="text-xs">Prefix</TableHead>
+                      <TableHead className="text-xs">Scopes</TableHead>
+                      <TableHead className="text-xs">Expires</TableHead>
+                      <TableHead className="text-xs">Last used</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs w-16"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {apiKeys.data.map((k) => (
+                      <TableRow key={k.id}>
+                        <TableCell className="text-xs font-medium">{k.name}</TableCell>
+                        <TableCell className="text-xs">{k.clientName ?? k.clientId.slice(0, 8)}</TableCell>
+                        <TableCell className="text-xs font-mono">{k.keyPrefix}…</TableCell>
+                        <TableCell className="text-xs">{k.scopes.join(", ")}</TableCell>
+                        <TableCell className="text-xs">{k.expiresAt ? new Date(k.expiresAt).toLocaleDateString() : "Never"}</TableCell>
+                        <TableCell className="text-xs">{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : "Never"}</TableCell>
+                        <TableCell>
+                          <Badge variant={k.revokedAt ? "destructive" : "default"} className="text-xs">
+                            {k.revokedAt ? "Revoked" : "Active"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {!k.revokedAt && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-destructive hover:text-destructive"
+                              onClick={() => revokeApiKey.mutate(k.id)}
+                              disabled={revokeApiKey.isPending}
+                            >
+                              Revoke
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Client consents section */}
         <div className="pt-2 border-t">

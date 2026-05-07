@@ -1160,6 +1160,62 @@ export function registerGalaxyV1Routes(
     res.json({ revoked: true });
   });
 
+  // ─── Admin: list API keys for an app ────────────────────────────────────────
+  app.get(`${adminBase}/apps/:id/api-keys`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    const tenantId = req.user!.tenantId!;
+    const galaxyApp = await storage.getGalaxyApp(req.params.id);
+    if (!galaxyApp || galaxyApp.tenantId !== tenantId) return res.status(404).json({ error: "not_found" });
+    const keys = await storage.listGalaxyApiKeys(galaxyApp.id, tenantId);
+    res.json(keys);
+  });
+
+  // ─── Admin: create an API key ────────────────────────────────────────────────
+  app.post(`${adminBase}/apps/:id/api-keys`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    const tenantId = req.user!.tenantId!;
+    const adminUserId = req.user!.id;
+    const galaxyApp = await storage.getGalaxyApp(req.params.id);
+    if (!galaxyApp || galaxyApp.tenantId !== tenantId) return res.status(404).json({ error: "not_found" });
+    if (galaxyApp.disabledAt) return res.status(400).json({ error: "app_disabled" });
+    const schema = z.object({
+      name: z.string().min(1).max(120),
+      clientId: z.string().uuid(),
+      scopes: z.array(z.string()).min(1),
+      expiresAt: z.string().datetime().optional().nullable(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "invalid_request", details: parsed.error.format() });
+    const { name, clientId, scopes, expiresAt } = parsed.data;
+    // Enforce client belongs to this tenant
+    const [client] = await db.select({ id: clients.id }).from(clients)
+      .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId))).limit(1);
+    if (!client) return res.status(400).json({ error: "invalid_client" });
+    // Enforce app client scope
+    if (galaxyApp.clientId && galaxyApp.clientId !== clientId)
+      return res.status(403).json({ error: "client_scope_mismatch" });
+    const grantedScopes = intersectScopes(scopes, galaxyApp.allowedScopes);
+    if (grantedScopes.length === 0) return res.status(400).json({ error: "invalid_scope" });
+    const { raw, record } = await storage.createGalaxyApiKey({
+      tenantId,
+      appId: galaxyApp.id,
+      clientId,
+      name,
+      scopes: grantedScopes,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+      createdBy: adminUserId,
+    });
+    // Return the raw key exactly once — it is never stored in plaintext
+    res.json({ ...record, rawKey: raw });
+  });
+
+  // ─── Admin: revoke an API key ────────────────────────────────────────────────
+  app.delete(`${adminBase}/apps/:id/api-keys/:keyId`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    const tenantId = req.user!.tenantId!;
+    const galaxyApp = await storage.getGalaxyApp(req.params.id);
+    if (!galaxyApp || galaxyApp.tenantId !== tenantId) return res.status(404).json({ error: "not_found" });
+    await storage.revokeGalaxyApiKeyById(req.params.keyId, tenantId);
+    res.json({ revoked: true });
+  });
+
   app.get(`${adminBase}/audit`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     const tenantId = req.user!.tenantId!;
     const appId = (req.query.appId as string) || undefined;

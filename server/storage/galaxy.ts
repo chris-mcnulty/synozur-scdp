@@ -219,6 +219,82 @@ export const galaxyMethods: ThisType<IStorage> = {
       .where(and(eq(galaxyAppGrants.id, grantId), eq(galaxyAppGrants.tenantId, tenantId)));
   },
 
+  // ─── API keys ────────────────────────────────────────────────────────────────
+  async createGalaxyApiKey(data: {
+    tenantId: string;
+    appId: string;
+    clientId: string;
+    name: string;
+    scopes: string[];
+    expiresAt?: Date | null;
+    createdBy?: string;
+  }): Promise<{ raw: string; record: GalaxyApiKey }> {
+    const raw = `gxy_${crypto.randomBytes(32).toString("base64url")}`;
+    const keyHash = crypto.createHash("sha256").update(raw, "utf8").digest("hex");
+    const keyPrefix = raw.slice(0, 12);
+    const [record] = await db
+      .insert(galaxyApiKeys)
+      .values({
+        tenantId: data.tenantId,
+        appId: data.appId,
+        clientId: data.clientId,
+        name: data.name,
+        keyHash,
+        keyPrefix,
+        scopes: data.scopes,
+        expiresAt: data.expiresAt ?? null,
+        createdBy: data.createdBy ?? null,
+      })
+      .returning();
+    return { raw, record };
+  },
+
+  async listGalaxyApiKeys(appId: string, tenantId: string): Promise<GalaxyApiKeyRow[]> {
+    const rows = await db
+      .select({
+        id: galaxyApiKeys.id,
+        tenantId: galaxyApiKeys.tenantId,
+        appId: galaxyApiKeys.appId,
+        clientId: galaxyApiKeys.clientId,
+        clientName: clients.name,
+        name: galaxyApiKeys.name,
+        keyPrefix: galaxyApiKeys.keyPrefix,
+        scopes: galaxyApiKeys.scopes,
+        expiresAt: galaxyApiKeys.expiresAt,
+        revokedAt: galaxyApiKeys.revokedAt,
+        lastUsedAt: galaxyApiKeys.lastUsedAt,
+        createdAt: galaxyApiKeys.createdAt,
+      })
+      .from(galaxyApiKeys)
+      .leftJoin(clients, eq(galaxyApiKeys.clientId, clients.id))
+      .where(and(eq(galaxyApiKeys.appId, appId), eq(galaxyApiKeys.tenantId, tenantId)))
+      .orderBy(desc(galaxyApiKeys.createdAt));
+    return rows as GalaxyApiKeyRow[];
+  },
+
+  async lookupGalaxyApiKeyByHash(hash: string): Promise<{ key: GalaxyApiKey; app: GalaxyApp } | null> {
+    const [key] = await db
+      .select()
+      .from(galaxyApiKeys)
+      .where(eq(galaxyApiKeys.keyHash, hash))
+      .limit(1);
+    if (!key) return null;
+    const [app] = await db.select().from(galaxyApps).where(eq(galaxyApps.id, key.appId)).limit(1);
+    if (!app) return null;
+    return { key, app };
+  },
+
+  async revokeGalaxyApiKeyById(keyId: string, tenantId: string): Promise<void> {
+    await db
+      .update(galaxyApiKeys)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(galaxyApiKeys.id, keyId), eq(galaxyApiKeys.tenantId, tenantId)));
+  },
+
+  async touchGalaxyApiKeyUsed(keyId: string): Promise<void> {
+    await db.update(galaxyApiKeys).set({ lastUsedAt: new Date() }).where(eq(galaxyApiKeys.id, keyId));
+  },
+
   // ─── auth codes ─────────────────────────────────────────────────
   async createGalaxyAuthCode(data: {
     code: string; tenantId: string; appId: string; clientUserId: string;
