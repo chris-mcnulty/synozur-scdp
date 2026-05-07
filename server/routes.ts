@@ -50,6 +50,7 @@ import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerGalaxyV1Routes } from "./routes/galaxy/v1/index.js";
+import { enqueueGalaxyEvent } from "./services/galaxy-webhook-delivery.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -7350,7 +7351,49 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   // Update milestone
   app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
+      // Tenant scoping: storage.getProjectMilestone/updateProjectMilestone
+      // query by milestone id only. Without this guard a user in tenant A
+      // could PATCH a milestone in tenant B (and now trigger a Galaxy
+      // webhook to tenant B's apps in their name). Resolve the milestone's
+      // owning project, verify tenant match, and only then proceed.
+      const before = await storage.getProjectMilestone(req.params.id);
+      if (!before) return res.status(404).json({ message: "Milestone not found" });
+      const project = await storage.getProject(before.projectId);
+      if (!project) return res.status(404).json({ message: "Milestone not found" });
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && project.tenantId && project.tenantId !== userTenantId) {
+        // Mirror the 404 we use elsewhere for cross-tenant access — don't
+        // leak whether the resource exists.
+        return res.status(404).json({ message: "Milestone not found" });
+      }
+
       const milestone = await storage.updateProjectMilestone(req.params.id, req.body);
+
+      // Genuine open→completed transition only (not every PATCH that
+      // happens to leave status="completed").
+      if (
+        milestone &&
+        before.status !== "completed" &&
+        milestone.status === "completed" &&
+        project.clientId &&
+        project.tenantId
+      ) {
+        enqueueGalaxyEvent({
+          tenantId: project.tenantId,
+          event: "milestone.completed",
+          clientId: project.clientId,
+          data: {
+            milestoneId: milestone.id,
+            projectId: milestone.projectId,
+            name: milestone.name,
+            completedDate: milestone.completedDate ?? null,
+            isPaymentMilestone: !!(milestone as any).isPaymentMilestone,
+          },
+        }).catch((err) =>
+          console.error("[GALAXY] milestone.completed enqueue failed:", err)
+        );
+      }
+
       res.json(milestone);
     } catch (error) {
       res.status(500).json({ message: "Failed to update milestone" });

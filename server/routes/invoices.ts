@@ -7,6 +7,7 @@ import { receiptStorage } from "../services/receipt-storage.js";
 import { invoicePDFStorage } from "../services/invoice-pdf-storage.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "../services/hubspot-client.js";
 import { notify } from "../services/notification-service.js";
+import { enqueueGalaxyEvent } from "../services/galaxy-webhook-delivery.js";
 
 interface InvoiceRouteDeps {
   requireAuth: any;
@@ -793,6 +794,35 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         } catch (notifyErr) {
           console.error('[INVOICE] Failed to send finalize notification:', notifyErr);
         }
+
+        // Notify Galaxy client portal apps. A batch can span multiple
+        // clients (rare, but supported), so fan out per distinct clientId
+        // on the batch's lines. Fire-and-forget — webhook delivery must
+        // not block the staff finalize response.
+        (async () => {
+          try {
+            const lineRows = await db
+              .selectDistinct({ clientId: invoiceLines.clientId })
+              .from(invoiceLines)
+              .where(eq(invoiceLines.batchId, batchId));
+            for (const row of lineRows) {
+              if (!row.clientId) continue;
+              await enqueueGalaxyEvent({
+                tenantId,
+                event: "invoice.issued",
+                clientId: row.clientId,
+                data: {
+                  batchId,
+                  glInvoiceNumber: updatedBatch?.glInvoiceNumber ?? null,
+                  totalAmount: updatedBatch?.totalAmount ?? null,
+                  finalizedAt: updatedBatch?.finalizedAt ?? new Date().toISOString(),
+                },
+              });
+            }
+          } catch (err) {
+            console.error("[GALAXY] invoice.issued enqueue failed:", err);
+          }
+        })();
       }
 
       res.json({

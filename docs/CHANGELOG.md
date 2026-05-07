@@ -17,6 +17,137 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 2.5 (May 7, 2026)
+
+**Release Date:** May 7, 2026
+**Status:** Production Release
+**Codename:** Galaxy
+
+Version 2.5 is a major release headlined by the new **Galaxy Client Portal API**, a fully-shipped **Notifications System**, **multi-currency estimates**, an Excel-grade **Time Grid 2.0**, **estimate version history**, **client portal approvals & sign-offs**, **payment-milestone billing automation**, an **AI Project Manager Agent**, and Planner sync robustness with last-write-wins. The release also lands the v2.4 **Copilot Agent Write Activities** Phases 0–5 (April 12) under one umbrella for the public release notes.
+
+#### Galaxy Client Portal API
+
+- **External `/api/galaxy/v1/*` API** — new externally-consumable HTTP API that lets approved client-portal apps read project artifacts and post sign-offs on behalf of a client user, running alongside (and independent of) the internal A2A and MCP APIs
+- **OAuth2 Grants** — authorization-code (delegated, end-user) and client-credentials (machine-to-machine) flows
+- **Tenant + Client Scoping** — every token carries `tenantId` and `clientId` claims, all data automatically scoped server-side
+- **Microsoft Entra Authentication** — tokens are issued by Constellation's own authorization server and authenticated against Entra
+- **Signed Webhooks** — optional webhook URL receives signed event payloads (project, estimate, sign-off, document); HMAC signing secret displayed once at registration with rotation flow
+- **App Registration UI** — new **Settings → Galaxy API** page (and platform admin `/admin/galaxy`) for registering apps with name, description, redirect URIs, webhook URL, allowed origins (CORS allow-list), and scope ceiling
+- **Hashed Secret Storage** — client secret and webhook signing secret stored hashed; one-time display on creation, rotation flow if lost
+- **Document Streaming** — Galaxy v1 streams document downloads through the portal so SharePoint Embedded URLs are never exposed to client apps
+- **Client Portal Approvals & Sign-offs** — payment milestones, status reports, and estimate sign-offs all reachable through Galaxy
+- **Comprehensive Test Coverage** — automated test suites for auth, scopes, routes, and webhook delivery (Tasks #127, #142)
+- **Documentation** — full API reference at `docs/galaxy-api.md`
+
+#### Notifications System (Promoted from Deprioritized → Shipped)
+
+- **In-App Notification Center** — bell icon with dropdown unread feed, dedicated full-page view at `/notifications`
+- **Per-User Preferences** — preferences page at `/notification-preferences` with channel selection (email + in-app + push) and granular per-event-type toggles
+- **Real-Time Tab Title Count** — unread notification count surfaced in the browser tab title for active sessions (Task #110)
+- **Browser Push Notifications** — opt-in Web Push subscription with permission flow (Task #111)
+- **Weekly Digest Emails** — SendGrid-delivered weekly digest with per-tenant schedule configuration (day, time, timezone) (Tasks #101, #129)
+- **Digest Open Tracking** — SendGrid webhook integration to track digest email opens, surfaced as delivery stats on the Scheduled Jobs admin page (Tasks #128, #130)
+- **Expanded Notification Hooks** — events now fire for allocations, milestones, sign-offs, expense approvals, RAIDD updates, status report acknowledgements, and budget alerts (Task #112)
+
+#### Multi-Currency Estimates & Invoicing
+
+- **Quote vs Cost Currency** — estimates now carry a quote currency that is independent of the cost currency, with full schema migration (Task #102)
+- **Sub-SOW Propagation** — currency selection propagates through Sub-SOW exports
+- **Quote-Currency Invoice Totals** — invoice batches show quote-currency totals when they differ from the cost currency
+- **Client-Currency PDFs** — estimate PDFs and Sub-SOW exports display amounts in the client's currency (Task #131)
+- **Expense Currency Picker** — currency selector added to the expense edit form
+
+#### Excel-Like Time Grid 2.0
+
+- **Two-Tab Grid** — current week + prior week tabs with full Excel-style keyboard navigation (Task #125)
+- **Series Drag-Fill** — drag-fill now extends a series instead of just copying cell values
+- **Virtualised Rendering** — large grids render via virtualisation for smooth scrolling (Task #138)
+- **Clipboard Parser Tests** — multi-row paste handling backed by unit tests for the parser and row state machine (Task #137)
+- **Project-Code Search** — project picker shows and searches by project code in addition to name
+
+#### Estimate Version History
+
+- **Auto-Snapshot on First Edit** — backfilled snapshots so legacy estimates surface their full history (Task #113)
+- **Snapshot on Send** — every email/send creates a version snapshot for audit (Task #115)
+- **History Panel** — shows who saved each snapshot and when, with side-by-side compare and restore (Task #114)
+
+#### Client Portal Approvals & Sign-offs
+
+- **Sign-Off Status Badges** — visible on estimates and milestone list views (Task #134)
+- **Inline Status Report Acknowledgement** — clients can acknowledge a status report directly from the report view (Task #136)
+- **Admin Sign-Offs Audit Log** — new audit log page capturing actor, target, comment, and source for every sign-off (Task #135)
+- **Client Portal Approvals & Sign-offs Workflow** — end-to-end approval flow exposed through Galaxy (Task #104)
+- **Payment Milestones in Client Portal** — clients can view and acknowledge their payment milestones (Task #89)
+- **Cascade Allocation Improvements** — shifted-from-milestone indicator (Task #91) and PM "undo" for an applied cascade date shift (Task #90)
+
+#### Payment Milestone Billing Automation
+
+- **Auto-Generated Invoice Batch** — when a payment milestone is marked Invoiced, the corresponding invoice batch is created automatically (Task #87)
+- **Portfolio Billing Status** — payment milestone billing status surfaced on the portfolio dashboard (Task #88)
+- **Hours Budget Status** — project list dashboard table now shows budget consumption status (Task #82)
+- **Low-Budget Alerts** — alert sent when a project drops below 10% of its budgeted hours (Task #83)
+- **Empty-State Callout** — projects with no approved estimate hours now show a callout instead of an empty pane (Task #84)
+
+#### AI Project Manager Agent
+
+- **Conversational PM Agent** — new AI agent (Task #143) layered on top of the v2.4 Copilot Agent Write Activities infrastructure
+- Tuned for narrative status updates, cascade triage, and sign-off chase-down using the MCP read + write surfaces
+
+#### Copilot Agent Write Activities (v2.4 — April 12, 2026)
+
+- **`/mcp/v1/*` Write Namespace** — alongside the existing read surface, with feature flag (`MCP_WRITES_ENABLED`), required `X-Idempotency-Key` header, replay-cache, request-hash conflict detection, and universal `?dryRun=true`
+- **Audit Envelope** — every write response carries `idempotent`, `dryRun`, `auditId`, and `correlationId`
+- **`mcp_write_audit` Table** — per-request idempotency, request hash, response body, resource, dry-run flag
+- **Stricter Write Roles** — admin, pm, portfolio-manager only (executive and billing-admin dropped from write paths)
+- **Client Discovery & Creation** — `GET /mcp/clients` with linkage signals (`hasHubspotLink`, `hasTeamsLink`, `activeEstimateCount`); `POST /mcp/v1/clients` with near-match duplicate detection (normalized + Levenshtein, 409 with candidates unless `force: true`)
+- **Estimate Creation (3 variants)** — `POST /mcp/v1/estimates/from-narrative` (AI-generated, ≤8 line items), `POST /mcp/v1/estimates/block-hours`, `POST /mcp/v1/estimates/fixed-price`, with prompt-injection sanitization on `narrative` and pre-create duplicate check
+- **HubSpot Linkage** — `GET /mcp/v1/hubspot/search?type=company|deal&query=` and `POST /mcp/v1/clients/:id/hubspot-link` with `createIfMissing` flag
+- **Teams Team & Channel Linkage** — `POST /mcp/v1/clients/:id/teams-link` and `POST /mcp/v1/projects/:id/teams-channel` with partial-failure envelope (`warnings[]` preserved)
+- **OpenAPI Spec** — bumped to v1.2.0; connector setup doc rewritten to cover the write flow
+
+#### Planner Sync Robustness
+
+- **Last-Write-Wins Conflict Resolution** — bidirectional sync now resolves simultaneous edits deterministically (Task #126)
+- **Admin Alerts** — failures surface to admins with actionable context (project, task, error class)
+- **Improved Retry/Backoff** — Graph throttling handled with exponential backoff
+- **Audit Trail** — every sync action logged
+
+#### Operational & Performance Improvements
+
+- **Persistent Cache** — startup warm-up loader rebuilds the in-memory cache after restarts (Task #106)
+- **Invoice List Speed-Up** — bulk-query approach replaces N+1 lookups (Task #105)
+- **User Page Pagination** — server-side pagination on the Users page (Task #116)
+- **Background Job Cleanup** — auto-cleanup of old `background_jobs` rows (Task #121); admin sidebar link added
+- **Financial-Comparison SQL Rewrite** — major rewrite to use SQL aggregation instead of in-process processing (Task #117); dramatic speed-up on large tenants
+- **Global Deep-Link Search** — search across projects, users, and time entries from the global search bar
+- **Actionable Data Quality Warnings** — warnings now expand to show affected items (Task #86)
+- **Calendar Suggestions Detail** — expandable per-event detail in the calendar suggestions panel (Task #108)
+- **RAIDD Visibility** — "Visible to clients" toggle on RAIDD entries
+- **Copilot Studio Manifest Sync** — Copilot Studio client IDs synced into the Azure app manifest (Task #52)
+
+#### Bug Fixes
+
+- Fixed "Set Up Teams Channel" button incorrectly showing on estimates that already had a channel
+- Fixed three Teams channel setup bugs on the project detail page
+- Fixed TimeGrid project picker so it shows and searches by project code
+
+#### Database Schema
+
+- New tables for Galaxy: `galaxy_apps`, `galaxy_tokens`, `galaxy_webhook_deliveries`, plus auth-code and refresh-token storage (migration `0009_galaxy_client_portal_api.sql`)
+- New tables for Notifications: `notifications`, `notification_preferences`, `push_subscriptions`, `digest_schedules`, `digest_deliveries`
+- New tables for Estimate Version History: `estimate_versions` with snapshot payload + actor metadata
+- New tables for Sign-Offs Audit: `sign_off_audit_log`
+- New columns on `estimates` for quote currency separate from cost currency
+- New columns on `payment_milestones` for portal-visibility flags
+
+#### Documentation
+
+- New `docs/galaxy-api.md` covering OAuth flows, scope catalog, webhook signing, and rate limits
+- Updated user guide and admin guide for Galaxy Client Portal, Notifications, Multi-Currency Estimates, Time Grid 2.0, Estimate Version History, Client Portal Approvals & Sign-offs, and Payment Milestone Billing Automation
+- Roadmap and backlog updated for v2.5
+
+---
+
 ### Version 2.1 (April 3, 2026)
 
 **Release Date:** April 3, 2026

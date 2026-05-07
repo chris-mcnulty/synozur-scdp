@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { z } from "zod";
+import { enqueueGalaxyEvent } from "../services/galaxy-webhook-delivery.js";
 
 function escapeHtml(text: string): string {
   return text
@@ -469,6 +470,29 @@ export function registerTeamsAutomationRoutes(app: Express, deps: TeamsAutomatio
           sharepointPageUrl,
           publishedBy: user?.id || null,
         });
+
+        // Notify Galaxy client portal apps. Per-client fan-out — only apps
+        // with an active grant for this project's client receive the event.
+        // Fire-and-forget; webhook failures must not block publish. Reuse
+        // the `project` already loaded + tenant-validated above so we don't
+        // run an extra DB round-trip and can't diverge from the validated
+        // record.
+        if (tenantId && project.clientId) {
+          enqueueGalaxyEvent({
+            tenantId,
+            event: "status_report.published",
+            clientId: project.clientId,
+            data: {
+              statusReportId: report.id,
+              projectId,
+              reportPeriod,
+              ragStatus,
+              publishedAt: report.publishedAt,
+            },
+          }).catch((err) =>
+            console.error("[GALAXY] status_report.published enqueue failed:", err)
+          );
+        }
 
         res.json({ ...report, published: !!sharepointPageUrl });
       } catch (error: any) {
