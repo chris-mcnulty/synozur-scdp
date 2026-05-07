@@ -21,11 +21,23 @@ Version history and release notes for Constellation, organized from newest to ol
 
 **Release Date:** May 7, 2026
 **Status:** Production Release
-**Codename:** Pulse
+**Codename:** Galaxy
 
-Version 2.5 is a major release headlined by a fully-shipped **Notifications System**, **multi-currency estimates**, an Excel-grade **Time Grid 2.0**, **estimate version history**, an **internal sign-offs & approvals workflow**, **payment-milestone billing automation**, an **AI Project Manager Agent**, and Planner sync robustness with last-write-wins. The release also lands the v2.4 **Copilot Agent Write Activities** Phases 0–5 (April 12) under one umbrella for the public release notes.
+Version 2.5 is a major release headlined by the new **Galaxy Client Portal API**, a fully-shipped **Notifications System**, **multi-currency estimates**, an Excel-grade **Time Grid 2.0**, **estimate version history**, **client portal approvals & sign-offs**, **payment-milestone billing automation**, an **AI Project Manager Agent**, and Planner sync robustness with last-write-wins. The release also lands the v2.4 **Copilot Agent Write Activities** Phases 0–5 (April 12) under one umbrella for the public release notes.
 
-> **Not in this release:** the Galaxy Client Portal API code is in the repo and tested, but it is gated on security review and pilot enablement and is **not** part of v2.5. See the Roadmap and Backlog for current Galaxy status.
+#### Galaxy Client Portal API
+
+- **External `/api/galaxy/v1/*` API** — new externally-consumable HTTP API that lets approved client-portal apps read project artifacts and post sign-offs on behalf of a client user, running alongside (and independent of) the internal A2A and MCP APIs
+- **OAuth2 Grants** — authorization-code (delegated, end-user) and client-credentials (machine-to-machine) flows
+- **Tenant + Client Scoping** — every token carries `tenantId` and `clientId` claims, all data automatically scoped server-side
+- **Microsoft Entra Authentication** — tokens are issued by Constellation's own authorization server and authenticated against Entra
+- **Signed Webhooks** — optional webhook URL receives signed event payloads (project, estimate, sign-off, document); HMAC signing secret displayed once at registration with rotation flow
+- **App Registration UI** — new **Settings → Galaxy API** page (and platform admin `/admin/galaxy`) for registering apps with name, description, redirect URIs, webhook URL, allowed origins (CORS allow-list), and scope ceiling
+- **Hashed Secret Storage** — client secret and webhook signing secret stored hashed; one-time display on creation, rotation flow if lost
+- **Document Streaming** — Galaxy v1 streams document downloads through the portal so SharePoint Embedded URLs are never exposed to client apps
+- **Client Portal Approvals & Sign-offs** — payment milestones, status reports, and estimate sign-offs all reachable through Galaxy
+- **Comprehensive Test Coverage** — automated test suites for auth, scopes, routes, and webhook delivery (Tasks #127, #142)
+- **Documentation** — full API reference at `docs/galaxy-api.md`
 
 #### Notifications System (Promoted from Deprioritized → Shipped)
 
@@ -59,15 +71,13 @@ Version 2.5 is a major release headlined by a fully-shipped **Notifications Syst
 - **Snapshot on Send** — every email/send creates a version snapshot for audit (Task #115)
 - **History Panel** — shows who saved each snapshot and when, with side-by-side compare and restore (Task #114)
 
-#### Internal Sign-offs & Approvals Workflow
-
-*Internal app routes only in v2.5. The external Galaxy Client Portal API exposure of these flows is forthcoming and not part of this release.*
+#### Client Portal Approvals & Sign-offs
 
 - **Sign-Off Status Badges** — visible on estimates and milestone list views (Task #134)
-- **Inline Status Report Acknowledgement** — acknowledge a status report directly from the report view (Task #136)
+- **Inline Status Report Acknowledgement** — clients can acknowledge a status report directly from the report view (Task #136)
 - **Admin Sign-Offs Audit Log** — new audit log page capturing actor, target, comment, and source for every sign-off (Task #135)
-- **Approvals & Sign-offs Workflow** — end-to-end internal approval flow (Task #104)
-- **Payment Milestones Acknowledgement Surface** — payment milestones surfaced for client-side acknowledgement via internal app routes (Task #89)
+- **Client Portal Approvals & Sign-offs Workflow** — end-to-end approval flow exposed through Galaxy (Task #104)
+- **Payment Milestones in Client Portal** — clients can view and acknowledge their payment milestones (Task #89)
 - **Cascade Allocation Improvements** — shifted-from-milestone indicator (Task #91) and PM "undo" for an applied cascade date shift (Task #90)
 
 #### Payment Milestone Billing Automation
@@ -123,17 +133,17 @@ Version 2.5 is a major release headlined by a fully-shipped **Notifications Syst
 
 #### Database Schema
 
+- New tables for Galaxy: `galaxy_apps`, `galaxy_tokens`, `galaxy_webhook_deliveries`, plus auth-code and refresh-token storage (migration `0009_galaxy_client_portal_api.sql`)
 - New tables for Notifications: `notifications`, `notification_preferences`, `push_subscriptions`, `digest_schedules`, `digest_deliveries`
 - New tables for Estimate Version History: `estimate_versions` with snapshot payload + actor metadata
 - New tables for Sign-Offs Audit: `sign_off_audit_log`
 - New columns on `estimates` for quote currency separate from cost currency
-- New columns on `payment_milestones` for client-acknowledgement metadata
-
-*Galaxy schema (`0009_galaxy_client_portal_api.sql`) is merged but not part of this release; tables remain unused until Galaxy ships.*
+- New columns on `payment_milestones` for portal-visibility flags
 
 #### Documentation
 
-- Updated user guide and admin guide for Notifications, Multi-Currency Estimates, Time Grid 2.0, Estimate Version History, Internal Sign-offs Workflow, and Payment Milestone Billing Automation
+- New `docs/galaxy-api.md` covering OAuth flows, scope catalog, webhook signing, and rate limits
+- Updated user guide and admin guide for Galaxy Client Portal, Notifications, Multi-Currency Estimates, Time Grid 2.0, Estimate Version History, Client Portal Approvals & Sign-offs, and Payment Milestone Billing Automation
 - Roadmap and backlog updated for v2.5
 
 ---

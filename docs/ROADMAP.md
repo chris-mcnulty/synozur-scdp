@@ -58,6 +58,20 @@ Constellation empowers consulting organizations to deliver exceptional client va
 
 The following major features have been delivered and are live in production. See the [Changelog](/changelog) for detailed release notes.
 
+### ✅ Galaxy Client Portal API
+**Completed:** May 2026 (v2.5)
+- New external HTTP API mounted at `/api/galaxy/v1/*` for approved client-portal apps to read project artifacts and post sign-offs on behalf of client users
+- OAuth2 authorization-code (delegated) and client-credentials grants, tokens issued by Constellation's authorization server and authenticated against Microsoft Entra
+- Tenant- and client-scoped tokens — every token carries `tenantId` and `clientId` claims, all data scoped automatically
+- Per-app registration UI under **Settings → Galaxy API** (name, redirect URIs, webhook URL, allowed origins, scope ceiling)
+- Hashed storage of client secret and webhook signing secret; one-time display on creation with rotation flow
+- Document downloads streamed through the portal (no direct SharePoint exposure)
+- Signed webhook delivery for project, estimate, sign-off, and document events with retry and audit
+- Galaxy admin page (`/admin/galaxy`) for app management, scope review, and webhook delivery inspection
+- Comprehensive test suites for auth, scopes, routes, and webhook delivery
+- Schema migration `0009_galaxy_client_portal_api.sql`
+- Documentation at `docs/galaxy-api.md`
+
 ### ✅ Notifications System
 **Completed:** May 2026 (v2.5)
 **Note:** Previously deprioritized after Feb 2026 user feedback; promoted and delivered alongside the Galaxy and digest work in v2.5.
@@ -93,14 +107,13 @@ The following major features have been delivered and are live in production. See
 - Side-by-side compare and restore from any prior version
 - Backfilled snapshots so existing estimates surface their full history
 
-### ✅ Internal Sign-offs & Approvals Workflow
+### ✅ Client Portal Approvals & Sign-offs
 **Completed:** May 2026 (v2.5)
 - Sign-off badges on estimates and milestone list views (Task #134)
 - Inline status report acknowledgement (Task #136)
 - Admin sign-offs audit log page (Task #135) capturing actor, target, comment, and source
-- Payment milestones surfaced for client-side acknowledgement (Task #89) — internal app routes; external Galaxy exposure forthcoming
+- Payment milestones exposed to client portal users via Galaxy (Task #89)
 - Cascade allocations: shifted-from-milestone indicator (Task #91) and PM "undo" for an applied cascade date shift (Task #90)
-- Foundation for the forthcoming Galaxy Client Portal API external surface
 
 ### ✅ Payment Milestone Billing Automation
 **Completed:** May 2026 (v2.5)
@@ -502,29 +515,6 @@ The following major features have been delivered and are live in production. See
 ---
 
 ## Near-Term Priorities (Q2 2026)
-
-### 🌌 Galaxy Client Portal API
-
-**Status:** 🚧 In Progress — code in repo, not yet released to customers
-**Target Completion:** Q2 2026 (post-v2.5)
-**Value Proposition:** Expose Constellation's project artifacts and sign-off workflows to approved client-portal apps through a tenant- and client-scoped external API. Galaxy lets customers and partners build their own client-facing experiences (white-label portals, embedded widgets, downstream automations) without each integration needing bespoke security review.
-
-#### Planned Deliverables
-- External `/api/galaxy/v1/*` API mounted alongside (and independent of) the internal A2A and MCP APIs
-- OAuth2 authorization-code (delegated) and client-credentials grants
-- Tokens issued by Constellation's authorization server and authenticated against Microsoft Entra
-- Tenant- and client-scoped tokens — every token carries `tenantId` and `clientId` claims, all data scoped automatically server-side
-- Per-app registration UI under **Settings → Galaxy API** (name, redirect URIs, webhook URL, allowed origins, scope ceiling)
-- Hashed storage of client secret and webhook signing secret with one-time display and rotation flow
-- Document download streaming through the portal (no direct SharePoint exposure)
-- Signed webhook delivery for project, estimate, sign-off, and document events with retry and audit
-- Galaxy admin page for app management, scope review, and webhook delivery inspection
-- Comprehensive test suites for auth, scopes, routes, and webhook delivery
-- Documentation at `docs/galaxy-api.md`
-
-**Status Note:** The Galaxy code, schema migration (`0009_galaxy_client_portal_api.sql`), test suites, and documentation are all merged. The release is gated on additional security review, scope-catalog finalization, and tenant-pilot enablement. It is **not** part of the v2.5 release.
-
----
 
 ### ☁️ Cloud Deployment Migration: GCP → Azure
 
@@ -1113,12 +1103,13 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-**May 7, 2026 — Version 2.5**
+**May 7, 2026 — Version 2.5 (Galaxy)**
+- Major release adding the **Galaxy Client Portal API** — external OAuth2 surface for client-portal apps with tenant- and client-scoped tokens, signed webhooks, document streaming, and an admin registration UI
 - **Notifications System shipped end-to-end** — bell, full-page view, per-user preferences, browser push, weekly digest emails with per-tenant schedule, SendGrid open tracking; previously-deprioritized item now marked Complete
 - **Multi-Currency Estimates & Invoicing** — quote vs cost currency, Sub-SOW propagation, client-currency totals on PDFs and invoice batches
 - **Excel-Like Time Grid 2.0** — virtualised two-tab grid, drag-fill series extension, clipboard parser unit tests, project-code search
 - **Estimate Version History** — auto-snapshot on edit/send, who-saved-when panel, backfilled snapshots
-- **Internal Sign-offs & Approvals Workflow** — sign-off badges, inline status-report acknowledgement, admin sign-offs audit log, payment milestones surfaced for client-side acknowledgement (foundation for the forthcoming Galaxy external surface)
+- **Client Portal Approvals & Sign-offs** — sign-off badges, inline status-report acknowledgement, admin sign-offs audit log, payment milestones exposed via Galaxy
 - **Payment Milestone Billing Automation** — auto-generated invoice batches, portfolio billing-status surface, hours-budget alerts and empty-state callouts
 - **AI Project Manager Agent** (Task #143) — conversational PM agent on top of v2.4 Copilot write infrastructure
 - **Planner Sync Robustness** — last-write-wins, admin alerts, retry/backoff (closes part of Phase 2 Teams Planner work)
@@ -1126,7 +1117,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 - Notifications System moved from "Deprioritized" Q2–Q3 2026 to ✅ Complete
 - Advanced Financial Reporting "Completed" subsection extended with the financial-comparison SQL rewrite
 - Microsoft Teams Planner Integration Phase 2 marked Partially Shipped (LWW + audit trail done; webhook delivery and multitenant app registration still open)
-- **Galaxy Client Portal API** added to Near-Term Q2 2026 priorities (code merged, release pending — not part of v2.5)
 
 **April 1, 2026 — Version 2.0 (Nebula)**
 - Major version bump to 2.0
