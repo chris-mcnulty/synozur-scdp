@@ -1210,9 +1210,28 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
       const tenantId = req.user?.tenantId;
-      const projects = await storage.getProjects(tenantId);
-      res.json(projects);
+      // Backward-compat: only paginate when caller explicitly passes limit or offset
+      const hasPagination = req.query.limit !== undefined || req.query.offset !== undefined;
+      if (!hasPagination) {
+        const projects = await storage.getProjects(tenantId);
+        return res.json(projects);
+      }
+      const { projectFiltersSchema } = await import("@shared/pagination");
+      const parsed = projectFiltersSchema.parse(req.query);
+      const result = await storage.getProjectsPaginated({
+        tenantId,
+        limit: parsed.limit,
+        offset: parsed.offset,
+        search: parsed.search,
+        status: parsed.status,
+        clientId: parsed.clientId,
+        pmId: parsed.pmId,
+        sortDir: parsed.sortDir,
+        sortBy: parsed.sortBy,
+      });
+      return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
     } catch (error) {
+      console.error("Error fetching projects:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
     }
   });
