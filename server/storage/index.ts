@@ -1137,6 +1137,9 @@ export interface IStorage {
   getGalaxyAppGrant(appId: string, clientUserId: string): Promise<any>;
   revokeGalaxyAppGrant(id: string): Promise<void>;
   touchGalaxyGrantUsed(id: string): Promise<void>;
+  listGalaxyAppGrants(appId: string, tenantId: string): Promise<any[]>;
+  adminGrantGalaxyConsent(appId: string, tenantId: string, clientId: string, scopes: string[], adminUserId: string): Promise<any>;
+  revokeGalaxyAppGrantById(grantId: string, tenantId: string): Promise<void>;
   createGalaxyAuthCode(data: any): Promise<any>;
   consumeGalaxyAuthCode(code: string): Promise<any>;
   writeGalaxyAudit(data: {

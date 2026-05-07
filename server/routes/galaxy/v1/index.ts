@@ -21,6 +21,7 @@ import {
   invoiceBatches,
   documentMetadata,
   type GalaxyScope,
+  clients,
 } from "@shared/schema";
 import {
   ACCESS_TTL_SECONDS,
@@ -1105,6 +1106,58 @@ export function registerGalaxyV1Routes(
     if (!galaxyApp || galaxyApp.tenantId !== tenantId) return res.status(404).json({ error: "not_found" });
     await storage.disableGalaxyApp(galaxyApp.id);
     res.json({ disabled: true });
+  });
+
+  // ─── Admin: list grants for an app ──────────────────────────────────────────
+  app.get(`${adminBase}/apps/:id/grants`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    const tenantId = req.user!.tenantId!;
+    const galaxyApp = await storage.getGalaxyApp(req.params.id);
+    if (!galaxyApp || galaxyApp.tenantId !== tenantId) return res.status(404).json({ error: "not_found" });
+    const grants = await storage.listGalaxyAppGrants(galaxyApp.id, tenantId);
+    res.json(grants);
+  });
+
+  // ─── Admin: grant consent for a client (creates/re-activates a grant record) ─
+  app.post(`${adminBase}/apps/:id/grants`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    const tenantId = req.user!.tenantId!;
+    const adminUserId = req.user!.id;
+    const galaxyApp = await storage.getGalaxyApp(req.params.id);
+    if (!galaxyApp || galaxyApp.tenantId !== tenantId) return res.status(404).json({ error: "not_found" });
+    if (galaxyApp.disabledAt) return res.status(400).json({ error: "app_disabled" });
+    const schema = z.object({
+      clientId: z.string().min(1),
+      scopes: z.array(z.string()).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "invalid_request", details: parsed.error.format() });
+    const { clientId, scopes } = parsed.data;
+    // Verify the client belongs to this tenant.
+    const [client] = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId)))
+      .limit(1);
+    if (!client) return res.status(400).json({ error: "invalid_client", message: "Client not found in this tenant" });
+    // If the app is scoped to a specific client, enforce it.
+    if (galaxyApp.clientId && galaxyApp.clientId !== clientId) {
+      return res.status(403).json({ error: "client_scope_mismatch", message: "App is scoped to a different client" });
+    }
+    const grantedScopes = intersectScopes(
+      scopes && scopes.length > 0 ? scopes : galaxyApp.allowedScopes,
+      galaxyApp.allowedScopes,
+    );
+    if (grantedScopes.length === 0) return res.status(400).json({ error: "invalid_scope" });
+    const grant = await storage.adminGrantGalaxyConsent(galaxyApp.id, tenantId, clientId, grantedScopes, adminUserId);
+    res.json(grant);
+  });
+
+  // ─── Admin: revoke a specific grant ─────────────────────────────────────────
+  app.delete(`${adminBase}/apps/:id/grants/:grantId`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    const tenantId = req.user!.tenantId!;
+    const galaxyApp = await storage.getGalaxyApp(req.params.id);
+    if (!galaxyApp || galaxyApp.tenantId !== tenantId) return res.status(404).json({ error: "not_found" });
+    await storage.revokeGalaxyAppGrantById(req.params.grantId, tenantId);
+    res.json({ revoked: true });
   });
 
   app.get(`${adminBase}/audit`, deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {

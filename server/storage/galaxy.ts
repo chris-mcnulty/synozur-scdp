@@ -10,11 +10,29 @@ import {
   type GalaxyAuthCode,
   type GalaxyApiAudit,
   type GalaxyWebhookDelivery,
+  users,
+  clients,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import crypto from "crypto";
 import type { IStorage } from "./index";
+
+export interface GalaxyGrantRow {
+  id: string;
+  tenantId: string;
+  appId: string;
+  clientUserId: string;
+  userEmail: string | null;
+  userFirstName: string | null;
+  userLastName: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  scopes: string[];
+  revokedAt: Date | null;
+  lastUsedAt: Date | null;
+  createdAt: Date;
+}
 
 export const galaxyMethods: ThisType<IStorage> = {
   // ─── apps ───────────────────────────────────────────────────────
@@ -95,6 +113,93 @@ export const galaxyMethods: ThisType<IStorage> = {
 
   async touchGalaxyGrantUsed(id: string): Promise<void> {
     await db.update(galaxyAppGrants).set({ lastUsedAt: new Date() }).where(eq(galaxyAppGrants.id, id));
+  },
+
+  async listGalaxyAppGrants(appId: string, tenantId: string): Promise<GalaxyGrantRow[]> {
+    const rows = await db
+      .select({
+        id: galaxyAppGrants.id,
+        tenantId: galaxyAppGrants.tenantId,
+        appId: galaxyAppGrants.appId,
+        clientUserId: galaxyAppGrants.clientUserId,
+        userEmail: users.email,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        clientId: galaxyAppGrants.clientId,
+        clientName: clients.name,
+        scopes: galaxyAppGrants.scopes,
+        revokedAt: galaxyAppGrants.revokedAt,
+        lastUsedAt: galaxyAppGrants.lastUsedAt,
+        createdAt: galaxyAppGrants.createdAt,
+      })
+      .from(galaxyAppGrants)
+      .leftJoin(users, eq(galaxyAppGrants.clientUserId, users.id))
+      .leftJoin(clients, eq(galaxyAppGrants.clientId, clients.id))
+      .where(and(eq(galaxyAppGrants.appId, appId), eq(galaxyAppGrants.tenantId, tenantId)))
+      .orderBy(desc(galaxyAppGrants.createdAt));
+    return rows as GalaxyGrantRow[];
+  },
+
+  async adminGrantGalaxyConsent(
+    appId: string,
+    tenantId: string,
+    clientId: string,
+    scopes: string[],
+    adminUserId: string,
+  ): Promise<GalaxyAppGrant> {
+    // If a non-revoked grant already exists for this app+client pair, return it.
+    const [existing] = await db
+      .select()
+      .from(galaxyAppGrants)
+      .where(and(
+        eq(galaxyAppGrants.appId, appId),
+        eq(galaxyAppGrants.tenantId, tenantId),
+        eq(galaxyAppGrants.clientId, clientId),
+        isNull(galaxyAppGrants.revokedAt),
+      ))
+      .limit(1);
+    if (existing) return existing;
+
+    // If a revoked grant exists for this app+client, un-revoke it.
+    const [revoked] = await db
+      .select()
+      .from(galaxyAppGrants)
+      .where(and(
+        eq(galaxyAppGrants.appId, appId),
+        eq(galaxyAppGrants.tenantId, tenantId),
+        eq(galaxyAppGrants.clientId, clientId),
+      ))
+      .limit(1);
+    if (revoked) {
+      const [updated] = await db
+        .update(galaxyAppGrants)
+        .set({ revokedAt: null, scopes })
+        .where(eq(galaxyAppGrants.id, revoked.id))
+        .returning();
+      return updated;
+    }
+
+    // No existing grant for this client — create one with the admin's userId.
+    // The unique constraint is (appId, clientUserId); if this admin already has
+    // a grant for this app (for a different client), update it in-place.
+    const result = await db.execute(sql`
+      INSERT INTO galaxy_app_grants (tenant_id, app_id, client_user_id, client_id, scopes)
+      VALUES (${tenantId}, ${appId}, ${adminUserId}, ${clientId}, ${JSON.stringify(scopes)}::jsonb)
+      ON CONFLICT (app_id, client_user_id)
+      DO UPDATE SET client_id = EXCLUDED.client_id,
+                    scopes    = EXCLUDED.scopes,
+                    revoked_at = NULL
+      RETURNING *
+    `);
+    const resultRows = (result as any).rows ?? result;
+    return resultRows[0] as GalaxyAppGrant;
+  },
+
+  async revokeGalaxyAppGrantById(grantId: string, tenantId: string): Promise<void> {
+    await db
+      .update(galaxyAppGrants)
+      .set({ revokedAt: new Date(), refreshTokenHash: null })
+      .where(and(eq(galaxyAppGrants.id, grantId), eq(galaxyAppGrants.tenantId, tenantId)));
   },
 
   // ─── auth codes ─────────────────────────────────────────────────

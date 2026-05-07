@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Copy, Trash2, RotateCw, Plus, ExternalLink } from "lucide-react";
+import { Copy, Trash2, RotateCw, Plus, ExternalLink, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import { GALAXY_SCOPES } from "@shared/schema";
 import { Layout } from "@/components/layout/layout";
 
@@ -39,6 +39,21 @@ interface ClientOption {
   id: string;
   name: string;
   shortName?: string | null;
+}
+
+interface GalaxyGrant {
+  id: string;
+  appId: string;
+  clientUserId: string;
+  userEmail: string | null;
+  userFirstName: string | null;
+  userLastName: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  scopes: string[];
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
 }
 
 interface GalaxyAudit {
@@ -205,14 +220,110 @@ function RegisterAppDialog() {
   );
 }
 
-function AppRow({ a }: { a: GalaxyApp }) {
+function GrantConsentDialog({ app, clients }: { app: GalaxyApp; clients: ClientOption[] }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [clientId, setClientId] = useState<string>(app.clientId ?? "__none__");
+  const [scopes, setScopes] = useState<string[]>(app.allowedScopes);
+
+  const grant = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/galaxy/apps/${app.id}/grants`, {
+        method: "POST",
+        body: JSON.stringify({ clientId, scopes }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/galaxy/apps", app.id, "grants"] });
+      toast({ title: "Consent granted", description: "The client can now obtain client_credentials tokens." });
+      setOpen(false);
+    },
+    onError: (e: any) => toast({ title: "Failed to grant consent", description: e.message, variant: "destructive" }),
+  });
+
+  const eligibleClients = app.clientId
+    ? clients.filter((c) => c.id === app.clientId)
+    : clients;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" disabled={!!app.disabledAt}>
+          <ShieldCheck className="h-3 w-3 mr-1" />Grant consent
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Grant client consent — {app.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <p className="text-sm text-muted-foreground">
+            Creates a pre-authorized consent record so this app can obtain <code className="bg-muted px-1 rounded text-xs">client_credentials</code> tokens for the selected client without requiring a portal user to complete the OAuth flow first.
+          </p>
+          <div>
+            <Label>Client</Label>
+            <Select
+              value={clientId}
+              onValueChange={setClientId}
+              disabled={!!app.clientId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a client…" />
+              </SelectTrigger>
+              <SelectContent>
+                {!app.clientId && <SelectItem value="__none__">— Select a client —</SelectItem>}
+                {eligibleClients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.shortName ? `${c.shortName} — ${c.name}` : c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {app.clientId && (
+              <p className="text-xs text-muted-foreground mt-1">This app is scoped to one client and cannot be changed.</p>
+            )}
+          </div>
+          <div>
+            <Label>Scopes to grant</Label>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {app.allowedScopes.map((s) => (
+                <label key={s} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={scopes.includes(s)}
+                    onCheckedChange={(v) => setScopes(v ? [...scopes, s] : scopes.filter((x) => x !== s))}
+                  />
+                  {s}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => grant.mutate()}
+            disabled={grant.isPending || !clientId || clientId === "__none__" || scopes.length === 0}
+          >
+            {grant.isPending ? "Granting…" : "Grant consent"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AppRow({ a, clients }: { a: GalaxyApp; clients: ClientOption[] }) {
   const { toast } = useToast();
   const [secret, setSecret] = useState<string | null>(null);
+  const [showGrants, setShowGrants] = useState(false);
+
+  const grants = useQuery<GalaxyGrant[]>({
+    queryKey: ["/api/admin/galaxy/apps", a.id, "grants"],
+    queryFn: () => apiRequest(`/api/admin/galaxy/apps/${a.id}/grants`),
+    enabled: showGrants,
+  });
 
   const rotate = useMutation({
-    mutationFn: async () => {
-      return apiRequest(`/api/admin/galaxy/apps/${a.id}/rotate-secret`, { method: "POST" });
-    },
+    mutationFn: async () => apiRequest(`/api/admin/galaxy/apps/${a.id}/rotate-secret`, { method: "POST" }),
     onSuccess: (data) => setSecret(data.clientSecret),
   });
   const disable = useMutation({
@@ -221,6 +332,15 @@ function AppRow({ a }: { a: GalaxyApp }) {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/galaxy/apps"] });
       toast({ title: "App disabled" });
     },
+  });
+  const revokeGrant = useMutation({
+    mutationFn: (grantId: string) =>
+      apiRequest(`/api/admin/galaxy/apps/${a.id}/grants/${grantId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/galaxy/apps", a.id, "grants"] });
+      toast({ title: "Consent revoked" });
+    },
+    onError: (e: any) => toast({ title: "Failed to revoke", description: e.message, variant: "destructive" }),
   });
 
   return (
@@ -242,7 +362,8 @@ function AppRow({ a }: { a: GalaxyApp }) {
             <p className="text-xs text-muted-foreground mt-1">{a.id}</p>
             {a.description && <p className="text-sm mt-2">{a.description}</p>}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
+            <GrantConsentDialog app={a} clients={clients} />
             <Button size="sm" variant="outline" onClick={() => rotate.mutate()} disabled={!!a.disabledAt || rotate.isPending}>
               <RotateCw className="h-3 w-3 mr-1" />Rotate secret
             </Button>
@@ -266,6 +387,71 @@ function AppRow({ a }: { a: GalaxyApp }) {
         <div><span className="text-muted-foreground">Origins:</span> {a.originAllowList.join(", ") || "any"}</div>
         <div><span className="text-muted-foreground">Scopes:</span> {a.allowedScopes.join(", ")}</div>
         <div><span className="text-muted-foreground">Rate limits:</span> {a.rateLimitPerMin}/min app · {a.tokenRateLimitPerMin}/min token</div>
+
+        {/* Client consents section */}
+        <div className="pt-2 border-t">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-sm font-medium hover:text-foreground text-muted-foreground"
+            onClick={() => setShowGrants((v) => !v)}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Client consents
+            {showGrants ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </button>
+          {showGrants && (
+            <div className="mt-2">
+              {grants.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+              {grants.data?.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">
+                  No consents yet. Use "Grant consent" to pre-authorize a client for <code className="bg-muted px-1 rounded">client_credentials</code> tokens.
+                </p>
+              )}
+              {grants.data && grants.data.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Client</TableHead>
+                      <TableHead className="text-xs">Granted by</TableHead>
+                      <TableHead className="text-xs">Scopes</TableHead>
+                      <TableHead className="text-xs">Last used</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs w-16"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {grants.data.map((g) => (
+                      <TableRow key={g.id}>
+                        <TableCell className="text-xs">{g.clientName ?? g.clientId?.slice(0, 8) ?? "—"}</TableCell>
+                        <TableCell className="text-xs">{g.userEmail ?? g.clientUserId.slice(0, 8)}</TableCell>
+                        <TableCell className="text-xs">{g.scopes.join(", ")}</TableCell>
+                        <TableCell className="text-xs">{g.lastUsedAt ? new Date(g.lastUsedAt).toLocaleDateString() : "Never"}</TableCell>
+                        <TableCell>
+                          <Badge variant={g.revokedAt ? "destructive" : "default"} className="text-xs">
+                            {g.revokedAt ? "Revoked" : "Active"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {!g.revokedAt && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-destructive hover:text-destructive"
+                              onClick={() => revokeGrant.mutate(g.id)}
+                              disabled={revokeGrant.isPending}
+                            >
+                              Revoke
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -275,6 +461,7 @@ export default function GalaxyAdminPage() {
   const apps = useQuery<GalaxyApp[]>({ queryKey: ["/api/admin/galaxy/apps"] });
   const audit = useQuery<GalaxyAudit[]>({ queryKey: ["/api/admin/galaxy/audit"] });
   const webhooks = useQuery<GalaxyWebhook[]>({ queryKey: ["/api/admin/galaxy/webhooks"] });
+  const clientsQuery = useQuery<ClientOption[]>({ queryKey: ["/api/clients"] });
 
   return (
     <Layout>
@@ -310,7 +497,7 @@ export default function GalaxyAdminPage() {
               No apps registered yet.
             </CardContent></Card>
           )}
-          {apps.data?.map((a) => <AppRow key={a.id} a={a} />)}
+          {apps.data?.map((a) => <AppRow key={a.id} a={a} clients={clientsQuery.data ?? []} />)}
         </TabsContent>
 
         <TabsContent value="audit" className="mt-4">
