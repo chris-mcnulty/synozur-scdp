@@ -661,7 +661,9 @@ export default function Billing() {
                               data-testid={`checkbox-project-${project.id}`}
                             />
                             <Label htmlFor={project.id} className="flex-1">
-                              <div className="font-medium">{project.name}</div>
+                              <div className="font-medium">
+                                {(project.client.shortName || project.client.name)} | {project.name}
+                              </div>
                               <div className="text-sm text-muted-foreground">
                                 {project.client.name}
                               </div>
