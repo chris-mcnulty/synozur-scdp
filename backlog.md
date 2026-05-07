@@ -1,14 +1,21 @@
 # Constellation Product Backlog
 
 **Last Updated**: May 7, 2026
-**Version**: 7.0 — v2.5 release: Galaxy Client Portal API, Notifications System, Multi-Currency Estimates, Time Grid 2.0, Estimate Version History, Client Portal Approvals & Sign-offs, Payment Milestone Billing Automation, AI Project Manager Agent, Planner LWW. Notifications System (previously deprioritized) marked ✅ Complete. Copilot Write Phases 0–5 fully shipped.
+**Version**: 7.0 — v2.5 release: Notifications System, Multi-Currency Estimates, Time Grid 2.0, Estimate Version History, Internal Sign-offs & Approvals, Payment Milestone Billing Automation, AI Project Manager Agent, Planner LWW. Notifications System (previously deprioritized) marked ✅ Complete. Copilot Write Phases 0–5 fully shipped. Galaxy Client Portal API code merged but **not yet released** — tracked as In Progress, gated on security review and pilot enablement.
 
 ---
 
-## ✅ Recently Completed (v2.5 — May 2026)
+## 🆕 In Progress — Galaxy Client Portal API
 
-### Galaxy Client Portal API ✅ COMPLETE
-- [x] External `/api/galaxy/v1/*` API for approved client-portal apps
+**Status:** 🚧 Code merged; release pending (NOT in v2.5)
+**Effort:** High — substantially built; remaining work is security review, scope-catalog finalization, and pilot enablement
+**Target:** Q2 2026 (post-v2.5)
+
+### Why
+Expose Constellation's project artifacts and sign-off workflows to approved client-portal apps through a tenant- and client-scoped external API. Galaxy lets customers and partners build their own client-facing experiences (white-label portals, embedded widgets, downstream automations) without each integration needing bespoke security review.
+
+### Built (in repo, awaiting release)
+- [x] External `/api/galaxy/v1/*` API mounted alongside (and independent of) the internal A2A and MCP APIs
 - [x] OAuth2 authorization-code (delegated) and client-credentials grants
 - [x] Token issuance against Microsoft Entra with `tenantId` + `clientId` claims for automatic scoping
 - [x] Per-app registration UI under Settings → Galaxy API (redirect URIs, webhook URL, allowed origins, scope ceiling)
@@ -16,8 +23,21 @@
 - [x] Document download streaming through the portal (no direct SharePoint exposure)
 - [x] Signed webhook delivery with retry/audit
 - [x] Admin Galaxy page (`/admin/galaxy`)
-- [x] Test suites for auth, scopes, routes, webhook delivery (Task #142)
+- [x] Test suites for auth, scopes, routes, webhook delivery (Tasks #127, #142)
+- [x] Schema migration `0009_galaxy_client_portal_api.sql`
 - [x] `docs/galaxy-api.md`
+
+### Remaining for Release
+- [ ] Security review sign-off
+- [ ] Scope catalog finalization and freeze
+- [ ] Pilot tenant enablement plan
+- [ ] Customer-facing API documentation polish
+- [ ] Rate-limiting and abuse protection final pass
+- [ ] Release notes and customer communications
+
+---
+
+## ✅ Recently Completed (v2.5 — May 2026)
 
 ### Notifications System ✅ COMPLETE
 - [x] In-app notification center (bell, dropdown, full-page `/notifications`)
@@ -50,12 +70,13 @@
 - [x] Who saved each snapshot in History panel (Task #114)
 - [x] Side-by-side compare and restore from any prior version
 
-### Client Portal Approvals & Sign-offs ✅ COMPLETE
-- [x] Client Portal Approvals & Sign-offs (Task #104)
+### Internal Sign-offs & Approvals Workflow ✅ COMPLETE
+*Note: Internal app routes only. External Galaxy exposure is forthcoming and not part of v2.5 — see "In Progress: Galaxy Client Portal API" above.*
+- [x] Approvals & Sign-offs internal workflow (Task #104)
 - [x] Sign-off status badges on estimates and milestone list views (Task #134)
 - [x] Inline status report acknowledgement (Task #136)
 - [x] Admin sign-offs audit log page (Task #135)
-- [x] Payment milestones exposed to client portal users (Task #89)
+- [x] Payment milestones surfaced for client-side acknowledgement (Task #89)
 - [x] Cascade allocation: shifted-from-milestone indicator (Task #91)
 - [x] Cascade allocation: PM "undo" for applied date shift (Task #90)
 
@@ -627,7 +648,6 @@ Invoice PDF files stored in SharePoint/object storage are never removed when a b
 - ✅ "What's New" changelog modal
 - ✅ AI status reports with RAIDD
 - ✅ SharePoint Embedded document storage with File Repository
-- ✅ Galaxy Client Portal API (OAuth2, scoped tokens, signed webhooks, document streaming)
 - ✅ Notifications System (bell, push, weekly digests, SendGrid open tracking)
 - ✅ Multi-currency estimates and Sub-SOW propagation
 - ✅ Excel-like time grid 2.0 with virtualisation and series drag-fill
