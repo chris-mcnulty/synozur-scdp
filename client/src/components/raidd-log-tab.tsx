@@ -257,7 +257,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
       toast({ title: "Created", description: "RAIDD entry created successfully" });
       setShowCreateDialog(false);
       setCreateWithType(null);
@@ -276,7 +276,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
       if (expandedEntryId) {
         queryClient.invalidateQueries({ queryKey: ["/api/raidd", expandedEntryId] });
       }
@@ -293,7 +293,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       return apiRequest(`/api/raidd/${id}`, { method: "DELETE" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
       toast({ title: "Deleted", description: "RAIDD entry deleted" });
       setDeletingEntryId(null);
       if (expandedEntryId === deletingEntryId) setExpandedEntryId(null);
@@ -308,7 +308,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       return apiRequest(`/api/raidd/${id}/convert-to-issue`, { method: "POST" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
       toast({ title: "Converted", description: "Risk converted to issue" });
     },
     onError: (error: Error) => {
@@ -324,7 +324,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
       toast({ title: "Superseded", description: "Decision superseded with new entry" });
       setSupersedeEntryId(null);
     },
@@ -449,7 +449,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       return { results, errors, total: items.length };
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
       const created = data.results?.length || 0;
       const errors = data.errors || 0;
       if (errors > 0) {
@@ -543,7 +543,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       const result = response as any;
       setImportResult(result);
       if (result.created > 0) {
-        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+        queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
         toast({ title: "Import complete", description: `${result.created} of ${result.total} entries imported successfully` });
       }
       if (result.errors?.length > 0 && result.created === 0) {
