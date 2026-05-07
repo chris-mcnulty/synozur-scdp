@@ -6,6 +6,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers, projectChannels, projectBaselines, servicePlans, blockedDomains, pageViews } from "@shared/schema";
 import { isPublicEmailDomain } from "@shared/publicDomains";
+import { projectFiltersSchema } from "@shared/pagination";
 import { eq, sql, inArray, max, and, gte, lte, isNull, desc, or } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -1209,15 +1210,16 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Projects
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
-      const tenantId = req.user?.tenantId;
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
       // Backward-compat: only paginate when caller explicitly passes limit or offset
       const hasPagination = req.query.limit !== undefined || req.query.offset !== undefined;
+      console.log(`[GET /api/projects] tenantId=${tenantId} hasPagination=${hasPagination} query=`, req.query);
       if (!hasPagination) {
         const projects = await storage.getProjects(tenantId);
         return res.json(projects);
       }
-      const { projectFiltersSchema } = await import("@shared/pagination");
       const parsed = projectFiltersSchema.parse(req.query);
+      console.log(`[GET /api/projects] parsed:`, parsed);
       const result = await storage.getProjectsPaginated({
         tenantId,
         limit: parsed.limit,
@@ -1229,10 +1231,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         sortDir: parsed.sortDir,
         sortBy: parsed.sortBy,
       });
+      console.log(`[GET /api/projects] result.total=${result.total} items=${result.items.length}`);
       return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
     } catch (error) {
-      console.error("Error fetching projects:", error);
-      res.status(500).json({ message: "Failed to fetch projects" });
+      console.error("[GET /api/projects] error:", error);
+      res.status(500).json({ message: "Failed to fetch projects", error: String(error) });
     }
   });
 
