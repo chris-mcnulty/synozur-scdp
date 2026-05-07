@@ -19,6 +19,7 @@ import { formatProjectLabel } from "@/lib/project-utils";
 import {
   Plus, Save, Send, Trash2, Copy, Download, Upload, Sparkles, Loader2,
   AlertCircle, CheckCircle2, Circle, Undo2, Redo2, MoreHorizontal, X,
+  ChevronUp, ChevronDown, ChevronsUpDown,
 } from "lucide-react";
 import type { Project, Client, TimeEntry, User } from "@shared/schema";
 import { parseClipboard, toTsv, toCsv, coerceDate, coerceHours, coerceBoolean } from "./clipboard";
@@ -293,6 +294,11 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       return n;
     });
 
+  // Per-tab column sort state (null = natural/default order)
+  type SortState = { col: ColKey; dir: "asc" | "desc" } | null;
+  const [draftsSort, setDraftsSort] = useState<SortState>(null);
+  const [submittedSort, setSubmittedSort] = useState<SortState>(null);
+
   // Active cell + range
   const [active, setActive] = useState<{ row: number; col: number }>({ row: 0, col: 0 });
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
@@ -522,11 +528,140 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   const addRow = () => {
     pushHistory(drafts);
     setDrafts((prev) => [emptyDraft(), ...prev]);
+    // Clear sort so the new empty row appears at the top of the visible list
+    setDraftsSort(null);
     setActive({ row: 0, col: 0 });
+    setRangeStart(null);
   };
 
-  // Row used for rendering depending on tab
-  const visibleRows = tab === "drafts" ? drafts : submittedRows;
+  // ─── Column sort (client-side, per tab) ─────────────────────────────────
+  const compareRows = useCallback(
+    (a: DraftRow, b: DraftRow, col: ColKey, dir: "asc" | "desc"): number => {
+      const sign = dir === "asc" ? 1 : -1;
+      const emptyLast = (s: string) => (s === "" || s == null ? 1 : 0);
+      let av: string | number | boolean = "";
+      let bv: string | number | boolean = "";
+      switch (col) {
+        case "date":
+          av = a.date || ""; bv = b.date || "";
+          break;
+        case "projectId": {
+          const ap = projects.find((p) => p.id === a.projectId);
+          const bp = projects.find((p) => p.id === b.projectId);
+          av = ap ? formatProjectLabel(ap).toLowerCase() : "";
+          bv = bp ? formatProjectLabel(bp).toLowerCase() : "";
+          break;
+        }
+        case "allocationId":
+          av = (a.allocationId || "").toLowerCase();
+          bv = (b.allocationId || "").toLowerCase();
+          break;
+        case "description":
+          av = (a.description || "").toLowerCase();
+          bv = (b.description || "").toLowerCase();
+          break;
+        case "hours": {
+          const an = parseFloat(a.hours);
+          const bn = parseFloat(b.hours);
+          av = isNaN(an) ? -Infinity : an;
+          bv = isNaN(bn) ? -Infinity : bn;
+          break;
+        }
+        case "billable":
+          av = a.billable ? 1 : 0;
+          bv = b.billable ? 1 : 0;
+          break;
+        case "milestoneId":
+          av = (a.milestoneId || "").toLowerCase();
+          bv = (b.milestoneId || "").toLowerCase();
+          break;
+      }
+      if (typeof av === "string" && typeof bv === "string") {
+        const ea = emptyLast(av);
+        const eb = emptyLast(bv);
+        if (ea !== eb) return ea - eb; // empties always last regardless of dir
+        if (av < bv) return -1 * sign;
+        if (av > bv) return 1 * sign;
+        return 0;
+      }
+      if (av < bv) return -1 * sign;
+      if (av > bv) return 1 * sign;
+      return 0;
+    },
+    [projects],
+  );
+
+  const applySort = useCallback(
+    (rows: DraftRow[], sort: SortState): DraftRow[] => {
+      if (!sort) return rows;
+      const arr = rows.slice();
+      arr.sort((a, b) => compareRows(a, b, sort.col, sort.dir));
+      return arr;
+    },
+    [compareRows],
+  );
+
+  const sortedDrafts = useMemo(() => applySort(drafts, draftsSort), [drafts, draftsSort, applySort]);
+  const sortedSubmitted = useMemo(() => applySort(submittedRows, submittedSort), [submittedRows, submittedSort, applySort]);
+
+  // Row used for rendering / keyboard nav / paste / copy depending on tab.
+  // These are the *sorted* views; index-based mutations below translate back
+  // to the canonical drafts array via row id.
+  const visibleRows = tab === "drafts" ? sortedDrafts : sortedSubmitted;
+
+  // Cycle a column header through asc → desc → none, preserving the active
+  // row by id so the cursor stays on the same logical row after sort changes.
+  const cycleSort = (col: ColKey) => {
+    const isDrafts = tab === "drafts";
+    const currentSort = isDrafts ? draftsSort : submittedSort;
+    const currentRows = isDrafts ? drafts : submittedRows;
+    const currentSorted = isDrafts ? sortedDrafts : sortedSubmitted;
+    const anchorId = currentSorted[active.row]?.id ?? null;
+    let nextSort: SortState;
+    if (!currentSort || currentSort.col !== col) nextSort = { col, dir: "asc" };
+    else if (currentSort.dir === "asc") nextSort = { col, dir: "desc" };
+    else nextSort = null;
+    if (isDrafts) setDraftsSort(nextSort);
+    else setSubmittedSort(nextSort);
+    const newSorted = applySort(currentRows, nextSort);
+    if (anchorId) {
+      const newIdx = newSorted.findIndex((r) => r.id === anchorId);
+      if (newIdx >= 0) setActive({ row: newIdx, col: active.col });
+    }
+    setRangeStart(null);
+    console.log("[TIME-GRID] sort", { tab, sort: nextSort });
+  };
+
+  // Header select-all: select / deselect every row currently rendered in the
+  // active (drafts) tab. The submitted tab is read-only so this is a no-op.
+  const selectAllVisible = (checked: boolean) => {
+    if (tab !== "drafts") return;
+    setSelectedIds(() => {
+      if (!checked) return new Set();
+      const next = new Set<string>();
+      for (const r of sortedDrafts) next.add(r.id);
+      return next;
+    });
+  };
+
+  // Translate an index from the sorted view back to the canonical drafts
+  // array so existing index-based mutations (updateCell/dragFill/paste)
+  // continue to work when a sort is applied.
+  const draftsIdxFromSorted = useCallback(
+    (sortedIdx: number): number => {
+      if (!draftsSort) return sortedIdx;
+      const id = sortedDrafts[sortedIdx]?.id;
+      if (!id) return -1;
+      return drafts.findIndex((r) => r.id === id);
+    },
+    [draftsSort, sortedDrafts, drafts],
+  );
+
+  const updateCellSorted = (sortedIdx: number, col: ColKey, value: unknown) => {
+    const realIdx = draftsIdxFromSorted(sortedIdx);
+    if (realIdx < 0) return;
+    updateCell(realIdx, col, value);
+  };
 
   // Keyboard navigation handler attached at table-level
   const tableRef = useRef<HTMLDivElement>(null);
@@ -587,7 +722,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       e.preventDefault();
       const col = COLUMNS[active.col].key;
       if (col === "billable") return;
-      updateCell(active.row, col, col === "hours" ? "" : "");
+      updateCellSorted(active.row, col, col === "hours" ? "" : "");
     }
   };
 
@@ -659,25 +794,40 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       const rows = parseClipboard(text);
       if (rows.length === 0) return;
       console.log("[TIME-GRID] paste", { rows: rows.length });
+      // Map each affected sorted-view row to its id so we mutate the right
+      // logical rows in `drafts` regardless of whether a sort is applied.
+      const targetIds: (string | null)[] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const sortedIdx = active.row + i;
+        targetIds.push(sortedDrafts[sortedIdx]?.id ?? null);
+      }
       pushHistory(drafts);
       setDrafts((prev) => {
         const next = prev.slice();
         for (let i = 0; i < rows.length; i++) {
-          const ri = active.row + i;
-          if (ri >= next.length) {
+          let realIdx: number;
+          const id = targetIds[i];
+          if (id) {
+            realIdx = next.findIndex((r) => r.id === id);
+            if (realIdx < 0) {
+              next.push(emptyDraft());
+              realIdx = next.length - 1;
+            }
+          } else {
             next.push(emptyDraft());
+            realIdx = next.length - 1;
           }
           for (let j = 0; j < rows[i].length; j++) {
             const ci = active.col + j;
             if (ci >= COLUMNS.length) break;
             const col = COLUMNS[ci].key;
             const raw = rows[i][j];
-            const base = next[ri];
+            const base = next[realIdx];
             const coerced = coerceValue(col, raw, base.projectId);
             const row: DraftRow = { ...base, [col]: coerced } as DraftRow;
             row.errors = validateRow(row);
             row.state = "dirty";
-            next[ri] = row;
+            next[realIdx] = row;
           }
         }
         return next;
@@ -721,33 +871,42 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     const downward = toRow > seedEnd;
     const fillStart = downward ? seedEnd + 1 : toRow;
     const fillEnd = downward ? toRow : seedStart - 1;
+    // All indices above are into the *sorted* view. Resolve seed values from
+    // the view, then translate fill targets to ids so we mutate `drafts`
+    // (the canonical list) by id rather than by potentially-stale index.
+    const seedValues: (string | boolean | undefined)[] = [];
+    for (let r = seedStart; r <= seedEnd; r++) {
+      if (!sortedDrafts[r]) return;
+      seedValues.push(getCell(sortedDrafts[r], col));
+    }
+    const series = detectSeries(col, seedValues, downward);
+    const seedLen = seedValues.length;
+    const fillTargets: { id: string; r: number }[] = [];
+    for (let r = fillStart; r <= fillEnd; r++) {
+      const id = sortedDrafts[r]?.id;
+      if (id) fillTargets.push({ id, r });
+    }
+    if (fillTargets.length === 0) return;
     pushHistory(drafts);
     setDrafts((prev) => {
       const next = prev.slice();
-      const seedValues: (string | boolean | undefined)[] = [];
-      for (let r = seedStart; r <= seedEnd; r++) {
-        if (!prev[r]) return prev;
-        seedValues.push(getCell(prev[r], col));
-      }
-      const series = detectSeries(col, seedValues, downward);
-      const seedLen = seedValues.length;
-      for (let r = fillStart; r <= fillEnd; r++) {
-        if (!next[r]) continue;
+      for (const { id, r } of fillTargets) {
+        const realIdx = next.findIndex((row) => row.id === id);
+        if (realIdx < 0) continue;
         let val: string | boolean | undefined;
         if (series) {
           const offset = downward ? r - seedEnd : seedStart - r;
           val = series(offset);
         } else {
-          // Cyclic copy from seed values, preserving order in fill direction.
           const dist = downward ? r - seedEnd - 1 : seedStart - r - 1;
           const idxInCycle = dist % seedLen;
           const pick = downward ? idxInCycle : seedLen - 1 - idxInCycle;
           val = seedValues[pick];
         }
-        const row = { ...next[r], [col]: val } as DraftRow;
+        const row = { ...next[realIdx], [col]: val } as DraftRow;
         row.errors = validateRow(row);
         row.state = "dirty";
-        next[r] = row;
+        next[realIdx] = row;
       }
       return next;
     });
@@ -1022,7 +1181,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
 
         <TabsContent value="drafts" className="mt-2">
           <GridTable
-            rows={drafts}
+            rows={sortedDrafts}
             projects={projects}
             personId={currentUser.id}
             active={active}
@@ -1032,16 +1191,19 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
             extendRange={(a) => setActive(a)}
             editing={editing}
             setEditing={setEditing}
-            updateCell={updateCell}
+            updateCell={updateCellSorted}
             selectedIds={selectedIds}
             toggleSelect={toggleSelect}
             editable
             onDragFill={dragFill}
+            sort={draftsSort}
+            onSortChange={cycleSort}
+            onSelectAll={selectAllVisible}
           />
         </TabsContent>
         <TabsContent value="submitted" className="mt-2">
           <GridTable
-            rows={submittedRows}
+            rows={sortedSubmitted}
             projects={projects}
             personId={currentUser.id}
             active={active}
@@ -1055,6 +1217,8 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
             selectedIds={new Set()}
             toggleSelect={() => {}}
             editable={false}
+            sort={submittedSort}
+            onSortChange={cycleSort}
           />
         </TabsContent>
       </Tabs>
@@ -1142,8 +1306,20 @@ function GridTable(props: {
   toggleSelect: (id: string) => void;
   editable: boolean;
   onDragFill?: (toRow: number, seed: { r0: number; r1: number }) => void;
+  sort?: { col: ColKey; dir: "asc" | "desc" } | null;
+  onSortChange?: (col: ColKey) => void;
+  onSelectAll?: (checked: boolean) => void;
 }) {
-  const { rows, projects, active, range, editable, editing, setEditing, setActive, startRange, extendRange, updateCell, selectedIds, toggleSelect, onDragFill, personId } = props;
+  const { rows, projects, active, range, editable, editing, setEditing, setActive, startRange, extendRange, updateCell, selectedIds, toggleSelect, onDragFill, personId, sort, onSortChange, onSelectAll } = props;
+
+  // Header select-all state derived from currently-rendered rows.
+  const visibleSelectedCount = useMemo(() => {
+    let n = 0;
+    for (const r of rows) if (selectedIds.has(r.id)) n++;
+    return n;
+  }, [rows, selectedIds]);
+  const allSelected = rows.length > 0 && visibleSelectedCount === rows.length;
+  const someSelected = visibleSelectedCount > 0 && !allSelected;
   const [dragFromRow, setDragFromRow] = useState<number | null>(null);
   const dragToRowRef = useRef<number | null>(null);
 
@@ -1177,11 +1353,49 @@ function GridTable(props: {
       <table className="w-full text-sm">
         <thead className="bg-muted sticky top-0 z-10">
           <tr>
-            <th className="w-[36px] p-1"></th>
+            <th className="w-[36px] p-1 text-center">
+              {editable && onSelectAll ? (
+                <Checkbox
+                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                  disabled={rows.length === 0}
+                  onCheckedChange={(v) => onSelectAll(v === true)}
+                  aria-label={allSelected ? "Deselect all rows" : "Select all rows"}
+                  data-testid="grid-select-all"
+                />
+              ) : null}
+            </th>
             <th className="w-[80px] p-1 text-left text-xs font-medium">Status</th>
-            {COLUMNS.map((c) => (
-              <th key={c.key} className={cn("p-1 text-left text-xs font-medium", c.width)}>{c.label}</th>
-            ))}
+            {COLUMNS.map((c) => {
+              const isSorted = sort?.col === c.key;
+              const dir = isSorted ? sort?.dir : null;
+              return (
+                <th key={c.key} className={cn("p-0 text-left text-xs font-medium", c.width)}>
+                  {onSortChange ? (
+                    <button
+                      type="button"
+                      onClick={() => onSortChange(c.key)}
+                      className={cn(
+                        "w-full h-full px-2 py-1.5 flex items-center gap-1 hover:bg-muted-foreground/10 select-none text-left",
+                        isSorted && "text-foreground font-semibold",
+                      )}
+                      data-testid={`grid-sort-${c.key}`}
+                      aria-label={`Sort by ${c.label}`}
+                    >
+                      <span>{c.label}</span>
+                      {dir === "asc" ? (
+                        <ChevronUp className="h-3 w-3" />
+                      ) : dir === "desc" ? (
+                        <ChevronDown className="h-3 w-3" />
+                      ) : (
+                        <ChevronsUpDown className="h-3 w-3 opacity-30" />
+                      )}
+                    </button>
+                  ) : (
+                    <div className="px-2 py-1.5">{c.label}</div>
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
