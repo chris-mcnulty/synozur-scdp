@@ -67,11 +67,16 @@ const refs: Record<string, any> = {
   StatusReport: {
     type: "object",
     properties: {
-      id: { type: "string" }, projectId: { type: "string" }, reportPeriod: { type: "string" },
-      ragStatus: { type: "string", enum: ["green", "amber", "red"] },
-      accomplishments: { type: ["string", "null"] }, milestones: { type: ["string", "null"] },
-      risks: { type: ["string", "null"] }, notes: { type: ["string", "null"] },
-      publishedAt: { type: "string", format: "date-time" },
+      id: { type: "string" }, projectId: { type: "string" },
+      title: { type: ["string", "null"] },
+      reportType: { type: "string", enum: ["text", "pptx", "executive_narrative"] },
+      reportStyle: { type: ["string", "null"] },
+      periodStart: { type: ["string", "null"], format: "date" },
+      periodEnd: { type: ["string", "null"], format: "date" },
+      status: { type: "string", enum: ["draft", "final"] },
+      reportContent: { type: ["string", "null"] },
+      metadata: { type: ["object", "null"] },
+      createdAt: { type: ["string", "null"], format: "date-time" },
     },
   },
   RaiddEntry: {

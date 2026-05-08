@@ -282,13 +282,15 @@ function projectStatusReport(s: any) {
   return {
     id: s.id,
     projectId: s.projectId,
-    reportPeriod: s.reportPeriod,
-    ragStatus: s.ragStatus,
-    accomplishments: s.accomplishments ?? null,
-    milestones: s.milestones ?? null,
-    risks: s.risks ?? null,
-    notes: s.notes ?? null,
-    publishedAt: s.publishedAt,
+    title: s.title ?? null,
+    reportType: s.reportType ?? "text",
+    reportStyle: s.reportStyle ?? null,
+    periodStart: s.periodStart ?? null,
+    periodEnd: s.periodEnd ?? null,
+    status: s.status ?? "final",
+    reportContent: s.reportContent ?? null,
+    metadata: s.metadata ?? null,
+    createdAt: s.createdAt ?? null,
   };
 }
 function projectInvoice(i: any) {
@@ -677,8 +679,8 @@ export function registerGalaxyV1Routes(
     if (!(await userCanSeeProject(g, req.params.id))) return res.status(404).json({ error: "not_found" });
     const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10) || 50, 200);
     const offset = decodeCursor(String(req.query.cursor ?? ""));
-    const all = await storage.getProjectStatusReports(req.params.id);
-    const published = all.filter((r: any) => !!r.publishedAt);
+    const all = await storage.getStatusReports(req.params.id, g.tenantId);
+    const published = all.filter((r: any) => r.status === "final");
     const page = published.slice(offset, offset + limit);
     const next = (offset + limit) < published.length ? encodeCursor(offset + limit) : null;
     res.json({ items: page.map(projectStatusReport), nextCursor: next });
@@ -687,9 +689,9 @@ export function registerGalaxyV1Routes(
   // Get a single status report (published only)
   app.get(`${base}/status-reports/:id`, galaxyAuth(["status_reports:read"]), async (req, res) => {
     const g = req.galaxy!;
-    const r = await storage.getProjectStatusReport(req.params.id);
+    const r = await storage.getStatusReport(req.params.id);
     if (!r || r.tenantId !== g.tenantId) return res.status(404).json({ error: "not_found" });
-    if (!r.publishedAt) return res.status(404).json({ error: "not_found" });
+    if (r.status !== "final") return res.status(404).json({ error: "not_found" });
     if (!(await userCanSeeProject(g, r.projectId))) return res.status(404).json({ error: "not_found" });
     res.json(projectStatusReport(r));
   });
@@ -988,8 +990,9 @@ export function registerGalaxyV1Routes(
     if (!requireDelegated(req, res)) return;
     const g = req.galaxy!;
     const { comment } = commentSchema.parse(req.body ?? {});
-    const r = await storage.getProjectStatusReport(req.params.id);
+    const r = await storage.getStatusReport(req.params.id);
     if (!r || r.tenantId !== g.tenantId) return res.status(404).json({ error: "not_found" });
+    if (r.status !== "final") return res.status(404).json({ error: "not_found" });
     if (!(await userCanSeeProject(g, r.projectId))) return res.status(404).json({ error: "not_found" });
     const signoff = await recordSignoff(g, "acknowledged", "status_report", r.id, comment ?? null);
     await enqueueGalaxyEvent({ tenantId: g.tenantId, event: "status_report.acknowledged", clientId: g.clientId, data: { statusReportId: r.id, projectId: r.projectId, signoffId: signoff.id } });
