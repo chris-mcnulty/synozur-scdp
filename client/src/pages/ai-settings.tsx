@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -157,17 +157,29 @@ function ModelConfigSection() {
   const [alertEnabled, setAlertEnabled] = useState(true);
   const [alertThresholds, setAlertThresholds] = useState("75, 90, 100");
 
-  const isInitialized = selectedProvider !== "";
+  const initializedRef = useRef(false);
 
-  if (config && !isInitialized) {
-    setSelectedProvider(config.activeProvider);
-    setSelectedModel(config.activeModel);
-    setEnableStreaming(config.enableStreaming ?? true);
-    setMaxTokens(String(config.maxTokensPerRequest || 4096));
-    setMonthlyBudget(config.monthlyTokenBudget ? String(config.monthlyTokenBudget) : "");
-    setAlertEnabled(config.alertEnabled ?? true);
-    setAlertThresholds((config.alertThresholds ?? [75, 90, 100]).join(", "));
-  }
+  useEffect(() => {
+    if (config && options && !initializedRef.current) {
+      initializedRef.current = true;
+      const validModels = options.models[config.activeProvider] || [];
+      const modelIsValid = validModels.includes(config.activeModel);
+      setSelectedProvider(config.activeProvider);
+      setSelectedModel(modelIsValid ? config.activeModel : (validModels[0] || ""));
+      setEnableStreaming(config.enableStreaming ?? true);
+      setMaxTokens(String(config.maxTokensPerRequest || 4096));
+      setMonthlyBudget(config.monthlyTokenBudget ? String(config.monthlyTokenBudget) : "");
+      setAlertEnabled(config.alertEnabled ?? true);
+      setAlertThresholds((config.alertThresholds ?? [75, 90, 100]).join(", "));
+      if (!modelIsValid && config.activeModel) {
+        toast({
+          title: "Model auto-corrected",
+          description: `Saved model '${config.activeModel}' is no longer available for provider '${config.activeProvider}'. Switched to '${validModels[0] || "none"}'. Save to apply.`,
+          variant: "destructive",
+        });
+      }
+    }
+  }, [config, options, toast]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: Partial<AiConfig>) => {
@@ -185,7 +197,26 @@ function ModelConfigSection() {
     },
   });
 
+  if (configLoading || optionsLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
   const handleSave = () => {
+    const validModels = options?.models[selectedProvider] || [];
+    if (selectedModel && validModels.length > 0 && !validModels.includes(selectedModel)) {
+      toast({
+        title: "Invalid model",
+        description: `Model '${selectedModel}' is not available for provider '${selectedProvider}'. Please select a valid model.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const parsedThresholds = alertThresholds
       .split(",")
       .map((s) => parseInt(s.trim(), 10))
@@ -201,15 +232,6 @@ function ModelConfigSection() {
       alertEnabled,
     });
   };
-
-  if (configLoading || optionsLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
-  }
 
   const availableModels = options?.models[selectedProvider] || [];
   const modelInfo = options?.modelInfo || {};

@@ -848,10 +848,24 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       if (req.body.activeProvider && !SUPPORTED_PROVIDERS.has(req.body.activeProvider)) {
         return res.status(400).json({ message: `Unsupported provider: ${req.body.activeProvider}. Supported: ${[...SUPPORTED_PROVIDERS].join(', ')}` });
       }
-      if (req.body.activeModel && req.body.activeProvider) {
-        const providerModels = AI_MODELS[req.body.activeProvider];
-        if (providerModels && !providerModels.includes(req.body.activeModel)) {
-          return res.status(400).json({ message: `Model '${req.body.activeModel}' is not supported by provider '${req.body.activeProvider}'` });
+
+      if (req.body.activeProvider || 'activeModel' in req.body) {
+        const currentConfig = await storage.getAiConfiguration();
+        const effectiveProvider = req.body.activeProvider ?? currentConfig?.activeProvider ?? AI_PROVIDERS.REPLIT;
+        const effectiveModel = 'activeModel' in req.body ? req.body.activeModel : currentConfig?.activeModel;
+        if (effectiveModel !== undefined) {
+          if (typeof effectiveModel !== 'string' || !effectiveModel.trim()) {
+            return res.status(400).json({ message: "Model ID must be a non-empty string." });
+          }
+          const providerModels = AI_MODELS[effectiveProvider];
+          if (!providerModels) {
+            return res.status(400).json({ message: `Unknown provider '${effectiveProvider}'.` });
+          }
+          if (!providerModels.includes(effectiveModel)) {
+            return res.status(400).json({
+              message: `Model '${effectiveModel}' is not valid for provider '${effectiveProvider}'. Valid models: ${[...providerModels].join(', ')}`,
+            });
+          }
         }
       }
 
