@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -171,13 +172,6 @@ function ModelConfigSection() {
       setMonthlyBudget(config.monthlyTokenBudget ? String(config.monthlyTokenBudget) : "");
       setAlertEnabled(config.alertEnabled ?? true);
       setAlertThresholds((config.alertThresholds ?? [75, 90, 100]).join(", "));
-      if (!modelIsValid && config.activeModel) {
-        toast({
-          title: "Model auto-corrected",
-          description: `Saved model '${config.activeModel}' is no longer available for provider '${config.activeProvider}'. Switched to '${validModels[0] || "none"}'. Save to apply.`,
-          variant: "destructive",
-        });
-      }
     }
   }, [config, options, toast]);
 
@@ -236,8 +230,33 @@ function ModelConfigSection() {
   const availableModels = options?.models[selectedProvider] || [];
   const modelInfo = options?.modelInfo || {};
 
+  const savedProviderUnknown = !!(config && options && !options.providers[config.activeProvider]);
+  const savedModelUnknown = !!(config && options && !savedProviderUnknown && !(options.models[config.activeProvider] || []).includes(config.activeModel));
+  const showUnknownWarning = savedProviderUnknown || savedModelUnknown;
+
   return (
     <div className="space-y-6">
+      {showUnknownWarning && (
+        <Alert className="border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
+          <AlertCircle className="w-4 h-4" />
+          <AlertTitle>Unrecognised AI {savedProviderUnknown ? "Provider" : "Model"}</AlertTitle>
+          <AlertDescription>
+            {savedProviderUnknown ? (
+              <>
+                The saved provider <strong>&ldquo;{config?.activeProvider}&rdquo;</strong> is not in the list of known providers.
+                AI features may not work until a valid provider is selected and saved.
+              </>
+            ) : (
+              <>
+                The saved model <strong>&ldquo;{config?.activeModel}&rdquo;</strong> is not recognised for the{" "}
+                <strong>{options?.providers[config?.activeProvider ?? ""]?.displayName ?? config?.activeProvider}</strong> provider.
+                AI features may fail until a valid model is chosen below and saved.
+              </>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

@@ -29,6 +29,8 @@ const docParseUpload = multer({
   }
 });
 
+const warnedUnknownAiConfigs = new Set<string>();
+
 export function registerAiRoutes(app: Express, deps: AiRouteDeps) {
   const { requireAuth, requireRole, requirePlatformAdmin } = deps;
 
@@ -826,6 +828,25 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
   app.get("/api/admin/ai-config", requireAuth, requirePlatformAdmin, async (req, res) => {
     try {
       const config = await storage.getAiConfiguration();
+      if (config) {
+        const warnKey = `${config.activeProvider}::${config.activeModel}`;
+        if (!warnedUnknownAiConfigs.has(warnKey)) {
+          const knownModels: readonly string[] = AI_MODELS[config.activeProvider] ?? [];
+          if (!AI_MODELS[config.activeProvider]) {
+            warnedUnknownAiConfigs.add(warnKey);
+            console.warn(
+              `[AI_CONFIG] WARNING: saved provider "${config.activeProvider}" is not in the known provider list. ` +
+              `AI features may fail until the configuration is updated.`
+            );
+          } else if (knownModels.length > 0 && !knownModels.includes(config.activeModel)) {
+            warnedUnknownAiConfigs.add(warnKey);
+            console.warn(
+              `[AI_CONFIG] WARNING: saved model "${config.activeModel}" is not recognised for provider "${config.activeProvider}". ` +
+              `Known models: ${knownModels.join(", ")}. AI features may fail until the configuration is updated.`
+            );
+          }
+        }
+      }
       res.json(config || {
         activeProvider: 'replit_ai',
         activeModel: 'gpt-5',
@@ -880,6 +901,7 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
 
       const config = await storage.updateAiConfiguration(updates);
       invalidateProviderCache();
+      warnedUnknownAiConfigs.clear();
       console.log(`[AI_CONFIG] Configuration updated by ${currentUser?.email || currentUser?.id}: provider=${config.activeProvider}, model=${config.activeModel}`);
       res.json(config);
     } catch (error: any) {
