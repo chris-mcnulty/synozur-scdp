@@ -28,6 +28,24 @@ export interface IAIProvider {
   getProviderModel(): string;
 }
 
+function isClaudeModel(model: string): boolean {
+  return model.startsWith('claude-');
+}
+
+const CLAUDE_JSON_DIRECTIVE = '\n\nIMPORTANT: Respond with valid JSON only. Do not include any text outside the JSON object.';
+
+function injectClaudeJsonDirective(
+  messages: Array<{ role: string; content: string }>
+): Array<{ role: string; content: string }> {
+  const systemIdx = messages.findIndex(m => m.role === 'system');
+  if (systemIdx !== -1) {
+    return messages.map((m, i) =>
+      i === systemIdx ? { ...m, content: m.content + CLAUDE_JSON_DIRECTIVE } : m
+    );
+  }
+  return [{ role: 'system', content: CLAUDE_JSON_DIRECTIVE.trim() }, ...messages];
+}
+
 export class ReplitAIProvider implements IAIProvider {
   private client: OpenAI | null = null;
   private model: string;
@@ -62,16 +80,24 @@ export class ReplitAIProvider implements IAIProvider {
     }
 
     const maxTokens = params.maxTokens ?? 4096;
+    const claude = isClaudeModel(this.model);
+
+    let messages = params.messages.map(m => ({ role: m.role, content: m.content }));
+    if (params.responseFormat === 'json' && claude) {
+      messages = injectClaudeJsonDirective(messages);
+    }
+
     const requestParams: OpenAI.ChatCompletionCreateParams = {
       model: this.model,
-      messages: params.messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-      max_completion_tokens: maxTokens,
+      messages,
+      ...(claude ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens }),
     };
 
-    if (params.responseFormat === 'json') {
+    if (params.temperature !== undefined) {
+      requestParams.temperature = params.temperature;
+    }
+
+    if (params.responseFormat === 'json' && !claude) {
       requestParams.response_format = { type: 'json_object' };
     }
 
@@ -145,6 +171,10 @@ export class AzureOpenAIProvider implements IAIProvider {
       max_tokens: params.maxTokens ?? 4096,
     };
 
+    if (params.temperature !== undefined) {
+      body.temperature = params.temperature;
+    }
+
     if (params.responseFormat === 'json') {
       body.response_format = { type: 'json_object' };
     }
@@ -212,16 +242,24 @@ export class AzureFoundryProvider implements IAIProvider {
     }
 
     const maxTokens = params.maxTokens ?? 4096;
+    const claude = isClaudeModel(this.deployment);
+
+    let messages = params.messages.map(m => ({ role: m.role, content: m.content }));
+    if (params.responseFormat === 'json' && claude) {
+      messages = injectClaudeJsonDirective(messages);
+    }
+
     const requestParams: OpenAI.ChatCompletionCreateParams = {
       model: this.deployment,
-      messages: params.messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-      max_completion_tokens: maxTokens,
+      messages,
+      ...(claude ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens }),
     };
 
-    if (params.responseFormat === 'json') {
+    if (params.temperature !== undefined) {
+      requestParams.temperature = params.temperature;
+    }
+
+    if (params.responseFormat === 'json' && !claude) {
       requestParams.response_format = { type: 'json_object' };
     }
 
