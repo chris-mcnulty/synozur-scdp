@@ -761,7 +761,7 @@ function TeamsChannelPanel({
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={handleProvision} disabled={!canProvision}>
                   {provisioning ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
                   {channelMode === "link"
