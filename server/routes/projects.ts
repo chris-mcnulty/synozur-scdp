@@ -87,11 +87,14 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     try {
       const projectId = req.params.id;
       const tenantId = req.user?.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
 
       const project = await storage.getProject(projectId);
       if (!project) return res.status(404).json({ message: "Project not found" });
 
-      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+      // Tenant-scope the project: a project with a null tenantId is global/legacy,
+      // anything else must match the caller's tenant exactly.
+      if (project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -107,8 +110,13 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         }
       }
 
-      const projectTimeEntries = await storage.getTimeEntries({ projectId });
-      const actualHours = projectTimeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours ?? "0"), 0);
+      // SQL aggregate — avoids loading every time entry (with joins) just to sum.
+      const [actualRow] = await db.execute<{ actual_hours: string }>(sql`
+        SELECT COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0) AS actual_hours
+        FROM ${timeEntries}
+        WHERE ${timeEntries.projectId} = ${projectId}
+      `).then(r => r.rows);
+      const actualHours = Number(actualRow?.actual_hours ?? 0);
 
       const remainingHours = Math.max(0, budgetedHours - actualHours);
       const hoursVariance = actualHours - budgetedHours;
@@ -136,6 +144,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   app.get("/api/projects/hours-summary-batch", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const tenantId = req.user?.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
 
       // Pull all estimates per project (id, status, budgetedHours from sum of line items)
       type EstRow = { project_id: string; estimate_id: string; status: string; budgeted_hours: string };
@@ -148,7 +157,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         FROM estimates e
         LEFT JOIN estimate_line_items li ON li.estimate_id = e.id
         WHERE e.project_id IS NOT NULL
-          ${tenantId ? sql`AND e.tenant_id = ${tenantId}` : sql``}
+          AND e.tenant_id = ${tenantId}
         GROUP BY e.project_id, e.id, e.status, e.version
         ORDER BY e.project_id, (e.status = 'approved') DESC, e.version DESC
       `);
@@ -161,13 +170,13 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         }
       }
 
-      // Actual hours per project from time entries
+      // Actual hours per project from time entries — always tenant-scoped via projects join.
       type ActualRow = { project_id: string; actual_hours: string };
       const actualRows = await db.execute<ActualRow>(sql`
         SELECT te.project_id AS project_id,
                COALESCE(SUM(CAST(te.hours AS NUMERIC)), 0) AS actual_hours
         FROM time_entries te
-        ${tenantId ? sql`JOIN projects p ON p.id = te.project_id AND p.tenant_id = ${tenantId}` : sql``}
+        JOIN projects p ON p.id = te.project_id AND p.tenant_id = ${tenantId}
         GROUP BY te.project_id
       `);
 
@@ -245,7 +254,12 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
     } catch (error) {
       console.error("[GET /api/projects] error:", error);
-      res.status(500).json({ message: "Failed to fetch projects", error: String(error) });
+      // Echo the error string only outside production. 278d939 added this for prod
+      // diagnostics of a silent hang; the static-import fix in that commit resolved
+      // the underlying cause, so we no longer need to leak the message to clients.
+      const body: { message: string; error?: string } = { message: "Failed to fetch projects" };
+      if (process.env.NODE_ENV !== "production") body.error = String(error);
+      res.status(500).json(body);
     }
   });
 
