@@ -7350,20 +7350,6 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  // Project milestones (these may already exist, but adding for completeness)
-  app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
-    try {
-      const { projectId } = req.params;
-
-      const milestones = await storage.getProjectMilestones(projectId);
-      res.json(milestones);
-    } catch (error: any) {
-      console.error("Failed to get project milestones:", error);
-      res.status(500).json({ 
-        message: "Failed to get project milestones" 
-      });
-    }
-  });
 
   app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
@@ -7440,16 +7426,6 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete milestone" });
-    }
-  });
-
-  // Get workstreams for dropdown  
-  app.get("/api/projects/:projectId/workstreams", requireAuth, async (req, res) => {
-    try {
-      const workstreams = await storage.getProjectWorkStreams(req.params.projectId);
-      res.json(workstreams);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to get project workstreams" });
     }
   });
 
