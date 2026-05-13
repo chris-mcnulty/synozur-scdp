@@ -50,6 +50,7 @@ import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { registerSearchRoutes } from "./routes/search.js";
+import { registerProjectRoutes } from "./routes/projects.js";
 import { registerGalaxyV1Routes } from "./routes/galaxy/v1/index.js";
 import { enqueueGalaxyEvent } from "./services/galaxy-webhook-delivery.js";
 
@@ -549,6 +550,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerAiRoutes(app, { requireAuth, requireRole, requirePlatformAdmin });
     registerProjectAgentRoutes(app, { requireAuth, requireRole });
     registerRaiddRoutes(app, { requireAuth, requireRole });
+    // NOTE: project routes registered AFTER raidd/planner so that the duplicate
+    // RAIDD/deliverables/planner-connection registrations inside projects.ts lose
+    // to the canonical handlers (Express picks the first-registered route).
+    // Inline project endpoints below in this file are dead duplicates pending
+    // cleanup — projects.ts handles them as of this commit.
+    registerProjectRoutes(app, { requireAuth, requireRole, upload, sharePointFileStorage });
     registerSupportRoutes(app, { requireAuth, requireRole });
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });
     registerJobRoutes(app, { requireAuth, requireRole });

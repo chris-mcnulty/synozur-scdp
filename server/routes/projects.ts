@@ -6,6 +6,7 @@ import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
 import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, type InvoiceBatch } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, desc, or } from "drizzle-orm";
+import { projectFiltersSchema } from "@shared/pagination";
 import { emailService } from "../services/email-notification.js";
 import { SharePointFileStorage } from "../services/sharepoint-file-storage.js";
 import { generateRetainerPaymentMilestones } from "./estimates.js";
@@ -81,6 +82,126 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     }
   });
 
+  // Project hours summary — budgeted vs actual vs remaining (Task #82, #83)
+  app.get("/api/projects/:id/hours-summary", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const projectId = req.params.id;
+      const tenantId = req.user?.tenantId;
+
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const projectEstimates = await storage.getEstimatesByProject(projectId);
+      let budgetedHours = 0;
+
+      if (projectEstimates.length > 0) {
+        const approvedEstimate = projectEstimates.find(e => e.status === "approved");
+        const targetEstimate = approvedEstimate || projectEstimates[0];
+        if (targetEstimate) {
+          const lineItems = await storage.getEstimateLineItems(targetEstimate.id);
+          budgetedHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours ?? "0"), 0);
+        }
+      }
+
+      const projectTimeEntries = await storage.getTimeEntries({ projectId });
+      const actualHours = projectTimeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours ?? "0"), 0);
+
+      const remainingHours = Math.max(0, budgetedHours - actualHours);
+      const hoursVariance = actualHours - budgetedHours;
+      const hoursConsumedPct = budgetedHours > 0 ? Math.round((actualHours / budgetedHours) * 100) : 0;
+
+      console.log(`[hours-summary] project=${projectId} tenant=${tenantId} budgeted=${budgetedHours.toFixed(1)} actual=${actualHours.toFixed(1)} remaining=${remainingHours.toFixed(1)} consumedPct=${hoursConsumedPct}`);
+      if (budgetedHours > 0 && remainingHours / budgetedHours < 0.10) {
+        console.warn(`[hours-summary][alert] project=${projectId} is below 10% remaining hours (${hoursConsumedPct}% consumed) — consider alerting PM`);
+      }
+
+      res.json({
+        budgetedHours: Math.round(budgetedHours * 10) / 10,
+        actualHours: Math.round(actualHours * 10) / 10,
+        remainingHours: Math.round(remainingHours * 10) / 10,
+        hoursVariance: Math.round(hoursVariance * 10) / 10,
+        hoursConsumedPct,
+      });
+    } catch (error) {
+      console.error("Error getting project hours summary:", error);
+      res.status(500).json({ message: "Failed to get project hours summary" });
+    }
+  });
+
+  // Batch hours summary for all active projects — used by dashboard project list
+  app.get("/api/projects/hours-summary-batch", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+
+      // Pull all estimates per project (id, status, budgetedHours from sum of line items)
+      type EstRow = { project_id: string; estimate_id: string; status: string; budgeted_hours: string };
+      const estRows = await db.execute<EstRow>(sql`
+        SELECT
+          e.project_id AS project_id,
+          e.id AS estimate_id,
+          e.status AS status,
+          COALESCE(SUM(CAST(li.adjusted_hours AS NUMERIC)), 0) AS budgeted_hours
+        FROM estimates e
+        LEFT JOIN estimate_line_items li ON li.estimate_id = e.id
+        WHERE e.project_id IS NOT NULL
+          ${tenantId ? sql`AND e.tenant_id = ${tenantId}` : sql``}
+        GROUP BY e.project_id, e.id, e.status, e.version
+        ORDER BY e.project_id, (e.status = 'approved') DESC, e.version DESC
+      `);
+
+      const budgetedByProject = new Map<string, number>();
+      for (const row of estRows.rows) {
+        // First row per project wins (approved first, then most recent)
+        if (!budgetedByProject.has(row.project_id)) {
+          budgetedByProject.set(row.project_id, Number(row.budgeted_hours));
+        }
+      }
+
+      // Actual hours per project from time entries
+      type ActualRow = { project_id: string; actual_hours: string };
+      const actualRows = await db.execute<ActualRow>(sql`
+        SELECT te.project_id AS project_id,
+               COALESCE(SUM(CAST(te.hours AS NUMERIC)), 0) AS actual_hours
+        FROM time_entries te
+        ${tenantId ? sql`JOIN projects p ON p.id = te.project_id AND p.tenant_id = ${tenantId}` : sql``}
+        GROUP BY te.project_id
+      `);
+
+      const actualByProject = new Map<string, number>();
+      for (const row of actualRows.rows) {
+        actualByProject.set(row.project_id, Number(row.actual_hours));
+      }
+
+      const projectIdSet = new Set<string>();
+      budgetedByProject.forEach((_v, k) => projectIdSet.add(k));
+      actualByProject.forEach((_v, k) => projectIdSet.add(k));
+      const summaries = Array.from(projectIdSet).map((projectId) => {
+        const budgetedHours = budgetedByProject.get(projectId) ?? 0;
+        const actualHours = actualByProject.get(projectId) ?? 0;
+        const remainingHours = Math.max(0, budgetedHours - actualHours);
+        const hoursVariance = actualHours - budgetedHours;
+        const hoursConsumedPct = budgetedHours > 0 ? Math.round((actualHours / budgetedHours) * 100) : 0;
+        return {
+          projectId,
+          budgetedHours: Math.round(budgetedHours * 10) / 10,
+          actualHours: Math.round(actualHours * 10) / 10,
+          remainingHours: Math.round(remainingHours * 10) / 10,
+          hoursVariance: Math.round(hoursVariance * 10) / 10,
+          hoursConsumedPct,
+        };
+      });
+
+      res.json(summaries);
+    } catch (error) {
+      console.error("Error getting batch hours summary:", error);
+      res.status(500).json({ message: "Failed to get batch hours summary" });
+    }
+  });
+
   // User-scoped slippage alerts (role-aware: team members see own alerts; PMs/portfolio see more)
   app.get("/api/dashboard/slippage-alerts", requireAuth, async (req, res) => {
     try {
@@ -99,15 +220,16 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   // Projects
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
-      const tenantId = req.user?.tenantId;
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
       // Backward-compat: only paginate when caller explicitly passes limit or offset
       const hasPagination = req.query.limit !== undefined || req.query.offset !== undefined;
+      console.log(`[GET /api/projects] tenantId=${tenantId} hasPagination=${hasPagination} query=`, req.query);
       if (!hasPagination) {
         const projects = await storage.getProjects(tenantId);
         return res.json(projects);
       }
-      const { projectFiltersSchema } = await import("@shared/pagination");
       const parsed = projectFiltersSchema.parse(req.query);
+      console.log(`[GET /api/projects] parsed:`, parsed);
       const result = await storage.getProjectsPaginated({
         tenantId,
         limit: parsed.limit,
@@ -119,9 +241,11 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         sortDir: parsed.sortDir,
         sortBy: parsed.sortBy,
       });
+      console.log(`[GET /api/projects] result.total=${result.total} items=${result.items.length}`);
       return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch projects" });
+      console.error("[GET /api/projects] error:", error);
+      res.status(500).json({ message: "Failed to fetch projects", error: String(error) });
     }
   });
 
