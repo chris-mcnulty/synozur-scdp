@@ -59,6 +59,7 @@ interface InvoiceBatchData {
   clientNames?: string[]; // Names of clients if <= 3
   projectNames?: string[]; // Names of projects if <= 3
   totalAmount: number;
+  taxAmount?: number | null;
   discountAmount?: number;
   invoicingMode: 'client' | 'project';
   status: string;
@@ -968,7 +969,7 @@ export default function Billing() {
                               <th className="pb-2 pr-3 font-medium">As-Of Date</th>
                               <th className="pb-2 pr-3 font-medium">Status</th>
                               <th className="pb-2 pr-3 font-medium">Payment</th>
-                              <th className="pb-2 pr-3 font-medium text-right">Amount</th>
+                              <th className="pb-2 pr-3 font-medium text-right">Net / Tax</th>
                               <th className="pb-2 font-medium"></th>
                             </tr>
                           </thead>
@@ -1041,6 +1042,11 @@ export default function Billing() {
                                   <span className="font-medium" data-testid={`batch-amount-${batch.id}`}>
                                     {canViewPricing ? `$${Number(batch.totalAmount || 0).toLocaleString()}` : '***'}
                                   </span>
+                                  {canViewPricing && Number(batch.taxAmount || 0) > 0 && (
+                                    <div className="text-xs text-muted-foreground mt-0.5">
+                                      Tax: ${Number(batch.taxAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="py-2.5">
                                   <div className="flex items-center gap-1">
