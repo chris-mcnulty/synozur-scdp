@@ -574,13 +574,19 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       const { batchId } = req.params;
       const { type } = req.query;
       
-      const lines = await storage.getInvoiceLinesForBatch(batchId);
-      const batchDetails = await storage.getInvoiceBatchDetails(batchId);
-      
-      if (!batchDetails) {
+      // Lightweight existence check — getInvoiceBatchDetails runs two queries
+      // (batch + aggregate count) and is unnecessary overhead for a CSV export.
+      const [batch, lines] = await Promise.all([
+        storage.getInvoiceBatchByBatchId(batchId),
+        storage.getInvoiceLinesForBatch(batchId),
+      ]);
+
+      if (!batch) {
         return res.status(404).json({ message: "Invoice batch not found" });
       }
-      
+
+      console.log(`[CSV-EXPORT] batchId=${batchId} type=${type ?? 'all'} totalLines=${lines.length}`);
+
       let filteredLines = lines;
       if (type === 'expense') {
         filteredLines = lines.filter(l => l.type === 'expense');
@@ -613,14 +619,18 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         } else if (line.type === 'time') {
           expenseCategory = 'Services';
         }
+
+        const clientName = line.client?.name || '';
+        const projectName = line.project?.name || '';
+        const projectCode = line.project?.code || '';
         
         return [
           line.id,
           line.type,
           `"${expenseCategory.replace(/"/g, '""')}"`,
-          `"${(line.client.name || '').replace(/"/g, '""')}"`,
-          `"${(line.project.name || '').replace(/"/g, '""')}"`,
-          line.project.code || '',
+          `"${clientName.replace(/"/g, '""')}"`,
+          `"${projectName.replace(/"/g, '""')}"`,
+          projectCode,
           `"${(line.description || '').replace(/"/g, '""')}"`,
           line.quantity || '',
           line.rate || '',
@@ -634,13 +644,16 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       
       const typeLabel = type === 'expense' ? '_expenses' : type === 'time' ? '_time' : '';
       const filename = `invoice_lines_${batchId}${typeLabel}.csv`;
-      
+
+      console.log(`[CSV-EXPORT] sending ${csvContent.length} bytes for batchId=${batchId}`);
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(csvContent);
     } catch (error) {
-      console.error("[ERROR] Failed to export invoice lines CSV:", error);
-      res.status(500).json({ message: "Failed to export invoice lines" });
+      console.error(`[ERROR] CSV export failed batchId=${req.params.batchId}:`, error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to export invoice lines" });
+      }
     }
   });
 
