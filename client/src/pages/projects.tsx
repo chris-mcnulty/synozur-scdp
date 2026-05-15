@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive, AlertTriangle } from "lucide-react";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronUp, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive, AlertTriangle, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 
@@ -120,6 +122,18 @@ export default function Projects() {
   const [projectToDelete, setProjectToDelete] = useState<ProjectWithBillableInfo | null>(null);
   const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
+
+  // M365 integration state for project creation dialog
+  const [createDialogClientId, setCreateDialogClientId] = useState<string>("");
+  const [teamsExpanded, setTeamsExpanded] = useState(false);
+  const [teamsMode, setTeamsMode] = useState<'new' | 'existing' | 'skip'>('new');
+  const [teamSearch, setTeamSearch] = useState('');
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<{ id: string; displayName: string; webUrl?: string } | null>(null);
+  const [createPlannerPlan, setCreatePlannerPlan] = useState(true);
+  const [autoAddMembers, setAutoAddMembers] = useState(true);
+  const [inviteGuests, setInviteGuests] = useState(false);
+
   const { toast } = useToast();
 
   useEffect(() => {
@@ -231,6 +245,68 @@ export default function Projects() {
   const { data: catalogTerms = [] } = useQuery<any[]>({
     queryKey: ["/api/vocabulary-catalog"],
   });
+
+  // M365 integration queries (only fetched while the Create Project dialog is open)
+  const { data: plannerStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["/api/planner/status"],
+    enabled: createDialogOpen,
+    retry: false,
+  });
+
+  const { data: defaultTeam } = useQuery<{ teamId: string; teamName: string; source: string } | null>({
+    queryKey: ["/api/estimates/resolve-default-team", createDialogClientId],
+    queryFn: () =>
+      apiRequest(
+        `/api/estimates/resolve-default-team?clientId=${encodeURIComponent(createDialogClientId)}`
+      ),
+    enabled: createDialogOpen && !!createDialogClientId && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  const { data: teamsData, isLoading: teamsLoading } = useQuery<{ teams: { id: string; displayName: string }[] }>({
+    queryKey: ["/api/planner/teams"],
+    enabled: createDialogOpen && plannerStatus?.connected === true,
+    retry: false,
+  });
+
+  const { data: channelsData, isLoading: channelsLoading } = useQuery<{ id: string; displayName: string; webUrl?: string; membershipType?: string }[]>({
+    queryKey: ["/api/planner/teams", selectedTeam?.id, "channels"],
+    queryFn: () => apiRequest(`/api/planner/teams/${selectedTeam!.id}/channels`),
+    enabled: createDialogOpen && teamsMode === 'existing' && !!selectedTeam?.id,
+    retry: false,
+  });
+
+  const allTeams = teamsData?.teams ?? [];
+  const channels = channelsData ?? [];
+  const filteredTeams = teamSearch
+    ? allTeams.filter(t => t.displayName.toLowerCase().includes(teamSearch.toLowerCase()))
+    : allTeams;
+
+  // Auto-select default team when resolved
+  useEffect(() => {
+    if (defaultTeam?.teamId && allTeams.length > 0) {
+      const found = allTeams.find(t => t.id === defaultTeam.teamId);
+      if (found) {
+        setSelectedTeam(found);
+        setSelectedChannel(null);
+      }
+    }
+  }, [defaultTeam?.teamId, allTeams.length]);
+
+  // Reset M365 state when create dialog closes
+  useEffect(() => {
+    if (!createDialogOpen) {
+      setCreateDialogClientId("");
+      setTeamsExpanded(false);
+      setTeamsMode('new');
+      setTeamSearch('');
+      setSelectedTeam(null);
+      setSelectedChannel(null);
+      setCreatePlannerPlan(true);
+      setAutoAddMembers(true);
+      setInviteGuests(false);
+    }
+  }, [createDialogOpen]);
 
   const createProject = useMutation({
     mutationFn: (data: any) => apiRequest("/api/projects", {
@@ -930,17 +1006,61 @@ export default function Projects() {
               const formData = new FormData(e.currentTarget);
               const endDateValue = formData.get('endDate') as string;
               const pmValue = formData.get('pm') as string;
-              createProject.mutate({
-                name: formData.get('name'),
+              const projectName = formData.get('name') as string;
+              const clientId = formData.get('clientId') as string;
+
+              // Validate Teams selection when M365 is configured and a non-skip mode is active.
+              if (plannerStatus?.connected && teamsMode !== 'skip') {
+                if (!selectedTeam) {
+                  toast({
+                    title: "Team Required",
+                    description: "Please pick a Microsoft Teams team or choose Skip.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                if (teamsMode === 'existing' && !selectedChannel) {
+                  toast({
+                    title: "Teams Channel Required",
+                    description: "Please select an existing channel or choose a different Teams option.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+              }
+
+              const payload: any = {
+                name: projectName,
                 description: formData.get('description') || undefined,
-                clientId: formData.get('clientId'),
+                clientId,
                 code: formData.get('code'),
                 pm: pmValue === 'none' ? null : pmValue || null,
                 startDate: formData.get('startDate') || undefined,
                 endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
                 commercialScheme: formData.get('commercialScheme'),
                 status: 'active',
-              });
+              };
+
+              // Attach M365 integration options
+              if (plannerStatus?.connected && teamsMode !== 'skip' && selectedTeam) {
+                const clientName = clients.find((c: any) => c.id === clientId)?.name;
+                payload.teamsTeamId = selectedTeam.id;
+                payload.teamsTeamName = selectedTeam.displayName;
+                if (teamsMode === 'new') {
+                  payload.teamsChannelName = clientName
+                    ? `${clientName} – ${projectName}`
+                    : projectName;
+                } else if (teamsMode === 'existing' && selectedChannel) {
+                  payload.teamsExistingChannelId = selectedChannel.id;
+                  payload.teamsExistingChannelName = selectedChannel.displayName;
+                  payload.teamsExistingChannelWebUrl = selectedChannel.webUrl || null;
+                }
+                payload.createPlannerPlan = createPlannerPlan;
+                payload.autoAddMembers = autoAddMembers;
+                payload.inviteGuests = inviteGuests;
+              }
+
+              createProject.mutate(payload);
             }}>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
@@ -978,7 +1098,17 @@ export default function Projects() {
                 
                 <div className="grid gap-2">
                   <Label htmlFor="clientId">Client</Label>
-                  <Select name="clientId" required>
+                  <Select
+                    name="clientId"
+                    required
+                    value={createDialogClientId}
+                    onValueChange={(value) => {
+                      setCreateDialogClientId(value);
+                      // Clear team selection so the new client's default team resolves
+                      setSelectedTeam(null);
+                      setSelectedChannel(null);
+                    }}
+                  >
                     <SelectTrigger data-testid="select-client">
                       <SelectValue placeholder="Select a client" />
                     </SelectTrigger>
@@ -1046,6 +1176,237 @@ export default function Projects() {
                     <p className="text-xs text-muted-foreground">Leave blank for open-ended projects</p>
                   </div>
                 </div>
+
+                {/* Microsoft 365 Integration */}
+                {plannerStatus?.connected && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between p-3 hover:bg-muted/50 text-left"
+                      onClick={() => setTeamsExpanded(!teamsExpanded)}
+                      data-testid="toggle-teams-section"
+                    >
+                      <div className="flex items-center gap-2">
+                        <MicrosoftTeamsIcon className="h-4 w-4" />
+                        <span className="text-sm font-medium">Microsoft 365 Integration</span>
+                        {teamsMode !== 'skip' && selectedTeam && (
+                          <span className="text-xs text-muted-foreground">
+                            ({teamsMode === 'existing' ? 'Existing channel' : 'New channel'} in {selectedTeam.displayName})
+                          </span>
+                        )}
+                        {teamsMode === 'skip' && (
+                          <span className="text-xs text-muted-foreground">(Skipped)</span>
+                        )}
+                      </div>
+                      {teamsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </button>
+
+                    {teamsExpanded && (
+                      <div className="p-3 pt-0 space-y-3 border-t">
+                        {/* Mode selector */}
+                        <div className="flex rounded-md border overflow-hidden text-xs">
+                          <button
+                            type="button"
+                            className={`flex-1 px-2 py-1.5 ${teamsMode === 'new' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('new')}
+                            data-testid="button-teams-mode-new"
+                          >
+                            New Channel
+                          </button>
+                          <button
+                            type="button"
+                            className={`flex-1 px-2 py-1.5 border-l ${teamsMode === 'existing' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('existing')}
+                            data-testid="button-teams-mode-existing"
+                          >
+                            Existing Channel
+                          </button>
+                          <button
+                            type="button"
+                            className={`flex-1 px-2 py-1.5 border-l ${teamsMode === 'skip' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('skip')}
+                            data-testid="button-teams-mode-skip"
+                          >
+                            Skip
+                          </button>
+                        </div>
+
+                        {teamsMode !== 'skip' && (
+                          <>
+                            {/* Smart detection: default team hint */}
+                            {defaultTeam && (
+                              <div className="rounded-md border p-2 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                                <p className="text-xs text-blue-800 dark:text-blue-300">
+                                  {defaultTeam.source === 'client'
+                                    ? `This client already has the "${defaultTeam.teamName}" team — a new channel will be added there.`
+                                    : `No team linked to this client. Defaulting to the tenant pursuit team: "${defaultTeam.teamName}".`}
+                                </p>
+                              </div>
+                            )}
+                            {!defaultTeam && createDialogClientId && (
+                              <div className="rounded-md border p-2 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                                <p className="text-xs text-amber-800 dark:text-amber-300">
+                                  First project for this client. Pick the team that should host the new channel.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Team picker */}
+                            <div className="space-y-1">
+                              <Label className="text-xs">Team</Label>
+                              <div className="relative">
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                <Input
+                                  placeholder="Filter teams..."
+                                  value={teamSearch}
+                                  onChange={(e) => setTeamSearch(e.target.value)}
+                                  className="pl-8 h-8 text-sm"
+                                  data-testid="input-team-search"
+                                />
+                              </div>
+                            </div>
+
+                            {teamsLoading ? (
+                              <div className="flex items-center justify-center py-3">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              </div>
+                            ) : (
+                              <div className="max-h-32 overflow-y-auto border rounded-md" role="listbox" aria-label="Microsoft Teams">
+                                {filteredTeams.map((team) => (
+                                  <button
+                                    type="button"
+                                    key={team.id}
+                                    role="option"
+                                    aria-selected={selectedTeam?.id === team.id}
+                                    className={`w-full text-left flex items-center p-2 border-b last:border-b-0 hover:bg-muted/50 text-sm focus:outline-none focus:bg-muted/50 ${selectedTeam?.id === team.id ? 'bg-primary/10' : ''}`}
+                                    onClick={() => { setSelectedTeam(team); setSelectedChannel(null); }}
+                                    data-testid={`team-option-${team.id}`}
+                                  >
+                                    <MicrosoftTeamsIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
+                                    <span className="font-medium">{team.displayName}</span>
+                                  </button>
+                                ))}
+                                {filteredTeams.length === 0 && (
+                                  <p className="text-xs text-muted-foreground p-2 text-center">No teams found</p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Channel picker (existing mode) */}
+                            {teamsMode === 'existing' && selectedTeam && (
+                              <div className="space-y-1">
+                                <Label className="text-xs">Channel</Label>
+                                {channelsLoading ? (
+                                  <div className="flex items-center justify-center py-3">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  </div>
+                                ) : (
+                                  <div className="max-h-32 overflow-y-auto border rounded-md" role="listbox" aria-label="Channels">
+                                    {channels.map((ch) => (
+                                      <button
+                                        type="button"
+                                        key={ch.id}
+                                        role="option"
+                                        aria-selected={selectedChannel?.id === ch.id}
+                                        className={`w-full text-left flex items-center p-2 border-b last:border-b-0 hover:bg-muted/50 text-sm focus:outline-none focus:bg-muted/50 ${selectedChannel?.id === ch.id ? 'bg-primary/10' : ''}`}
+                                        onClick={() => setSelectedChannel(ch)}
+                                        data-testid={`channel-option-${ch.id}`}
+                                      >
+                                        <span className="font-medium">{ch.displayName}</span>
+                                      </button>
+                                    ))}
+                                    {channels.length === 0 && (
+                                      <p className="text-xs text-muted-foreground p-2 text-center">No channels found</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* M365 resource options */}
+                            {selectedTeam && (
+                              <div className="space-y-2 pt-2 border-t">
+                                <Label className="text-xs">Also create / manage</Label>
+                                <div className="space-y-1.5">
+                                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <Checkbox
+                                      checked={createPlannerPlan}
+                                      onCheckedChange={(v) => setCreatePlannerPlan(v === true)}
+                                      data-testid="checkbox-create-planner"
+                                    />
+                                    <span>Create a Microsoft Planner plan for this project</span>
+                                  </label>
+                                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <Checkbox
+                                      checked={autoAddMembers}
+                                      onCheckedChange={(v) => setAutoAddMembers(v === true)}
+                                      data-testid="checkbox-auto-members"
+                                    />
+                                    <span>Auto-add team members as assignments are made</span>
+                                  </label>
+                                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <Checkbox
+                                      checked={inviteGuests}
+                                      onCheckedChange={(v) => setInviteGuests(v === true)}
+                                      data-testid="checkbox-invite-guests"
+                                    />
+                                    <span>Invite external consultants as guests (Azure AD B2B)</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Visual preview of resources */}
+                            {selectedTeam && (
+                              <div className="rounded-md border p-3 bg-muted/30 space-y-1.5" data-testid="m365-preview">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Will provision</p>
+                                <ul className="text-sm space-y-1">
+                                  <li className="flex items-start gap-2">
+                                    <span className="text-green-600 dark:text-green-400">●</span>
+                                    {teamsMode === 'new' ? (
+                                      <span>
+                                        New channel <strong>
+                                          {(() => {
+                                            const clientName = clients.find((c: any) => c.id === createDialogClientId)?.name;
+                                            return clientName ? `${clientName} – [project name]` : '[project name]';
+                                          })()}
+                                        </strong> in <strong>{selectedTeam.displayName}</strong>
+                                      </span>
+                                    ) : selectedChannel ? (
+                                      <span>
+                                        Link to existing channel <strong>{selectedChannel.displayName}</strong> in <strong>{selectedTeam.displayName}</strong>
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">Select a channel above</span>
+                                    )}
+                                  </li>
+                                  {createPlannerPlan && (
+                                    <li className="flex items-start gap-2">
+                                      <span className="text-green-600 dark:text-green-400">●</span>
+                                      <span>Microsoft Planner plan bound to this project</span>
+                                    </li>
+                                  )}
+                                  {autoAddMembers && (
+                                    <li className="flex items-start gap-2">
+                                      <span className="text-green-600 dark:text-green-400">●</span>
+                                      <span>Team membership auto-managed from assignments</span>
+                                    </li>
+                                  )}
+                                  {inviteGuests && (
+                                    <li className="flex items-start gap-2">
+                                      <span className="text-green-600 dark:text-green-400">●</span>
+                                      <span>Guest invitations sent for non-Azure AD consultants</span>
+                                    </li>
+                                  )}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-4 border-t pt-4">
                   <h4 className="font-medium">SOW Tracking</h4>

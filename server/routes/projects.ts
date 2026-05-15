@@ -20,6 +20,173 @@ interface ProjectRouteDeps {
   sharePointFileStorage: SharePointFileStorage;
 }
 
+interface ProjectM365ProvisioningOptions {
+  projectId: string;
+  projectName: string;
+  tenantId: string | null;
+  teamsTeamId: string;
+  teamsTeamName: string | null;
+  teamsChannelName: string;
+  teamsExistingChannelId: string | null;
+  teamsExistingChannelName: string | null;
+  teamsExistingChannelWebUrl: string | null;
+  createPlannerPlan: boolean;
+  autoAddMembers: boolean;
+  inviteGuests: boolean;
+}
+
+// Non-blocking Teams channel + Planner provisioning for a freshly created project.
+// Mirrors the pattern shipped for estimates (fireTeamsProvisioning in estimates.ts).
+function fireProjectM365Provisioning(req: Request, opts: ProjectM365ProvisioningOptions) {
+  const requestUser = (req.user ?? {}) as {
+    id?: string;
+    ssoRefreshToken?: string;
+  };
+  const userId = requestUser.id || null;
+  const tenantId = opts.tenantId;
+
+  // Skip provisioning entirely when tenant context is missing — the channel
+  // row would otherwise be unreachable from /api/projects/:id/channel,
+  // which is tenant-scoped.
+  if (!tenantId) {
+    console.warn(
+      `[PROJECTS] Skipping M365 provisioning for project ${opts.projectId}: missing tenant context`,
+    );
+    return;
+  }
+
+  setImmediate(async () => {
+    let channelId: string | null = null;
+    let channelName: string | null = null;
+    let channelWebUrl: string | null = null;
+
+    try {
+      const { plannerService } = await import('../services/planner-service.js');
+
+      if (opts.teamsExistingChannelId) {
+        // Link to existing channel
+        channelId = opts.teamsExistingChannelId;
+        channelName = opts.teamsExistingChannelName;
+        channelWebUrl = opts.teamsExistingChannelWebUrl;
+
+        try {
+          await plannerService.createConstellationTab(opts.teamsTeamId, channelId, {
+            entityType: 'project',
+            entityId: opts.projectId,
+            entityName: opts.projectName,
+            ssoRefreshToken: requestUser.ssoRefreshToken,
+          });
+        } catch (tabErr: any) {
+          console.warn('[PROJECTS] Constellation tab failed for existing channel (non-blocking):', tabErr.message);
+        }
+        console.log(`[PROJECTS] Linked existing channel ${channelId} to project ${opts.projectId}`);
+      } else {
+        // Create a new channel
+        const channel = await plannerService.createChannel(opts.teamsTeamId, {
+          displayName: opts.teamsChannelName,
+        });
+        channelId = channel.id;
+        channelName = channel.displayName;
+        channelWebUrl = channel.webUrl || null;
+
+        try {
+          await plannerService.createConstellationTab(opts.teamsTeamId, channel.id, {
+            entityType: 'project',
+            entityId: opts.projectId,
+            entityName: opts.projectName,
+            ssoRefreshToken: requestUser.ssoRefreshToken,
+            newChannel: true,
+          });
+        } catch (tabErr: any) {
+          console.warn('[PROJECTS] Constellation tab failed (non-blocking):', tabErr.message);
+        }
+        console.log(`[PROJECTS] Created channel ${channel.id} for project ${opts.projectId}`);
+      }
+
+      // Optionally create a Planner plan bound to the team's M365 group
+      let plannerPlanId: string | null = null;
+      let plannerPlanWebUrl: string | null = null;
+      if (opts.createPlannerPlan && channelId) {
+        try {
+          const plan = await plannerService.createPlan(opts.teamsTeamId, opts.projectName);
+          plannerPlanId = plan.id;
+          plannerPlanWebUrl = (plan as any).webUrl || null;
+
+          // Persist the Planner connection so sync infrastructure picks it up.
+          try {
+            await storage.createProjectPlannerConnection({
+              projectId: opts.projectId,
+              planId: plan.id,
+              planTitle: opts.projectName,
+              planWebUrl: plannerPlanWebUrl,
+              groupId: opts.teamsTeamId,
+              groupName: opts.teamsTeamName,
+              channelId,
+              channelName,
+              syncEnabled: true,
+              syncDirection: 'bidirectional',
+              autoAddMembers: opts.autoAddMembers,
+              connectedBy: userId,
+            } as any);
+          } catch (connErr: any) {
+            console.warn('[PROJECTS] Planner connection persistence failed (non-blocking):', connErr.message);
+          }
+        } catch (planErr: any) {
+          console.warn('[PROJECTS] Planner plan creation failed (non-blocking):', planErr.message);
+        }
+      }
+
+      // Persist project_channels row
+      try {
+        await db.insert(projectChannels).values({
+          projectId: opts.projectId,
+          tenantId,
+          channelId: channelId!,
+          channelName: channelName,
+          channelWebUrl: channelWebUrl,
+          plannerPlanId,
+          plannerPlanWebUrl,
+          createdBy: userId,
+        } as any).onConflictDoUpdate({
+          target: projectChannels.projectId,
+          set: {
+            channelId: channelId!,
+            channelName,
+            channelWebUrl,
+            plannerPlanId,
+            plannerPlanWebUrl,
+            updatedAt: sql`now()`,
+          },
+        });
+      } catch (rowErr: any) {
+        console.warn('[PROJECTS] project_channels persistence failed (non-blocking):', rowErr.message);
+      }
+
+      // Optionally sync project members → Team (and invite guests)
+      if (opts.autoAddMembers && userId) {
+        try {
+          const { teamsAutomationService } = await import('../services/teams-automation-service.js');
+          await teamsAutomationService.syncProjectMembers(
+            opts.projectId,
+            opts.teamsTeamId,
+            {
+              autoAdd: true,
+              autoRemove: false,
+              inviteGuests: opts.inviteGuests,
+              tenantId,
+              triggeredBy: userId,
+            },
+          );
+        } catch (memberErr: any) {
+          console.warn('[PROJECTS] Member sync failed (non-blocking):', memberErr.message);
+        }
+      }
+    } catch (err: any) {
+      console.error('[PROJECTS] M365 provisioning failed (non-blocking):', err.message);
+    }
+  });
+}
+
 export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   const { requireAuth, requireRole, upload, sharePointFileStorage } = deps;
 
@@ -280,7 +447,23 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       console.log("[DEBUG] Creating project with:", req.body);
       console.log("[DEBUG] User role:", req.user?.role);
       console.log("[DEBUG] Tenant context:", req.user?.tenantId);
-      const validatedData = insertProjectSchema.parse(req.body);
+
+      // Pull off the M365 integration options before schema validation;
+      // they are dialog-only fields, not part of the project schema.
+      const {
+        teamsTeamId,
+        teamsTeamName,
+        teamsChannelName,
+        teamsExistingChannelId,
+        teamsExistingChannelName,
+        teamsExistingChannelWebUrl,
+        createPlannerPlan,
+        autoAddMembers,
+        inviteGuests,
+        ...projectFields
+      } = req.body || {};
+
+      const validatedData = insertProjectSchema.parse(projectFields);
       // Include tenant context in the project data (dual-write)
       const projectDataWithTenant = {
         ...validatedData,
@@ -289,6 +472,28 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       console.log("[DEBUG] Validated project data with tenant:", projectDataWithTenant);
       const project = await storage.createProject(projectDataWithTenant);
       console.log("[DEBUG] Created project:", project.id, "tenantId:", project.tenantId);
+
+      // Fire non-blocking M365 provisioning when the create dialog opted in.
+      // The provisioning helper inherits the project's tenantId so the
+      // project_channels row stays in sync with the project itself; flags
+      // default to false so non-dialog API callers must opt in explicitly.
+      if (teamsTeamId) {
+        fireProjectM365Provisioning(req, {
+          projectId: project.id,
+          projectName: project.name,
+          tenantId: project.tenantId || null,
+          teamsTeamId,
+          teamsTeamName: teamsTeamName || null,
+          teamsChannelName: teamsChannelName || project.name,
+          teamsExistingChannelId: teamsExistingChannelId || null,
+          teamsExistingChannelName: teamsExistingChannelName || null,
+          teamsExistingChannelWebUrl: teamsExistingChannelWebUrl || null,
+          createPlannerPlan: createPlannerPlan === true,
+          autoAddMembers: autoAddMembers === true,
+          inviteGuests: inviteGuests === true,
+        });
+      }
+
       res.status(201).json(project);
     } catch (error: any) {
       console.error("[ERROR] Failed to create project:", error);

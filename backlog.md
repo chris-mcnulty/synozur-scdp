@@ -1,7 +1,7 @@
 # Constellation Product Backlog
 
-**Last Updated**: May 7, 2026
-**Version**: 7.1 — v2.5 release: Galaxy Client Portal API, Notifications System, Multi-Currency Estimates, Time Grid 2.0, Estimate Version History, Client Portal Approvals & Sign-offs, Payment Milestone Billing Automation, AI Project Manager Agent, Planner LWW. Notifications System (previously deprioritized) marked ✅ Complete. Copilot Write Phases 0–5 fully shipped.
+**Last Updated**: May 15, 2026
+**Version**: 7.2 — Status reconciliation pass on Microsoft Teams Integration Phase 2: confirmed Graph webhook subscriptions, webhook receiver, and guest user invitations are already shipped (previously tracked as pending). Added Project Creation UX Enhancement (M365 options in create dialog) to Recently Completed. Remaining gaps narrowed to multitenant app registration and external-user UI.
 
 ---
 
@@ -346,8 +346,8 @@ Estimate approval/status transitions, invoice generation, line-item-level edits 
 - [x] Phase 6: Bulk import & polish
 
 ### Microsoft 365 Teams Integration
-**Status:** Phase 2 complete — SharePoint provisioning, member sync, guest invitations
-**Effort:** Medium (2-3 weeks remaining for bidirectional sync & project creation UI)
+**Status:** Phase 2 substantially complete — webhooks, audit trail, project-create UI all shipped
+**Effort:** Remaining: multitenant app registration (4-6 weeks), Teams Phase 3 SharePoint living updates (2-3 weeks), external-user UI (2 weeks)
 
 - [x] Planner one-way sync ✅
 - [x] Database schema for Teams/Channels/Planner ✅
@@ -358,10 +358,12 @@ Estimate approval/status transitions, invoice generation, line-item-level edits 
 - [x] Guest user invitation workflows ✅ (Phase 2)
 - [x] Automation audit logging ✅ (Phase 2)
 - [x] Planner sync robustness: last-write-wins + admin alerts ✅ (Task #126, v2.5)
-- [ ] Planner Phase 2: Bidirectional sync via Graph webhooks (still polling-based)
-- [ ] Planner Phase 2: Multitenant app registration
+- [x] Planner Phase 2: Bidirectional sync via Graph webhooks ✅ (`planner-subscription-manager.ts` + `POST /api/webhooks/planner`; 4-hour renewal scheduler)
+- [x] Planner Phase 2: Planner-to-Constellation change notifications ✅ (handled by webhook receiver, `webhook_received` audit events)
+- [x] Project creation UI with M365 options ✅ (v2.5 — Teams channel picker, smart client-team detection, Planner toggle, auto-member & invite-guest options, non-blocking provisioning)
+- [ ] Planner Phase 2: Multitenant app registration — schema exists (`tenantMicrosoftIntegrations` + `getCredentialsFromIntegration`) but not wired. Needs admin-consent flow, encrypted secret storage, tenant-scoped credential resolution through `planner-graph-client.ts`, and a Settings → Microsoft Integration UI
 - [ ] Teams Phase 3: SharePoint Living Updates (on-demand + scheduled news posts)
-- [ ] Project creation UI with M365 options
+- [ ] External-user UI & permissions: per-assignment "Not in Azure AD" badge with manual re-map, `userType` field on `users`, distinct external-collaborator permission tier (assigned-projects only)
 
 ### Codebase Modularization
 **Status:** Planned — Pattern established with `platform.ts` extraction
