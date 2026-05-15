@@ -1009,19 +1009,24 @@ export default function Projects() {
               const projectName = formData.get('name') as string;
               const clientId = formData.get('clientId') as string;
 
-              // Validate Teams selection when 'existing' is chosen but no channel picked
-              if (
-                plannerStatus?.connected &&
-                teamsMode === 'existing' &&
-                selectedTeam &&
-                !selectedChannel
-              ) {
-                toast({
-                  title: "Teams Channel Required",
-                  description: "Please select an existing channel or choose a different Teams option.",
-                  variant: "destructive",
-                });
-                return;
+              // Validate Teams selection when M365 is configured and a non-skip mode is active.
+              if (plannerStatus?.connected && teamsMode !== 'skip') {
+                if (!selectedTeam) {
+                  toast({
+                    title: "Team Required",
+                    description: "Please pick a Microsoft Teams team or choose Skip.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                if (teamsMode === 'existing' && !selectedChannel) {
+                  toast({
+                    title: "Teams Channel Required",
+                    description: "Please select an existing channel or choose a different Teams option.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
               }
 
               const payload: any = {
@@ -1266,17 +1271,20 @@ export default function Projects() {
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               </div>
                             ) : (
-                              <div className="max-h-32 overflow-y-auto border rounded-md">
+                              <div className="max-h-32 overflow-y-auto border rounded-md" role="listbox" aria-label="Microsoft Teams">
                                 {filteredTeams.map((team) => (
-                                  <div
+                                  <button
+                                    type="button"
                                     key={team.id}
-                                    className={`flex items-center p-2 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 text-sm ${selectedTeam?.id === team.id ? 'bg-primary/10' : ''}`}
+                                    role="option"
+                                    aria-selected={selectedTeam?.id === team.id}
+                                    className={`w-full text-left flex items-center p-2 border-b last:border-b-0 hover:bg-muted/50 text-sm focus:outline-none focus:bg-muted/50 ${selectedTeam?.id === team.id ? 'bg-primary/10' : ''}`}
                                     onClick={() => { setSelectedTeam(team); setSelectedChannel(null); }}
                                     data-testid={`team-option-${team.id}`}
                                   >
                                     <MicrosoftTeamsIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
                                     <span className="font-medium">{team.displayName}</span>
-                                  </div>
+                                  </button>
                                 ))}
                                 {filteredTeams.length === 0 && (
                                   <p className="text-xs text-muted-foreground p-2 text-center">No teams found</p>
@@ -1293,16 +1301,19 @@ export default function Projects() {
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                   </div>
                                 ) : (
-                                  <div className="max-h-32 overflow-y-auto border rounded-md">
+                                  <div className="max-h-32 overflow-y-auto border rounded-md" role="listbox" aria-label="Channels">
                                     {channels.map((ch) => (
-                                      <div
+                                      <button
+                                        type="button"
                                         key={ch.id}
-                                        className={`flex items-center p-2 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 text-sm ${selectedChannel?.id === ch.id ? 'bg-primary/10' : ''}`}
+                                        role="option"
+                                        aria-selected={selectedChannel?.id === ch.id}
+                                        className={`w-full text-left flex items-center p-2 border-b last:border-b-0 hover:bg-muted/50 text-sm focus:outline-none focus:bg-muted/50 ${selectedChannel?.id === ch.id ? 'bg-primary/10' : ''}`}
                                         onClick={() => setSelectedChannel(ch)}
                                         data-testid={`channel-option-${ch.id}`}
                                       >
                                         <span className="font-medium">{ch.displayName}</span>
-                                      </div>
+                                      </button>
                                     ))}
                                     {channels.length === 0 && (
                                       <p className="text-xs text-muted-foreground p-2 text-center">No channels found</p>

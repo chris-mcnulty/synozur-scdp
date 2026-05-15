@@ -23,6 +23,7 @@ interface ProjectRouteDeps {
 interface ProjectM365ProvisioningOptions {
   projectId: string;
   projectName: string;
+  tenantId: string | null;
   teamsTeamId: string;
   teamsTeamName: string | null;
   teamsChannelName: string;
@@ -39,17 +40,20 @@ interface ProjectM365ProvisioningOptions {
 function fireProjectM365Provisioning(req: Request, opts: ProjectM365ProvisioningOptions) {
   const requestUser = (req.user ?? {}) as {
     id?: string;
-    tenantId?: string;
-    activeTenantId?: string;
-    primaryTenantId?: string;
     ssoRefreshToken?: string;
   };
-  const tenantId =
-    requestUser.activeTenantId ||
-    requestUser.primaryTenantId ||
-    requestUser.tenantId ||
-    null;
   const userId = requestUser.id || null;
+  const tenantId = opts.tenantId;
+
+  // Skip provisioning entirely when tenant context is missing — the channel
+  // row would otherwise be unreachable from /api/projects/:id/channel,
+  // which is tenant-scoped.
+  if (!tenantId) {
+    console.warn(
+      `[PROJECTS] Skipping M365 provisioning for project ${opts.projectId}: missing tenant context`,
+    );
+    return;
+  }
 
   setImmediate(async () => {
     let channelId: string | null = null;
@@ -136,7 +140,7 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
       try {
         await db.insert(projectChannels).values({
           projectId: opts.projectId,
-          tenantId: tenantId || null,
+          tenantId,
           channelId: channelId!,
           channelName: channelName,
           channelWebUrl: channelWebUrl,
@@ -159,7 +163,7 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
       }
 
       // Optionally sync project members → Team (and invite guests)
-      if (opts.autoAddMembers && tenantId && userId) {
+      if (opts.autoAddMembers && userId) {
         try {
           const { teamsAutomationService } = await import('../services/teams-automation-service.js');
           await teamsAutomationService.syncProjectMembers(
@@ -470,18 +474,22 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       console.log("[DEBUG] Created project:", project.id, "tenantId:", project.tenantId);
 
       // Fire non-blocking M365 provisioning when the create dialog opted in.
+      // The provisioning helper inherits the project's tenantId so the
+      // project_channels row stays in sync with the project itself; flags
+      // default to false so non-dialog API callers must opt in explicitly.
       if (teamsTeamId) {
         fireProjectM365Provisioning(req, {
           projectId: project.id,
           projectName: project.name,
+          tenantId: project.tenantId || null,
           teamsTeamId,
           teamsTeamName: teamsTeamName || null,
           teamsChannelName: teamsChannelName || project.name,
           teamsExistingChannelId: teamsExistingChannelId || null,
           teamsExistingChannelName: teamsExistingChannelName || null,
           teamsExistingChannelWebUrl: teamsExistingChannelWebUrl || null,
-          createPlannerPlan: createPlannerPlan !== false,
-          autoAddMembers: autoAddMembers !== false,
+          createPlannerPlan: createPlannerPlan === true,
+          autoAddMembers: autoAddMembers === true,
           inviteGuests: inviteGuests === true,
         });
       }

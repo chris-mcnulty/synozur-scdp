@@ -71,3 +71,11 @@ When planning new features, enhancements, or prioritizing work, ALWAYS consult t
 
 ## Communication Style
 Simple, everyday language.
+
+## Pull Request Workflow (standing instructions)
+Whenever a pull request is opened in this repo:
+1. **Subscribe** to PR activity via `mcp__github__subscribe_pr_activity` so review comments and CI events stream into the session.
+2. **Watch for comments from coding agents** (e.g. Copilot review, other automated reviewers) and address them. Investigate each comment, decide if it's tractable, and either apply a fix, ask for clarification when ambiguous, or skip if no action is needed.
+3. **Confirm fixes with a reply** before resolving the review thread. After pushing a fix, post a reply on the same review comment summarizing what changed (and the commit SHA when helpful) so the reviewer can verify. Only then call `mcp__github__resolve_review_thread`.
+4. **Babysit CI** on the PR until it goes green: on each failure, re-diagnose and push the fix; reply with the green status when it lands.
+5. **Stop the moment the user asks** — call `mcp__github__unsubscribe_pr_activity` and don't push further changes to that PR.
