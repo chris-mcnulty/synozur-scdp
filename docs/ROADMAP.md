@@ -657,23 +657,24 @@ The following major features have been delivered and are live in production. See
 - Integration with existing Status Reports: option to cross-post an approved status report as a SharePoint news post
 - Re-uses the same Graph API page publishing infrastructure built in Phase 2
 
-**Enhanced Planner Integration (Phase 2)** — 🔶 *Partially shipped (v2.5)*
-- ✅ Conflict resolution with last-write-wins (Task #126, May 2026)
+**Enhanced Planner Integration (Phase 2)** — ✅ *Substantially complete (May 2026)*
+- ✅ Conflict resolution with last-write-wins (Task #126)
 - ✅ Admin alerts on sync failures with actionable context (Task #126)
-- ✅ Comprehensive audit trail for all sync activities
-- [ ] Bidirectional sync via Microsoft Graph webhooks (still polling-based today)
-- [ ] Multitenant app registration (so other tenants can consent without creating their own app)
+- ✅ Comprehensive audit trail for all sync activities (`planner_sync_audit` table)
+- ✅ Bidirectional sync via Microsoft Graph webhooks — `planner-subscription-manager.ts` creates/renews Graph subscriptions on each Planner-connected project; `POST /api/webhooks/planner` receives change notifications and enqueues inbound pull. Subscription renewal scheduled every 4 hours (Graph caps at 7 days).
+- ✅ Planner-to-Constellation change notifications — wired through the same webhook receiver, with `webhook_received` events recorded in the audit log
+- [ ] **Multitenant app registration** — *remaining gap.* Schema (`tenantMicrosoftIntegrations` with `integrationType: 'publisher_app' | 'byoa'`) and credential resolver (`getCredentialsFromIntegration`) exist, but call paths still load credentials from the system-wide `PLANNER_TENANT_ID` / `PLANNER_CLIENT_ID` / `PLANNER_CLIENT_SECRET` env vars and there is no admin-consent UI for tenants to plug in their own Azure app. Requires: admin-consent flow + callback handler, encrypted secret storage, tenant-scoped credential resolution through `planner-graph-client.ts`, settings UI under Settings → Microsoft Integration.
 
-**Project Creation UX Enhancement**
-- M365 integration options in project creation dialog
-- Smart detection: "First project" vs "Add to existing Team"
-- Visual preview of resources to be created
-- Checkbox options for Teams, Planner, auto-member management
+**Project Creation UX Enhancement** — ✅ *Completed May 2026 (v2.5)*
+- ✅ M365 integration options in project creation dialog (Teams Channel, Planner Plan, Auto-add members, Invite guests)
+- ✅ Smart detection: defaults to the team linked to the selected client (via `clientTeams` / `clients.microsoftTeamId`) and offers "New Channel" vs "Existing Channel" modes
+- ✅ Visual preview of resources to be created beneath the picker
+- ✅ Non-blocking post-create provisioning (mirrors the pattern shipped for estimates): creates the channel + Constellation tab, persists `project_channels`, and creates the Planner connection if requested
 
-**External User Support**
-- Graceful handling of non-Azure AD consultants
-- Guest user invitation workflow
-- External collaborator permissions management
+**External User Support** — 🔶 *Partially shipped*
+- ✅ Guest user invitation workflow — `inviteGuestUser()` in `teams-automation-service.ts` invokes the Azure AD B2B `/invitations` API, persists to `guest_invitations`, and adds the guest as a team member; surfaced via the `inviteGuests` flag on member sync and per-tenant `inviteGuestsAutomatically` setting
+- ✅ Graceful handling of non-Azure AD consultants (backend) — assignment-to-Teams sync resolves users via Azure AD lookup, records failures with actionable context, and (when enabled) auto-invites unmapped emails as guests
+- [ ] **External collaborator UI and permissions model** — *remaining gap.* No UI to surface "Not in Azure AD" state per assignee on the project Team Members panel, no manual re-mapping affordance, and no distinct permission tier for external/guest collaborators (they currently inherit standard tenant-user roles). Requires: per-assignment external-user badge + retry UI, `userType` field on `users`, and an external-user permission profile that limits access to assigned projects only.
 
 **Design Reference:** `docs/design/microsoft-365-project-integration.md`
 
