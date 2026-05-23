@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { formatProjectLabel } from "@/lib/project-utils";
-import { ChevronDown, ChevronRight, CheckCheck, X, Clock, Info, Sparkles, Users, UserCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronLeft, CheckCheck, X, Clock, Info, Sparkles, Users, UserCheck } from "lucide-react";
 import type { Project, Client } from "@shared/schema";
 
 type ProjectWithClient = Project & { client: Client };
@@ -45,6 +46,32 @@ interface Props {
   onEntriesCreated: () => void;
 }
 
+interface UserCalendarSettings {
+  calendarSuggestionsEnabled?: boolean;
+  calendarSuggestionsDaysBack?: number;
+}
+
+function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
+function formatLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatDisplayDate(s: string, today: string): string {
+  const d = parseLocalDate(s);
+  if (s === today) return "Today";
+  const t = parseLocalDate(today);
+  const diffMs = t.getTime() - d.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 1) return "Yesterday";
+  const weekday = d.toLocaleDateString(undefined, { weekday: "short" });
+  const monthDay = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${weekday}, ${monthDay}`;
+}
+
 const CONFIDENCE_COLORS: Record<string, string> = {
   high: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
   medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
@@ -75,8 +102,51 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   // suggestion — keeps the project picker visible even when suggestion.projectId exists.
   const [changingEvents, setChangingEvents] = useState<Set<string>>(new Set());
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  // Date the user is currently browsing for meeting candidates. Defaults to the
+  // date prop (typically today) and can be navigated back up to the user's
+  // calendarSuggestionsDaysBack preference.
+  const [viewDate, setViewDate] = useState<string>(date);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  const today = useMemo(() => formatLocalDate(new Date()), []);
+
+  // Fetch the user's calendar settings so we can gate the back-navigation limit.
+  const settingsQuery = useQuery<UserCalendarSettings>({
+    queryKey: ['/api/users', user?.id, 'reminder-settings'],
+    enabled: !!user?.id,
+  });
+  const daysBackLimit = settingsQuery.data?.calendarSuggestionsDaysBack ?? 0;
+
+  // Earliest navigable date = today - daysBackLimit (in local time)
+  const earliestDate = useMemo(() => {
+    const d = parseLocalDate(today);
+    d.setDate(d.getDate() - daysBackLimit);
+    return formatLocalDate(d);
+  }, [today, daysBackLimit]);
+
+  // Keep viewDate in sync when the parent's date prop changes (e.g. on initial mount).
+  useEffect(() => {
+    setViewDate(date);
+  }, [date]);
+
+  const goPrevDay = () => {
+    const d = parseLocalDate(viewDate);
+    d.setDate(d.getDate() - 1);
+    const next = formatLocalDate(d);
+    if (next >= earliestDate) setViewDate(next);
+  };
+
+  const goNextDay = () => {
+    const d = parseLocalDate(viewDate);
+    d.setDate(d.getDate() + 1);
+    const next = formatLocalDate(d);
+    if (next <= today) setViewDate(next);
+  };
+
+  const canGoPrev = viewDate > earliestDate;
+  const canGoNext = viewDate < today;
 
   const activeProjects = projects
     .filter(p => p.status === 'active')
@@ -84,10 +154,10 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
     .sort((a, b) => a.displayLabel.localeCompare(b.displayLabel));
 
   const { data, isLoading, error } = useQuery<CalendarSuggestionsResponse>({
-    queryKey: ['/api/me/calendar-suggestions', date],
+    queryKey: ['/api/me/calendar-suggestions', viewDate],
     queryFn: async () => {
       const sessionId = localStorage.getItem('sessionId');
-      const response = await fetch(`/api/me/calendar-suggestions?date=${date}`, {
+      const response = await fetch(`/api/me/calendar-suggestions?date=${viewDate}`, {
         credentials: 'include',
         headers: sessionId ? { 'X-Session-Id': sessionId } : {},
       });
@@ -104,7 +174,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
     if (visible.length === 0) return;
     fireAndForgetTelemetry({
       event: 'shown',
-      date,
+      date: viewDate,
       suggestionCount: visible.length,
       matchedCount: visible.filter(s => s.projectId !== null).length,
     });
@@ -193,12 +263,12 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
 
   const handleDismiss = (eventId: string) => {
     setDismissed(prev => new Set([...prev, eventId]));
-    fireAndForgetTelemetry({ event: 'dismissed', date, eventId });
+    fireAndForgetTelemetry({ event: 'dismissed', date: viewDate, eventId });
   };
 
   const handleManualProjectPick = (eventId: string, projectId: string) => {
     setProjectOverrides(prev => ({ ...prev, [eventId]: projectId }));
-    fireAndForgetTelemetry({ event: 'manual_project_pick', date, eventId });
+    fireAndForgetTelemetry({ event: 'manual_project_pick', date: viewDate, eventId });
   };
 
   if (error || data?.outlookNotConnected) return null;
@@ -207,7 +277,17 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   const allSuggestions = data?.suggestions || [];
   const visibleSuggestions = allSuggestions.filter(s => !dismissed.has(s.eventId));
 
-  if (!isLoading && visibleSuggestions.length === 0 && allSuggestions.length === 0) return null;
+  // When the user has a look-back window configured, keep the panel mounted so
+  // they can navigate backwards even on a day with no events. With "today only"
+  // (daysBackLimit === 0), preserve the original behavior of hiding when empty.
+  if (
+    daysBackLimit === 0 &&
+    !isLoading &&
+    visibleSuggestions.length === 0 &&
+    allSuggestions.length === 0
+  ) {
+    return null;
+  }
 
   const matchedCount = visibleSuggestions.filter(
     s => (projectOverrides[s.eventId] || s.projectId)
@@ -224,6 +304,86 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                 <CardTitle className="text-sm font-semibold">
                   Suggestions from Calendar
                 </CardTitle>
+                {daysBackLimit > 0 && (
+                  <div
+                    className="flex items-center gap-1 ml-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              goPrevDay();
+                            }}
+                            disabled={!canGoPrev}
+                            aria-label="Previous day"
+                            data-testid="button-calendar-suggestions-prev-day"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="text-xs">
+                            {canGoPrev
+                              ? "Previous day"
+                              : `Reached look-back limit (${daysBackLimit} day${daysBackLimit !== 1 ? "s" : ""})`}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <Badge
+                      variant="outline"
+                      className="text-xs px-2 py-0 h-6 font-normal"
+                      data-testid="badge-calendar-suggestions-date"
+                    >
+                      {formatDisplayDate(viewDate, today)}
+                    </Badge>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              goNextDay();
+                            }}
+                            disabled={!canGoNext}
+                            aria-label="Next day"
+                            data-testid="button-calendar-suggestions-next-day"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="text-xs">
+                            {canGoNext ? "Next day" : "Already at today"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    {viewDate !== today && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs px-2 text-muted-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewDate(today);
+                        }}
+                        data-testid="button-calendar-suggestions-today"
+                      >
+                        Today
+                      </Button>
+                    )}
+                  </div>
+                )}
                 {!isLoading && visibleSuggestions.length > 0 && (
                   <Badge variant="secondary" className="text-xs">
                     {visibleSuggestions.length} event{visibleSuggestions.length !== 1 ? 's' : ''}

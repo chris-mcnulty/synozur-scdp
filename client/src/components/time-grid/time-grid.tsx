@@ -1775,15 +1775,19 @@ function DescriptionEditor(props: { row: DraftRow; rowIndex: number; updateCell:
   const { row, rowIndex, updateCell, onCommit, onCancel } = props;
   const [text, setText] = useState(row.description || "");
   const [previousText, setPreviousText] = useState<string | null>(null);
+  const [justRewrote, setJustRewrote] = useState(false);
   const { data: aiStatus } = useAIStatus();
   const rewrite = useRewriteTimeEntryDescription();
+  const { toast } = useToast();
   const aiAvailable = !!aiStatus?.configured;
+  const trimmed = text.trim();
+  const canRewrite = aiAvailable && trimmed.length > 0 && !rewrite.isPending;
 
   const doRewrite = async () => {
-    if (!text.trim()) return;
+    if (!canRewrite) return;
     try {
       const result = await rewrite.mutateAsync({
-        description: text.trim(),
+        description: trimmed,
         projectId: row.projectId || undefined,
         hours: row.hours,
         date: row.date,
@@ -1794,12 +1798,29 @@ function DescriptionEditor(props: { row: DraftRow; rowIndex: number; updateCell:
       if (next) {
         setPreviousText(text);
         setText(next);
+        setJustRewrote(true);
         console.log("[TIME-GRID] ai-rewrite");
+      } else {
+        toast({
+          title: "Nothing to rewrite",
+          description: "The AI did not return a rewritten description.",
+          variant: "destructive",
+        });
       }
-    } catch (e) {
-      // fall through
+    } catch (e: any) {
+      toast({
+        title: "Rewrite failed",
+        description: e?.message || "Unable to rewrite description. Please try again.",
+        variant: "destructive",
+      });
     }
   };
+
+  const rewriteTooltip = !aiAvailable
+    ? "AI is not configured for this environment"
+    : trimmed.length === 0
+      ? "Add some text to rewrite"
+      : "Polish this description for client-facing use";
 
   return (
     <Popover open onOpenChange={(o) => !o && (updateCell(rowIndex, "description", text), onCommit())}>
@@ -1807,7 +1828,7 @@ function DescriptionEditor(props: { row: DraftRow; rowIndex: number; updateCell:
         <Input
           autoFocus
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); if (justRewrote) setJustRewrote(false); }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); updateCell(rowIndex, "description", text); onCommit(); }
             if (e.key === "Escape") onCancel();
@@ -1819,26 +1840,45 @@ function DescriptionEditor(props: { row: DraftRow; rowIndex: number; updateCell:
         <textarea
           autoFocus
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); if (justRewrote) setJustRewrote(false); }}
           rows={4}
           className="w-full text-sm border rounded p-2"
         />
+        <div className="text-xs text-muted-foreground min-h-[1rem]">
+          {justRewrote ? (
+            <span data-testid="grid-description-rewrite-status">Rewritten with AI. Edit further or save.</span>
+          ) : !aiAvailable ? (
+            <span className="text-muted-foreground/70">AI rewrite unavailable</span>
+          ) : (
+            <span className="text-muted-foreground/70">Tip: jot quick notes, then rewrite with AI.</span>
+          )}
+        </div>
         <div className="flex items-center justify-between gap-2">
           <div className="flex gap-1">
             {previousText !== null && (
-              <Button size="sm" variant="ghost" onClick={() => { setText(previousText); setPreviousText(null); }}>
+              <Button size="sm" variant="ghost" onClick={() => { setText(previousText); setPreviousText(null); setJustRewrote(false); }}>
                 <Undo2 className="h-3 w-3 mr-1" /> Undo
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={doRewrite}
-              disabled={!aiAvailable || !text.trim() || rewrite.isPending}
-            >
-              {rewrite.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
-              Rewrite
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={doRewrite}
+                      disabled={!canRewrite}
+                      data-testid="button-grid-description-rewrite"
+                    >
+                      {rewrite.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                      Rewrite
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{rewriteTooltip}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
           <Button size="sm" onClick={() => { updateCell(rowIndex, "description", text); onCommit(); }}>Save</Button>
         </div>

@@ -236,9 +236,11 @@ export function Header() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="0">Today only</SelectItem>
-                        <SelectItem value="1">Today + 1 day</SelectItem>
-                        <SelectItem value="3">Today + 3 days</SelectItem>
-                        <SelectItem value="7">Today + 7 days</SelectItem>
+                        <SelectItem value="1">Last 1 day</SelectItem>
+                        <SelectItem value="3">Last 3 days</SelectItem>
+                        <SelectItem value="7">Last 7 days</SelectItem>
+                        <SelectItem value="14">Last 14 days</SelectItem>
+                        <SelectItem value="30">Last 30 days</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
