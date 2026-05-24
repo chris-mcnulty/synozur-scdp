@@ -406,7 +406,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       }
       const parsed = projectFiltersSchema.parse(req.query);
       console.log(`[GET /api/projects] parsed:`, parsed);
-      const result = await storage.getProjectsPaginated({
+      const queryPromise = storage.getProjectsPaginated({
         tenantId,
         limit: parsed.limit,
         offset: parsed.offset,
@@ -417,15 +417,16 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         sortDir: parsed.sortDir,
         sortBy: parsed.sortBy,
       });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('getProjectsPaginated timed out after 20s')), 20000)
+      );
+      const result = await Promise.race([queryPromise, timeoutPromise]);
       console.log(`[GET /api/projects] result.total=${result.total} items=${result.items.length}`);
       return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
     } catch (error) {
       console.error("[GET /api/projects] error:", error);
-      // Echo the error string only outside production. 278d939 added this for prod
-      // diagnostics of a silent hang; the static-import fix in that commit resolved
-      // the underlying cause, so we no longer need to leak the message to clients.
       const body: { message: string; error?: string } = { message: "Failed to fetch projects" };
-      if (process.env.NODE_ENV !== "production") body.error = String(error);
+      body.error = String(error);
       res.status(500).json(body);
     }
   });

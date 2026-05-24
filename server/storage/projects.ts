@@ -225,11 +225,13 @@ export const projectsMethods: ThisType<IStorage> = {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
+    console.log(`[getProjectsPaginated] starting count query tenantId=${params.tenantId} status=${params.status} sortBy=${params.sortBy} sortDir=${params.sortDir}`);
     const countResult = await db.select({ count: sql<number>`COUNT(*)` })
       .from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .where(whereClause);
     const total = Number(countResult[0]?.count || 0);
+    console.log(`[getProjectsPaginated] count done total=${total}`);
 
     const dir = params.sortDir === 'asc' ? 'asc' : 'desc';
     let orderDir: any;
@@ -242,6 +244,7 @@ export const projectsMethods: ThisType<IStorage> = {
       default: orderDir = dir === 'asc' ? projects.createdAt : desc(projects.createdAt);
     }
 
+    console.log(`[getProjectsPaginated] starting main query limit=${params.limit} offset=${params.offset}`);
     const projectRows = await db.select().from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(pmAlias, eq(projects.pm, pmAlias.id))
@@ -249,6 +252,7 @@ export const projectsMethods: ThisType<IStorage> = {
       .orderBy(orderDir)
       .limit(params.limit)
       .offset(params.offset);
+    console.log(`[getProjectsPaginated] main query done rows=${projectRows.length}`);
 
     const defaultClient = {
       id: 'unknown', name: 'No Client Assigned', status: 'inactive', currency: 'USD',
@@ -265,6 +269,7 @@ export const projectsMethods: ThisType<IStorage> = {
     let burnedMap = new Map<string, number>();
 
     if (projectIds.length > 0) {
+      console.log(`[getProjectsPaginated] starting sow budgets query ids=${projectIds.length}`);
       const sowBudgets = await db.select({
         projectId: sows.projectId,
         total: sql<number>`COALESCE(SUM(CAST(${sows.contractValue} AS NUMERIC)), 0)`
@@ -275,8 +280,10 @@ export const projectsMethods: ThisType<IStorage> = {
         eq(sows.status, 'approved')
       ))
       .groupBy(sows.projectId);
+      console.log(`[getProjectsPaginated] sow budgets done rows=${sowBudgets.length}`);
       for (const r of sowBudgets) budgetMap.set(r.projectId, Number(r.total));
 
+      console.log(`[getProjectsPaginated] starting burned data query`);
       const burnedData = await db.select({
         projectId: timeEntries.projectId,
         totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
@@ -287,11 +294,13 @@ export const projectsMethods: ThisType<IStorage> = {
         eq(timeEntries.billable, true)
       ))
       .groupBy(timeEntries.projectId);
+      console.log(`[getProjectsPaginated] burned data done rows=${burnedData.length}`);
       for (const r of burnedData) burnedMap.set(r.projectId, Math.round(Number(r.totalBurned)));
     }
 
     let billingMap = new Map<string, { overdueCount: number; unInvoicedCount: number }>();
     if (projectIds.length > 0) {
+      console.log(`[getProjectsPaginated] starting billing milestone query`);
       const billingData = await db.execute<{ project_id: string; overdue_count: string; uninvoiced_count: string }>(sql`
         SELECT
           project_id,
@@ -308,6 +317,7 @@ export const projectsMethods: ThisType<IStorage> = {
           AND project_id IN (${sql.join(projectIds.map(id => sql`${id}`), sql`,`)})
         GROUP BY project_id
       `);
+      console.log(`[getProjectsPaginated] billing milestone done rows=${billingData.rows.length}`);
       for (const r of billingData.rows) {
         billingMap.set(r.project_id, {
           overdueCount: Number(r.overdue_count) || 0,

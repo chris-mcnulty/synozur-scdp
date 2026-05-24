@@ -20,6 +20,8 @@ export const pool = new Pool({
   maxUses: 7500,
   allowExitOnIdle: false,
   idleTimeoutMillis: 10000,
+  // Fail fast if no connection is available — prevents silent infinite hangs
+  connectionTimeoutMillis: 15000,
 });
 
 // Handle pool connection errors
