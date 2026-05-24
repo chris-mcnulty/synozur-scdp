@@ -11,7 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { formatProjectLabel } from "@/lib/project-utils";
-import { ChevronDown, ChevronRight, ChevronLeft, CheckCheck, X, Clock, Info, Sparkles, Users, UserCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronLeft, CheckCheck, X, Clock, Info, Sparkles, Users, UserCheck, GitMerge } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Project, Client } from "@shared/schema";
 
 type ProjectWithClient = Project & { client: Client };
@@ -120,6 +121,10 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   const [viewDate, setViewDate] = useState<string>(date);
   // Pending value for the inline look-back prompt (shown when daysBackLimit === 0 and no events).
   const [pendingDaysBack, setPendingDaysBack] = useState("7");
+  // Merge selection state — tracks which event IDs are checked for merging.
+  const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set());
+  // Project chosen in the merge bar (overrides individual row project when merging mixed-project events).
+  const [mergeProjectId, setMergeProjectId] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -132,6 +137,34 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
     enabled: !!user?.id,
   });
   const daysBackLimit = settingsQuery.data?.calendarSuggestionsDaysBack ?? 0;
+
+  const mergeMutation = useMutation({
+    mutationFn: async (payload: {
+      items: Array<{ eventId: string; eventKey: string; hours: number; description: string; date: string; seriesMasterId?: string | null; subject?: string | null }>;
+      projectId: string;
+      date: string;
+    }) =>
+      apiRequest("/api/me/calendar-suggestions/merge", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      const mergedIds = variables.items.map(i => i.eventId);
+      setDismissed(prev => new Set([...prev, ...mergedIds]));
+      setSelectedForMerge(new Set());
+      setMergeProjectId("");
+      const totalHours = Math.min(24, Math.round(variables.items.reduce((s, i) => s + i.hours, 0) * 4) / 4);
+      toast({
+        title: "Merged time entry created",
+        description: `${variables.items.length} events combined into ${totalHours}h. Review and submit when ready.`,
+      });
+      onEntriesCreated();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Merge failed", description: err.message || "Please try again.", variant: "destructive" });
+    },
+  });
 
   // Mutation to save the look-back preference directly from the inline prompt.
   const setLookBackMutation = useMutation({
@@ -160,6 +193,12 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   useEffect(() => {
     setViewDate(date);
   }, [date]);
+
+  // Clear merge selection whenever the viewed date changes.
+  useEffect(() => {
+    setSelectedForMerge(new Set());
+    setMergeProjectId("");
+  }, [viewDate]);
 
   const goPrevDay = () => {
     const d = parseLocalDate(viewDate);
@@ -297,7 +336,37 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
 
   const handleDismiss = (eventId: string) => {
     setDismissed(prev => new Set([...prev, eventId]));
+    setSelectedForMerge(prev => { const n = new Set(prev); n.delete(eventId); return n; });
     fireAndForgetTelemetry({ event: 'dismissed', date: viewDate, eventId });
+  };
+
+  const handleMerge = () => {
+    const selectedSuggestions = visibleSuggestions.filter(s => selectedForMerge.has(s.eventId));
+    if (selectedSuggestions.length < 2) return;
+
+    // Determine which project to use: explicit merge picker > common resolved project.
+    const resolvedIds = selectedSuggestions.map(s => projectOverrides[s.eventId] || s.projectId);
+    const allSame = resolvedIds.every(id => id && id === resolvedIds[0]);
+    const effectiveProjectId = mergeProjectId || (allSame ? resolvedIds[0] : null);
+
+    if (!effectiveProjectId) {
+      toast({ title: "Pick a project", description: "Select a project for the merged entry.", variant: "destructive" });
+      return;
+    }
+
+    mergeMutation.mutate({
+      items: selectedSuggestions.map(s => ({
+        eventId: s.eventId,
+        eventKey: s.eventKey,
+        hours: s.hours,
+        description: s.subject,
+        date: s.date,
+        seriesMasterId: s.seriesMasterId,
+        subject: s.subject,
+      })),
+      projectId: effectiveProjectId,
+      date: viewDate,
+    });
   };
 
   const handleManualProjectPick = (eventId: string, projectId: string) => {
@@ -526,8 +595,24 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                   return (
                     <div
                       key={suggestion.eventId}
-                      className="flex items-start gap-3 p-3 bg-background rounded-lg border border-border/50"
+                      className={`flex items-start gap-3 p-3 bg-background rounded-lg border transition-colors ${selectedForMerge.has(suggestion.eventId) ? "border-primary/50 bg-primary/5" : "border-border/50"}`}
                     >
+                      {visibleSuggestions.length >= 2 && (
+                        <div className="pt-0.5 shrink-0">
+                          <Checkbox
+                            checked={selectedForMerge.has(suggestion.eventId)}
+                            onCheckedChange={(checked) => {
+                              setSelectedForMerge(prev => {
+                                const next = new Set(prev);
+                                if (checked) next.add(suggestion.eventId);
+                                else next.delete(suggestion.eventId);
+                                return next;
+                              });
+                            }}
+                            aria-label={`Select "${suggestion.subject}" for merge`}
+                          />
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         {/* Row 1: Subject + time */}
                         <div className="flex items-center gap-2 flex-wrap">
@@ -766,6 +851,69 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                 })}
               </div>
             )}
+
+            {/* Merge bar — appears when 2+ events are checked */}
+            {selectedForMerge.size >= 2 && (() => {
+              const sel = visibleSuggestions.filter(s => selectedForMerge.has(s.eventId));
+              const rawHours = sel.reduce((sum, s) => sum + s.hours, 0);
+              const totalHours = Math.min(24, Math.round(rawHours * 4) / 4);
+              const resolvedProjectIds = sel.map(s => projectOverrides[s.eventId] || s.projectId).filter(Boolean);
+              const allSameProject = resolvedProjectIds.length === sel.length && resolvedProjectIds.every(id => id === resolvedProjectIds[0]);
+              const autoProjectId = allSameProject ? resolvedProjectIds[0] : null;
+              const effectiveProjectId = mergeProjectId || autoProjectId;
+              const needsPicker = !autoProjectId;
+              return (
+                <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <GitMerge className="w-4 h-4 text-primary shrink-0" />
+                    <span className="text-sm font-medium text-foreground">
+                      {sel.length} events selected
+                    </span>
+                    <span className="text-xs text-muted-foreground">·</span>
+                    <span className="text-xs text-muted-foreground">{totalHours}h total</span>
+                    {autoProjectId && (
+                      <>
+                        <span className="text-xs text-muted-foreground">·</span>
+                        <span className="text-xs text-muted-foreground truncate max-w-[160px]">
+                          {activeProjects.find(p => p.id === autoProjectId)?.displayLabel}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    {needsPicker && (
+                      <Select value={mergeProjectId} onValueChange={setMergeProjectId}>
+                        <SelectTrigger className="h-7 w-44 text-xs border-dashed">
+                          <SelectValue placeholder="Pick project…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeProjects.map(p => (
+                            <SelectItem key={p.id} value={p.id}>{p.displayLabel}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs px-3"
+                      disabled={!effectiveProjectId || mergeMutation.isPending}
+                      onClick={handleMerge}
+                    >
+                      <GitMerge className="w-3 h-3 mr-1" />
+                      Merge into 1 entry
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs px-2 text-muted-foreground"
+                      onClick={() => { setSelectedForMerge(new Set()); setMergeProjectId(""); }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
           </CardContent>
         </CollapsibleContent>
       </Card>

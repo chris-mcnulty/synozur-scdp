@@ -243,6 +243,98 @@ export function registerCalendarSuggestionsRoutes(
   });
 
   /**
+   * POST /api/me/calendar-suggestions/merge
+   *
+   * Merges 2+ calendar events into a single draft time entry.  Hours are summed
+   * (capped at 24), subjects are joined with " · ".  A calendar mapping is saved
+   * for every source event so recurring events auto-match in the future.
+   */
+  app.post("/api/me/calendar-suggestions/merge", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const tenantId: string | null = req.user?.tenantId ?? null;
+
+    const mergeSchema = z.object({
+      items: z
+        .array(
+          z.object({
+            eventId: z.string(),
+            eventKey: z.string(),
+            hours: z.number().min(0.01).max(8),
+            description: z.string().default(""),
+            date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            seriesMasterId: z.string().nullable().optional(),
+            subject: z.string().nullable().optional(),
+          })
+        )
+        .min(2),
+      projectId: z.string(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      description: z.string().optional(),
+    });
+
+    const parsed = mergeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
+    }
+
+    const { items, projectId, date, description } = parsed.data;
+
+    // Authorise project against caller's tenant.
+    const project = await storage.getProject(projectId);
+    if (!project) {
+      return res.status(422).json({ message: `Project not found: ${projectId}` });
+    }
+    if (tenantId && project.tenantId !== tenantId) {
+      return res.status(403).json({ message: "Project does not belong to your organization" });
+    }
+
+    // Sum hours, round to nearest quarter-hour, cap at 24.
+    const rawTotal = items.reduce((sum, i) => sum + i.hours, 0);
+    const totalHours = Math.min(24, Math.round(rawTotal * 4) / 4);
+
+    const mergedDescription =
+      description ??
+      items
+        .map(i => i.subject || i.description)
+        .filter(Boolean)
+        .join(" · ");
+
+    try {
+      const timeEntry = await storage.createTimeEntry({
+        personId: userId,
+        projectId,
+        date,
+        hours: String(totalHours),
+        description: mergedDescription,
+        billable: true,
+        tenantId,
+        fromCalendarSuggestion: true,
+        calendarEventId: items[0].eventId,
+      });
+
+      // Persist mapping for every merged event so recurring ones auto-match next time.
+      for (const item of items) {
+        await storage.upsertCalendarMapping(
+          userId,
+          tenantId,
+          item.eventKey,
+          projectId,
+          item.subject ?? null,
+        );
+      }
+
+      console.log(
+        `[CALENDAR_SUGGESTIONS] user=${userId} merged ${items.length} events → entry=${timeEntry.id} (${totalHours}h)`
+      );
+      return res.status(201).json({ created: 1, entryId: timeEntry.id });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[CALENDAR_SUGGESTIONS] Merge error:", message);
+      return res.status(500).json({ message: "Failed to create merged time entry" });
+    }
+  });
+
+  /**
    * GET /api/me/calendar-mappings
    *
    * Returns the authenticated user's saved recurring-event → project mappings,
