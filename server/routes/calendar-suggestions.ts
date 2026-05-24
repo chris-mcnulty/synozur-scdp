@@ -34,7 +34,15 @@ export function registerCalendarSuggestionsRoutes(
     const userId: string = req.user!.id;
     const tenantId: string | null = req.user?.tenantId ?? null;
     const ssoRefreshToken: string | null | undefined = req.user?.ssoRefreshToken;
-    const today = new Date().toISOString().split("T")[0];
+    const serverToday = new Date().toISOString().split("T")[0];
+    // The client passes its local-time "today" so the look-back window is
+    // evaluated against the same notion of "today" the user sees in the panel.
+    // Around UTC midnight the server's UTC date can be ahead of the user's local
+    // date by one day, which previously caused legitimate same-day requests to
+    // be rejected as out-of-window when daysBack=0.
+    const clientTodayRaw = typeof req.query.clientToday === "string" ? req.query.clientToday : null;
+    const today =
+      clientTodayRaw && /^\d{4}-\d{2}-\d{2}$/.test(clientTodayRaw) ? clientTodayRaw : serverToday;
     const date = typeof req.query.date === "string" ? req.query.date : today;
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -48,9 +56,10 @@ export function registerCalendarSuggestionsRoutes(
     }
 
     // Gate by look-back window: if the requested date is older than daysBack, skip.
+    // Parse both dates explicitly as UTC midnight so the arithmetic is timezone-agnostic.
     const daysBack = currentUser.calendarSuggestionsDaysBack ?? 0;
-    const requestedDate = new Date(date);
-    const todayDate = new Date(today);
+    const requestedDate = new Date(`${date}T00:00:00Z`);
+    const todayDate = new Date(`${today}T00:00:00Z`);
     const diffDays = Math.round(
       (todayDate.getTime() - requestedDate.getTime()) / (1000 * 60 * 60 * 24)
     );
