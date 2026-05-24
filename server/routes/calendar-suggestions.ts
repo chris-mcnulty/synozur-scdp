@@ -78,8 +78,14 @@ export function registerCalendarSuggestionsRoutes(
       const suggestions = events.map(event => {
         const mapping = mapEventToProject(event, projects, userMappings);
         const hours = computeEventHours(event);
-        const timeRange = formatEventTime(event);
         const eventKey = buildEventKey(event);
+        // Pass raw ISO strings to the client so the browser can format in the
+        // user's local timezone.  Graph returns datetimes in UTC without a Z
+        // suffix when no Prefer: outlook.timezone header is sent — append Z so
+        // JavaScript Date parses them correctly as UTC.
+        const toUtcIso = (dt: string) => dt.endsWith('Z') || dt.includes('+') ? dt : dt + 'Z';
+        const startIso = toUtcIso(event.start.dateTime);
+        const endIso   = toUtcIso(event.end.dateTime);
 
         const attendees = (event.attendees ?? [])
           .map(a => ({
