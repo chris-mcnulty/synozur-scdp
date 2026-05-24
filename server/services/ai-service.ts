@@ -366,7 +366,7 @@ Be helpful, accurate, and concise. If you're unsure about something, say so.`,
 Rewrite the description so it:
 - Reads as polished, professional prose suitable for an external client
 - Preserves the actual work performed — never invent activities, deliverables, or hours
-- Removes filler, internal jargon, profanity, and personal commentary
+- Removes filler, internal jargon, informal language, and personal commentary
 - Uses past tense, active voice, and crisp business language
 - Stays concise: typically 1-3 sentences, no longer than the original unless clarity requires it
 - Keeps any concrete artifacts (deliverable names, system names, meeting names) the user mentioned

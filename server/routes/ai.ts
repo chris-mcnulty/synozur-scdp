@@ -596,7 +596,16 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input", errors: error.errors });
       }
-      res.status(500).json({ message: error.message || "Failed to rewrite time entry description" });
+      // Azure AI Foundry content filter returns a 400 with a recognisable message.
+      // Surface a clean, actionable message to the client rather than the raw Azure error.
+      const msg: string = error.message || "";
+      if (msg.includes("content management policy") || msg.includes("content_filter") || msg.includes("ResponsibleAI")) {
+        return res.status(422).json({
+          message: "The AI was unable to process this description due to content safety filters. Try rephrasing or simplifying the text.",
+          contentFiltered: true,
+        });
+      }
+      res.status(500).json({ message: msg || "Failed to rewrite time entry description" });
     }
   });
 
