@@ -902,13 +902,13 @@ export default function TimeTracking() {
                   <FileDown className="w-4 h-4 mr-2" />
                   Generic Template
                 </DropdownMenuItem>
-                {projects && projects.length > 0 && (
+                {activeProjects && activeProjects.length > 0 && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-xs text-muted-foreground">
                       Project-Specific Template
                     </DropdownMenuLabel>
-                    {projects.slice(0, 10).map((project: ProjectWithClient) => (
+                    {activeProjects.slice(0, 10).map((project) => (
                       <DropdownMenuItem
                         key={project.id}
                         onClick={async () => {
@@ -1014,7 +1014,7 @@ export default function TimeTracking() {
         <CalendarSuggestionAdoptionCard canViewTenant={currentUser?.role === "admin"} />
 
         {viewMode === "grid" && currentUser && projects && (
-          <TimeGrid currentUser={currentUser} projects={projects} />
+          <TimeGrid currentUser={currentUser} projects={activeProjects} />
         )}
         {viewMode === "form" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
