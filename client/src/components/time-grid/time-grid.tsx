@@ -1807,10 +1807,11 @@ function DescriptionEditor(props: { row: DraftRow; rowIndex: number; updateCell:
           variant: "destructive",
         });
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
       toast({
         title: "Rewrite failed",
-        description: e?.message || "Unable to rewrite description. Please try again.",
+        description: message || "Unable to rewrite description. Please try again.",
         variant: "destructive",
       });
     }

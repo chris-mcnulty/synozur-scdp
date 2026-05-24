@@ -154,10 +154,14 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
     .sort((a, b) => a.displayLabel.localeCompare(b.displayLabel));
 
   const { data, isLoading, error } = useQuery<CalendarSuggestionsResponse>({
-    queryKey: ['/api/me/calendar-suggestions', viewDate],
+    queryKey: ['/api/me/calendar-suggestions', viewDate, today],
     queryFn: async () => {
       const sessionId = localStorage.getItem('sessionId');
-      const response = await fetch(`/api/me/calendar-suggestions?date=${viewDate}`, {
+      // Pass the client's local "today" so the server's look-back gate uses the
+      // same notion of today the user sees (avoids a UTC vs. local off-by-one
+      // around midnight UTC).
+      const params = new URLSearchParams({ date: viewDate, clientToday: today });
+      const response = await fetch(`/api/me/calendar-suggestions?${params.toString()}`, {
         credentials: 'include',
         headers: sessionId ? { 'X-Session-Id': sessionId } : {},
       });
@@ -280,7 +284,11 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   // When the user has a look-back window configured, keep the panel mounted so
   // they can navigate backwards even on a day with no events. With "today only"
   // (daysBackLimit === 0), preserve the original behavior of hiding when empty.
+  // Also wait for the settings query to resolve before applying the early-return,
+  // so we don't unmount the panel before discovering the user has a look-back
+  // configured (daysBackLimit defaults to 0 while settings are still loading).
   if (
+    !settingsQuery.isLoading &&
     daysBackLimit === 0 &&
     !isLoading &&
     visibleSuggestions.length === 0 &&
