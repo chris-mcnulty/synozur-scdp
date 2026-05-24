@@ -16,11 +16,23 @@ import type { Project, Client } from "@shared/schema";
 
 type ProjectWithClient = Project & { client: Client };
 
+/** Format a UTC ISO pair as a local-time range, e.g. "9:00 AM – 10:00 AM". */
+function formatLocalTime(startIso: string, endIso: string): string {
+  try {
+    const opts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
+    const fmt = (iso: string) => new Date(iso).toLocaleTimeString(undefined, opts);
+    return `${fmt(startIso)} – ${fmt(endIso)}`;
+  } catch {
+    return '';
+  }
+}
+
 interface CalendarSuggestion {
   eventId: string;
   eventKey: string;
   subject: string;
-  timeRange: string;
+  startIso: string;
+  endIso: string;
   hours: number;
   date: string;
   organizer: { name: string | null; email: string } | null;
@@ -524,7 +536,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                           </span>
                           <div className="flex items-center gap-1 text-muted-foreground text-xs shrink-0">
                             <Clock className="w-3 h-3" />
-                            {suggestion.timeRange}
+                            {formatLocalTime(suggestion.startIso, suggestion.endIso)}
                             <span className="ml-1">({suggestion.hours}h)</span>
                           </div>
                           {hasDetails && (

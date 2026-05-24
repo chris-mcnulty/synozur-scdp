@@ -99,7 +99,8 @@ export function registerCalendarSuggestionsRoutes(
           eventId: event.id,
           eventKey,
           subject: event.subject,
-          timeRange,
+          startIso,
+          endIso,
           hours,
           date,
           organizer: event.organizer?.emailAddress
