@@ -106,6 +106,8 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   // date prop (typically today) and can be navigated back up to the user's
   // calendarSuggestionsDaysBack preference.
   const [viewDate, setViewDate] = useState<string>(date);
+  // Pending value for the inline look-back prompt (shown when daysBackLimit === 0 and no events).
+  const [pendingDaysBack, setPendingDaysBack] = useState("7");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -118,6 +120,22 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
     enabled: !!user?.id,
   });
   const daysBackLimit = settingsQuery.data?.calendarSuggestionsDaysBack ?? 0;
+
+  // Mutation to save the look-back preference directly from the inline prompt.
+  const setLookBackMutation = useMutation({
+    mutationFn: (daysBack: number) =>
+      apiRequest("/api/me/calendar-suggestions/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ calendarSuggestionsDaysBack: daysBack }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", user?.id, "reminder-settings"] });
+      toast({ title: "Look-back enabled", description: "Calendar suggestions will now browse back past days." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save preference.", variant: "destructive" });
+    },
+  });
 
   // Earliest navigable date = today - daysBackLimit (in local time)
   const earliestDate = useMemo(() => {
@@ -283,10 +301,8 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
 
   // When the user has a look-back window configured, keep the panel mounted so
   // they can navigate backwards even on a day with no events. With "today only"
-  // (daysBackLimit === 0), preserve the original behavior of hiding when empty.
-  // Also wait for the settings query to resolve before applying the early-return,
-  // so we don't unmount the panel before discovering the user has a look-back
-  // configured (daysBackLimit defaults to 0 while settings are still loading).
+  // (daysBackLimit === 0) and no events, show an inline prompt to enable look-back
+  // rather than silently hiding the panel.
   if (
     !settingsQuery.isLoading &&
     daysBackLimit === 0 &&
@@ -294,7 +310,42 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
     visibleSuggestions.length === 0 &&
     allSuggestions.length === 0
   ) {
-    return null;
+    return (
+      <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10">
+        <CardContent className="py-3 px-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Sparkles className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-medium text-foreground">Suggestions from Calendar</span>
+              <span className="text-sm text-muted-foreground hidden sm:inline">— no events today.</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Browse back:</span>
+              <Select value={pendingDaysBack} onValueChange={setPendingDaysBack}>
+                <SelectTrigger className="h-7 w-36 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 day</SelectItem>
+                  <SelectItem value="3">3 days</SelectItem>
+                  <SelectItem value="7">7 days</SelectItem>
+                  <SelectItem value="14">14 days</SelectItem>
+                  <SelectItem value="30">30 days</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="h-7 text-xs px-3"
+                disabled={setLookBackMutation.isPending}
+                onClick={() => setLookBackMutation.mutate(parseInt(pendingDaysBack))}
+              >
+                Enable
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   const matchedCount = visibleSuggestions.filter(
