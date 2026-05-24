@@ -205,7 +205,6 @@ export default function Login() {
       "@type": "Organization",
       name: "Synozur",
       url: "https://www.synozur.com",
-      logo: "https://constellation.synozur.com/synozur-logo-square.png",
       description: "Synozur is the creator of Constellation, a consulting delivery platform for professional services firms.",
       brand: {
         "@type": "Brand",
