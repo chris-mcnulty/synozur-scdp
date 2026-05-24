@@ -527,7 +527,7 @@ export default function NotificationPreferencesPage() {
         </Card>
 
         {dirty && (
-          <div className="fixed bottom-6 right-6">
+          <div className="fixed bottom-20 right-6 z-[60]">
             <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
               <Save className="w-4 h-4 mr-2" />
               {saveMutation.isPending ? "Saving..." : "Save Changes"}
