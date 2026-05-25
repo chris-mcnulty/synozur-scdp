@@ -922,6 +922,7 @@ function EstimateDetailContent() {
   });
   const [editingMilestone, setEditingMilestone] = useState<any>(null);
   const [showMilestoneEditDialog, setShowMilestoneEditDialog] = useState(false);
+  const [milestoneAmountMode, setMilestoneAmountMode] = useState<'amount' | 'percentage'>('amount');
   const [presentedTotal, setPresentedTotal] = useState("");
   const [margin, setMargin] = useState("");
   const [editingEstimateName, setEditingEstimateName] = useState("");
@@ -3960,104 +3961,236 @@ function EstimateDetailContent() {
               </CardContent>
             </Card>
 
-            {/* Milestones */}
+            {/* Milestone Payments */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Milestone Payments</CardTitle>
-                    <CardDescription>Customer payment schedule</CardDescription>
+                    <CardTitle>Payment Schedule</CardTitle>
+                    <CardDescription>
+                      {estimate?.paymentStructure === 'multi'
+                        ? 'Sequential milestone payments — client pays per deliverable'
+                        : 'Single lump-sum payment upon completion'}
+                    </CardDescription>
                   </div>
-                  <Button onClick={() => setShowMilestoneDialog(true)} size="sm" disabled={!isEditable}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Milestone
-                  </Button>
+                  {/* Structure toggle */}
+                  {isEditable && (
+                    <div className="flex items-center gap-1 rounded-lg border p-1 bg-muted/40">
+                      <Button
+                        size="sm"
+                        variant={estimate?.paymentStructure !== 'multi' ? 'default' : 'ghost'}
+                        className="h-7 px-3 text-xs"
+                        onClick={async () => {
+                          if (estimate?.paymentStructure === 'multi') {
+                            // Switch to single: delete all milestones, update structure
+                            for (const m of milestones) {
+                              await apiRequest(`/api/estimates/${id}/milestones/${m.id}`, { method: 'DELETE' });
+                            }
+                            queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'milestones'] });
+                            updateEstimateMutation.mutate({ paymentStructure: 'single' } as any);
+                          }
+                        }}
+                      >
+                        Single Payment
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={estimate?.paymentStructure === 'multi' ? 'default' : 'ghost'}
+                        className="h-7 px-3 text-xs"
+                        onClick={() => {
+                          if (estimate?.paymentStructure !== 'multi') {
+                            updateEstimateMutation.mutate({ paymentStructure: 'multi' } as any);
+                          }
+                        }}
+                      >
+                        Multiple Milestones
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
-                {milestones.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">No milestones created yet</p>
-                ) : (
+                {estimate?.paymentStructure === 'multi' ? (
+                  /* ── Multi-milestone view ── */
                   <div className="space-y-4">
-                    {/* Milestone total indicator */}
+                    {/* Running total banner */}
                     {(() => {
+                      const quoteTotal = Number(estimate?.presentedTotal || totalAmount);
                       const milestoneTotal = milestones.reduce((sum, m) => {
-                        if (m.amount) {
-                          return sum + Number(m.amount);
-                        } else if (m.percentage && estimate?.presentedTotal) {
-                          return sum + (Number(estimate.presentedTotal) * Number(m.percentage) / 100);
-                        }
+                        if (m.amount) return sum + Number(m.amount);
+                        if (m.percentage && quoteTotal) return sum + (quoteTotal * Number(m.percentage) / 100);
                         return sum;
                       }, 0);
-                      const quoteTotal = Number(estimate?.presentedTotal || totalAmount);
                       const difference = quoteTotal - milestoneTotal;
                       const isMatching = Math.abs(difference) < 1;
-                      
-                      return (
-                        <div className={`p-3 rounded-lg border ${isMatching ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">
-                              Milestone Total: ${milestoneTotal.toLocaleString()}
-                            </span>
-                            <span className={`text-sm ${isMatching ? 'text-green-600' : 'text-orange-600'}`}>
-                              {isMatching ? (
-                                '✓ Matches quote total'
-                              ) : (
-                                `${difference > 0 ? 'Under' : 'Over'} by $${Math.abs(difference).toLocaleString()}`
-                              )}
-                            </span>
-                          </div>
+                      return milestones.length > 0 ? (
+                        <div className={`flex items-center justify-between p-3 rounded-lg border text-sm ${isMatching ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800' : 'bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800'}`}>
+                          <span className="font-medium">
+                            Scheduled: {quoteTotal > 0
+                              ? `$${milestoneTotal.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+                              : milestones.reduce((s, m) => s + Number(m.percentage || 0), 0).toFixed(0) + '%'}
+                          </span>
+                          <span className={isMatching ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400'}>
+                            {isMatching
+                              ? '✓ Fully scheduled'
+                              : quoteTotal > 0
+                                ? `${difference > 0 ? 'Under' : 'Over'} by $${Math.abs(difference).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                                : `${(100 - milestones.reduce((s, m) => s + Number(m.percentage || 0), 0)).toFixed(0)}% unscheduled`}
+                          </span>
                         </div>
-                      );
+                      ) : null;
                     })()}
-                    
-                    {/* Milestone list */}
-                    <div className="space-y-2">
-                    {milestones.map((milestone) => (
-                      <div key={milestone.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex-1">
-                          <div className="font-medium">{milestone.name}</div>
-                          {milestone.description && (
-                            <div className="text-sm text-muted-foreground">{milestone.description}</div>
-                          )}
-                          <div className="text-sm mt-1">
-                            {milestone.amount ? (
-                              <span className="font-medium">${Number(milestone.amount).toLocaleString()}</span>
-                            ) : milestone.percentage ? (
-                              <span className="font-medium">{milestone.percentage}% of total</span>
-                            ) : null}
-                            {milestone.dueDate && (
-                              <span className="text-muted-foreground ml-2">
-                                Due: {new Date(milestone.dueDate).toLocaleDateString()}
-                              </span>
+
+                    {/* Ordered milestone rows */}
+                    {milestones.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No milestones yet — add one below.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {milestones.map((milestone, idx) => {
+                          const quoteTotal = Number(estimate?.presentedTotal || totalAmount);
+                          const resolvedAmt = milestone.amount
+                            ? Number(milestone.amount)
+                            : milestone.percentage && quoteTotal
+                              ? quoteTotal * Number(milestone.percentage) / 100
+                              : null;
+                          return (
+                            <div key={milestone.id} className="flex items-start gap-3 p-3 border rounded-lg bg-card">
+                              <div className="flex flex-col gap-1 pt-0.5">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-5 w-5"
+                                  disabled={!isEditable || idx === 0}
+                                  onClick={async () => {
+                                    const prev = milestones[idx - 1];
+                                    await Promise.all([
+                                      apiRequest(`/api/estimates/${id}/milestones/${milestone.id}`, { method: 'PATCH', body: JSON.stringify({ sortOrder: prev.sortOrder }) }),
+                                      apiRequest(`/api/estimates/${id}/milestones/${prev.id}`, { method: 'PATCH', body: JSON.stringify({ sortOrder: milestone.sortOrder }) }),
+                                    ]);
+                                    queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'milestones'] });
+                                  }}
+                                ><ChevronUp className="h-3 w-3" /></Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-5 w-5"
+                                  disabled={!isEditable || idx === milestones.length - 1}
+                                  onClick={async () => {
+                                    const next = milestones[idx + 1];
+                                    await Promise.all([
+                                      apiRequest(`/api/estimates/${id}/milestones/${milestone.id}`, { method: 'PATCH', body: JSON.stringify({ sortOrder: next.sortOrder }) }),
+                                      apiRequest(`/api/estimates/${id}/milestones/${next.id}`, { method: 'PATCH', body: JSON.stringify({ sortOrder: milestone.sortOrder }) }),
+                                    ]);
+                                    queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'milestones'] });
+                                  }}
+                                ><ChevronDown className="h-3 w-3" /></Button>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-xs text-muted-foreground font-medium">#{idx + 1}</span>
+                                  <span className="font-medium truncate">{milestone.name}</span>
+                                </div>
+                                {milestone.description && (
+                                  <p className="text-sm text-muted-foreground mt-0.5">{milestone.description}</p>
+                                )}
+                                <div className="flex items-center gap-3 mt-1">
+                                  {milestone.amount ? (
+                                    <span className="text-sm font-semibold">${Number(milestone.amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                                  ) : milestone.percentage ? (
+                                    <span className="text-sm font-semibold">{Number(milestone.percentage).toFixed(0)}%
+                                      {resolvedAmt !== null && <span className="font-normal text-muted-foreground ml-1">(≈${resolvedAmt.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>}
+                                    </span>
+                                  ) : (
+                                    <span className="text-sm text-muted-foreground italic">No amount set</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <Button size="sm" variant="ghost" disabled={!isEditable}
+                                  onClick={() => { setEditingMilestone(milestone); setShowMilestoneEditDialog(true); }}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="text-destructive" disabled={!isEditable}
+                                  onClick={() => deleteMilestoneMutation.mutate(milestone.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {isEditable && (
+                      <Button variant="outline" size="sm" onClick={() => { setMilestoneAmountMode('amount'); setShowMilestoneDialog(true); }}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Milestone
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  /* ── Single-payment view ── */
+                  <div className="space-y-3">
+                    {milestones.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        {isEditable ? (
+                          <Button variant="outline" size="sm" onClick={async () => {
+                            const total = Number(estimate?.presentedTotal || totalAmount);
+                            createMilestoneMutation.mutate({
+                              name: 'Full Payment',
+                              description: null,
+                              amount: total > 0 ? String(total) : null,
+                              percentage: total > 0 ? null : '100',
+                              sortOrder: 1,
+                            });
+                          }}>
+                            <Plus className="h-4 w-4 mr-2" />
+                            Set Payment Amount
+                          </Button>
+                        ) : (
+                          <span>No payment amount set.</span>
+                        )}
+                      </div>
+                    ) : (
+                      (() => {
+                        const m = milestones[0];
+                        const quoteTotal = Number(estimate?.presentedTotal || totalAmount);
+                        const resolvedAmt = m.amount
+                          ? Number(m.amount)
+                          : m.percentage && quoteTotal
+                            ? quoteTotal * Number(m.percentage) / 100
+                            : null;
+                        return (
+                          <div className="flex items-center justify-between p-4 border rounded-lg bg-card">
+                            <div>
+                              <div className="font-medium">{m.name}</div>
+                              {m.description && <p className="text-sm text-muted-foreground mt-0.5">{m.description}</p>}
+                              <div className="mt-1">
+                                {m.amount ? (
+                                  <span className="text-lg font-semibold">${Number(m.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                ) : m.percentage ? (
+                                  <span className="text-lg font-semibold">{Number(m.percentage).toFixed(0)}% of total
+                                    {resolvedAmt !== null && <span className="text-base font-normal text-muted-foreground ml-2">(≈${resolvedAmt.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground italic">No amount set</span>
+                                )}
+                              </div>
+                            </div>
+                            {isEditable && (
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="ghost" onClick={() => { setEditingMilestone(m); setShowMilestoneEditDialog(true); }}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteMilestoneMutation.mutate(m.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
                             )}
                           </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={() => {
-                              setEditingMilestone(milestone);
-                              setShowMilestoneEditDialog(true);
-                            }}
-                            size="sm"
-                            variant="ghost"
-                            disabled={!isEditable}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive"
-                            disabled={!isEditable}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                    </div>
+                        );
+                      })()
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -5863,161 +5996,180 @@ function EstimateDetailContent() {
       </Dialog>
 
       {/* Milestone Creation Dialog */}
-      <Dialog open={showMilestoneDialog} onOpenChange={setShowMilestoneDialog}>
+      <Dialog open={showMilestoneDialog} onOpenChange={(open) => {
+        setShowMilestoneDialog(open);
+        if (!open) setNewMilestone({ name: "", description: "", amount: "", percentage: "", dueDate: "" });
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Milestone Payment</DialogTitle>
-            <DialogDescription>
-              Define a payment milestone for the customer
-            </DialogDescription>
+            <DialogDescription>Define a payment milestone deliverable for the client</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="milestone-name">Name</Label>
+              <Label htmlFor="milestone-name">Deliverable name</Label>
               <Input
                 id="milestone-name"
-                placeholder="e.g., Project Kickoff, Phase 1 Completion"
+                placeholder="e.g., Phase 1 Delivery, MVP Launch"
                 value={newMilestone.name}
                 onChange={(e) => setNewMilestone({ ...newMilestone, name: e.target.value })}
+                autoFocus
               />
             </div>
             <div>
-              <Label htmlFor="milestone-description">Description</Label>
+              <Label htmlFor="milestone-description">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 id="milestone-description"
-                placeholder="Optional description"
+                placeholder="What the client receives at this milestone"
                 value={newMilestone.description}
                 onChange={(e) => setNewMilestone({ ...newMilestone, description: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="milestone-amount">Fixed Amount ($)</Label>
-                <Input
-                  id="milestone-amount"
-                  type="number"
-                  placeholder="0.00"
-                  value={newMilestone.amount}
-                  onChange={(e) => setNewMilestone({ ...newMilestone, amount: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="milestone-percentage">Or Percentage (%)</Label>
-                <Input
-                  id="milestone-percentage"
-                  type="number"
-                  placeholder="0"
-                  value={newMilestone.percentage}
-                  onChange={(e) => setNewMilestone({ ...newMilestone, percentage: e.target.value })}
-                />
-              </div>
-            </div>
+            {/* Amount mode toggle */}
             <div>
-              <Label htmlFor="milestone-due">Due Date</Label>
-              <Input
-                id="milestone-due"
-                type="date"
-                value={newMilestone.dueDate}
-                onChange={(e) => setNewMilestone({ ...newMilestone, dueDate: e.target.value })}
-              />
+              <Label>Payment amount</Label>
+              <div className="flex items-center gap-1 rounded-lg border p-1 bg-muted/40 mt-1 w-fit">
+                <Button size="sm" variant={milestoneAmountMode === 'amount' ? 'default' : 'ghost'} className="h-7 px-3 text-xs"
+                  onClick={() => { setMilestoneAmountMode('amount'); setNewMilestone({ ...newMilestone, percentage: '' }); }}>
+                  Fixed ($)
+                </Button>
+                <Button size="sm" variant={milestoneAmountMode === 'percentage' ? 'default' : 'ghost'} className="h-7 px-3 text-xs"
+                  onClick={() => { setMilestoneAmountMode('percentage'); setNewMilestone({ ...newMilestone, amount: '' }); }}>
+                  Percentage (%)
+                </Button>
+              </div>
+              <div className="mt-2">
+                {milestoneAmountMode === 'amount' ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g., 25000"
+                    value={newMilestone.amount}
+                    onChange={(e) => setNewMilestone({ ...newMilestone, amount: e.target.value, percentage: '' })}
+                  />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="100"
+                      placeholder="e.g., 25"
+                      value={newMilestone.percentage}
+                      onChange={(e) => setNewMilestone({ ...newMilestone, percentage: e.target.value, amount: '' })}
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">% of total</span>
+                    {newMilestone.percentage && Number(estimate?.presentedTotal || totalAmount) > 0 && (
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                        ≈ ${(Number(estimate?.presentedTotal || totalAmount) * Number(newMilestone.percentage) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMilestoneDialog(false)}>Cancel</Button>
             <Button
               onClick={() => {
-                setShowMilestoneDialog(false);
-                setNewMilestone({ name: "", description: "", amount: "", percentage: "", dueDate: "" });
-              }}
-              variant="outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                // Calculate sort order based on existing milestones
-                const sortOrder = milestones.length + 1;
-                
                 createMilestoneMutation.mutate({
                   name: newMilestone.name,
                   description: newMilestone.description || null,
-                  amount: newMilestone.amount ? String(newMilestone.amount) : null,
-                  percentage: newMilestone.percentage ? String(newMilestone.percentage) : null,
-                  dueDate: newMilestone.dueDate || null,
-                  sortOrder
+                  amount: milestoneAmountMode === 'amount' && newMilestone.amount ? String(newMilestone.amount) : null,
+                  percentage: milestoneAmountMode === 'percentage' && newMilestone.percentage ? String(newMilestone.percentage) : null,
+                  sortOrder: milestones.length + 1,
                 });
               }}
               disabled={
                 !isEditable ||
-                !newMilestone.name?.trim() || 
-                ((!newMilestone.amount?.trim()) && (!newMilestone.percentage?.trim())) || 
-                (!!newMilestone.amount?.trim() && !!newMilestone.percentage?.trim()) || 
+                !newMilestone.name?.trim() ||
+                (milestoneAmountMode === 'amount' ? !newMilestone.amount?.trim() : !newMilestone.percentage?.trim()) ||
                 createMilestoneMutation.isPending
               }
             >
-              {createMilestoneMutation.isPending ? "Creating..." : "Add Milestone"}
+              {createMilestoneMutation.isPending ? "Adding..." : "Add Milestone"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Milestone Edit Dialog */}
-      <Dialog open={showMilestoneEditDialog} onOpenChange={setShowMilestoneEditDialog}>
+      <Dialog open={showMilestoneEditDialog} onOpenChange={(open) => {
+        setShowMilestoneEditDialog(open);
+        if (!open) setEditingMilestone(null);
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Milestone Payment</DialogTitle>
-            <DialogDescription>
-              Update the milestone payment details
-            </DialogDescription>
+            <DialogDescription>Update the milestone deliverable details</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="edit-milestone-name">Name</Label>
+              <Label htmlFor="edit-milestone-name">Deliverable name</Label>
               <Input
                 id="edit-milestone-name"
-                placeholder="e.g., Project Kickoff, Phase 1 Completion"
+                placeholder="e.g., Phase 1 Delivery, MVP Launch"
                 value={editingMilestone?.name || ""}
                 onChange={(e) => setEditingMilestone({ ...editingMilestone, name: e.target.value })}
               />
             </div>
             <div>
-              <Label htmlFor="edit-milestone-description">Description</Label>
+              <Label htmlFor="edit-milestone-description">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 id="edit-milestone-description"
-                placeholder="Optional description"
+                placeholder="What the client receives at this milestone"
                 value={editingMilestone?.description || ""}
                 onChange={(e) => setEditingMilestone({ ...editingMilestone, description: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-milestone-amount">Fixed Amount ($)</Label>
-                <Input
-                  id="edit-milestone-amount"
-                  type="number"
-                  placeholder="0.00"
-                  value={editingMilestone?.amount || ""}
-                  onChange={(e) => setEditingMilestone({ ...editingMilestone, amount: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-milestone-percentage">Or Percentage (%)</Label>
-                <Input
-                  id="edit-milestone-percentage"
-                  type="number"
-                  placeholder="0"
-                  value={editingMilestone?.percentage || ""}
-                  onChange={(e) => setEditingMilestone({ ...editingMilestone, percentage: e.target.value })}
-                />
-              </div>
-            </div>
             <div>
-              <Label htmlFor="edit-milestone-due">Due Date</Label>
-              <Input
-                id="edit-milestone-due"
-                type="date"
-                value={editingMilestone?.dueDate || ""}
-                onChange={(e) => setEditingMilestone({ ...editingMilestone, dueDate: e.target.value })}
-              />
+              <Label>Payment amount</Label>
+              <div className="flex items-center gap-1 rounded-lg border p-1 bg-muted/40 mt-1 w-fit">
+                <Button size="sm"
+                  variant={!editingMilestone?.percentage ? 'default' : 'ghost'}
+                  className="h-7 px-3 text-xs"
+                  onClick={() => setEditingMilestone({ ...editingMilestone, percentage: '', amount: editingMilestone?.amount || '' })}>
+                  Fixed ($)
+                </Button>
+                <Button size="sm"
+                  variant={editingMilestone?.percentage ? 'default' : 'ghost'}
+                  className="h-7 px-3 text-xs"
+                  onClick={() => setEditingMilestone({ ...editingMilestone, amount: '', percentage: editingMilestone?.percentage || '' })}>
+                  Percentage (%)
+                </Button>
+              </div>
+              <div className="mt-2">
+                {!editingMilestone?.percentage ? (
+                  <Input
+                    id="edit-milestone-amount"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={editingMilestone?.amount || ""}
+                    onChange={(e) => setEditingMilestone({ ...editingMilestone, amount: e.target.value, percentage: '' })}
+                  />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="edit-milestone-percentage"
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="100"
+                      placeholder="0"
+                      value={editingMilestone?.percentage || ""}
+                      onChange={(e) => setEditingMilestone({ ...editingMilestone, percentage: e.target.value, amount: '' })}
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">% of total</span>
+                    {editingMilestone?.percentage && Number(estimate?.presentedTotal || totalAmount) > 0 && (
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                        ≈ ${(Number(estimate?.presentedTotal || totalAmount) * Number(editingMilestone.percentage) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -6037,15 +6189,14 @@ function EstimateDetailContent() {
                   data: {
                     name: editingMilestone.name,
                     description: editingMilestone.description || null,
-                    amount: editingMilestone.amount ? parseFloat(editingMilestone.amount) : null,
-                    percentage: editingMilestone.percentage ? parseFloat(editingMilestone.percentage) : null,
-                    dueDate: editingMilestone.dueDate || null
+                    amount: editingMilestone.amount ? String(editingMilestone.amount) : null,
+                    percentage: editingMilestone.percentage ? String(editingMilestone.percentage) : null,
                   }
                 });
                 setShowMilestoneEditDialog(false);
                 setEditingMilestone(null);
               }}
-              disabled={!isEditable || !editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || !!(editingMilestone?.amount && editingMilestone?.percentage) || updateMilestoneMutation.isPending}
+              disabled={!isEditable || !editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || updateMilestoneMutation.isPending}
             >
               {updateMilestoneMutation.isPending ? "Updating..." : "Update Milestone"}
             </Button>

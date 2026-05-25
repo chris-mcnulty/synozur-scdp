@@ -653,22 +653,35 @@ export const projectsMethods: ThisType<IStorage> = {
   },
 
   async copyEstimateMilestonesToProject(estimateId: string, projectId: string): Promise<void> {
-    // Get estimate milestones
+    // Get estimate milestones and the parent estimate (for percentage resolution)
     const estMilestones = await db.select()
       .from(estimateMilestones)
       .where(eq(estimateMilestones.estimateId, estimateId))
       .orderBy(estimateMilestones.sortOrder);
 
+    if (estMilestones.length === 0) return;
+
+    // Fetch the estimate so we can resolve percentage-based amounts
+    const [est] = await db.select().from(estimates).where(eq(estimates.id, estimateId));
+    const estimateTotal = Number(est?.presentedTotal || est?.totalFees || 0);
+
     // Copy each milestone to project milestones as payment milestones
     for (const estMilestone of estMilestones) {
+      // Resolve amount: prefer explicit amount, fall back to percentage × total
+      let resolvedAmount: string | null = null;
+      if (estMilestone.amount) {
+        resolvedAmount = estMilestone.amount;
+      } else if (estMilestone.percentage && estimateTotal > 0) {
+        resolvedAmount = String(Math.round(estimateTotal * Number(estMilestone.percentage) / 100 * 100) / 100);
+      }
+
       await db.insert(projectMilestones).values({
         projectId,
         estimateMilestoneId: estMilestone.id,
         name: estMilestone.name,
         description: estMilestone.description,
-        isPaymentMilestone: true, // Mark as payment milestone
-        amount: estMilestone.amount || '0',
-        targetDate: estMilestone.dueDate,
+        isPaymentMilestone: true,
+        amount: resolvedAmount || '0',
         status: 'planned',
         sortOrder: estMilestone.sortOrder,
       });

@@ -791,6 +791,8 @@ export const estimates = pgTable("estimates", {
   exchangeRateSource: varchar("exchange_rate_source", { length: 20 }).default("live"), // 'live', 'locked', 'manual'
   proposalNarrative: text("proposal_narrative"),
   proposalNarrativeGeneratedAt: timestamp("proposal_narrative_generated_at"),
+  // Payment structure for fixed-price estimates: 'single' = one lump-sum payment, 'multi' = sequential milestone payments
+  paymentStructure: text("payment_structure").default("single"), // 'single' | 'multi'
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_estimates_tenant").on(table.tenantId),
