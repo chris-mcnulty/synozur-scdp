@@ -3961,6 +3961,40 @@ function EstimateDetailContent() {
               </CardContent>
             </Card>
 
+            {/* Optional: Target Effort Hours (fallback budget for milestone/fixed-price estimates without line items) */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Target Effort Hours (optional)</CardTitle>
+                <CardDescription>
+                  Only used when this estimate has no detailed line items. Lets project Remaining Hours metrics work on fixed-price/milestone deals. Dollar budget remains the primary measure.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.5"
+                    placeholder="e.g. 120"
+                    defaultValue={(estimate as any)?.targetEffortHours ?? ''}
+                    disabled={!isEditable}
+                    className="max-w-[180px]"
+                    data-testid="input-target-effort-hours"
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      const next = raw === '' ? null : Number(raw);
+                      const current = (estimate as any)?.targetEffortHours;
+                      const currentNum = current == null || current === '' ? null : Number(current);
+                      if (next === currentNum) return;
+                      if (next !== null && (!isFinite(next) || next < 0)) return;
+                      updateEstimateMutation.mutate({ targetEffortHours: next } as any);
+                    }}
+                  />
+                  <span className="text-sm text-muted-foreground">hours</span>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Milestone Payments */}
             <Card>
               <CardHeader>

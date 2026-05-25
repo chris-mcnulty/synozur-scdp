@@ -3409,6 +3409,10 @@ export default function ProjectDetail() {
         {(() => {
           const effectiveBudgetedHours = hoursSummary?.budgetedHours ?? burnRate.estimatedHours ?? 0;
           if (effectiveBudgetedHours > 0) return null;
+          // Milestone / fixed-price deals are dollar-tracked, not hours-tracked.
+          // If a dollar budget exists, don't nag about missing hours budget —
+          // remaining-hours metrics are optional on those engagements.
+          if ((burnRate.totalBudget || 0) > 0) return null;
           return (
             <div
               className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 p-4"
@@ -3424,7 +3428,7 @@ export default function ProjectDetail() {
                   </p>
                   <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
                     {hasApprovedEstimate
-                      ? "Add line items to the approved estimate to track Remaining Hours and Hours Variance against a budget."
+                      ? "Add line items to the approved estimate, or set a Target Effort Hours on the estimate, to track Remaining Hours and Hours Variance against a budget."
                       : "Approve an estimate to track Remaining Hours and Hours Variance against a budget."}
                   </p>
                 </div>

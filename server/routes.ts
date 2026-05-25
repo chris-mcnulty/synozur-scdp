@@ -1109,6 +1109,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         if (targetEstimate) {
           const lineItems = await storage.getEstimateLineItems(targetEstimate.id);
           budgetedHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours ?? "0"), 0);
+          // Fallback for milestone/fixed-price estimates without detailed line items:
+          // use the explicit targetEffortHours from the estimate so Remaining Hours
+          // metrics still work without forcing a per-line-item breakdown.
+          if (budgetedHours === 0) {
+            const target = parseFloat((targetEstimate as any).targetEffortHours ?? "0");
+            if (target > 0) budgetedHours = target;
+          }
         }
       }
 
@@ -1223,48 +1230,12 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Projects
-  app.get("/api/projects", requireAuth, async (req, res) => {
-    try {
-      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
-      // Backward-compat: only paginate when caller explicitly passes limit or offset
-      const hasPagination = req.query.limit !== undefined || req.query.offset !== undefined;
-      console.log(`[GET /api/projects] tenantId=${tenantId} hasPagination=${hasPagination} query=`, req.query);
-      if (!hasPagination) {
-        const projects = await storage.getProjects(tenantId);
-        return res.json(projects);
-      }
-      const parsed = projectFiltersSchema.parse(req.query);
-      console.log(`[GET /api/projects] parsed:`, parsed);
-      const result = await storage.getProjectsPaginated({
-        tenantId,
-        limit: parsed.limit,
-        offset: parsed.offset,
-        search: parsed.search,
-        status: parsed.status,
-        clientId: parsed.clientId,
-        pmId: parsed.pmId,
-        sortDir: parsed.sortDir,
-        sortBy: parsed.sortBy,
-      });
-      console.log(`[GET /api/projects] result.total=${result.total} items=${result.items.length}`);
-      return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
-    } catch (error) {
-      console.error("[GET /api/projects] error:", error);
-      res.status(500).json({ message: "Failed to fetch projects", error: String(error) });
-    }
-  });
-
-  app.get("/api/projects/:id", requireAuth, async (req, res) => {
-    try {
-      const project = await storage.getProject(req.params.id);
-      if (!project) {
-        return res.status(404).json({ message: "Project not found" });
-      }
-      res.json(project);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch project" });
-    }
-  });
+  // NOTE: GET /api/projects and GET /api/projects/:id are intentionally NOT
+  // registered here. They are registered by registerProjectRoutes() in
+  // server/routes/projects.ts which wraps the paginated query with a 20s
+  // timeout. Express picks the FIRST registered handler — leaving a duplicate
+  // here without a timeout caused production requests to hang silently when
+  // the DB query was slow (no error, no response, just empty UI).
 
   app.post("/api/projects", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {

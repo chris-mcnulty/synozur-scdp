@@ -793,6 +793,10 @@ export const estimates = pgTable("estimates", {
   proposalNarrativeGeneratedAt: timestamp("proposal_narrative_generated_at"),
   // Payment structure for fixed-price estimates: 'single' = one lump-sum payment, 'multi' = sequential milestone payments
   paymentStructure: text("payment_structure").default("single"), // 'single' | 'multi'
+  // Target effort budget (hours) for milestone/fixed-price estimates that don't have detailed line items.
+  // When set and > 0, this is used as the project's budgeted hours so Remaining Hours / Hours Variance
+  // metrics can be tracked even without breaking the estimate into per-line-item hours.
+  targetEffortHours: decimal("target_effort_hours", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_estimates_tenant").on(table.tenantId),

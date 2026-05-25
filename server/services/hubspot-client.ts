@@ -834,37 +834,65 @@ export async function searchHubSpotDeals(tenantId: string, query: string): Promi
     }
   }
 
+  const properties = ['dealname', 'amount', 'dealstage', 'closedate', 'pipeline', 'hubspot_owner_id', 'createdate', 'hs_lastmodifieddate'];
+
+  const mapResults = (results: any[]): HubSpotDeal[] => results.map(deal => {
+    const props = deal.properties;
+    const stageInfo = stageMap.get(props.dealstage || '');
+    return {
+      id: deal.id,
+      dealName: props.dealname || 'Untitled Deal',
+      amount: props.amount || null,
+      dealStage: props.dealstage || '',
+      dealStageName: stageInfo?.name || 'Unknown',
+      pipeline: props.pipeline || '',
+      pipelineName: stageInfo?.pipelineName || 'Unknown',
+      probability: stageInfo?.probability ? stageInfo.probability * 100 : 0,
+      closeDate: props.closedate || null,
+      ownerName: null,
+      companyName: null,
+      companyId: null,
+      createdAt: props.createdate || String(deal.createdAt),
+      updatedAt: props.hs_lastmodifieddate || String(deal.updatedAt),
+    };
+  });
+
+  // Primary path: free-text query (HubSpot's tokenized fuzzy search across default fields).
+  // Fallback path: explicit CONTAINS_TOKEN filter on dealname for short/partial matches
+  // (the free-text `query` parameter sometimes returns nothing for very short inputs).
+  let primaryResults: HubSpotDeal[] = [];
   try {
     const response = await client.crm.deals.searchApi.doSearch({
       query,
       limit: 20,
-      properties: ['dealname', 'amount', 'dealstage', 'closedate', 'pipeline', 'hubspot_owner_id', 'createdate', 'hs_lastmodifieddate'],
+      properties,
       filterGroups: [],
       sorts: [],
       after: 0 as any,
     });
+    primaryResults = mapResults(response.results);
+    console.log(`[HUBSPOT] Deal search query="${query}" primary results=${primaryResults.length}`);
+  } catch (error: any) {
+    console.error('[HUBSPOT] Deal search (primary) failed:', error?.message || error, error?.body || '');
+  }
 
-    return response.results.map(deal => {
-      const props = deal.properties;
-      const stageInfo = stageMap.get(props.dealstage || '');
-      return {
-        id: deal.id,
-        dealName: props.dealname || 'Untitled Deal',
-        amount: props.amount || null,
-        dealStage: props.dealstage || '',
-        dealStageName: stageInfo?.name || 'Unknown',
-        pipeline: props.pipeline || '',
-        pipelineName: stageInfo?.pipelineName || 'Unknown',
-        probability: stageInfo?.probability ? stageInfo.probability * 100 : 0,
-        closeDate: props.closedate || null,
-        ownerName: null,
-        companyName: null,
-        companyId: null,
-        createdAt: props.createdate || String(deal.createdAt),
-        updatedAt: props.hs_lastmodifieddate || String(deal.updatedAt),
-      };
-    });
-  } catch {
+  if (primaryResults.length > 0) return primaryResults;
+
+  try {
+    const response = await client.crm.deals.searchApi.doSearch({
+      limit: 20,
+      properties,
+      filterGroups: [
+        { filters: [{ propertyName: 'dealname', operator: 'CONTAINS_TOKEN' as any, value: query }] },
+      ],
+      sorts: [],
+      after: 0 as any,
+    } as any);
+    const fallback = mapResults(response.results);
+    console.log(`[HUBSPOT] Deal search query="${query}" fallback (CONTAINS_TOKEN dealname) results=${fallback.length}`);
+    return fallback;
+  } catch (error: any) {
+    console.error('[HUBSPOT] Deal search (fallback) failed:', error?.message || error, error?.body || '');
     return [];
   }
 }
