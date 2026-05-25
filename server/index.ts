@@ -106,9 +106,18 @@ process.on('unhandledRejection', (reason, promise) => {
   // Log but don't exit - non-critical async failures should not crash the server
 });
 
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', (error: any) => {
   console.error('Uncaught Exception:', error);
-  // Exit cleanly to allow deployment system to restart  
+  const stack = (error?.stack || String(error));
+  const message = String(error?.message || '');
+  const isNeonDriverNoise =
+    stack.includes('@neondatabase/serverless') ||
+    /Cannot set property message of #<ErrorEvent>/.test(message);
+  if (isNeonDriverNoise) {
+    console.error('[crash-handler] Suppressing Neon driver WS error — not exiting.');
+    return;
+  }
+  // Exit cleanly to allow deployment system to restart
   process.exit(1);
 });
 
