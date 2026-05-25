@@ -42,6 +42,7 @@ import {
   Plug,
   TrendingUp,
   Bell,
+  Inbox,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -132,9 +133,9 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-raidd", "/notifications", "/notifications/preferences"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-vendor-invoices", "/my-raidd", "/notifications", "/notifications/preferences"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
-  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/rates"] },
+  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/vendor-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/admin/agent-card-health", "/admin/background-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
@@ -223,6 +224,7 @@ export function Sidebar() {
               <SubGroupLabel label="Tracking" />
               <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" />
               <SidebarItem href="/my-contractor-invoices" icon={<FileText />} label="My Contractor Invoices" />
+              <SidebarItem href="/my-vendor-invoices" icon={<Inbox />} label="My Vendor Invoices" />
               <SidebarItem href="/my-raidd" icon={<Shield />} label="My RAIDD" />
               <SubGroupLabel label="Notifications" />
               <SidebarItem href="/notifications" icon={<Bell />} label="Notifications" />
@@ -277,6 +279,8 @@ export function Sidebar() {
                 <SidebarItem href="/expense-management" icon={<CreditCard />} label="Expense Management" />
                 <SidebarItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursement Batches" />
                 <SidebarItem href="/contractor-invoices" icon={<FileText />} label="Contractor Invoices" />
+                <SubGroupLabel label="Accounts Payable" />
+                <SidebarItem href="/vendor-invoices" icon={<Inbox />} label="Vendor Invoices" />
                 <SubGroupLabel label="Rates" />
                 <SidebarItem href="/rates" icon={<Calculator />} label="Rate Management" />
               </CollapsibleSection>

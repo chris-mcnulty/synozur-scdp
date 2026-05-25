@@ -388,7 +388,9 @@ function FinancialReports() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{fmtDisplay(summary.totalActualCost)}</div>
-              <p className="text-xs text-muted-foreground">Time + expenses</p>
+              <p className="text-xs text-muted-foreground">
+                Time + expenses · actuals from posted vendor invoices when available
+              </p>
             </CardContent>
           </Card>
 

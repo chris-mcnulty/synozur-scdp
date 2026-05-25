@@ -2,9 +2,33 @@ import OpenAI from "openai";
 import { db } from "../db.js";
 import { aiConfiguration } from "@shared/schema";
 
+// Vision-capable content parts. Matches the OpenAI Chat Completions
+// content-array shape, which both the Replit AI proxy and Azure OpenAI
+// gpt-4o / gpt-5 deployments accept directly. Providers that don't
+// support vision will pass arrays through to the API; non-vision-capable
+// models will return an error from the upstream API.
+export type ChatMessageContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } };
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ChatMessageContentPart[];
+}
+
+function contentToText(content: ChatMessage['content']): string {
+  if (typeof content === 'string') return content;
+  return content
+    .map(part => (part.type === 'text' ? part.text : '[image]'))
+    .join(' ');
+}
+
+function contentCharCount(content: ChatMessage['content']): number {
+  if (typeof content === 'string') return content.length;
+  return content.reduce(
+    (sum, part) => sum + (part.type === 'text' ? part.text.length : 0),
+    0,
+  );
 }
 
 export interface ChatCompletionParams {
@@ -34,14 +58,21 @@ function isClaudeModel(model: string): boolean {
 
 const CLAUDE_JSON_DIRECTIVE = '\n\nIMPORTANT: Respond with valid JSON only. Do not include any text outside the JSON object.';
 
-function injectClaudeJsonDirective(
-  messages: Array<{ role: string; content: string }>
-): Array<{ role: string; content: string }> {
+function injectClaudeJsonDirective(messages: ChatMessage[]): ChatMessage[] {
   const systemIdx = messages.findIndex(m => m.role === 'system');
   if (systemIdx !== -1) {
-    return messages.map((m, i) =>
-      i === systemIdx ? { ...m, content: m.content + CLAUDE_JSON_DIRECTIVE } : m
-    );
+    return messages.map((m, i) => {
+      if (i !== systemIdx) return m;
+      // System messages are nearly always plain strings; if a caller passed
+      // an array we append the directive as a final text part instead.
+      if (typeof m.content === 'string') {
+        return { ...m, content: m.content + CLAUDE_JSON_DIRECTIVE };
+      }
+      return {
+        ...m,
+        content: [...m.content, { type: 'text' as const, text: CLAUDE_JSON_DIRECTIVE }],
+      };
+    });
   }
   return [{ role: 'system', content: CLAUDE_JSON_DIRECTIVE.trim() }, ...messages];
 }
@@ -82,14 +113,14 @@ export class ReplitAIProvider implements IAIProvider {
     const maxTokens = params.maxTokens ?? 4096;
     const claude = isClaudeModel(this.model);
 
-    let messages = params.messages.map(m => ({ role: m.role, content: m.content }));
+    let messages: ChatMessage[] = params.messages.map(m => ({ role: m.role, content: m.content }));
     if (params.responseFormat === 'json' && claude) {
       messages = injectClaudeJsonDirective(messages);
     }
 
     const requestParams: OpenAI.ChatCompletionCreateParams = {
       model: this.model,
-      messages,
+      messages: messages as OpenAI.ChatCompletionMessageParam[],
       ...(claude ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens }),
     };
 
@@ -101,7 +132,7 @@ export class ReplitAIProvider implements IAIProvider {
       requestParams.response_format = { type: 'json_object' };
     }
 
-    const totalInputChars = params.messages.reduce((sum, m) => sum + m.content.length, 0);
+    const totalInputChars = params.messages.reduce((sum, m) => sum + contentCharCount(m.content), 0);
     console.log(`[AI_PROVIDER] Starting request: ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${maxTokens}`);
     const startTime = Date.now();
 
@@ -244,14 +275,14 @@ export class AzureFoundryProvider implements IAIProvider {
     const maxTokens = params.maxTokens ?? 4096;
     const claude = isClaudeModel(this.deployment);
 
-    let messages = params.messages.map(m => ({ role: m.role, content: m.content }));
+    let messages: ChatMessage[] = params.messages.map(m => ({ role: m.role, content: m.content }));
     if (params.responseFormat === 'json' && claude) {
       messages = injectClaudeJsonDirective(messages);
     }
 
     const requestParams: OpenAI.ChatCompletionCreateParams = {
       model: this.deployment,
-      messages,
+      messages: messages as OpenAI.ChatCompletionMessageParam[],
       ...(claude ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens }),
     };
 
@@ -263,7 +294,7 @@ export class AzureFoundryProvider implements IAIProvider {
       requestParams.response_format = { type: 'json_object' };
     }
 
-    const totalInputChars = params.messages.reduce((sum, m) => sum + m.content.length, 0);
+    const totalInputChars = params.messages.reduce((sum, m) => sum + contentCharCount(m.content), 0);
     console.log(`[AI_PROVIDER] [Foundry] Starting request: model=${this.deployment}, ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${maxTokens}`);
     const startTime = Date.now();
 

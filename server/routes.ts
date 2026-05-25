@@ -20,6 +20,7 @@ import { sharepointStorage, initSharePointStorage } from "./services/sharepoint-
 import { registerPlatformRoutes, enforcePlanStatus } from "./routes/platform.js";
 import { registerSharePointContainerRoutes } from "./routes/sharepoint-containers.js";
 import { registerExpenseRoutes } from "./routes/expenses.js";
+import { registerVendorInvoiceRoutes } from "./routes/vendor-invoices.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
@@ -309,6 +310,13 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register expense routes (extracted module)
   registerExpenseRoutes(app, {
+    requireAuth,
+    requireRole,
+    smartFileStorage,
+  });
+
+  // Register vendor invoice (inbound AP) routes
+  registerVendorInvoiceRoutes(app, {
     requireAuth,
     requireRole,
     smartFileStorage,

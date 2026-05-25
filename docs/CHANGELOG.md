@@ -17,6 +17,29 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 2.6 (May 25, 2026)
+
+**Release Date:** May 25, 2026
+**Status:** Production Release
+**Codename:** Ledger
+
+Version 2.6 closes the loop on contractor cost. Constellation now ingests **inbound contractor invoices** — covering both services (time billed) and reimbursable expenses — runs AI vision extraction over the document, reconciles each line against logged time entries and expenses, and posts the **actual** amount paid as project cost. Every margin and profitability calculation in the platform now prefers actuals from posted vendor invoices over the rate-card estimate.
+
+#### Contractor Invoice Ingestion (Accounts Payable)
+
+- **Inbound AP Workflow** — new `Financial → Accounts Payable → Vendor Invoices` inbox at `/vendor-invoices` with a "Needs Review" tab badge, status filter, and per-row reconcile progress
+- **AI Vision Extraction** — uploaded invoice images are sent to the configured AI provider (gpt-4o / gpt-5 family) with a strict JSON output schema; vendor name, invoice number, date, total, currency, and per-line `kind` / quantity / rate / amount are extracted with per-line confidence scores
+- **Split-Pane Reviewer Screen** — source document on the left (PDF iframe / image / SharePoint link), extracted header plus collapsible line items on the right; each unreconciled line shows ranked match suggestions with one-click accept
+- **Reconciliation Engine** — weighted candidate scoring (amount 0.5 / date 0.2 / category 0.2 / vendor 0.1); ≥0.85 auto-matches, 0.6–0.85 surfaces as a suggestion; service lines greedily fill against billed quantity, producing `matched` / `partial` / `variance` / `unmatched` per line
+- **State Machine** — `draft → extracted → in_review → reconciled → approved → posted → paid` with `disputed` and `void` side states; Approve is gated until every line is reconciled or overridden
+- **Transactional Posting** — Post writes `project_cost_postings` rows and back-fills `actualCostAmount` on every matched time entry and expense in a single transaction; Void reverses the back-fill atomically
+- **Profit Reads Now Prefer Actuals** — Project Variance, Portfolio Financials, weekly digest cost rollup, and the Financial Reports actual-cost tile all read `actualCostAmount` first, falling back to `hours × costRate` only when no vendor invoice has been posted
+- **Vendor Self-Service** — new `/my-vendor-invoices` page under My Workspace → Tracking shows each contractor a read-only view of invoices billed to them, with vendor-friendly status labels, source-document links, and a timeline
+- **Permissions** — `pm` / `billing-admin` / `admin` can review and match; only `billing-admin` and `admin` can approve, post, mark paid, or void
+- **Known v1 limitation** — PDF inputs land in *Draft* with no extracted lines (the shared receipt normalizer renders PDFs as placeholder PNGs in production); image uploads (PNG / JPG / HEIC) extract end-to-end. Email ingest, vendor stub promotion UI, and GL bill export are planned for v2.6.x follow-ups.
+
+---
+
 ### Version 2.5 (May 7, 2026)
 
 **Release Date:** May 7, 2026
