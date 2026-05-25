@@ -267,13 +267,23 @@ export async function autoReconcileInvoice(
         matchScore: top.score.toFixed(3),
         matchReason: top.reason,
       });
-      const variance = computeAmountVariance(line.lineAmount, top.preview.amount ?? null);
+      // varianceFraction is the relative magnitude used for the threshold
+      // decision; varianceDelta is the absolute currency amount stored on
+      // the row so it stays consistent with the service-line path and with
+      // how the UI displays variance figures.
+      const varianceFraction = computeAmountVariance(line.lineAmount, top.preview.amount ?? null);
+      const varianceDelta = top.preview.amount
+        ? parseFloat(line.lineAmount) - parseFloat(top.preview.amount)
+        : 0;
+      const exceedsTolerance = varianceFraction > AMOUNT_RELATIVE_TOLERANCE;
       await storage.updateVendorInvoiceLine(line.id, {
-        reconcileStatus: variance > AMOUNT_RELATIVE_TOLERANCE ? "variance" : "matched",
-        varianceAmount: variance ? variance.toFixed(2) : null,
-        varianceReason: variance > AMOUNT_RELATIVE_TOLERANCE ? `Expense amount differs from invoice line by ${(variance * 100).toFixed(1)}%` : null,
+        reconcileStatus: exceedsTolerance ? "variance" : "matched",
+        varianceAmount: exceedsTolerance ? varianceDelta.toFixed(2) : null,
+        varianceReason: exceedsTolerance
+          ? `Expense amount differs from invoice line by ${(varianceFraction * 100).toFixed(1)}%`
+          : null,
       });
-      if (variance > AMOUNT_RELATIVE_TOLERANCE) result.variance++;
+      if (exceedsTolerance) result.variance++;
       else result.matched++;
       continue;
     }

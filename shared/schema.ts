@@ -1202,7 +1202,7 @@ export const timeEntries = pgTable("time_entries", {
   // Vendor invoice reconciliation (inbound AP). When set, this time entry has been
   // matched to a contractor's billed line; actualCostAmount replaces costRate*hours
   // for project margin reporting.
-  vendorInvoiceLineId: varchar("vendor_invoice_line_id"), // FK to vendor_invoice_lines (set after posting)
+  vendorInvoiceLineId: varchar("vendor_invoice_line_id").references(() => vendorInvoiceLines.id),
   actualCostAmount: decimal("actual_cost_amount", { precision: 12, scale: 2 }),
   milestoneId: varchar("milestone_id").references(() => projectMilestones.id), // Optional milestone reference
   workstreamId: varchar("workstream_id").references(() => projectWorkstreams.id), // Optional workstream reference
@@ -1272,7 +1272,7 @@ export const expenses = pgTable("expenses", {
   clientPaidAt: timestamp("client_paid_at"), // When client paid for this expense via invoice batch
   // Vendor invoice reconciliation (inbound AP). When set, this expense has been
   // matched to a contractor invoice line; actualCostAmount is what we actually pay.
-  vendorInvoiceLineId: varchar("vendor_invoice_line_id"), // FK to vendor_invoice_lines (set after posting)
+  vendorInvoiceLineId: varchar("vendor_invoice_line_id").references(() => vendorInvoiceLines.id),
   actualCostAmount: decimal("actual_cost_amount", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({

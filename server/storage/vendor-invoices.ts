@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db.js";
 import {
@@ -514,6 +514,17 @@ export const vendorInvoicesMethods = {
           );
         }
 
+        // Convert line amount to tenant cost currency for the ledger. The
+        // original-currency fields are kept on the row for audit.
+        // exchangeRate is interpreted as costCurrency per 1 originalCurrency
+        // (matching the convention used elsewhere in the schema).
+        const originalAmount = line.originalAmount ?? line.lineAmount;
+        const originalCurrency = line.currency ?? invoice.currency;
+        const effectiveRate = line.exchangeRate ?? invoice.exchangeRate;
+        const amountInCostCurrency = effectiveRate
+          ? (parseFloat(line.lineAmount) * parseFloat(effectiveRate)).toFixed(2)
+          : line.lineAmount;
+
         const [posting] = await tx
           .insert(projectCostPostings)
           .values({
@@ -523,18 +534,20 @@ export const vendorInvoicesMethods = {
             sourceType: "vendor_invoice",
             vendorInvoiceId: invoice.id,
             vendorInvoiceLineId: line.id,
-            amount: line.lineAmount,
-            originalCurrency: line.currency ?? invoice.currency,
-            originalAmount: line.originalAmount ?? line.lineAmount,
-            exchangeRate: line.exchangeRate ?? invoice.exchangeRate,
+            amount: amountInCostCurrency,
+            originalCurrency,
+            originalAmount,
+            exchangeRate: effectiveRate,
             description: line.description,
             postedBy,
           })
           .returning();
         postingsCreated++;
 
-        // Back-fill source rows. We distribute the line amount proportionally
-        // across matched sources using each match's allocatedAmount.
+        // Back-fill source rows. Updates are guarded with tenant + vendor +
+        // not-already-linked predicates so a malformed or cross-tenant match
+        // ID can't overwrite an unrelated row. Throw if a match updates zero
+        // rows — that signals a data-integrity bug we don't want to swallow.
         const matches = await tx
           .select()
           .from(vendorInvoiceLineMatches)
@@ -542,22 +555,48 @@ export const vendorInvoicesMethods = {
 
         for (const m of matches) {
           if (m.sourceType === "time_entry" && m.sourceTimeEntryId) {
-            await tx
+            const updated = await tx
               .update(timeEntries)
               .set({
                 vendorInvoiceLineId: line.id,
                 actualCostAmount: m.allocatedAmount,
               })
-              .where(eq(timeEntries.id, m.sourceTimeEntryId));
+              .where(
+                and(
+                  eq(timeEntries.id, m.sourceTimeEntryId),
+                  eq(timeEntries.tenantId, invoice.tenantId),
+                  eq(timeEntries.personId, invoice.vendorUserId),
+                  isNull(timeEntries.vendorInvoiceLineId),
+                ),
+              )
+              .returning({ id: timeEntries.id });
+            if (updated.length === 0) {
+              throw new Error(
+                `Line ${line.lineNumber}: matched time entry ${m.sourceTimeEntryId} is not eligible (wrong tenant/vendor or already linked).`,
+              );
+            }
             sourcesUpdated++;
           } else if (m.sourceType === "expense" && m.sourceExpenseId) {
-            await tx
+            const updated = await tx
               .update(expenses)
               .set({
                 vendorInvoiceLineId: line.id,
                 actualCostAmount: m.allocatedAmount,
               })
-              .where(eq(expenses.id, m.sourceExpenseId));
+              .where(
+                and(
+                  eq(expenses.id, m.sourceExpenseId),
+                  eq(expenses.tenantId, invoice.tenantId),
+                  eq(expenses.personId, invoice.vendorUserId),
+                  isNull(expenses.vendorInvoiceLineId),
+                ),
+              )
+              .returning({ id: expenses.id });
+            if (updated.length === 0) {
+              throw new Error(
+                `Line ${line.lineNumber}: matched expense ${m.sourceExpenseId} is not eligible (wrong tenant/vendor or already linked).`,
+              );
+            }
             sourcesUpdated++;
           }
         }

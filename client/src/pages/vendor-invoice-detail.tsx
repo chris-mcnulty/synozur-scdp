@@ -76,6 +76,7 @@ interface VendorInvoiceDetail {
   total: string;
   description: string | null;
   status: string;
+  createdAt: string;
   reviewedAt: string | null;
   approvedAt: string | null;
   postedAt: string | null;
@@ -252,7 +253,9 @@ export default function VendorInvoiceDetailPage() {
   const canApprove = ["extracted", "in_review", "reconciled"].includes(invoice.status) && allReconciled;
   const canPost = invoice.status === "approved";
   const canMarkPaid = invoice.status === "posted";
-  const canVoid = !["paid", "void", "posted"].includes(invoice.status);
+  // Backend supports voiding a posted-but-unpaid invoice (reverses postings
+  // atomically), so only paid + already-void are off-limits.
+  const canVoid = !["paid", "void"].includes(invoice.status);
 
   return (
     <Layout>
@@ -910,7 +913,7 @@ function ActivityCard({
   reconcileSummary: { matched: number; partial: number; variance: number; unmatched: number; total: number } | null;
 }) {
   const events: Array<{ label: string; at: string | null; sub?: string }> = [
-    { label: "Created", at: invoice.reviewedAt ?? null }, // reuse field; server should provide createdAt
+    { label: "Created", at: invoice.createdAt },
     { label: "Reviewed", at: invoice.reviewedAt },
     { label: "Approved", at: invoice.approvedAt, sub: invoice.approver?.name },
     { label: "Posted to project cost", at: invoice.postedAt },

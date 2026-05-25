@@ -1,10 +1,13 @@
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { storage, db } from "../storage/index.js";
 import {
   insertVendorInvoiceLineMatchSchema,
   vendorInvoiceLineKindEnum,
+  timeEntries,
+  expenses,
 } from "@shared/schema";
 import { extractVendorInvoice } from "../services/vendor-invoice-extractor.js";
 import {
@@ -373,7 +376,12 @@ export function registerVendorInvoiceRoutes(
         if (!file) return res.status(404).json({ message: "Stored file not available" });
 
         res.setHeader("Content-Type", file.mimeType || upload.mimeType);
-        res.setHeader("Content-Disposition", `inline; filename="${file.fileName || upload.fileName}"`);
+        // Sanitize the filename: strip control chars and quote characters so a
+        // malicious vendor-supplied filename can't inject extra headers.
+        const safeFileName = (file.fileName || upload.fileName)
+          .replace(/[\r\n"]/g, "_")
+          .replace(/[\x00-\x1f]/g, "");
+        res.setHeader("Content-Disposition", `inline; filename="${safeFileName}"`);
         res.end(file.buffer);
       } catch (err: any) {
         console.error("[VENDOR_INVOICES] preview failed:", err);
@@ -443,14 +451,68 @@ export function registerVendorInvoiceRoutes(
         }
 
         const body = parsed.data;
+
+        // Verify the referenced source row exists, belongs to this tenant, and
+        // is billed by the same vendor the invoice is from. This prevents
+        // cross-tenant linking and accidental attribution to an unrelated
+        // person's time/expense rows.
+        let defaultAllocatedAmount = line.lineAmount;
+        let defaultAllocatedQuantity: string | null = line.quantity ?? null;
+        if (body.sourceType === "time_entry") {
+          const [te] = await db
+            .select()
+            .from(timeEntries)
+            .where(
+              and(
+                eq(timeEntries.id, body.sourceId),
+                eq(timeEntries.tenantId, tenantId),
+                eq(timeEntries.personId, invoice.vendorUserId),
+              ),
+            )
+            .limit(1);
+          if (!te) {
+            return res.status(400).json({
+              message: "Time entry not found or not eligible for this invoice (wrong tenant/vendor).",
+            });
+          }
+          // Default allocation = this entry's hours × line unit rate. Avoids
+          // crediting the whole line to a single entry when a service line is
+          // built from several entries.
+          defaultAllocatedQuantity = te.hours;
+          if (line.unitAmount) {
+            defaultAllocatedAmount = (parseFloat(te.hours) * parseFloat(line.unitAmount)).toFixed(2);
+          } else if (te.costRate) {
+            defaultAllocatedAmount = (parseFloat(te.hours) * parseFloat(te.costRate)).toFixed(2);
+          }
+        } else if (body.sourceType === "expense") {
+          const [exp] = await db
+            .select()
+            .from(expenses)
+            .where(
+              and(
+                eq(expenses.id, body.sourceId),
+                eq(expenses.tenantId, tenantId),
+                eq(expenses.personId, invoice.vendorUserId),
+              ),
+            )
+            .limit(1);
+          if (!exp) {
+            return res.status(400).json({
+              message: "Expense not found or not eligible for this invoice (wrong tenant/vendor).",
+            });
+          }
+          defaultAllocatedAmount = exp.amount;
+          defaultAllocatedQuantity = null;
+        }
+
         const matchInput = {
           tenantId,
           vendorInvoiceLineId: line.id,
           sourceType: body.sourceType,
           sourceTimeEntryId: body.sourceType === "time_entry" ? body.sourceId : null,
           sourceExpenseId: body.sourceType === "expense" ? body.sourceId : null,
-          allocatedAmount: body.allocatedAmount ?? line.lineAmount,
-          allocatedQuantity: body.allocatedQuantity ?? line.quantity ?? null,
+          allocatedAmount: body.allocatedAmount ?? defaultAllocatedAmount,
+          allocatedQuantity: body.allocatedQuantity ?? defaultAllocatedQuantity,
           matchedBy: "manual" as const,
           matchScore: null,
           matchReason: body.matchReason ?? "Reviewer accepted match",
