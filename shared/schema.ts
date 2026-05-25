@@ -2680,14 +2680,14 @@ export const insertContractorInvoiceSchema = createInsertSchema(contractorInvoic
 });
 
 // Vendor Invoice (Inbound AP) insert schemas
+// extractionStartedAt / extractionAttempts are intentionally NOT omitted —
+// the upload handler sets them immediately when kicking off extraction.
 export const insertVendorInvoiceUploadSchema = createInsertSchema(vendorInvoiceUploads).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
   receivedAt: true,
-  extractionStartedAt: true,
   extractionCompletedAt: true,
-  extractionAttempts: true,
   vendorInvoiceId: true, // back-filled by server
 }).extend({
   sourceChannel: vendorInvoiceUploadChannelEnum,
@@ -4096,6 +4096,7 @@ export const AI_FEATURES = {
   SUB_SOW_NARRATIVE: 'sub_sow_narrative',
   EXECUTIVE_NARRATIVE: 'executive_narrative',
   TIME_ENTRY_REWRITE: 'time_entry_rewrite',
+  VENDOR_INVOICE_EXTRACTION: 'vendor_invoice_extraction',
   CUSTOM: 'custom',
   OTHER: 'other',
   PROJECT_AGENT: 'project_agent',

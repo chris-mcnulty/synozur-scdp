@@ -95,6 +95,10 @@ import { estimatesMethods } from "./estimates";
 import { timeEntriesMethods } from "./time-entries";
 import { expensesMethods } from "./expenses";
 import { invoicingMethods } from "./invoicing";
+import {
+  vendorInvoicesMethods,
+  type VendorInvoicesMethods,
+} from "./vendor-invoices";
 import { adminMethods } from "./admin";
 import { documentsMethods } from "./documents";
 import { plannerMethods } from "./planner";
@@ -1167,7 +1171,7 @@ export interface IStorage {
 export class DatabaseStorage {
 }
 
-export interface DatabaseStorage extends IStorage {}
+export interface DatabaseStorage extends IStorage, VendorInvoicesMethods {}
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -1188,9 +1192,10 @@ Object.assign(
   signoffsMethods,
   galaxyMethods,
   agentMethods,
+  vendorInvoicesMethods,
 );
 
-export const storage: IStorage = new DatabaseStorage();
+export const storage: IStorage & VendorInvoicesMethods = new DatabaseStorage() as DatabaseStorage;
 
 /**
  * Shared rate resolution helper that implements the complete rate hierarchy:
