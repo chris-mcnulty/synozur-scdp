@@ -16,6 +16,46 @@ export type ExpenseApprovalStatus = z.infer<typeof expenseApprovalStatusEnum>;
 export const planStatusEnum = z.enum(['active', 'trial', 'expired', 'cancelled', 'suspended']);
 export type PlanStatus = z.infer<typeof planStatusEnum>;
 
+// Vendor invoice (inbound AP) enums
+export const vendorInvoiceStatusEnum = z.enum([
+  'draft',       // manually created, not yet submitted for extraction
+  'extracted',   // AI extraction completed; awaiting review
+  'in_review',   // reviewer working on it
+  'reconciled',  // all lines have a reconcile decision
+  'approved',    // approved by billing-admin / admin
+  'posted',      // posted to projectCostPostings; affects margins
+  'paid',        // payment recorded
+  'disputed',    // contested with vendor
+  'void',        // cancelled / superseded
+]);
+export type VendorInvoiceStatus = z.infer<typeof vendorInvoiceStatusEnum>;
+
+export const vendorInvoiceLineKindEnum = z.enum(['service', 'expense', 'tax', 'discount', 'other']);
+export type VendorInvoiceLineKind = z.infer<typeof vendorInvoiceLineKindEnum>;
+
+export const vendorInvoiceLineReconcileStatusEnum = z.enum([
+  'unmatched',  // no candidate found
+  'matched',    // auto- or manually matched within tolerance
+  'partial',    // some quantity/amount matched, remainder unmatched
+  'variance',   // matched but with a rate/quantity variance
+  'overridden', // reviewer accepted line as-is without source match
+]);
+export type VendorInvoiceLineReconcileStatus = z.infer<typeof vendorInvoiceLineReconcileStatusEnum>;
+
+export const vendorInvoiceUploadStatusEnum = z.enum([
+  'received', 'extracting', 'extracted', 'failed', 'linked', 'discarded',
+]);
+export type VendorInvoiceUploadStatus = z.infer<typeof vendorInvoiceUploadStatusEnum>;
+
+export const vendorInvoiceUploadChannelEnum = z.enum(['web', 'email', 'sharepoint', 'api']);
+export type VendorInvoiceUploadChannel = z.infer<typeof vendorInvoiceUploadChannelEnum>;
+
+export const vendorInvoiceLineMatchSourceEnum = z.enum(['time_entry', 'expense', 'perdiem_day']);
+export type VendorInvoiceLineMatchSource = z.infer<typeof vendorInvoiceLineMatchSourceEnum>;
+
+export const projectCostPostingSourceEnum = z.enum(['vendor_invoice', 'manual_adjustment', 'payroll']);
+export type ProjectCostPostingSource = z.infer<typeof projectCostPostingSourceEnum>;
+
 // TenantBranding type for jsonb field
 export type TenantBranding = {
   primaryColor?: string;
@@ -256,6 +296,7 @@ export const users = pgTable("users", {
   contractorBillingId: text("contractor_billing_id"), // Contractor's invoice/billing ID or tax ID
   contractorPhone: text("contractor_phone"), // Contractor's phone number
   contractorEmail: text("contractor_email"), // Contractor's billing email (may differ from login email)
+  vendorIngestEmail: text("vendor_ingest_email").unique(), // Per-vendor forwarding alias for inbound AP invoice ingestion
   passwordHash: text("password_hash"),
   // Multi-tenancy fields
   primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id), // User's primary/home tenant
@@ -1158,6 +1199,11 @@ export const timeEntries = pgTable("time_entries", {
   statusReportedFlag: boolean("status_reported_flag").notNull().default(false),
   billingRate: decimal("billing_rate", { precision: 10, scale: 2 }), // Billing rate at time of entry
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate at time of entry
+  // Vendor invoice reconciliation (inbound AP). When set, this time entry has been
+  // matched to a contractor's billed line; actualCostAmount replaces costRate*hours
+  // for project margin reporting.
+  vendorInvoiceLineId: varchar("vendor_invoice_line_id"), // FK to vendor_invoice_lines (set after posting)
+  actualCostAmount: decimal("actual_cost_amount", { precision: 12, scale: 2 }),
   milestoneId: varchar("milestone_id").references(() => projectMilestones.id), // Optional milestone reference
   workstreamId: varchar("workstream_id").references(() => projectWorkstreams.id), // Optional workstream reference
   projectStageId: varchar("project_stage_id").references(() => projectStages.id),
@@ -1224,6 +1270,10 @@ export const expenses = pgTable("expenses", {
   reimbursedAt: timestamp("reimbursed_at"),
   reimbursementBatchId: varchar("reimbursement_batch_id"), // Will reference reimbursementBatches
   clientPaidAt: timestamp("client_paid_at"), // When client paid for this expense via invoice batch
+  // Vendor invoice reconciliation (inbound AP). When set, this expense has been
+  // matched to a contractor invoice line; actualCostAmount is what we actually pay.
+  vendorInvoiceLineId: varchar("vendor_invoice_line_id"), // FK to vendor_invoice_lines (set after posting)
+  actualCostAmount: decimal("actual_cost_amount", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_expenses_tenant").on(table.tenantId),
@@ -1391,9 +1441,226 @@ export const contractorInvoices = pgTable("contractor_invoices", {
   tenantIdx: index("contractor_invoices_tenant_idx").on(table.tenantId),
 }));
 
+// ============================================================================
+// VENDOR INVOICES (INBOUND AP) - Contractor invoice ingestion + reconciliation
+// ============================================================================
+
+// Vendor Invoice Uploads - Raw ingested artifacts (PDF / image / email attachment)
+// staged before LLM extraction. One upload can yield zero or one vendorInvoices row.
+export const vendorInvoiceUploads = pgTable("vendor_invoice_uploads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  uploadedBy: varchar("uploaded_by").references(() => users.id), // null for email/system ingest
+  sourceChannel: text("source_channel").notNull(), // web, email, sharepoint, api
+  sourceMetadata: jsonb("source_metadata"), // { from, subject, messageId, folderPath, ... }
+  // SharePoint Embedded storage references (primary)
+  speDriveId: text("spe_drive_id"),
+  speItemId: text("spe_item_id"),
+  speWebUrl: text("spe_web_url"),
+  // Legacy / fallback object storage
+  fileStoragePath: text("file_storage_path"),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  sha256: text("sha256"), // for duplicate detection
+  // Extraction lifecycle
+  status: text("status").notNull().default("received"), // received, extracting, extracted, failed, linked, discarded
+  extractionStartedAt: timestamp("extraction_started_at"),
+  extractionCompletedAt: timestamp("extraction_completed_at"),
+  extractionError: text("extraction_error"),
+  extractionAttempts: integer("extraction_attempts").notNull().default(0),
+  // Vendor hint - resolved during extraction; FK back-filled when invoice is created
+  vendorUserId: varchar("vendor_user_id").references(() => users.id),
+  vendorInvoiceId: varchar("vendor_invoice_id"), // FK to vendor_invoices (back-filled)
+  receivedAt: timestamp("received_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_vendor_invoice_uploads_tenant").on(table.tenantId),
+  statusIdx: index("idx_vendor_invoice_uploads_status").on(table.status),
+  vendorIdx: index("idx_vendor_invoice_uploads_vendor").on(table.vendorUserId),
+  sha256Idx: index("idx_vendor_invoice_uploads_sha256").on(table.sha256),
+}));
+
+// Vendor Invoices - Canonical inbound AP invoice (one per vendor invoice document).
+// Distinct from the outbound `contractorInvoices` table (which is a reimbursement
+// PDF we generate). A vendor invoice may cover services, expenses, or both,
+// across one or more projects (project scope is at the line level).
+export const vendorInvoices = pgTable("vendor_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  vendorUserId: varchar("vendor_user_id").notNull().references(() => users.id),
+  uploadId: varchar("upload_id").references(() => vendorInvoiceUploads.id), // null for manual entry
+  // Vendor-supplied identifiers
+  vendorInvoiceNumber: text("vendor_invoice_number").notNull(),
+  invoiceDate: date("invoice_date").notNull(),
+  dueDate: date("due_date"),
+  // Money
+  currency: text("currency").notNull().default("USD"),
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }), // to tenant cost currency
+  subtotal: decimal("subtotal", { precision: 12, scale: 2 }),
+  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }),
+  total: decimal("total", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),
+  // Optional single-project hint (line-level project is the source of truth)
+  projectId: varchar("project_id").references(() => projects.id),
+  // Lifecycle: draft -> extracted -> in_review -> reconciled -> approved -> posted -> paid
+  // Side states: disputed, void
+  status: text("status").notNull().default("draft"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  postedAt: timestamp("posted_at"),
+  paidAt: timestamp("paid_at"),
+  paidBy: varchar("paid_by").references(() => users.id),
+  paymentRef: text("payment_ref"), // check #, ACH ref, etc.
+  paymentNote: text("payment_note"),
+  // External GL/AP integration (e.g., QuickBooks bill ID)
+  glBillNumber: text("gl_bill_number"),
+  exportedToQBO: boolean("exported_to_qbo").notNull().default(false),
+  exportedAt: timestamp("exported_at"),
+  // Dispute / void tracking
+  disputedAt: timestamp("disputed_at"),
+  disputeReason: text("dispute_reason"),
+  voidedAt: timestamp("voided_at"),
+  voidedBy: varchar("voided_by").references(() => users.id),
+  voidReason: text("void_reason"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_vendor_invoices_tenant").on(table.tenantId),
+  vendorIdx: index("idx_vendor_invoices_vendor").on(table.vendorUserId),
+  statusIdx: index("idx_vendor_invoices_status").on(table.status),
+  projectIdx: index("idx_vendor_invoices_project").on(table.projectId),
+  invoiceDateIdx: index("idx_vendor_invoices_invoice_date").on(table.invoiceDate),
+  // A given vendor can't submit the same invoice number twice within a tenant.
+  uniqueVendorInvoiceNumber: uniqueIndex("idx_vendor_invoices_vendor_number_unique")
+    .on(table.tenantId, table.vendorUserId, table.vendorInvoiceNumber),
+}));
+
+// Vendor Invoice Lines - Individual line items on a vendor invoice.
+// `kind` discriminates between time-based services and reimbursable expenses
+// (plus passthrough lines like tax/discount). Reconciliation runs per line.
+export const vendorInvoiceLines = pgTable("vendor_invoice_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  vendorInvoiceId: varchar("vendor_invoice_id").notNull().references(() => vendorInvoices.id, { onDelete: 'cascade' }),
+  lineNumber: integer("line_number").notNull(), // 1-based ordering
+  kind: text("kind").notNull(), // service, expense, tax, discount, other
+  description: text("description"),
+  // Project scope (required for service/expense; null for tax/discount/other)
+  projectId: varchar("project_id").references(() => projects.id),
+  // Service period or expense date range
+  periodStart: date("period_start"),
+  periodEnd: date("period_end"),
+  // Quantity / rate / amount
+  quantity: decimal("quantity", { precision: 12, scale: 2 }),
+  unit: text("unit"), // hours, each, mile, day
+  unitAmount: decimal("unit_amount", { precision: 12, scale: 2 }), // rate per unit
+  lineAmount: decimal("line_amount", { precision: 12, scale: 2 }).notNull(),
+  // Expense-specific
+  expenseCategory: text("expense_category"), // matches expenses.category
+  // Multi-currency snapshot
+  currency: text("currency"),
+  originalAmount: decimal("original_amount", { precision: 12, scale: 2 }),
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }),
+  // Reconciliation state
+  reconcileStatus: text("reconcile_status").notNull().default("unmatched"),
+  varianceAmount: decimal("variance_amount", { precision: 12, scale: 2 }), // line - sum(matched)
+  varianceReason: text("variance_reason"),
+  // AI extraction provenance
+  aiConfidence: decimal("ai_confidence", { precision: 4, scale: 3 }), // 0.000 - 1.000
+  aiRawJson: jsonb("ai_raw_json"), // raw extractor output for this line, for audit/training
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_vendor_invoice_lines_tenant").on(table.tenantId),
+  invoiceIdx: index("idx_vendor_invoice_lines_invoice").on(table.vendorInvoiceId),
+  projectIdx: index("idx_vendor_invoice_lines_project").on(table.projectId),
+  reconcileIdx: index("idx_vendor_invoice_lines_reconcile").on(table.reconcileStatus),
+  uniqueLineNumber: uniqueIndex("idx_vendor_invoice_lines_number_unique")
+    .on(table.vendorInvoiceId, table.lineNumber),
+}));
+
+// Vendor Invoice Line Matches - Junction connecting an invoice line to its
+// source records (logged time entries or platform expenses). One line may
+// match many source rows (e.g., a "40 hours in May" line matches 10 daily
+// time entries) and one source row may partially satisfy multiple lines.
+// Exactly one of sourceTimeEntryId / sourceExpenseId is set per row
+// (perdiem_day matches carry neither and rely on description metadata).
+export const vendorInvoiceLineMatches = pgTable("vendor_invoice_line_matches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  vendorInvoiceLineId: varchar("vendor_invoice_line_id").notNull().references(() => vendorInvoiceLines.id, { onDelete: 'cascade' }),
+  sourceType: text("source_type").notNull(), // time_entry, expense, perdiem_day
+  sourceTimeEntryId: varchar("source_time_entry_id").references(() => timeEntries.id),
+  sourceExpenseId: varchar("source_expense_id").references(() => expenses.id),
+  allocatedAmount: decimal("allocated_amount", { precision: 12, scale: 2 }).notNull(),
+  allocatedQuantity: decimal("allocated_quantity", { precision: 12, scale: 2 }),
+  matchedBy: text("matched_by").notNull().default("auto"), // auto, manual
+  matchScore: decimal("match_score", { precision: 4, scale: 3 }), // 0.000 - 1.000 (auto matches)
+  matchReason: text("match_reason"), // free-text explanation (auto heuristic or reviewer note)
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_vendor_invoice_line_matches_tenant").on(table.tenantId),
+  lineIdx: index("idx_vendor_invoice_line_matches_line").on(table.vendorInvoiceLineId),
+  timeEntryIdx: index("idx_vendor_invoice_line_matches_time_entry").on(table.sourceTimeEntryId),
+  expenseIdx: index("idx_vendor_invoice_line_matches_expense").on(table.sourceExpenseId),
+  // A given source row can only be matched once (drives the FK back-fill on
+  // time_entries / expenses). Partial NULL coexistence is fine because the
+  // unique index treats NULLs as distinct.
+  uniqueTimeEntry: uniqueIndex("idx_vendor_invoice_line_matches_time_entry_unique")
+    .on(table.sourceTimeEntryId)
+    .where(sql`source_time_entry_id IS NOT NULL`),
+  uniqueExpense: uniqueIndex("idx_vendor_invoice_line_matches_expense_unique")
+    .on(table.sourceExpenseId)
+    .where(sql`source_expense_id IS NOT NULL`),
+}));
+
+// Project Cost Postings - The "actual cost" ledger used by profit reporting.
+// Created when a vendor invoice is posted; one row per line per project.
+// Joining backwards (vendorInvoiceLine -> matches -> timeEntry/expense ->
+// invoiceLines via source*Id) gives revenue ↔ actual cost per client invoice.
+export const projectCostPostings = pgTable("project_cost_postings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  postingDate: date("posting_date").notNull(), // typically the vendor invoice date
+  sourceType: text("source_type").notNull(), // vendor_invoice, manual_adjustment, payroll
+  vendorInvoiceId: varchar("vendor_invoice_id").references(() => vendorInvoices.id),
+  vendorInvoiceLineId: varchar("vendor_invoice_line_id").references(() => vendorInvoiceLines.id),
+  // Cost in tenant cost currency
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  originalCurrency: text("original_currency"),
+  originalAmount: decimal("original_amount", { precision: 12, scale: 2 }),
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }),
+  description: text("description"),
+  // Optional attribution to a client invoice batch (when the underlying time/
+  // expense has been billed). Helpful for per-invoice margin reporting.
+  invoiceBatchId: text("invoice_batch_id").references(() => invoiceBatches.batchId),
+  // Lifecycle
+  postedBy: varchar("posted_by").references(() => users.id),
+  postedAt: timestamp("posted_at").notNull().default(sql`now()`),
+  voidedAt: timestamp("voided_at"),
+  voidedBy: varchar("voided_by").references(() => users.id),
+  voidReason: text("void_reason"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_project_cost_postings_tenant").on(table.tenantId),
+  projectIdx: index("idx_project_cost_postings_project").on(table.projectId),
+  postingDateIdx: index("idx_project_cost_postings_date").on(table.postingDate),
+  invoiceIdx: index("idx_project_cost_postings_vendor_invoice").on(table.vendorInvoiceId),
+  invoiceBatchIdx: index("idx_project_cost_postings_invoice_batch").on(table.invoiceBatchId),
+}));
+
 // Add unique constraint for project rate overrides
 export const projectRateOverridesUniqueConstraint = sql`
-  CREATE UNIQUE INDEX IF NOT EXISTS project_rate_overrides_unique_idx 
+  CREATE UNIQUE INDEX IF NOT EXISTS project_rate_overrides_unique_idx
   ON project_rate_overrides(project_id, user_id, effective_start)
 `;
 
@@ -2004,6 +2271,131 @@ export const invoiceAdjustmentsRelations = relations(invoiceAdjustments, ({ one 
 }));
 
 // ============================================================================
+// Vendor Invoice (Inbound AP) Relations
+// ============================================================================
+
+export const vendorInvoiceUploadsRelations = relations(vendorInvoiceUploads, ({ one }) => ({
+  tenant: one(tenants, { fields: [vendorInvoiceUploads.tenantId], references: [tenants.id] }),
+  uploader: one(users, {
+    fields: [vendorInvoiceUploads.uploadedBy],
+    references: [users.id],
+    relationName: "vendorInvoiceUploadUploaders",
+  }),
+  vendor: one(users, {
+    fields: [vendorInvoiceUploads.vendorUserId],
+    references: [users.id],
+    relationName: "vendorInvoiceUploadVendors",
+  }),
+  vendorInvoice: one(vendorInvoices, {
+    fields: [vendorInvoiceUploads.vendorInvoiceId],
+    references: [vendorInvoices.id],
+  }),
+}));
+
+export const vendorInvoicesRelations = relations(vendorInvoices, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [vendorInvoices.tenantId], references: [tenants.id] }),
+  vendor: one(users, {
+    fields: [vendorInvoices.vendorUserId],
+    references: [users.id],
+    relationName: "vendorInvoiceVendors",
+  }),
+  project: one(projects, { fields: [vendorInvoices.projectId], references: [projects.id] }),
+  upload: one(vendorInvoiceUploads, {
+    fields: [vendorInvoices.uploadId],
+    references: [vendorInvoiceUploads.id],
+  }),
+  reviewer: one(users, {
+    fields: [vendorInvoices.reviewedBy],
+    references: [users.id],
+    relationName: "vendorInvoiceReviewers",
+  }),
+  approver: one(users, {
+    fields: [vendorInvoices.approvedBy],
+    references: [users.id],
+    relationName: "vendorInvoiceApprovers",
+  }),
+  payer: one(users, {
+    fields: [vendorInvoices.paidBy],
+    references: [users.id],
+    relationName: "vendorInvoicePayers",
+  }),
+  voider: one(users, {
+    fields: [vendorInvoices.voidedBy],
+    references: [users.id],
+    relationName: "vendorInvoiceVoiders",
+  }),
+  creator: one(users, {
+    fields: [vendorInvoices.createdBy],
+    references: [users.id],
+    relationName: "vendorInvoiceCreators",
+  }),
+  lines: many(vendorInvoiceLines),
+  postings: many(projectCostPostings),
+}));
+
+export const vendorInvoiceLinesRelations = relations(vendorInvoiceLines, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [vendorInvoiceLines.tenantId], references: [tenants.id] }),
+  invoice: one(vendorInvoices, {
+    fields: [vendorInvoiceLines.vendorInvoiceId],
+    references: [vendorInvoices.id],
+  }),
+  project: one(projects, { fields: [vendorInvoiceLines.projectId], references: [projects.id] }),
+  reviewer: one(users, {
+    fields: [vendorInvoiceLines.reviewedBy],
+    references: [users.id],
+    relationName: "vendorInvoiceLineReviewers",
+  }),
+  matches: many(vendorInvoiceLineMatches),
+}));
+
+export const vendorInvoiceLineMatchesRelations = relations(vendorInvoiceLineMatches, ({ one }) => ({
+  tenant: one(tenants, { fields: [vendorInvoiceLineMatches.tenantId], references: [tenants.id] }),
+  line: one(vendorInvoiceLines, {
+    fields: [vendorInvoiceLineMatches.vendorInvoiceLineId],
+    references: [vendorInvoiceLines.id],
+  }),
+  timeEntry: one(timeEntries, {
+    fields: [vendorInvoiceLineMatches.sourceTimeEntryId],
+    references: [timeEntries.id],
+  }),
+  expense: one(expenses, {
+    fields: [vendorInvoiceLineMatches.sourceExpenseId],
+    references: [expenses.id],
+  }),
+  creator: one(users, {
+    fields: [vendorInvoiceLineMatches.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const projectCostPostingsRelations = relations(projectCostPostings, ({ one }) => ({
+  tenant: one(tenants, { fields: [projectCostPostings.tenantId], references: [tenants.id] }),
+  project: one(projects, { fields: [projectCostPostings.projectId], references: [projects.id] }),
+  vendorInvoice: one(vendorInvoices, {
+    fields: [projectCostPostings.vendorInvoiceId],
+    references: [vendorInvoices.id],
+  }),
+  vendorInvoiceLine: one(vendorInvoiceLines, {
+    fields: [projectCostPostings.vendorInvoiceLineId],
+    references: [vendorInvoiceLines.id],
+  }),
+  invoiceBatch: one(invoiceBatches, {
+    fields: [projectCostPostings.invoiceBatchId],
+    references: [invoiceBatches.batchId],
+  }),
+  poster: one(users, {
+    fields: [projectCostPostings.postedBy],
+    references: [users.id],
+    relationName: "projectCostPostingPosters",
+  }),
+  voider: one(users, {
+    fields: [projectCostPostings.voidedBy],
+    references: [users.id],
+    relationName: "projectCostPostingVoiders",
+  }),
+}));
+
+// ============================================================================
 // Insert Schemas - Multi-Tenancy Tables
 // ============================================================================
 
@@ -2287,6 +2679,111 @@ export const insertContractorInvoiceSchema = createInsertSchema(contractorInvoic
   submittedAt: true,
 });
 
+// Vendor Invoice (Inbound AP) insert schemas
+export const insertVendorInvoiceUploadSchema = createInsertSchema(vendorInvoiceUploads).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  receivedAt: true,
+  extractionStartedAt: true,
+  extractionCompletedAt: true,
+  extractionAttempts: true,
+  vendorInvoiceId: true, // back-filled by server
+}).extend({
+  sourceChannel: vendorInvoiceUploadChannelEnum,
+  status: vendorInvoiceUploadStatusEnum.optional(),
+});
+
+export const insertVendorInvoiceSchema = createInsertSchema(vendorInvoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  reviewedAt: true,
+  reviewedBy: true,
+  approvedAt: true,
+  approvedBy: true,
+  postedAt: true,
+  paidAt: true,
+  paidBy: true,
+  disputedAt: true,
+  voidedAt: true,
+  voidedBy: true,
+  exportedAt: true,
+}).extend({
+  status: vendorInvoiceStatusEnum.optional(),
+  vendorUserId: z.string().trim().min(1, "Vendor is required"),
+  vendorInvoiceNumber: z.string().trim().min(1, "Invoice number is required"),
+});
+
+export const insertVendorInvoiceLineSchema = createInsertSchema(vendorInvoiceLines).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  reviewedAt: true,
+  reviewedBy: true,
+  varianceAmount: true, // computed
+}).extend({
+  kind: vendorInvoiceLineKindEnum,
+  reconcileStatus: vendorInvoiceLineReconcileStatusEnum.optional(),
+});
+
+export const insertVendorInvoiceLineMatchSchema = createInsertSchema(vendorInvoiceLineMatches).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  sourceType: vendorInvoiceLineMatchSourceEnum,
+  matchedBy: z.enum(['auto', 'manual']).optional(),
+}).refine(
+  (data) => {
+    // Exactly one source FK must be set per match (perdiem_day carries neither).
+    if (data.sourceType === 'time_entry') return !!data.sourceTimeEntryId && !data.sourceExpenseId;
+    if (data.sourceType === 'expense') return !!data.sourceExpenseId && !data.sourceTimeEntryId;
+    if (data.sourceType === 'perdiem_day') return !data.sourceTimeEntryId && !data.sourceExpenseId;
+    return false;
+  },
+  { message: "Match source FK must align with sourceType" },
+);
+
+export const insertProjectCostPostingSchema = createInsertSchema(projectCostPostings).omit({
+  id: true,
+  createdAt: true,
+  postedAt: true,
+  voidedAt: true,
+  voidedBy: true,
+}).extend({
+  sourceType: projectCostPostingSourceEnum,
+});
+
+// Shape returned by the LLM vendor-invoice extractor; used by the ingestion
+// pipeline to validate raw model output before persisting lines.
+export const vendorInvoiceExtractionSchema = z.object({
+  vendorName: z.string().optional(),
+  vendorBusinessId: z.string().optional(), // tax ID / 1099 EIN if present
+  vendorInvoiceNumber: z.string(),
+  invoiceDate: z.string(), // ISO date
+  dueDate: z.string().optional(),
+  currency: z.string().default("USD"),
+  subtotal: z.number().optional(),
+  taxAmount: z.number().optional(),
+  total: z.number(),
+  notes: z.string().optional(),
+  lines: z.array(z.object({
+    kind: vendorInvoiceLineKindEnum,
+    description: z.string().optional(),
+    periodStart: z.string().optional(), // ISO date
+    periodEnd: z.string().optional(),
+    quantity: z.number().optional(),
+    unit: z.string().optional(),
+    unitAmount: z.number().optional(),
+    lineAmount: z.number(),
+    expenseCategory: z.string().optional(),
+    projectHint: z.string().optional(), // free-text project name/code to resolve
+    confidence: z.number().min(0).max(1).optional(),
+  })),
+  overallConfidence: z.number().min(0).max(1).optional(),
+});
+export type VendorInvoiceExtraction = z.infer<typeof vendorInvoiceExtractionSchema>;
+
 export const insertSowSchema = createInsertSchema(sows).omit({
   id: true,
   createdAt: true,
@@ -2451,6 +2948,32 @@ export type InsertReimbursementLineItem = z.infer<typeof insertReimbursementLine
 
 export type ContractorInvoice = typeof contractorInvoices.$inferSelect;
 export type InsertContractorInvoice = z.infer<typeof insertContractorInvoiceSchema>;
+
+// Vendor Invoice (Inbound AP) types
+export type VendorInvoiceUpload = typeof vendorInvoiceUploads.$inferSelect;
+export type InsertVendorInvoiceUpload = z.infer<typeof insertVendorInvoiceUploadSchema>;
+
+export type VendorInvoice = typeof vendorInvoices.$inferSelect;
+export type InsertVendorInvoice = z.infer<typeof insertVendorInvoiceSchema>;
+
+export type VendorInvoiceLine = typeof vendorInvoiceLines.$inferSelect;
+export type InsertVendorInvoiceLine = z.infer<typeof insertVendorInvoiceLineSchema>;
+
+export type VendorInvoiceLineMatch = typeof vendorInvoiceLineMatches.$inferSelect;
+export type InsertVendorInvoiceLineMatch = z.infer<typeof insertVendorInvoiceLineMatchSchema>;
+
+export type ProjectCostPosting = typeof projectCostPostings.$inferSelect;
+export type InsertProjectCostPosting = z.infer<typeof insertProjectCostPostingSchema>;
+
+// Useful joined shape returned by the reviewer UI:
+//   vendor invoice + lines + each line's match candidates + posting summary
+export type VendorInvoiceWithLines = VendorInvoice & {
+  vendor: User | null;
+  project: Project | null;
+  lines: (VendorInvoiceLine & {
+    matches: VendorInvoiceLineMatch[];
+  })[];
+};
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
