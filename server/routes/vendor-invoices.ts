@@ -48,6 +48,56 @@ export function registerVendorInvoiceRoutes(
   deps: VendorInvoiceRouteDeps,
 ) {
   // -----------------------------------------------------------------------
+  // GET /api/my-vendor-invoices — read-only list for the vendor themselves
+  // (any authenticated user; results scoped to vendorUserId = current user)
+  // -----------------------------------------------------------------------
+  app.get(
+    "/api/my-vendor-invoices",
+    deps.requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        const userId = getUserId(req);
+        if (!tenantId || !userId)
+          return res.status(403).json({ message: "No tenant context" });
+        const rows = await storage.listVendorInvoices({
+          tenantId,
+          vendorUserId: userId,
+        });
+        res.json(rows);
+      } catch (err: any) {
+        console.error("[VENDOR_INVOICES] my list failed:", err);
+        res.status(500).json({ message: err.message || "Failed to fetch your vendor invoices" });
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // GET /api/my-vendor-invoices/:id — detail (vendor must own it)
+  // -----------------------------------------------------------------------
+  app.get(
+    "/api/my-vendor-invoices/:id",
+    deps.requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        const userId = getUserId(req);
+        if (!tenantId || !userId)
+          return res.status(403).json({ message: "No tenant context" });
+        const detail = await storage.getVendorInvoice(req.params.id, tenantId);
+        if (!detail) return res.status(404).json({ message: "Vendor invoice not found" });
+        if (detail.vendorUserId !== userId) {
+          return res.status(403).json({ message: "You can only view invoices billed to you" });
+        }
+        res.json(detail);
+      } catch (err: any) {
+        console.error("[VENDOR_INVOICES] my detail failed:", err);
+        res.status(500).json({ message: err.message || "Failed to fetch invoice" });
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
   // GET /api/vendor-invoices — inbox list
   // -----------------------------------------------------------------------
   app.get(

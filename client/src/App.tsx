@@ -22,6 +22,7 @@ import ContractorInvoices from "@/pages/contractor-invoices";
 import MyContractorInvoices from "@/pages/my-contractor-invoices";
 import VendorInvoices from "@/pages/vendor-invoices";
 import VendorInvoiceDetail from "@/pages/vendor-invoice-detail";
+import MyVendorInvoices from "@/pages/my-vendor-invoices";
 import Billing from "@/pages/billing";
 import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
@@ -290,6 +291,9 @@ function Router() {
       </Route>
       <Route path="/my-contractor-invoices">
         {user ? <MyContractorInvoices /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/my-vendor-invoices">
+        {user ? <MyVendorInvoices /> : <Redirect to="/login" />}
       </Route>
       <Route path="/vendor-invoices">
         {user ? (

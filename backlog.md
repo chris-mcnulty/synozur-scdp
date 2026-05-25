@@ -1,7 +1,7 @@
 # Constellation Product Backlog
 
-**Last Updated**: May 15, 2026
-**Version**: 7.2 — Status reconciliation pass on Microsoft Teams Integration Phase 2: confirmed Graph webhook subscriptions, webhook receiver, and guest user invitations are already shipped (previously tracked as pending). Added Project Creation UX Enhancement (M365 options in create dialog) to Recently Completed. Remaining gaps narrowed to multitenant app registration and external-user UI.
+**Last Updated**: May 25, 2026
+**Version**: 7.3 — Added Contractor Invoice Ingestion (Accounts Payable) v1 to Recently Completed: full inbound AP workflow with AI vision extraction, candidate-based reconciliation against logged time and expenses, and atomic posting of actual cost to project margin. Profit reads across the platform now prefer `actualCostAmount` (from posted vendor invoices) over rate-card estimates. v7.2 carried Status reconciliation on Teams Integration Phase 2 and Project Creation UX Enhancement.
 
 ---
 
@@ -92,6 +92,55 @@
 - [x] Teams channel setup on project detail (3 bugs)
 - [x] "Set Up Teams Channel" hidden on estimates that already have one
 - [x] TimeGrid project picker shows and searches by project code
+
+---
+
+## 🆕 Recently Completed (v2.6 — May 2026)
+
+### Contractor Invoice Ingestion (Accounts Payable) — v1 ✅ COMPLETE
+
+**Why.** Until now Constellation generated *outbound* contractor invoices from approved expense reports (the `contractorInvoices` PDF flow). Inbound invoices from subcontractors — covering both *services* (time billed) and *expenses* — had no home: they lived in inboxes and ad-hoc folders, and project margin numbers reflected the firm's rate-card cost estimates instead of the actual amount paid to contractors. This shipped the inbound side of AP so margin reads now reflect real cost.
+
+**Schema (additive).** Five new tables in `shared/schema.ts`:
+- [x] `vendor_invoice_uploads` — raw ingested artifacts (PDF / PNG / JPEG / HEIC) staged before LLM extraction; SHA-256 dedupe; SPE storage refs
+- [x] `vendor_invoices` — canonical inbound AP invoice with full FSM (`draft → extracted → in_review → reconciled → approved → posted → paid`, plus `disputed`/`void` side states)
+- [x] `vendor_invoice_lines` — per-line items kind-discriminated as `service` / `expense` / `tax` / `discount` / `other`; carries AI extraction confidence + raw JSON for audit
+- [x] `vendor_invoice_line_matches` — many-to-many junction onto source `time_entries` / `expenses` with allocated amount + quantity + auto/manual provenance
+- [x] `project_cost_postings` — actual-cost ledger consumed by profit reports; optionally attributed to a client `invoice_batches.batchId` for per-batch margin
+- [x] Additive columns: `time_entries.vendor_invoice_line_id` + `actual_cost_amount`, same on `expenses`, `users.vendor_ingest_email`
+- [x] Zod insert schemas + `vendorInvoiceExtractionSchema` defining the LLM output contract
+
+**Backend services.**
+- [x] Storage module `server/storage/vendor-invoices.ts` — CRUD plus transactional `postVendorInvoice` (writes posting rows + back-fills `vendorInvoiceLineId` + `actualCostAmount` on every matched time entry / expense) and `voidVendorInvoice` (reverses postings, clears FKs)
+- [x] AI extractor `server/services/vendor-invoice-extractor.ts` — extends `ChatMessage.content` to support OpenAI-style vision content parts (text + image_url); calls the configured provider via existing `getAIProviderAsync`; validates output against the Zod schema; logs to `aiUsageLogs` under feature key `VENDOR_INVOICE_EXTRACTION`
+- [x] Reconciler `server/services/vendor-invoice-reconciler.ts` — weighted candidate scoring (amount 0.5 / date 0.2 / category 0.2 / vendor 0.1); ≥0.85 auto-matches, 0.6–0.85 surfaces as a suggestion; service lines greedily fill against billed quantity; produces `matched` / `partial` / `variance` / `unmatched` per line
+- [x] Routes `server/routes/vendor-invoices.ts` — every endpoint the UI calls (list, detail, multipart upload with SHA-256 dedupe + SPE storage + extraction + auto-reconcile in a single request, preview stream, per-line match candidates, accept/remove match, override, approve/post/mark-paid/void) plus `/api/my-vendor-invoices*` for vendor self-service
+
+**UI surfaces.** All under Financial → Accounts Payable and My Workspace → Tracking:
+- [x] `/vendor-invoices` — inbox with "Needs Review" tab badge, search, status filter, per-row reconcile progress, inline upload dialog
+- [x] `/vendor-invoices/:id` — split-pane reviewer screen: source PDF / image on the left, header + collapsible line items with one-click match suggestions on the right; top-bar Approve → Post → Mark Paid chain follows the FSM; Void side action with required reason
+- [x] `/my-vendor-invoices` — vendor self-service read-only view with vendor-friendly status labels, source-document link, line items, and timeline
+- [x] Sidebar: new "Accounts Payable" subgroup under Financial; My Workspace gets "My Vendor Invoices"
+
+**Profit impact (the payoff).** Every cost aggregation that previously read `hours * costRate` now prefers `actualCostAmount` when present:
+- [x] `getProjectVarianceData` (project detail margin tile)
+- [x] `getPortfolioMetrics` (financial reports portfolio table)
+- [x] `getDetailedProjectAnalytics` (project drill-in)
+- [x] `/reports/portfolio-analysis` billable labor cost + team cost + expense aggregation
+- [x] Weekly digest `totalCost` rollup
+- [x] Financial Reports "Actual Cost" tile copy notes when actuals are sourced
+
+**Permissions.** `pm`, `billing-admin`, `admin` can review / match / override; only `billing-admin` and `admin` can approve, post, mark paid, or void. Vendors only see invoices billed to them.
+
+### Contractor Invoice Ingestion (AP) — v1 known limitations & next iterations
+
+- [ ] **PDF extraction.** The shared `receipt-normalizer` renders PDFs to placeholder PNGs in production (Puppeteer is disabled), so PDF invoices currently land in `draft` status with no extracted lines and need manual line entry. Fix path: enable a hosted Puppeteer service or add a parallel provider method that uses Claude's native PDF document content type.
+- [ ] **Email ingest channel.** `users.vendor_ingest_email` is plumbed but no Graph shared-mailbox poller exists yet. Manual web upload is the only channel.
+- [ ] **Vendor stub promotion UI.** Unknown vendors land as stub users (`canLogin = false`). No UI yet to merge a stub into a real contractor record.
+- [ ] **Dispute workflow UI.** Status exists, no reviewer/vendor flow to enter dispute details and resolve.
+- [ ] **GL / QuickBooks bill export.** `glBillNumber` column is plumbed; no export job.
+- [ ] **Three-way match against SOW commitments.** Would tie a vendor invoice to an estimate / sub-SOW for commitment-based AP.
+- [ ] **Reconciler tests.** Vitest cases against fixture rows for the scoring engine.
 
 ---
 

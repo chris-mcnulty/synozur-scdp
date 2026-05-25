@@ -2216,15 +2216,17 @@ export const projectsMethods: ThisType<IStorage> = {
     const projectSows = await this.getSows(projectId);
     const contracted = projectSows.reduce((sum, sow) => sum + parseFloat(sow.value), 0);
     
-    // Get actual cost from time entries and expenses
+    // Get actual cost from time entries and expenses. Prefer actualCostAmount
+    // (back-filled when a contractor vendor invoice was reconciled & posted)
+    // over the rate-card estimate.
     const timeEntryResult = await db.select({
-      totalCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.costRate} AS NUMERIC)), 0)::float`
+      totalCost: sql<number>`COALESCE(SUM(COALESCE(CAST(${timeEntries.actualCostAmount} AS NUMERIC), CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.costRate} AS NUMERIC))), 0)::float`
     })
     .from(timeEntries)
     .where(eq(timeEntries.projectId, projectId));
-    
+
     const expenseResult = await db.select({
-      totalExpenses: sql<number>`COALESCE(SUM(CAST(${expenses.amount} AS NUMERIC)), 0)::float`
+      totalExpenses: sql<number>`COALESCE(SUM(COALESCE(CAST(${expenses.actualCostAmount} AS NUMERIC), CAST(${expenses.amount} AS NUMERIC))), 0)::float`
     })
     .from(expenses)
     .where(eq(expenses.projectId, projectId));
@@ -2297,10 +2299,15 @@ export const projectsMethods: ThisType<IStorage> = {
       project: projects,
       client: clients,
       actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
-      actualCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projects.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        CAST(${users.defaultCostRate} AS NUMERIC),
-        100
+      // Prefer actualCostAmount (back-filled from reconciled contractor invoices)
+      // and fall back to the rate-card lookup when not yet known.
+      actualCost: sql<number>`COALESCE(SUM(COALESCE(
+        CAST(${timeEntries.actualCostAmount} AS NUMERIC),
+        CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+          (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projects.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
+          CAST(${users.defaultCostRate} AS NUMERIC),
+          100
+        )
       )), 0)::float`,
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projects.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
@@ -2458,10 +2465,13 @@ export const projectsMethods: ThisType<IStorage> = {
       // Get actual hours and costs
       const actualMetrics = await db.select({
         actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
-        actualCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-          (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${project.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-          CAST(${users.defaultCostRate} AS NUMERIC),
-          100
+        actualCost: sql<number>`COALESCE(SUM(COALESCE(
+          CAST(${timeEntries.actualCostAmount} AS NUMERIC),
+          CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+            (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${project.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
+            CAST(${users.defaultCostRate} AS NUMERIC),
+            100
+          )
         )), 0)::float`
       })
       .from(timeEntries)

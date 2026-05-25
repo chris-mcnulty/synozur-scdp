@@ -205,6 +205,10 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
 
       const isSalariedExpr = sql<boolean>`(COALESCE(${users.isSalaried}, false) OR COALESCE(${roles.isAlwaysSalaried}, false))`;
       const effectiveCostRateExpr = sql<string>`COALESCE(${timeEntries.costRate}, ${users.defaultCostRate}, 75)`;
+      // Per-row cost: prefer actualCostAmount (back-filled when a contractor
+      // vendor invoice was reconciled & posted) over the rate-card estimate.
+      // Salaried resources still contribute 0 to direct project cost.
+      const perRowCostExpr = sql<string>`CASE WHEN ${isSalariedExpr} THEN 0 ELSE COALESCE(${timeEntries.actualCostAmount}, ${timeEntries.hours} * ${effectiveCostRateExpr}) END`;
 
       const timeAggConditions: any[] = [];
       if (tenantId) {
@@ -217,7 +221,7 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
       const timeAgg = filteredProjectIds.length === 0 ? [] : await db.select({
         projectId: timeEntries.projectId,
         totalHours: sql<string>`COALESCE(SUM(${timeEntries.hours}), 0)`.as('total_hours'),
-        billableLaborCost: sql<string>`COALESCE(SUM(CASE WHEN ${isSalariedExpr} THEN 0 ELSE ${timeEntries.hours} * ${effectiveCostRateExpr} END), 0)`.as('billable_labor_cost'),
+        billableLaborCost: sql<string>`COALESCE(SUM(${perRowCostExpr}), 0)`.as('billable_labor_cost'),
         entryCount: sql<number>`COUNT(*)`.as('entry_count')
       })
       .from(timeEntries)
@@ -240,7 +244,7 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
         personId: timeEntries.personId,
         personName: users.name,
         hours: sql<string>`COALESCE(SUM(${timeEntries.hours}), 0)`.as('hours'),
-        cost: sql<string>`COALESCE(SUM(${timeEntries.hours} * ${effectiveCostRateExpr}), 0)`.as('cost')
+        cost: sql<string>`COALESCE(SUM(COALESCE(${timeEntries.actualCostAmount}, ${timeEntries.hours} * ${effectiveCostRateExpr})), 0)`.as('cost')
       })
       .from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
@@ -271,7 +275,8 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
 
       const expenseAgg = filteredProjectIds.length === 0 ? [] : await db.select({
         projectId: expenses.projectId,
-        totalAmount: sql<string>`COALESCE(SUM(${expenses.amount}), 0)`.as('total_amount'),
+        // Prefer actualCostAmount when set (contractor billed differently than logged).
+        totalAmount: sql<string>`COALESCE(SUM(COALESCE(${expenses.actualCostAmount}, ${expenses.amount})), 0)`.as('total_amount'),
         expenseCount: sql<number>`COUNT(*)`.as('expense_count')
       })
       .from(expenses)
@@ -1152,7 +1157,15 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
 
       const totalHours = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0), 0);
       const billableHours = allTimeEntries.filter(t => t.billable).reduce((s, t) => s + Number(t.hours || 0), 0);
-      const totalCost = allTimeEntries.reduce((s, t) => s + Number(t.hours || 0) * Number(t.costRate || 0), 0);
+      // Prefer actualCostAmount when set; fall back to rate-card cost otherwise.
+      const totalCost = allTimeEntries.reduce(
+        (s, t) =>
+          s +
+          (t.actualCostAmount
+            ? Number(t.actualCostAmount)
+            : Number(t.hours || 0) * Number(t.costRate || 0)),
+        0,
+      );
 
       const SERVICE_LINE_TYPES = new Set(["time", "milestone"]);
       const serviceLines = periodInvoiceLines.filter(l => SERVICE_LINE_TYPES.has(l.type));

@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 2.0 | Last Updated: April 1, 2026
+Version 2.1 | Last Updated: May 25, 2026
 
 ---
 
@@ -249,6 +249,54 @@ The Dashboard is your central hub for tracking work and priorities.
 - Executive approval for expenses over $500
 - Approved expenses move to reimbursement processing
 - Monthly reimbursement batches via ACH or check
+
+### 3.5 Vendor Invoices (Accounts Payable)
+
+Constellation can ingest inbound invoices from subcontractors — for services (time billed) and reimbursable expenses — and reconcile them against the time entries and expenses you already have on file. Once approved and posted, the actual amount paid to a contractor flows into project margin reports in place of the rate-card cost estimate.
+
+**Who can use it.** PMs, billing admins, and admins can upload and review. Only billing admins and admins can approve, post, mark paid, or void.
+
+**Uploading a vendor invoice:**
+
+1. Go to **Financial → Accounts Payable → Vendor Invoices** in the sidebar.
+2. Click **Upload Invoice** and drop a PDF or image (PNG, JPG, HEIC).
+3. Optionally pick the vendor from the dropdown — if you skip it, Constellation tries to detect from the document; if it can't, a stub vendor record is created that you can promote later.
+4. The system extracts header fields (vendor name, invoice number, date, total, currency) and line items (services or expenses with kind, period, quantity, rate, amount) using AI vision and shows the result under **Needs Review**.
+
+> **PDF note (v1):** PDFs currently land in *Draft* status with no extracted lines — enter the line items by hand from the **Vendor Invoice Detail** screen. Image uploads (PNG / JPG / HEIC) are fully auto-extracted.
+
+**Reviewing & reconciling:**
+
+Open any invoice from the inbox to see the **split-pane reviewer screen**: the source document on the left, the extracted header plus each line on the right.
+
+For each `service` or `expense` line Constellation searches for likely source rows it can tie back to:
+
+- **Service lines** match against time entries logged by that vendor inside the line's date range, comparing hours and cost rate.
+- **Expense lines** match against logged expenses by category, date, and amount.
+
+Lines display one of five reconcile states:
+
+| State | Meaning |
+|---|---|
+| `Matched` | Auto- or manually matched within tolerance |
+| `Partial` | Some quantity matched; remainder unmatched |
+| `Variance` | Matched, but rate or amount differs from what was logged |
+| `Unmatched` | No candidate found |
+| `Overridden` | Reviewer accepted the line without a source match |
+
+Suggested matches are listed underneath each unreconciled line with a confidence score. Click **Match** to accept one, **Unlink** to remove an accepted match, or **Override — post without source match** if the vendor's line legitimately has no logged source (e.g., a fee that wasn't tracked in time entries).
+
+**The Approve → Post → Mark Paid chain:**
+
+1. **Approve** is enabled once every service/expense line is reconciled or overridden, and each line has a project assigned. Approval just confirms the invoice — no cost has been posted yet.
+2. **Post to Project Cost** writes a `project_cost_postings` row per line and back-fills `actualCostAmount` on every matched time entry and expense, so margin reports immediately reflect what you actually owe the contractor. This is the step that affects profit.
+3. **Mark Paid** records the payment with an optional reference (ACH #, check #, etc.) — note that this does not initiate a real ACH or check disbursement, only records the bookkeeping fact.
+
+**Void.** Available at any time before Paid. Voiding reverses the postings (re-clears `vendorInvoiceLineId` / `actualCostAmount` on every matched row) and requires a reason. Once an invoice is Paid, you must issue a credit memo instead.
+
+**Profit impact.** Project Variance, Portfolio Financials, the per-project margin tile, and the weekly digest all read `actualCostAmount` first and fall back to the rate-card estimate only when no contractor invoice has been posted against the row. The **Actual Cost** tile on Financial Reports notes when actuals are in play.
+
+**My Vendor Invoices.** Vendors (contractor users) get a read-only inbox of invoices billed to them at **My Workspace → Tracking → My Vendor Invoices**: status, source document link, line items, and a timeline of when each invoice was reviewed, approved, posted, and paid. Disputes go to the AP team via email — there's no in-app dispute form in v1.
 
 ### 4. Resource Allocation
 
@@ -1378,6 +1426,12 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 **Reimbursement Batch**: Collection of approved expense reports processed together for employee payment.
 
+**Vendor Invoice (Inbound)**: An invoice received *from* a subcontractor for services or expenses. Distinct from the outbound *Contractor Invoice* reimbursement PDF Constellation generates from an approved expense report. Ingested under Financial → Accounts Payable; posting one writes actual cost to project margin reports.
+
+**Actual Cost**: The amount actually paid (or owed) to a contractor for time logged or expenses incurred, sourced from a posted vendor invoice. Replaces the rate-card cost estimate in margin calculations once known.
+
+**Reconcile Status**: Per-line state on a vendor invoice indicating how well it ties back to logged time entries / expenses — one of `matched`, `partial`, `variance`, `unmatched`, or `overridden`.
+
 **SOW (Statement of Work)**: Contract document defining project scope, deliverables, timeline, and terms.
 
 **Stage**: Major phase of work within a project (e.g., Discovery, Design, Development, Deployment).
@@ -1386,7 +1440,7 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: April 1, 2026*  
-*Version: 2.0*  
+*Last Updated: May 25, 2026*  
+*Version: 2.1*  
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*
