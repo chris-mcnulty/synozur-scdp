@@ -32,6 +32,7 @@ interface LocalFileEntry {
   fileName: string;
   fullPath: string;
   documentType: string;
+  size?: number;
   metadata?: Record<string, any>;
 }
 
@@ -460,7 +461,7 @@ export class SpeMigrationService {
 
     for (const file of allFiles) {
       const hasTenantTag = !!file.metadata?.tenantId;
-      const belongsToTenant = hasTenantTag && file.metadata.tenantId === tenantId;
+      const belongsToTenant = hasTenantTag && file.metadata!.tenantId === tenantId;
       const isUntagged = !hasTenantTag;
 
       if (isUntagged) untaggedCount++;

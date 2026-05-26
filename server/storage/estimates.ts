@@ -64,14 +64,18 @@ export const estimatesMethods: ThisType<IStorage> = {
     // Only filter out rows where estimates is null (not clients)
     return rows.filter(row => row.estimates !== null).map(row => ({
       ...row.estimates,
-      client: row.clients || { 
-        id: '', 
-        name: 'Unknown Client', 
+      client: (row.clients || {
+        id: '',
+        tenantId: null,
+        name: 'Unknown Client',
+        shortName: null,
         status: 'inactive',
         currency: 'USD',
         billingContact: null,
         contactName: null,
         contactAddress: null,
+        secondaryContactName: null,
+        secondaryContactEmail: null,
         vocabularyOverrides: null,
         epicTermId: null,
         stageTermId: null,
@@ -85,8 +89,14 @@ export const estimatesMethods: ThisType<IStorage> = {
         ndaDate: null,
         ndaDocument: null,
         hasNda: false,
+        microsoftTeamId: null,
+        microsoftTeamName: null,
+        microsoftTeamWebUrl: null,
+        sharepointSiteUrl: null,
+        paymentTerms: null,
+        paymentMethod: null,
         createdAt: new Date()
-      },
+      }) as Client,
       project: row.projects || undefined
     }));
   },

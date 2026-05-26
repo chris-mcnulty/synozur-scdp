@@ -92,7 +92,8 @@ export function registerCalendarSuggestionsRoutes(
             name: a.emailAddress?.name ?? null,
             email: a.emailAddress?.address ?? null,
           }))
-          .filter((a): a is { name: string | null; email: string } => a.email !== null)
+          .filter(a => a.email !== null)
+          .map(a => ({ name: a.name, email: a.email as string }))
           .slice(0, 10);
 
         return {

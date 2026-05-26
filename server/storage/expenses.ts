@@ -288,7 +288,7 @@ export const expensesMethods: ThisType<IStorage> = {
     // Transform results to expected format with batched project resources
     return filteredRows.map(row => {
       // Handle case where person might not exist (deleted user, etc.)
-      const person = row.users || {
+      const person: User = row.users || ({
         id: row.expenses.personId,
         email: 'unknown@example.com',
         name: 'Unknown User',
@@ -307,7 +307,7 @@ export const expensesMethods: ThisType<IStorage> = {
         isActive: false,
         receiveTimeReminders: true,
         createdAt: new Date()
-      };
+      } as User);
 
       // Handle case where project might not exist
       const project = row.projects || {
@@ -342,14 +342,18 @@ export const expensesMethods: ThisType<IStorage> = {
       };
 
       // Handle case where client might not exist
-      const client = row.clients || {
+      const client: Client = row.clients || ({
         id: 'unknown',
+        tenantId: null,
         name: 'Unknown Client',
+        shortName: null,
         status: 'inactive',
         currency: 'USD',
         billingContact: null,
         contactName: null,
         contactAddress: null,
+        secondaryContactName: null,
+        secondaryContactEmail: null,
         vocabularyOverrides: null,
         epicTermId: null,
         stageTermId: null,
@@ -363,8 +367,14 @@ export const expensesMethods: ThisType<IStorage> = {
         ndaDate: null,
         ndaDocument: null,
         hasNda: false,
+        microsoftTeamId: null,
+        microsoftTeamName: null,
+        microsoftTeamWebUrl: null,
+        sharepointSiteUrl: null,
+        paymentTerms: null,
+        paymentMethod: null,
         createdAt: new Date()
-      };
+      } as Client);
 
       // Get project resource from our batched fetch
       const projectResource = row.expenses.projectResourceId 

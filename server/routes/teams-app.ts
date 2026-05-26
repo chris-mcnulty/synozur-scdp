@@ -234,7 +234,6 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
           const refreshResult = await delegatedMsal.acquireTokenByRefreshToken({
             refreshToken: ssoRefreshToken,
             scopes: ["AppCatalog.ReadWrite.All"],
-            forceRefresh: true,
           });
 
           if (!refreshResult?.accessToken) throw new Error("acquireTokenByRefreshToken returned no token");
@@ -273,7 +272,6 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
           const silentResult = await delegatedMsal.acquireTokenSilent({
             account,
             scopes: ["AppCatalog.ReadWrite.All"],
-            forceRefresh: true,
           });
           if (!silentResult?.accessToken) throw new Error("acquireTokenSilent returned no token");
 

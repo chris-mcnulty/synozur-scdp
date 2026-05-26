@@ -115,14 +115,18 @@ export const documentsMethods: ThisType<IStorage & {
     
     return results.map(row => ({
       ...row,
-      client: row.client || { 
-        id: 'unknown', 
-        name: 'Unknown Client', 
+      client: (row.client || {
+        id: 'unknown',
+        tenantId: null,
+        name: 'Unknown Client',
+        shortName: null,
         status: 'inactive',
         currency: 'USD',
         billingContact: null,
         contactName: null,
         contactAddress: null,
+        secondaryContactName: null,
+        secondaryContactEmail: null,
         vocabularyOverrides: null,
         epicTermId: null,
         stageTermId: null,
@@ -136,8 +140,14 @@ export const documentsMethods: ThisType<IStorage & {
         ndaDate: null,
         ndaDocument: null,
         hasNda: false,
+        microsoftTeamId: null,
+        microsoftTeamName: null,
+        microsoftTeamWebUrl: null,
+        sharepointSiteUrl: null,
+        paymentTerms: null,
+        paymentMethod: null,
         createdAt: new Date()
-      },
+      }) as Client,
       containerType: row.containerType || {
         id: 'unknown',
         containerTypeId: 'unknown',
@@ -177,14 +187,18 @@ export const documentsMethods: ThisType<IStorage & {
 
     return {
       ...result,
-      client: result.client || { 
-        id: 'unknown', 
-        name: 'Unknown Client', 
+      client: (result.client || {
+        id: 'unknown',
+        tenantId: null,
+        name: 'Unknown Client',
+        shortName: null,
         status: 'inactive',
         currency: 'USD',
         billingContact: null,
         contactName: null,
         contactAddress: null,
+        secondaryContactName: null,
+        secondaryContactEmail: null,
         vocabularyOverrides: null,
         epicTermId: null,
         stageTermId: null,
@@ -198,8 +212,14 @@ export const documentsMethods: ThisType<IStorage & {
         ndaDate: null,
         ndaDocument: null,
         hasNda: false,
+        microsoftTeamId: null,
+        microsoftTeamName: null,
+        microsoftTeamWebUrl: null,
+        sharepointSiteUrl: null,
+        paymentTerms: null,
+        paymentMethod: null,
         createdAt: new Date()
-      },
+      }) as Client,
       containerType: result.containerType || {
         id: 'unknown',
         containerTypeId: 'unknown',

@@ -193,7 +193,7 @@ export class InvoicePDFStorage {
 
     return files.map(f => ({
       fileId: f.name,
-      sizeBytes: parseInt(f.metadata?.size ?? '0', 10) || 0,
+      sizeBytes: parseInt(String(f.metadata?.size ?? '0'), 10) || 0,
     }));
   }
 

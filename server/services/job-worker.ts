@@ -47,15 +47,15 @@ async function processNextJob() {
 }
 
 async function notifyJobFailure(job: BackgroundJob, error: string) {
+  if (!job.tenantId || !job.createdBy) return;
   try {
     const { storage } = await import('../storage.js');
     await storage.createNotification?.({
-      tenantId: job.tenantId || null,
-      userId: job.createdBy || null,
+      tenantId: job.tenantId,
+      userId: job.createdBy,
       type: 'job_failed',
       title: `Background job failed: ${job.type}`,
-      message: `Job ${job.id} permanently failed after ${job.attempts} attempts. Error: ${error}`,
-      metadata: { jobId: job.id, jobType: job.type },
+      body: `Job ${job.id} permanently failed after ${job.attempts} attempts. Error: ${error}`,
     });
   } catch {
     // Notification is best-effort

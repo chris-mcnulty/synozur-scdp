@@ -830,9 +830,12 @@ export interface IStorage {
   // Container Management Methods
   getContainerTypes(): Promise<ContainerType[]>;
   getContainerType(containerTypeId: string): Promise<ContainerType | undefined>;
+  getDefaultContainerType(): Promise<ContainerType>;
   createContainerType(containerType: InsertContainerType): Promise<ContainerType>;
   updateContainerType(id: string, updates: Partial<InsertContainerType>): Promise<ContainerType>;
   deleteContainerType(id: string): Promise<void>;
+  initializeDefaultContainerTypes(): Promise<void>;
+  checkUserClientAccess(userId: string, clientId: string): Promise<boolean>;
   
   getClientContainers(clientId?: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType })[]>;
   getClientContainer(containerId: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType }) | undefined>;
@@ -1193,6 +1196,8 @@ export interface IStorage {
   getSupportTicketPlannerSyncByTaskId(taskId: string): Promise<SupportTicketPlannerSync | undefined>;
   getSupportTicketPlannerSyncsByTenant(tenantId: string): Promise<SupportTicketPlannerSync[]>;
   updateSupportTicketPlannerSync(id: string, updates: Partial<InsertSupportTicketPlannerSync>): Promise<SupportTicketPlannerSync>;
+  getTenantsWithSupportPlannerEnabled(): Promise<Tenant[]>;
+  getOpenSupportTicketSyncsByTenant(tenantId: string): Promise<(SupportTicketPlannerSync & { ticketStatus: string })[]>;
 }
 
 export class DatabaseStorage {
