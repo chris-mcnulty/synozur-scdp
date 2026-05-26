@@ -397,7 +397,10 @@ export interface IStorage {
   getSows(projectId: string): Promise<Sow[]>;
   getSow(id: string): Promise<Sow | undefined>;
   createSow(sow: InsertSow): Promise<Sow>;
-  updateSow(id: string, sow: Partial<InsertSow>): Promise<Sow>;
+  // Accepts the full set of column-level updates (including approvedBy/At,
+  // which are omitted from InsertSow because they're set server-side, not
+  // by API callers).
+  updateSow(id: string, sow: Partial<typeof sows.$inferInsert>): Promise<Sow>;
   deleteSow(id: string): Promise<void>;
   getProjectTotalBudget(projectId: string): Promise<number>;
   
@@ -1065,7 +1068,11 @@ export interface IStorage {
   getPlatformAdminEmails(): Promise<string[]>;
 
   // Teams Automation Methods
-  createTeamsAutomationLog(log: InsertTeamsAutomationLog): Promise<TeamsAutomationLog>;
+  // Uses Drizzle's $inferInsert directly because the jsonb `details` field
+  // round-trips through drizzle-zod as a tuple type, which breaks callers
+  // that pass an object literal. The schema's `$type<Record<string,any>>()`
+  // annotation is preserved this way.
+  createTeamsAutomationLog(log: typeof teamsAutomationLogs.$inferInsert): Promise<TeamsAutomationLog>;
   getTeamsAutomationLogs(filters: { projectId?: string; teamId?: string; tenantId?: string; action?: string; limit?: number }): Promise<TeamsAutomationLog[]>;
   createGuestInvitation(invitation: InsertGuestInvitation): Promise<GuestInvitation>;
   getGuestInvitation(id: string): Promise<GuestInvitation | undefined>;

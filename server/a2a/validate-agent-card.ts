@@ -17,8 +17,8 @@ export interface AgentCardSkill {
   id: string;
   name: string;
   description: string;
-  examples: string[];
-  tags?: string[];
+  examples: readonly string[];
+  tags?: readonly string[];
 }
 
 export interface AgentCardOauth2 {
@@ -30,7 +30,7 @@ export interface AgentCardOauth2 {
 }
 
 export interface AgentCardAuthentication {
-  schemes: string[];
+  schemes: readonly string[];
   oauth2: AgentCardOauth2;
   credentials: null | unknown;
 }
@@ -41,7 +41,7 @@ export interface AgentCard {
   url: string;
   description?: string;
   version?: string;
-  skills: AgentCardSkill[];
+  skills: readonly AgentCardSkill[];
   authentication: AgentCardAuthentication;
   [key: string]: unknown;
 }

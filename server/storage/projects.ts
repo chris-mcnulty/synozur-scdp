@@ -824,7 +824,7 @@ export const projectsMethods: ThisType<IStorage> = {
     return created;
   },
 
-  async updateSow(id: string, updateSow: Partial<InsertSow>): Promise<Sow> {
+  async updateSow(id: string, updateSow: Partial<typeof sows.$inferInsert>): Promise<Sow> {
     const [updated] = await db.update(sows)
       .set({
         ...updateSow,

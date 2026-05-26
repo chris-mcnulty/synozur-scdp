@@ -506,7 +506,7 @@ export function registerEmbedRoutes(
           status: "approved",
           approvedBy: user.id,
           approvedAt: new Date(),
-        } as any);
+        });
 
         if (project.pm) {
           const pmUser = await storage.getUser(project.pm);

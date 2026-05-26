@@ -80,7 +80,7 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
         ...AGENT_CARD_STATIC,
         url: `${req.protocol}://${req.get("host")}/a2a/tasks/send`,
       };
-      const errors = validateAgentCard(card as any);
+      const errors = validateAgentCard(card);
       if (errors.length === 0) {
         return res.json({
           status: "ok",
