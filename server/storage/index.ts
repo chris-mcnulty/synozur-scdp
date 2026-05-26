@@ -138,6 +138,7 @@ export interface IStorage {
   getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]>;
   getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]; total: number; hasMore: boolean }>;
   getProject(id: string): Promise<(Project & { client: Client }) | undefined>;
+  getProjectsByIds(ids: string[]): Promise<Project[]>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
   deleteProject(id: string): Promise<void>;
@@ -432,6 +433,10 @@ export interface IStorage {
     project: Project;
     client: Client;
   })[]>;
+  getInvoiceBatchByBatchId(batchId: string): Promise<InvoiceBatch | undefined>;
+  getTimeEntriesForBatch(batchId: string): Promise<TimeEntry[]>;
+  deleteInvoiceLinesForBatch(batchId: string): Promise<void>;
+  bulkCreateInvoiceLines(lines: InsertInvoiceLine[]): Promise<InvoiceLine[]>;
   generateInvoicesForBatch(batchId: string, options: {
     clientIds?: string[];
     projectIds?: string[];
@@ -566,7 +571,7 @@ export interface IStorage {
   }>;
   
   // Delete Invoice Batch
-  deleteInvoiceBatch(batchId: string): Promise<void>;
+  deleteInvoiceBatch(batchId: string, options?: { force?: boolean }): Promise<void>;
   
   // Project Structure Methods
   getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
@@ -897,6 +902,7 @@ export interface IStorage {
       companyEmail?: string | undefined;
       companyWebsite?: string | undefined;
       paymentTerms?: string | undefined;
+      showConstellationFooter?: boolean;
     };
     timezone?: string;
   }): Promise<Buffer>;
@@ -1166,6 +1172,21 @@ export interface IStorage {
   updateGalaxyWebhookDelivery(id: string, patch: any): Promise<void>;
   incrementGalaxyRateBucket(bucketKey: string, ttlSeconds: number): Promise<number>;
   pruneGalaxyRateBuckets(): Promise<void>;
+
+  // Support Tickets
+  getSupportTicketsByUserId(userId: string): Promise<SupportTicket[]>;
+  getSupportTicketsByTenantId(tenantId: string, status?: string): Promise<SupportTicket[]>;
+  getAllSupportTickets(filters?: { status?: string | string[]; priority?: string; category?: string; tenantId?: string }): Promise<SupportTicket[]>;
+  getSupportTicketById(id: string): Promise<SupportTicket | undefined>;
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  updateSupportTicket(id: string, updates: Partial<InsertSupportTicket>): Promise<SupportTicket>;
+  getSupportTicketReplies(ticketId: string, includeInternal?: boolean): Promise<SupportTicketReply[]>;
+  createSupportTicketReply(reply: InsertSupportTicketReply): Promise<SupportTicketReply>;
+  createSupportTicketPlannerSync(sync: InsertSupportTicketPlannerSync): Promise<SupportTicketPlannerSync>;
+  getSupportTicketPlannerSyncByTicketId(ticketId: string): Promise<SupportTicketPlannerSync | undefined>;
+  getSupportTicketPlannerSyncByTaskId(taskId: string): Promise<SupportTicketPlannerSync | undefined>;
+  getSupportTicketPlannerSyncsByTenant(tenantId: string): Promise<SupportTicketPlannerSync[]>;
+  updateSupportTicketPlannerSync(id: string, updates: Partial<InsertSupportTicketPlannerSync>): Promise<SupportTicketPlannerSync>;
 }
 
 export class DatabaseStorage {
