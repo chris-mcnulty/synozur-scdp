@@ -4,7 +4,7 @@ import { storage } from "../storage";
 import { insertContainerTypeSchema, insertContainerPermissionSchema } from "@shared/schema";
 import { fileTypeFromBuffer } from "file-type";
 import multer from "multer";
-import { LocalFileStorage } from "../services/local-file-storage.js";
+import { LocalFileStorage, type DocumentMetadata } from "../services/local-file-storage.js";
 import { SharePointFileStorage } from "../services/sharepoint-file-storage.js";
 import { containerRegistration } from "../services/container-registration.js";
 import { receiptStorage } from "../services/receipt-storage.js";

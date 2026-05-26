@@ -876,7 +876,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
       let narrative = '';
       if (generateNarrative) {
-        const { aiService, buildGroundingContext } = await import('./services/ai-service.js');
+        const { aiService, buildGroundingContext } = await import('../services/ai-service.js');
         
         if (aiService.isConfigured()) {
           const sowTenantId = (req.user as any)?.tenantId;
