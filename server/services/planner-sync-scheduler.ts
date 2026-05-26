@@ -6,7 +6,7 @@ import { maybeSendSyncFailureAlert, suspendConnection, FATAL_ERROR_CODE_SET } fr
 import { withGraphRetry, withEtagRetry } from './planner-graph-retry.js';
 import { db } from '../db.js';
 import { projectPlannerConnections, plannerTaskSync, tenantSettings } from '@shared/schema.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 /**
  * Task #126 — Per-tenant rollout flag for the LWW resolver. Semantics:
@@ -998,6 +998,25 @@ async function syncSupportTicketsFromPlanner(): Promise<{ ticketsClosed: number;
 
 export async function startPlannerSyncScheduler(): Promise<void> {
   console.log('[PLANNER-SYNC] Starting Planner sync scheduler...');
+
+  // One-time self-heal: clear stale `last_sync_error` strings left over from
+  // the period when `users.vendor_ingest_email` did not yet exist in prod.
+  // The scheduler only nulls this field on full success, so projects whose
+  // sync hasn't actually re-run since the fix shipped still show the dead
+  // error in the UI. Idempotent — does nothing once cleaned up.
+  try {
+    const result = await db.execute(sql`
+      UPDATE project_planner_connections
+      SET last_sync_error = NULL
+      WHERE last_sync_error LIKE '%vendor_ingest_email%'
+    `);
+    const rowCount = (result as any)?.rowCount ?? 0;
+    if (rowCount > 0) {
+      console.log(`[PLANNER-SYNC] Cleared ${rowCount} stale vendor_ingest_email error message(s).`);
+    }
+  } catch (cleanupErr: any) {
+    console.warn('[PLANNER-SYNC] Stale-error cleanup failed (non-fatal):', cleanupErr?.message || cleanupErr);
+  }
 
   if (scheduledTask) {
     scheduledTask.stop();
