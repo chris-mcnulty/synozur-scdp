@@ -66,7 +66,7 @@ import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, ne, desc, and, or, gte, lte, sql, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { convertDecimalFieldsToNumbers } from "./helpers";
+import { convertDecimalFieldsToNumbers, placeholderClient } from "./helpers";
 
 export const projectsMethods: ThisType<IStorage> = {
   async getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]> {
@@ -156,39 +156,7 @@ export const projectsMethods: ThisType<IStorage> = {
       const project = row.projects;
 
       // Handle case where client might be null (LEFT JOIN)
-      const client: Client = row.clients || {
-        id: 'unknown',
-        name: 'No Client Assigned',
-        status: 'inactive',
-        currency: 'USD',
-        tenantId: null,
-        shortName: null,
-        billingContact: null,
-        contactName: null,
-        contactAddress: null,
-        secondaryContactName: null,
-        secondaryContactEmail: null,
-        vocabularyOverrides: null,
-        epicTermId: null,
-        stageTermId: null,
-        workstreamTermId: null,
-        milestoneTermId: null,
-        activityTermId: null,
-        msaDate: null,
-        msaDocument: null,
-        hasMsa: false,
-        sinceDate: null,
-        ndaDate: null,
-        ndaDocument: null,
-        hasNda: false,
-        microsoftTeamId: null,
-        microsoftTeamName: null,
-        microsoftTeamWebUrl: null,
-        sharepointSiteUrl: null,
-        paymentTerms: null,
-        paymentMethod: null,
-        createdAt: new Date(),
-      };
+      const client: Client = row.clients || { ...placeholderClient(), name: 'No Client Assigned' };
 
       const totalBudget = budgetByProject.get(project.id) ?? 0;
       const burnedAmount = burnedByProject.get(project.id) ?? 0;
@@ -260,18 +228,7 @@ export const projectsMethods: ThisType<IStorage> = {
       .offset(params.offset);
     console.log(`[getProjectsPaginated] main query done rows=${projectRows.length}`);
 
-    const defaultClient: Client = {
-      id: 'unknown', name: 'No Client Assigned', status: 'inactive', currency: 'USD',
-      tenantId: null, shortName: null, billingContact: null, contactName: null,
-      contactAddress: null, secondaryContactName: null, secondaryContactEmail: null,
-      vocabularyOverrides: null, epicTermId: null, stageTermId: null,
-      workstreamTermId: null, milestoneTermId: null, activityTermId: null, msaDate: null,
-      msaDocument: null, hasMsa: false, sinceDate: null, ndaDate: null, ndaDocument: null,
-      hasNda: false, microsoftTeamId: null, microsoftTeamName: null,
-      microsoftTeamWebUrl: null, sharepointSiteUrl: null,
-      paymentTerms: null, paymentMethod: null,
-      createdAt: new Date()
-    };
+    const defaultClient: Client = { ...placeholderClient(), name: 'No Client Assigned' };
 
     const projectIds = projectRows.map(r => r.projects.id);
 
@@ -360,39 +317,7 @@ export const projectsMethods: ThisType<IStorage> = {
     
     const row = rows[0];
     // Handle case where client might be null (LEFT JOIN)
-    const client: Client = row.clients || {
-      id: 'unknown',
-      tenantId: null,
-      name: 'No Client Assigned',
-      shortName: null,
-      status: 'inactive',
-      currency: 'USD',
-      billingContact: null,
-      contactName: null,
-      contactAddress: null,
-      secondaryContactName: null,
-      secondaryContactEmail: null,
-      vocabularyOverrides: null,
-      epicTermId: null,
-      stageTermId: null,
-      workstreamTermId: null,
-      milestoneTermId: null,
-      activityTermId: null,
-      msaDate: null,
-      msaDocument: null,
-      hasMsa: false,
-      sinceDate: null,
-      ndaDate: null,
-      ndaDocument: null,
-      hasNda: false,
-      microsoftTeamId: null,
-      microsoftTeamName: null,
-      microsoftTeamWebUrl: null,
-      sharepointSiteUrl: null,
-      paymentTerms: null,
-      paymentMethod: null,
-      createdAt: new Date()
-    };
+    const client: Client = row.clients || { ...placeholderClient(), name: 'No Client Assigned' };
     
     return {
       ...row.projects,

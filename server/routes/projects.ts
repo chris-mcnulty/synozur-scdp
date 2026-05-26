@@ -4429,7 +4429,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         }
       }
 
-      if ((user.role === "pm" || user.role === "portfolio-manager") && !isProjectPM) {
+      if (user.role === "pm" && !isProjectPM) {
         return res.status(403).json({
           message: "You can only view analytics for projects you manage"
         });

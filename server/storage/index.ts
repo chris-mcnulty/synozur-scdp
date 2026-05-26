@@ -111,7 +111,7 @@ import { signoffsMethods } from "./signoffs";
 import { galaxyMethods } from "./galaxy";
 import { agentMethods } from "./agent";
 
-export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
+export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers, placeholderUser, placeholderClient, placeholderProject } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
 
 export interface IStorage {

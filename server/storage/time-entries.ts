@@ -12,6 +12,7 @@ import {
 import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, desc, and, or, gte, lte, sql, inArray } from "drizzle-orm";
+import { placeholderUser } from "./helpers";
 
 export const timeEntriesMethods: ThisType<IStorage> = {
   async getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
@@ -36,29 +37,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     
     return rows.map(row => {
       // Handle case where user might not exist (deleted user, etc.)
-      const person: User = row.users || ({
-        id: row.time_entries.personId,
-        email: 'unknown@example.com',
-        name: 'Unknown User',
-        firstName: null,
-        lastName: null,
-        initials: null,
-        title: null,
-        role: 'employee',
-        canLogin: false,
-        isAssignable: false,
-        roleId: null,
-        customRole: null,
-        defaultBillingRate: null,
-        defaultCostRate: null,
-        isSalaried: false,
-        isActive: false,
-        receiveTimeReminders: true,
-        primaryTenantId: null,
-        platformRole: null,
-        createdAt: new Date()
-      } as User);
-      
+      const person: User = row.users || placeholderUser(row.time_entries.personId);
+
       return {
         ...row.time_entries,
         person,
@@ -73,14 +53,6 @@ export const timeEntriesMethods: ThisType<IStorage> = {
   },
 
   async getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; search?: string; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }> {
-    const defaultPerson = (personId: string): User => ({
-      id: personId, email: 'unknown@example.com', name: 'Unknown User',
-      firstName: null, lastName: null, initials: null, title: null, role: 'employee',
-      canLogin: false, isAssignable: false, roleId: null, customRole: null,
-      defaultBillingRate: null, defaultCostRate: null, isSalaried: false, isActive: false,
-      receiveTimeReminders: true, primaryTenantId: null, platformRole: null, createdAt: new Date()
-    } as User);
-
     const conditions: any[] = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
     if (filters.personId) conditions.push(eq(timeEntries.personId, filters.personId));
@@ -119,7 +91,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .offset(filters.offset);
 
     const items = rows.map(row => {
-      const person = row.users || defaultPerson(row.time_entries.personId);
+      const person = row.users || placeholderUser(row.time_entries.personId);
       return {
         ...row.time_entries,
         person,
@@ -142,29 +114,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     
     const row = rows[0];
     // Handle case where user might not exist (deleted user, etc.)
-    const person: User = row.users || ({
-      id: row.time_entries.personId,
-      email: 'unknown@example.com',
-      primaryTenantId: null,
-      platformRole: null,
-      name: 'Unknown User',
-      firstName: null,
-      lastName: null,
-      initials: null,
-      title: null,
-      role: 'employee',
-      canLogin: false,
-      isAssignable: false,
-      roleId: null,
-      customRole: null,
-      defaultBillingRate: null,
-      defaultCostRate: null,
-      isSalaried: false,
-      isActive: false,
-      receiveTimeReminders: true,
-      createdAt: new Date()
-    } as User);
-    
+    const person: User = row.users || placeholderUser(row.time_entries.personId);
+
     return {
       ...row.time_entries,
       person,
@@ -520,28 +471,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     const rows = await query.orderBy(desc(timeEntries.date));
 
     return rows.map(row => {
-      const person: User = row.users || ({
-        id: row.time_entries.personId,
-        email: 'unknown@example.com',
-        name: 'Unknown User',
-        firstName: null,
-        lastName: null,
-        initials: null,
-        title: null,
-        role: 'employee',
-        canLogin: false,
-        isAssignable: false,
-        roleId: null,
-        customRole: null,
-        defaultBillingRate: null,
-        defaultCostRate: null,
-        isSalaried: false,
-        isActive: false,
-        receiveTimeReminders: true,
-        primaryTenantId: null,
-        platformRole: null,
-        createdAt: new Date()
-      } as User);
+      const person: User = row.users || placeholderUser(row.time_entries.personId);
       return {
         ...row.time_entries,
         person,

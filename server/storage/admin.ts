@@ -52,6 +52,7 @@ import {
   aiConfiguration,
   type AiConfiguration,
   type InsertAiConfiguration,
+  type AIProviderConfig,
   aiUsageLogs,
   type AiUsageLog,
   type InsertAiUsageLog,
@@ -679,7 +680,11 @@ export const adminMethods: ThisType<IStorage & {
 
   async createRaiddEntry(entry: InsertRaiddEntry): Promise<RaiddEntry> {
     const refNumber = await this.getNextRaiddRefNumber(entry.projectId, entry.type);
-    const [created] = await db.insert(raiddEntries).values({ ...entry, refNumber } as any).returning();
+    // drizzle-zod loses the `$type<string[]>` annotation on jsonb columns and
+    // infers `tags` as unknown; narrow it back to the Drizzle column type
+    // rather than disabling type checking on the whole payload.
+    const tags = entry.tags as string[] | null | undefined;
+    const [created] = await db.insert(raiddEntries).values({ ...entry, refNumber, tags }).returning();
     return created;
   },
 
@@ -699,8 +704,10 @@ export const adminMethods: ThisType<IStorage & {
       ? new Date()
       : undefined;
 
+    // Same drizzle-zod tags-typing workaround as createRaiddEntry above.
+    const tags = updates.tags as string[] | null | undefined;
     const [updated] = await db.update(raiddEntries)
-      .set({ ...updates, updatedAt: new Date(), ...(closedAt ? { closedAt } : {}) } as any)
+      .set({ ...updates, tags, updatedAt: new Date(), ...(closedAt ? { closedAt } : {}) })
       .where(eq(raiddEntries.id, id))
       .returning();
     return updated;
@@ -755,12 +762,15 @@ export const adminMethods: ThisType<IStorage & {
     if (decision.type !== 'decision') throw new Error('Only decisions can be superseded');
 
     const refNumber = await this.getNextRaiddRefNumber(decision.projectId, 'decision');
+    // Same drizzle-zod tags-typing workaround as createRaiddEntry above.
+    const tags = newEntry.tags as string[] | null | undefined;
     const [newDecision] = await db.insert(raiddEntries).values({
       ...newEntry,
+      tags,
       type: 'decision',
       refNumber,
       convertedFromId: decisionId,
-    } as any).returning();
+    }).returning();
 
     await db.update(raiddEntries)
       .set({ status: 'superseded', supersededById: newDecision.id, updatedAt: new Date() })
@@ -1291,16 +1301,20 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async updateAiConfiguration(config: Partial<InsertAiConfiguration>): Promise<AiConfiguration> {
+    // drizzle-zod loses `$type<AIProviderConfig>` / `$type<number[]>` on jsonb
+    // columns and infers them as unknown; narrow them back to the column types.
+    const providerConfig = config.providerConfig as AIProviderConfig | null | undefined;
+    const alertThresholds = config.alertThresholds as number[] | null | undefined;
     const existing = await this.getAiConfiguration();
     if (existing) {
       const [updated] = await db.update(aiConfiguration)
-        .set({ ...config, updatedAt: new Date() } as any)
+        .set({ ...config, providerConfig, alertThresholds, updatedAt: new Date() })
         .where(eq(aiConfiguration.id, existing.id))
         .returning();
       return updated;
     }
     const [created] = await db.insert(aiConfiguration)
-      .values(config as any)
+      .values({ ...config, providerConfig, alertThresholds })
       .returning();
     return created;
   },
@@ -1418,7 +1432,9 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async createAiUsageAlert(alert: InsertAiUsageAlert): Promise<AiUsageAlert> {
-    const [result] = await db.insert(aiUsageAlerts).values(alert as any).returning();
+    // drizzle-zod loses `$type<string[]>` on the notifiedEmails jsonb column.
+    const notifiedEmails = alert.notifiedEmails as string[] | null | undefined;
+    const [result] = await db.insert(aiUsageAlerts).values({ ...alert, notifiedEmails }).returning();
     return result;
   },
 
@@ -1434,7 +1450,9 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async saveAgentCardHealthCheck(result: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck> {
-    const [created] = await db.insert(agentCardHealthChecks).values(result as any).returning();
+    // drizzle-zod loses `$type<string[]>` on the errors jsonb column.
+    const errors = result.errors as string[] | null | undefined;
+    const [created] = await db.insert(agentCardHealthChecks).values({ ...result, errors }).returning();
     return created;
   },
 
