@@ -1975,7 +1975,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         if (tenant) {
           tenantBranding = {
             emailHeaderUrl: tenant.emailHeaderUrl,
-            companyName: tenant.companyName,
+            companyName: tenant.name,
           };
         }
       }
@@ -2791,15 +2791,10 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
                         projectStageId = matchingStage.id;
                         console.log('[PLANNER] Mapped bucket to existing stage:', matchingStage.name);
                       } else {
-                        // Create new stage based on bucket name
-                        console.log('[PLANNER] Creating new stage from bucket:', bucketName);
-                        const newStage = await storage.createProjectStage({
-                          projectId,
-                          name: bucketName,
-                          description: `Imported from Planner bucket`,
-                          sortOrder: projectStages.length + 1
-                        });
-                        projectStageId = newStage.id;
+                        // Stages belong to epics, not projects; auto-creating a
+                        // stage from a Planner bucket is not supported here.
+                        // Leave the allocation unmapped; user can assign manually.
+                        console.warn('[PLANNER] No matching project stage for bucket; leaving unmapped:', bucketName);
                       }
                     }
                   }
@@ -2809,9 +2804,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
                     projectId,
                     taskDescription: taskDescriptionText,
                     personId,
-                    roleId,
+                    roleId: roleId ?? fallbackRole.id,
                     hours: '8', // Default 8 hours for imported tasks
-                    rackRate,
+                    rackRate: rackRate ?? '0',
                     costRate,
                     pricingMode: personId ? 'person' as const : 'role' as const,
                     status,
@@ -4392,9 +4387,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         }
       }
 
-      if (user.role === "pm" && !isProjectPM && user.role !== "portfolio-manager") {
-        return res.status(403).json({ 
-          message: "You can only view analytics for projects you manage" 
+      if ((user.role === "pm" || user.role === "portfolio-manager") && !isProjectPM) {
+        return res.status(403).json({
+          message: "You can only view analytics for projects you manage"
         });
       }
 
@@ -4451,7 +4446,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.json({ months: [], config: null });
       }
 
-      const estimate = project.estimateId ? await storage.getEstimate(project.estimateId) : null;
+      const projectEstimates = await storage.getEstimatesByProject(project.id);
+      const estimate = projectEstimates[0] ?? null;
 
       const timeEntryRows = await db.select({
         date: timeEntries.date,

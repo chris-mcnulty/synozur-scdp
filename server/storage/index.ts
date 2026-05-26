@@ -239,6 +239,7 @@ export interface IStorage {
   // Estimate Rate Overrides
   getEstimateRateOverrides(estimateId: string): Promise<EstimateRateOverride[]>;
   createEstimateRateOverride(override: InsertEstimateRateOverride): Promise<EstimateRateOverride>;
+  updateEstimateRateOverride(id: string, override: Partial<InsertEstimateRateOverride>): Promise<EstimateRateOverride>;
   deleteEstimateRateOverride(id: string): Promise<void>;
   copyEstimateRateOverrides(sourceEstimateId: string, targetEstimateId: string): Promise<void>;
   

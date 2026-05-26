@@ -24,6 +24,7 @@ declare global {
         // Multi-tenancy fields
         tenantId?: string;
         primaryTenantId?: string | null;
+        activeTenantId?: string | null;
         platformRole?: string | null;
       };
       // Resolved tenant context for the current request

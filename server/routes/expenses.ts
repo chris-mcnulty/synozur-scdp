@@ -2080,18 +2080,21 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
       const batches = await storage.getReimbursementBatches(filters);
       
-      // Recalculate totals for batches with foreign currency expenses
+      // Recalculate totals for batches with foreign currency expenses.
+      // The list endpoint does not include `expenses`, so use the per-batch detail.
       for (const batch of batches) {
         const batchCurrency = batch.currency || 'USD';
-        if (batch.expenses && batch.expenses.length > 0) {
-          const hasForeignCurrency = batch.expenses.some((exp: any) => {
+        const detail = await storage.getReimbursementBatch(batch.id);
+        const batchExpenses = detail?.expenses;
+        if (batchExpenses && batchExpenses.length > 0) {
+          const hasForeignCurrency = batchExpenses.some((exp: any) => {
             const expCurrency = exp.currency || 'USD';
             return expCurrency !== batchCurrency;
           });
-          
+
           if (hasForeignCurrency) {
             let convertedTotal = 0;
-            for (const exp of batch.expenses) {
+            for (const exp of batchExpenses) {
               const expCurrency = (exp as any).currency || 'USD';
               const amount = parseFloat((exp as any).amount || '0');
               if (expCurrency !== batchCurrency) {
@@ -2102,7 +2105,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
               }
             }
             batch.totalAmount = convertedTotal.toFixed(2);
-            
+
             await db.update(reimbursementBatches)
               .set({ totalAmount: convertedTotal.toFixed(2) })
               .where(eq(reimbursementBatches.id, batch.id));
@@ -2311,12 +2314,11 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         if (batch?.requestedForUser) {
           let branding;
           if (batch.tenantId) {
-            const tenantSettings = await storage.getSystemSettings(batch.tenantId);
-            const emailHeaderSetting = tenantSettings.find((s: any) => s.key === 'emailHeaderUrl');
-            const companyNameSetting = tenantSettings.find((s: any) => s.key === 'companyName');
+            const emailHeaderUrl = await storage.getTenantSettingValue(batch.tenantId, 'emailHeaderUrl');
+            const companyName = await storage.getTenantSettingValue(batch.tenantId, 'companyName');
             branding = {
-              emailHeaderUrl: emailHeaderSetting?.value,
-              companyName: companyNameSetting?.value,
+              emailHeaderUrl,
+              companyName,
             };
           }
 
@@ -2330,7 +2332,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
           }));
 
           await emailService.notifyReimbursementBatchProcessed(
-            { email: batch.requestedForUser.email, name: batch.requestedForUser.name || '' },
+            { email: batch.requestedForUser.email || '', name: batch.requestedForUser.name || '' },
             batch.batchNumber,
             batch.totalAmount,
             batch.currency,
