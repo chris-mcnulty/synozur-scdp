@@ -391,9 +391,9 @@ export function registerMcpWriteRoutes(
         const tenantRoles = await storage.getRoles(tenantId);
         const availableRoles = tenantRoles.map((r) => ({
           name: r.name,
-          rackRate: r.defaultBillingRate ? Number(r.defaultBillingRate) : 150,
+          rackRate: r.defaultRackRate ? Number(r.defaultRackRate) : 150,
           costRate: r.defaultCostRate ? Number(r.defaultCostRate) : 0,
-          isSalaried: r.isSalaried ?? false,
+          isSalaried: r.isAlwaysSalaried ?? false,
         }));
 
         // Dry-run: preview what the AI would receive, without calling the AI.
@@ -1615,7 +1615,7 @@ export function buildFixedPriceStructure(
   });
 
   return {
-    estimateType: "fixed",
+    estimateType: "detailed",
     commercialScheme: "fixed_price",
     epics,
     summary: {
@@ -1644,7 +1644,7 @@ export async function resolveRoleRate(
   );
   if (match) {
     return {
-      billingRate: match.defaultBillingRate ? Number(match.defaultBillingRate) : 150,
+      billingRate: match.defaultRackRate ? Number(match.defaultRackRate) : 150,
       costRate: match.defaultCostRate ? Number(match.defaultCostRate) : 0,
       roleId: match.id,
     };
@@ -1657,7 +1657,7 @@ export async function resolveRoleRate(
   );
   if (substringMatch) {
     return {
-      billingRate: substringMatch.defaultBillingRate ? Number(substringMatch.defaultBillingRate) : 150,
+      billingRate: substringMatch.defaultRackRate ? Number(substringMatch.defaultRackRate) : 150,
       costRate: substringMatch.defaultCostRate ? Number(substringMatch.defaultCostRate) : 0,
       roleId: substringMatch.id,
     };

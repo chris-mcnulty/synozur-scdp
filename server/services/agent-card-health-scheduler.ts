@@ -228,7 +228,7 @@ export async function runAgentCardHealthCheck(trigger: string = 'scheduled'): Pr
 
   // Persist every result to the database for history
   try {
-    await storage.addAgentCardHealthCheck({
+    await storage.saveAgentCardHealthCheck({
       status: result.status,
       checkedAt: new Date(result.checkedAt),
       skillCount: result.skillCount ?? null,

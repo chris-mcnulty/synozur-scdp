@@ -25,6 +25,7 @@ import {
 import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, desc, and, or, gte, lte, sql } from "drizzle-orm";
+import { placeholderClient } from "./helpers";
 
 export const documentsMethods: ThisType<IStorage & {
   createLocalReceiptColumns(containerId: string): Promise<any>;
@@ -115,29 +116,7 @@ export const documentsMethods: ThisType<IStorage & {
     
     return results.map(row => ({
       ...row,
-      client: row.client || { 
-        id: 'unknown', 
-        name: 'Unknown Client', 
-        status: 'inactive',
-        currency: 'USD',
-        billingContact: null,
-        contactName: null,
-        contactAddress: null,
-        vocabularyOverrides: null,
-        epicTermId: null,
-        stageTermId: null,
-        workstreamTermId: null,
-        milestoneTermId: null,
-        activityTermId: null,
-        msaDate: null,
-        msaDocument: null,
-        hasMsa: false,
-        sinceDate: null,
-        ndaDate: null,
-        ndaDocument: null,
-        hasNda: false,
-        createdAt: new Date()
-      },
+      client: row.client || placeholderClient(),
       containerType: row.containerType || {
         id: 'unknown',
         containerTypeId: 'unknown',
@@ -177,29 +156,7 @@ export const documentsMethods: ThisType<IStorage & {
 
     return {
       ...result,
-      client: result.client || { 
-        id: 'unknown', 
-        name: 'Unknown Client', 
-        status: 'inactive',
-        currency: 'USD',
-        billingContact: null,
-        contactName: null,
-        contactAddress: null,
-        vocabularyOverrides: null,
-        epicTermId: null,
-        stageTermId: null,
-        workstreamTermId: null,
-        milestoneTermId: null,
-        activityTermId: null,
-        msaDate: null,
-        msaDocument: null,
-        hasMsa: false,
-        sinceDate: null,
-        ndaDate: null,
-        ndaDocument: null,
-        hasNda: false,
-        createdAt: new Date()
-      },
+      client: result.client || placeholderClient(),
       containerType: result.containerType || {
         id: 'unknown',
         containerTypeId: 'unknown',

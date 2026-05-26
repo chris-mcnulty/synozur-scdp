@@ -55,7 +55,7 @@ export interface ActivityStatusReport {
   reportType: string | null;
   reportStyle: string | null;
   status: string | null;
-  projectId: string;
+  projectId: string | null;
   projectName: string | null;
   clientName: string | null;
   periodStart: string | null;

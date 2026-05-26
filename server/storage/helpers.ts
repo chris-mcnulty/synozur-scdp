@@ -95,12 +95,139 @@ export function convertDecimalFieldsToNumbers<T extends Record<string, any>>(obj
       result[key] = convertDecimalFieldsToNumbers(value);
     }
     else if (Array.isArray(value)) {
-      result[key] = value.map(item => 
-        (item && typeof item === 'object' && !(item instanceof Date)) 
-          ? convertDecimalFieldsToNumbers(item) 
+      result[key] = value.map(item =>
+        (item && typeof item === 'object' && !(item instanceof Date))
+          ? convertDecimalFieldsToNumbers(item)
           : item
       );
     }
   }
   return result;
+}
+
+/**
+ * Placeholder rows used when a LEFT JOIN finds no match (e.g., a time entry
+ * whose person was deleted). These return fully-shaped rows so downstream
+ * consumers don't see undefined fields. Keep in sync with the corresponding
+ * Drizzle schemas in shared/schema.ts.
+ */
+import type { User, Project, Client } from "@shared/schema";
+
+export function placeholderUser(id: string): User {
+  return {
+    id,
+    email: null,
+    name: 'Unknown User',
+    firstName: null,
+    lastName: null,
+    initials: null,
+    title: null,
+    role: 'employee',
+    canLogin: false,
+    isAssignable: false,
+    roleId: null,
+    customRole: null,
+    defaultBillingRate: null,
+    defaultCostRate: null,
+    isSalaried: false,
+    isActive: false,
+    receiveTimeReminders: true,
+    receiveExpenseReminders: true,
+    contractorBusinessName: null,
+    contractorBusinessAddress: null,
+    contractorBillingId: null,
+    contractorPhone: null,
+    contractorEmail: null,
+    vendorIngestEmail: null,
+    passwordHash: null,
+    primaryTenantId: null,
+    platformRole: null,
+    lastDismissedChangelogVersion: null,
+    authProvider: null,
+    azureObjectId: null,
+    weeklyCapacityHours: '40.00',
+    capacityNotes: null,
+    capacityEffectiveDate: null,
+    calendarSuggestionsEnabled: true,
+    calendarSuggestionsDaysBack: 0,
+    weeklyDigestEnabled: true,
+    weeklyDigestDay: 1,
+    weeklyDigestTime: '08:00',
+    createdAt: new Date(),
+  };
+}
+
+export function placeholderClient(id: string = 'unknown'): Client {
+  return {
+    id,
+    tenantId: null,
+    name: 'Unknown Client',
+    shortName: null,
+    status: 'inactive',
+    currency: 'USD',
+    billingContact: null,
+    contactName: null,
+    contactAddress: null,
+    secondaryContactName: null,
+    secondaryContactEmail: null,
+    vocabularyOverrides: null,
+    epicTermId: null,
+    stageTermId: null,
+    workstreamTermId: null,
+    milestoneTermId: null,
+    activityTermId: null,
+    msaDate: null,
+    msaDocument: null,
+    hasMsa: false,
+    sinceDate: null,
+    ndaDate: null,
+    ndaDocument: null,
+    hasNda: false,
+    microsoftTeamId: null,
+    microsoftTeamName: null,
+    microsoftTeamWebUrl: null,
+    sharepointSiteUrl: null,
+    paymentTerms: null,
+    paymentMethod: null,
+    createdAt: new Date(),
+  };
+}
+
+export function placeholderProject(id: string, clientId: string = 'unknown'): Project {
+  return {
+    id,
+    tenantId: null,
+    clientId,
+    name: 'Unknown Project',
+    description: null,
+    code: 'UNKNOWN',
+    pm: null,
+    startDate: null,
+    endDate: null,
+    commercialScheme: 'tm',
+    retainerBalance: null,
+    retainerTotal: null,
+    baselineBudget: null,
+    sowValue: null,
+    sowDate: null,
+    hasSow: false,
+    status: 'active',
+    estimatedTotal: null,
+    sowTotal: null,
+    actualCost: null,
+    billedTotal: null,
+    profitMargin: null,
+    vocabularyOverrides: null,
+    epicTermId: null,
+    stageTermId: null,
+    workstreamTermId: null,
+    milestoneTermId: null,
+    activityTermId: null,
+    quoteCurrency: 'USD',
+    costCurrency: 'USD',
+    exchangeRate: null,
+    exchangeRateLockedAt: null,
+    exchangeRateSource: 'live',
+    createdAt: new Date(),
+  };
 }

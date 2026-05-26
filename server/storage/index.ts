@@ -111,7 +111,7 @@ import { signoffsMethods } from "./signoffs";
 import { galaxyMethods } from "./galaxy";
 import { agentMethods } from "./agent";
 
-export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers } from "./helpers";
+export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers, placeholderUser, placeholderClient, placeholderProject } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
 
 export interface IStorage {
@@ -138,6 +138,7 @@ export interface IStorage {
   getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]>;
   getProjectsPaginated(params: { tenantId?: string | null; limit: number; offset: number; search?: string; status?: string; clientId?: string; pmId?: string; sortDir?: 'asc' | 'desc'; sortBy?: string }): Promise<{ items: (Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number; paymentMilestoneBilling?: { overdueCount: number; unInvoicedCount: number } })[]; total: number; hasMore: boolean }>;
   getProject(id: string): Promise<(Project & { client: Client }) | undefined>;
+  getProjectsByIds(ids: string[]): Promise<Project[]>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
   deleteProject(id: string): Promise<void>;
@@ -238,6 +239,7 @@ export interface IStorage {
   // Estimate Rate Overrides
   getEstimateRateOverrides(estimateId: string): Promise<EstimateRateOverride[]>;
   createEstimateRateOverride(override: InsertEstimateRateOverride): Promise<EstimateRateOverride>;
+  updateEstimateRateOverride(id: string, override: Partial<InsertEstimateRateOverride>): Promise<EstimateRateOverride>;
   deleteEstimateRateOverride(id: string): Promise<void>;
   copyEstimateRateOverrides(sourceEstimateId: string, targetEstimateId: string): Promise<void>;
   
@@ -256,16 +258,19 @@ export interface IStorage {
   getTimeApprovalsInbox(filters: { tenantId?: string; submitterId?: string; projectId?: string; startDate?: string; endDate?: string; status?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
   
   // Expenses with Project Resource Support
-  getExpenses(filters: { 
-    personId?: string; 
-    projectId?: string; 
-    projectResourceId?: string; 
-    startDate?: string; 
-    endDate?: string 
-  }): Promise<(Expense & { 
-    person: User; 
-    project: Project & { client: Client }; 
-    projectResource?: User; 
+  getExpenses(filters: {
+    personId?: string;
+    projectId?: string;
+    projectResourceId?: string;
+    startDate?: string;
+    endDate?: string;
+    pendingOnly?: boolean;
+    tenantId?: string;
+  }): Promise<(Expense & {
+    person: User;
+    project: Project & { client: Client };
+    projectResource?: User;
+    expenseReport?: { id: string; reportNumber: string; title: string; status: string } | null;
   })[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   updateExpense(id: string, expense: Partial<InsertExpense>): Promise<Expense>;
@@ -337,6 +342,7 @@ export interface IStorage {
   createExpenseReport(report: InsertExpenseReport, expenseIds: string[]): Promise<ExpenseReport>;
   updateExpenseReport(id: string, report: Partial<InsertExpenseReport>): Promise<ExpenseReport>;
   deleteExpenseReport(id: string): Promise<void>;
+  getExpenseIdsInReports(): Promise<Set<string>>;
   submitExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
   approveExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
   rejectExpenseReport(id: string, userId: string, rejectionNote: string): Promise<ExpenseReport>;
@@ -391,7 +397,10 @@ export interface IStorage {
   getSows(projectId: string): Promise<Sow[]>;
   getSow(id: string): Promise<Sow | undefined>;
   createSow(sow: InsertSow): Promise<Sow>;
-  updateSow(id: string, sow: Partial<InsertSow>): Promise<Sow>;
+  // Accepts the full set of column-level updates (including approvedBy/At,
+  // which are omitted from InsertSow because they're set server-side, not
+  // by API callers).
+  updateSow(id: string, sow: Partial<typeof sows.$inferInsert>): Promise<Sow>;
   deleteSow(id: string): Promise<void>;
   getProjectTotalBudget(projectId: string): Promise<number>;
   
@@ -432,6 +441,10 @@ export interface IStorage {
     project: Project;
     client: Client;
   })[]>;
+  getInvoiceBatchByBatchId(batchId: string): Promise<InvoiceBatch | undefined>;
+  getTimeEntriesForBatch(batchId: string): Promise<TimeEntry[]>;
+  deleteInvoiceLinesForBatch(batchId: string): Promise<void>;
+  bulkCreateInvoiceLines(lines: InsertInvoiceLine[]): Promise<InvoiceLine[]>;
   generateInvoicesForBatch(batchId: string, options: {
     clientIds?: string[];
     projectIds?: string[];
@@ -566,7 +579,7 @@ export interface IStorage {
   }>;
   
   // Delete Invoice Batch
-  deleteInvoiceBatch(batchId: string): Promise<void>;
+  deleteInvoiceBatch(batchId: string, options?: { force?: boolean }): Promise<void>;
   
   // Project Structure Methods
   getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
@@ -820,9 +833,12 @@ export interface IStorage {
   // Container Management Methods
   getContainerTypes(): Promise<ContainerType[]>;
   getContainerType(containerTypeId: string): Promise<ContainerType | undefined>;
+  getDefaultContainerType(): Promise<ContainerType>;
   createContainerType(containerType: InsertContainerType): Promise<ContainerType>;
   updateContainerType(id: string, updates: Partial<InsertContainerType>): Promise<ContainerType>;
   deleteContainerType(id: string): Promise<void>;
+  initializeDefaultContainerTypes(): Promise<void>;
+  checkUserClientAccess(userId: string, clientId: string): Promise<boolean>;
   
   getClientContainers(clientId?: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType })[]>;
   getClientContainer(containerId: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType }) | undefined>;
@@ -897,6 +913,7 @@ export interface IStorage {
       companyEmail?: string | undefined;
       companyWebsite?: string | undefined;
       paymentTerms?: string | undefined;
+      showConstellationFooter?: boolean;
     };
     timezone?: string;
   }): Promise<Buffer>;
@@ -935,6 +952,7 @@ export interface IStorage {
   
   // Tenant Methods
   getTenant(id: string): Promise<Tenant | undefined>;
+  getTenants(): Promise<Tenant[]>;
   updateTenant(id: string, updates: Partial<Tenant>): Promise<Tenant>;
   getTenantSpeConfig(tenantId: string): Promise<{
     speContainerIdDev: string | null;
@@ -1050,7 +1068,11 @@ export interface IStorage {
   getPlatformAdminEmails(): Promise<string[]>;
 
   // Teams Automation Methods
-  createTeamsAutomationLog(log: InsertTeamsAutomationLog): Promise<TeamsAutomationLog>;
+  // Uses Drizzle's $inferInsert directly because the jsonb `details` field
+  // round-trips through drizzle-zod as a tuple type, which breaks callers
+  // that pass an object literal. The schema's `$type<Record<string,any>>()`
+  // annotation is preserved this way.
+  createTeamsAutomationLog(log: typeof teamsAutomationLogs.$inferInsert): Promise<TeamsAutomationLog>;
   getTeamsAutomationLogs(filters: { projectId?: string; teamId?: string; tenantId?: string; action?: string; limit?: number }): Promise<TeamsAutomationLog[]>;
   createGuestInvitation(invitation: InsertGuestInvitation): Promise<GuestInvitation>;
   getGuestInvitation(id: string): Promise<GuestInvitation | undefined>;
@@ -1166,6 +1188,23 @@ export interface IStorage {
   updateGalaxyWebhookDelivery(id: string, patch: any): Promise<void>;
   incrementGalaxyRateBucket(bucketKey: string, ttlSeconds: number): Promise<number>;
   pruneGalaxyRateBuckets(): Promise<void>;
+
+  // Support Tickets
+  getSupportTicketsByUserId(userId: string): Promise<SupportTicket[]>;
+  getSupportTicketsByTenantId(tenantId: string, status?: string): Promise<SupportTicket[]>;
+  getAllSupportTickets(filters?: { status?: string | string[]; priority?: string; category?: string; tenantId?: string }): Promise<SupportTicket[]>;
+  getSupportTicketById(id: string): Promise<SupportTicket | undefined>;
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  updateSupportTicket(id: string, updates: Partial<InsertSupportTicket>): Promise<SupportTicket>;
+  getSupportTicketReplies(ticketId: string, includeInternal?: boolean): Promise<SupportTicketReply[]>;
+  createSupportTicketReply(reply: InsertSupportTicketReply): Promise<SupportTicketReply>;
+  createSupportTicketPlannerSync(sync: InsertSupportTicketPlannerSync): Promise<SupportTicketPlannerSync>;
+  getSupportTicketPlannerSyncByTicketId(ticketId: string): Promise<SupportTicketPlannerSync | undefined>;
+  getSupportTicketPlannerSyncByTaskId(taskId: string): Promise<SupportTicketPlannerSync | undefined>;
+  getSupportTicketPlannerSyncsByTenant(tenantId: string): Promise<SupportTicketPlannerSync[]>;
+  updateSupportTicketPlannerSync(id: string, updates: Partial<InsertSupportTicketPlannerSync>): Promise<SupportTicketPlannerSync>;
+  getTenantsWithSupportPlannerEnabled(): Promise<Tenant[]>;
+  getOpenSupportTicketSyncsByTenant(tenantId: string): Promise<(SupportTicketPlannerSync & { ticketStatus: string })[]>;
 }
 
 export class DatabaseStorage {

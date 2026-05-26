@@ -171,12 +171,10 @@ export async function generateRetainerPaymentMilestones(
   if (retainerEstimate?.retainerConfig) {
     const rc = retainerEstimate.retainerConfig as any;
     if (Array.isArray(rc.rateTiers) && rc.rateTiers.length > 0) {
-      estimateFallbackAmount = rc.rateTiers.reduce((sum: number, tier: any) => {
+      const computed: number = rc.rateTiers.reduce((sum: number, tier: any) => {
         return sum + ((Number(tier.rate) || 0) * (Number(tier.maxHours) || 0));
       }, 0);
-      if (isNaN(estimateFallbackAmount) || estimateFallbackAmount <= 0) {
-        estimateFallbackAmount = null;
-      }
+      estimateFallbackAmount = (isNaN(computed) || computed <= 0) ? null : computed;
     }
   }
 
@@ -679,7 +677,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           const role = user.roleId ? await storage.getRole(user.roleId) : null;
           resourceMap.set(allocation.personId, {
             userId: allocation.personId,
-            userName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+            userName: `${user.firstName} ${user.lastName}`.trim() || user.email || 'Unknown',
             roleName: role?.name || 'Unknown Role',
             isSalaried: user.isSalaried,
             totalHours: hours,
@@ -871,12 +869,12 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
       const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
       const totalCost = assignments.reduce((sum, a) => sum + a.amount, 0);
-      const resourceName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+      const resourceName = `${user.firstName} ${user.lastName}`.trim() || user.email || 'Unknown';
       const resourceRole = role?.name || 'Unknown Role';
 
       let narrative = '';
       if (generateNarrative) {
-        const { aiService, buildGroundingContext } = await import('./services/ai-service.js');
+        const { aiService, buildGroundingContext } = await import('../services/ai-service.js');
         
         if (aiService.isConfigured()) {
           const sowTenantId = (req.user as any)?.tenantId;
@@ -1000,7 +998,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
       const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
       const totalCost = assignments.reduce((sum, a) => sum + a.amount, 0);
-      const resourceName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+      const resourceName = `${user.firstName} ${user.lastName}`.trim() || user.email || 'Unknown';
       const resourceRole = role?.name || 'Unknown Role';
 
       // Generate PDF
@@ -1015,7 +1013,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         projectName: project.name,
         clientName: client?.name || 'Unknown Client',
         resourceName: resourceName || 'Unknown Resource',
-        resourceEmail: user.email,
+        resourceEmail: user.email || '',
         resourceRole,
         isSalaried: user.isSalaried,
         totalHours,
@@ -1311,7 +1309,6 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           email: email.toLowerCase().trim(),
           name: name || email.split('@')[0],
           role: 'employee',
-          password: '',
         });
       }
 
@@ -5992,7 +5989,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         referralFeeFlat: snapshot.header.referralFeeFlat as any,
         referralFeeAmount: snapshot.header.referralFeeAmount,
         netRevenue: snapshot.header.netRevenue,
-        estimateDate: snapshot.header.estimateDate,
+        estimateDate: snapshot.header.estimateDate ?? undefined,
         // Multipliers from snapshot
         sizeSmallMultiplier: snapshot.multipliers.sizeSmall,
         sizeMediumMultiplier: snapshot.multipliers.sizeMedium,

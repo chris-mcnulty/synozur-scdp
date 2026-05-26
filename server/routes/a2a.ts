@@ -542,8 +542,7 @@ async function dispatchTool(
       if (params.clientId) rows = rows.filter((p) => p.clientId === params.clientId);
       if (params.status) rows = rows.filter((p) => p.status === params.status);
       if (params.health) {
-        const enriched = rows as EnrichedProject[];
-        rows = enriched.filter((p) => {
+        rows = rows.filter((p) => {
           const budget = Number(p.totalBudget ?? 0);
           if (!budget) return false;
           const util = Number(p.burnedAmount ?? 0) / budget;
@@ -628,8 +627,8 @@ async function dispatchTool(
             openIssues: raiddData.filter((r) => r.type === "issue" && r.status !== "closed").length,
             criticalItems: raiddData.filter((r) => r.priority === "critical" && r.status !== "closed").length,
           },
-          milestones: milestones.map((m) => ({ name: m.name, status: m.status, dueDate: m.dueDate })),
-          deliverables: deliverables.map((d) => ({ name: d.name, status: d.status, dueDate: d.dueDate })),
+          milestones: milestones.map((m) => ({ name: m.name, status: m.status, dueDate: m.targetDate })),
+          deliverables: deliverables.map((d) => ({ name: d.name, status: d.status, dueDate: d.targetDate })),
           allocations: allocations.map((a: { role?: string; allocation?: number; user?: { name?: string } }) => ({ userName: a.user?.name, role: a.role, allocation: a.allocation })),
         },
         summary: `Status report data for ${project.name} (${startDate} to ${endDate})`,
@@ -733,7 +732,7 @@ async function dispatchTool(
         endDate: params.to as string,
         tenantId: tid,
       });
-      if (params.status) rows = rows.filter((e) => e.status === params.status);
+      if (params.status) rows = rows.filter((e) => e.submissionStatus === params.status);
       return { data: rows, summary: `${rows.length} time entries` };
     }
 
@@ -898,9 +897,9 @@ async function dispatchTool(
       const tenantRoles = await storage.getRoles(tid);
       const availableRoles = tenantRoles.map((r) => ({
         name: r.name,
-        rackRate: r.defaultBillingRate ? Number(r.defaultBillingRate) : 150,
+        rackRate: r.defaultRackRate ? Number(r.defaultRackRate) : 150,
         costRate: r.defaultCostRate ? Number(r.defaultCostRate) : 0,
-        isSalaried: r.isSalaried ?? false,
+        isSalaried: r.isAlwaysSalaried ?? false,
       }));
 
       const { aiService } = await import("../services/ai-service.js");

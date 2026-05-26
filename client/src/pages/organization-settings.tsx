@@ -6,7 +6,7 @@ import { z } from "zod";
 import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { canManageSystemSettings } from "@/lib/auth";
+import { canManageSystemSettings, type UserRole } from "@/lib/auth";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1888,7 +1888,7 @@ function DocumentStorageCard({ tenantSettings }: { tenantSettings: TenantSetting
   });
 
   const updateConfigMutation = useMutation({
-    mutationFn: (config: { speContainerIdDev?: string; speContainerIdProd?: string; speStorageEnabled?: boolean }) =>
+    mutationFn: (config: { speContainerIdDev?: string; speContainerIdProd?: string; speStorageEnabled?: boolean; adminConsentGranted?: boolean }) =>
       apiRequest(`/api/tenants/${tenantSettings.id}/spe/config`, {
         method: "PATCH",
         body: JSON.stringify(config),
@@ -3073,7 +3073,7 @@ export default function OrganizationSettings() {
                 <Languages className="w-4 h-4" />
                 <span>Vocabulary</span>
               </TabsTrigger>
-              {canManageSystemSettings(user?.role) && (
+              {canManageSystemSettings((user?.role ?? "") as UserRole) && (
                 <TabsTrigger value="teams-links" className="flex items-center gap-2" data-testid="tab-teams-links">
                   <MicrosoftTeamsIcon className="w-4 h-4" />
                   <span>Teams Links</span>
@@ -3838,7 +3838,7 @@ export default function OrganizationSettings() {
 
                   <HubSpotIntegrationCard />
 
-                  <TeamsAppPackageCard tenantSettings={tenantSettings} />
+                  <TeamsAppPackageCard tenantSettings={tenantSettings ?? null} />
 
                   <ChannelProvisioningCard />
 
@@ -4227,7 +4227,7 @@ export default function OrganizationSettings() {
               </Card>
             </TabsContent>
 
-            {canManageSystemSettings(user?.role) && (
+            {canManageSystemSettings((user?.role ?? "") as UserRole) && (
               <TabsContent value="teams-links" className="space-y-6">
                 <TeamsLinksTab />
               </TabsContent>

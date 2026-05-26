@@ -144,6 +144,10 @@ export interface DriveItem {
     id: string;
     path: string;
   };
+  createdBy?: {
+    user?: { displayName?: string; id?: string; email?: string };
+    application?: { displayName?: string; id?: string };
+  };
   '@microsoft.graph.downloadUrl'?: string;
 }
 
@@ -1172,15 +1176,15 @@ export class GraphClient {
 
       while (nextLink) {
         pageNum++;
-        const response = await this.makeGraphRequest<GraphResponse<DriveItem>>(
+        const response: GraphResponse<DriveItem> = await this.makeGraphRequest<GraphResponse<DriveItem>>(
           'GET',
           nextLink
         );
-        
+
         if (response.value) {
           allItems.push(...response.value);
         }
-        
+
         nextLink = response['@odata.nextLink'];
         if (nextLink && pageNum > 50) {
           console.warn(`[GraphClient] listFiles pagination exceeded 50 pages for ${folderPath}, stopping`);

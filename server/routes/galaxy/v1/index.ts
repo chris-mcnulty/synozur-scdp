@@ -692,7 +692,7 @@ export function registerGalaxyV1Routes(
     const r = await storage.getStatusReport(req.params.id);
     if (!r || r.tenantId !== g.tenantId) return res.status(404).json({ error: "not_found" });
     if (r.status !== "final") return res.status(404).json({ error: "not_found" });
-    if (!(await userCanSeeProject(g, r.projectId))) return res.status(404).json({ error: "not_found" });
+    if (!r.projectId || !(await userCanSeeProject(g, r.projectId))) return res.status(404).json({ error: "not_found" });
     res.json(projectStatusReport(r));
   });
 
@@ -993,7 +993,7 @@ export function registerGalaxyV1Routes(
     const r = await storage.getStatusReport(req.params.id);
     if (!r || r.tenantId !== g.tenantId) return res.status(404).json({ error: "not_found" });
     if (r.status !== "final") return res.status(404).json({ error: "not_found" });
-    if (!(await userCanSeeProject(g, r.projectId))) return res.status(404).json({ error: "not_found" });
+    if (!r.projectId || !(await userCanSeeProject(g, r.projectId))) return res.status(404).json({ error: "not_found" });
     const signoff = await recordSignoff(g, "acknowledged", "status_report", r.id, comment ?? null);
     await enqueueGalaxyEvent({ tenantId: g.tenantId, event: "status_report.acknowledged", clientId: g.clientId, data: { statusReportId: r.id, projectId: r.projectId, signoffId: signoff.id } });
     res.json({ signoff });

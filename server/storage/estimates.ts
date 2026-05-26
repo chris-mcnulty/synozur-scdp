@@ -33,6 +33,7 @@ import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, desc, and, or, sql, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { placeholderClient } from "./helpers";
 
 export const estimatesMethods: ThisType<IStorage> = {
   async getEstimates(includeArchived: boolean = false, tenantId?: string | null): Promise<(Estimate & { client: Client; project?: Project })[]> {
@@ -64,29 +65,7 @@ export const estimatesMethods: ThisType<IStorage> = {
     // Only filter out rows where estimates is null (not clients)
     return rows.filter(row => row.estimates !== null).map(row => ({
       ...row.estimates,
-      client: row.clients || { 
-        id: '', 
-        name: 'Unknown Client', 
-        status: 'inactive',
-        currency: 'USD',
-        billingContact: null,
-        contactName: null,
-        contactAddress: null,
-        vocabularyOverrides: null,
-        epicTermId: null,
-        stageTermId: null,
-        workstreamTermId: null,
-        milestoneTermId: null,
-        activityTermId: null,
-        msaDate: null,
-        msaDocument: null,
-        hasMsa: false,
-        sinceDate: null,
-        ndaDate: null,
-        ndaDocument: null,
-        hasNda: false,
-        createdAt: new Date()
-      },
+      client: row.clients || placeholderClient(''),
       project: row.projects || undefined
     }));
   },

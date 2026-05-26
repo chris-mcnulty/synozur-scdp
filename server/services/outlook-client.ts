@@ -111,7 +111,6 @@ export async function getEventsForUser(
   const tokenResult = await msalInstance.acquireTokenByRefreshToken({
     refreshToken: ssoRefreshToken,
     scopes: ['Calendars.Read'],
-    forceRefresh: false,
   });
 
   if (!tokenResult?.accessToken) {

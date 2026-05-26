@@ -171,13 +171,13 @@ export async function buildDigestForUser(userId: string, tenantId: string, asOf:
         )
       ) : Promise.resolve([]),
     storage.getProjects(tenantId).then(async (ps) => {
-      const pmProjects = isPmOrAdmin ? ps.filter(p => p.projectManagerId === userId || userProjectIds.includes(p.id)) : ps.filter(p => userProjectIds.includes(p.id));
+      const pmProjects = isPmOrAdmin ? ps.filter(p => p.pm === userId || userProjectIds.includes(p.id)) : ps.filter(p => userProjectIds.includes(p.id));
       const lastWeek = new Date(asOf.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const reports: any[] = [];
       for (const p of pmProjects.slice(0, 10)) {
         try {
           const pReports = await storage.getStatusReports(p.id, tenantId);
-          const recent = pReports.filter(r => new Date(r.publishedAt || r.createdAt || 0) > new Date(lastWeek));
+          const recent = pReports.filter(r => new Date(r.createdAt || 0) > new Date(lastWeek));
           for (const r of recent) reports.push({ ...r, projectName: p.name, projectId: p.id });
         } catch {}
       }
@@ -276,7 +276,7 @@ export async function buildDigestForUser(userId: string, tenantId: string, asOf:
 
   let myProjects: DigestData['myProjects'] = [];
   if (isPmOrAdmin && userProjectIds.length > 0) {
-    const pmProjectIds = allProjects.filter(p => p.projectManagerId === userId).map(p => p.id);
+    const pmProjectIds = allProjects.filter(p => p.pm === userId).map(p => p.id);
     for (const projectId of pmProjectIds.slice(0, 8)) {
       try {
         const burn = await storage.getProjectBurnRate(projectId);
@@ -286,7 +286,7 @@ export async function buildDigestForUser(userId: string, tenantId: string, asOf:
             projectId,
             projectName: project.name,
             status: project.status || 'active',
-            healthScore: project.healthScore || 'green',
+            healthScore: 'green',
             burnRatePercentage: burn.burnRatePercentage,
             actualHours: burn.actualHours,
             estimatedHours: burn.estimatedHours,

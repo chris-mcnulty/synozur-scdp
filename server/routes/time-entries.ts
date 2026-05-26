@@ -1325,7 +1325,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       // For PMs, scope the inbox to their managed projects
       let pmProjectIds: string[] | null = null;
       if (isPM) {
-        const allProjects = await storage.getProjects({ tenantId: tenantId || undefined });
+        const allProjects = await storage.getProjects(tenantId || undefined);
         const managed = allProjects.filter(p => p.pm === userId);
         pmProjectIds = managed.map(p => p.id);
         // If PM manages no projects, return empty immediately

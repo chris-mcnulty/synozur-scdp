@@ -80,9 +80,9 @@ export default function ResourcePlanning() {
     : people.filter((p: any) => p.utilizationStatus === filterStatus);
 
   // Build project color map
-  const allProjectIds = [...new Set(people.flatMap((p: any) => p.allocations.map((a: any) => a.projectId)))];
+  const allProjectIds = Array.from(new Set<string>(people.flatMap((p: any) => p.allocations.map((a: any) => a.projectId as string))));
   const projectColorMap = new Map<string, string>();
-  allProjectIds.forEach((id: string, idx) => {
+  allProjectIds.forEach((id, idx) => {
     projectColorMap.set(id, PROJECT_COLORS[idx % PROJECT_COLORS.length]);
   });
 

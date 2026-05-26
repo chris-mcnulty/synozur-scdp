@@ -19,6 +19,7 @@ import {
   type InvoiceBatch,
   type InsertInvoiceBatch,
   type InvoiceLine,
+  type InsertInvoiceLine,
   type InvoiceAdjustment,
   type Tenant,
   DEFAULT_VOCABULARY
@@ -488,19 +489,7 @@ export const invoicingMethods: ThisType<IStorage & {
     return convertDecimalFieldsToNumbers(newLine);
   },
 
-  async bulkCreateInvoiceLines(lines: Array<{
-    batchId: string;
-    projectId: string;
-    clientId: string;
-    type: string;
-    quantity: string;
-    rate: string;
-    amount: string;
-    description: string;
-    originalAmount?: string;
-    billedAmount?: string;
-    varianceAmount?: string;
-  }>): Promise<InvoiceLine[]> {
+  async bulkCreateInvoiceLines(lines: InsertInvoiceLine[]): Promise<InvoiceLine[]> {
     if (lines.length === 0) return [];
     const newLines = await db.insert(invoiceLines).values(lines).returning();
     return newLines.map(line => convertDecimalFieldsToNumbers(line));

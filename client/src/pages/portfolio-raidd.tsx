@@ -208,11 +208,11 @@ export default function PortfolioRaidd() {
     XLSX.writeFile(wb, `portfolio-raidd-report-${new Date().toISOString().split("T")[0]}.xlsx`);
   };
 
-  const isOverdue = (entry: RaiddEntry) =>
-    entry.type === "action_item" && entry.dueDate && new Date(entry.dueDate) < new Date() && ["open", "in_progress"].includes(entry.status);
+  const isOverdue = (entry: RaiddEntry): boolean =>
+    entry.type === "action_item" && !!entry.dueDate && new Date(entry.dueDate) < new Date() && ["open", "in_progress"].includes(entry.status);
 
   return (
-    <Layout title="Portfolio RAIDD">
+    <Layout>
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>

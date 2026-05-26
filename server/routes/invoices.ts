@@ -2551,7 +2551,7 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       }
 
       const userIds = [...new Set(expenseRows.map(e => e.personId).filter(Boolean))];
-      const userMap = new Map<string, { firstName: string; lastName: string }>();
+      const userMap = new Map<string, { firstName: string | null; lastName: string | null }>();
       for (const uid of userIds) {
         if (!uid) continue;
         const [u] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, uid));

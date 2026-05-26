@@ -129,11 +129,10 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
         clientShortName: clients.shortName,
         pm: projects.pm,
         pmName: users.name,
-        budget: projects.budget,
+        budget: projects.sowTotal,
         createdAt: projects.createdAt,
         startDate: projects.startDate,
         endDate: projects.endDate,
-        estimateId: projects.estimateId
       })
       .from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
@@ -199,9 +198,17 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
       }
       
       const filteredProjectIds = filteredProjects.map(p => p.id);
-      const estimateIds = filteredProjects
-        .map(p => p.estimateId)
-        .filter((id): id is string => !!id);
+      const projectEstimateRows = filteredProjectIds.length === 0 ? [] : await db.select({
+        id: estimates.id,
+        projectId: estimates.projectId,
+      }).from(estimates).where(inArray(estimates.projectId, filteredProjectIds));
+      const estimateIdByProject = new Map<string, string>();
+      for (const e of projectEstimateRows) {
+        if (e.projectId && !estimateIdByProject.has(e.projectId)) {
+          estimateIdByProject.set(e.projectId, e.id);
+        }
+      }
+      const estimateIds = Array.from(estimateIdByProject.values());
 
       const isSalariedExpr = sql<boolean>`(COALESCE(${users.isSalaried}, false) OR COALESCE(${roles.isAlwaysSalaried}, false))`;
       const effectiveCostRateExpr = sql<string>`COALESCE(${timeEntries.costRate}, ${users.defaultCostRate}, 75)`;
@@ -337,7 +344,8 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
 
         const actualCost = laborCost + expenseCost;
 
-        const estimate = project.estimateId ? estimateMap.get(project.estimateId) : undefined;
+        const projectEstimateId = estimateIdByProject.get(project.id);
+        const estimate = projectEstimateId ? estimateMap.get(projectEstimateId) : undefined;
         const originalEstimate = estimate ? estimate.totalFees : 0;
         const budgetedHours = estimate ? estimate.totalHours : 0;
 

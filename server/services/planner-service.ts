@@ -367,7 +367,6 @@ class PlannerService {
           const result = await msalInstance.acquireTokenByRefreshToken({
             refreshToken: ssoRefreshToken,
             scopes: ['AppCatalog.Read.All'],
-            forceRefresh: true,
           });
           if (result?.accessToken) {
             const graphResponse = await fetch(
@@ -727,7 +726,6 @@ class PlannerService {
           const result = await msalInstance.acquireTokenByRefreshToken({
             refreshToken: ssoRefreshToken,
             scopes: ['Files.ReadWrite.All'],
-            forceRefresh: true,
           });
           if (result?.accessToken) {
             delegatedHeaders = { Authorization: `Bearer ${result.accessToken}` };

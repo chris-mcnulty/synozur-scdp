@@ -1975,7 +1975,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         if (tenant) {
           tenantBranding = {
             emailHeaderUrl: tenant.emailHeaderUrl,
-            companyName: tenant.companyName,
+            companyName: tenant.name,
           };
         }
       }
@@ -2602,7 +2602,41 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
               errors.push('No roles configured - cannot import Planner tasks. Please configure at least one role.');
             } else {
               console.log('[PLANNER] Fallback role for imports (if person has no role):', fallbackRole.name);
-              
+
+              // Pre-load project structure for bucket → stage mapping.
+              // Stages belong to epics, so search across every epic on this project.
+              const projectEpicsList = await storage.getProjectEpics(projectId);
+              const stagesByEpic = await storage.getProjectStagesByEpicIds(
+                projectEpicsList.map(e => e.id)
+              );
+              // bucket name (lowercased) → stage id, includes both existing matches
+              // and stages we create during this run so same-bucket tasks share one.
+              const bucketNameToStageId = new Map<string, string>();
+              for (const stages of stagesByEpic.values()) {
+                for (const stage of stages) {
+                  if (!bucketNameToStageId.has(stage.name.toLowerCase())) {
+                    bucketNameToStageId.set(stage.name.toLowerCase(), stage.id);
+                  }
+                }
+              }
+              // The catch-all epic for unmatched buckets is created lazily on first need.
+              let plannerCatchAllEpic = projectEpicsList.find(e => e.name === 'Planner Tasks');
+              const ensurePlannerCatchAllEpic = async () => {
+                if (plannerCatchAllEpic) return plannerCatchAllEpic;
+                const nextEpicOrder = projectEpicsList.length > 0
+                  ? Math.max(...projectEpicsList.map(e => e.order)) + 1
+                  : 0;
+                const [created] = await db.insert(projectEpics).values({
+                  projectId,
+                  name: 'Planner Tasks',
+                  order: nextEpicOrder,
+                }).returning();
+                plannerCatchAllEpic = created;
+                projectEpicsList.push(created);
+                console.log('[PLANNER] Created "Planner Tasks" epic for unmatched buckets');
+                return created;
+              };
+
               for (const task of planTasks) {
                 // Use getPlannerTaskSyncByTaskId to check if already synced (idempotent)
                 const existingSync = await storage.getPlannerTaskSyncByTaskId(task.id);
@@ -2781,25 +2815,28 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
                   if (task.bucketId) {
                     const bucketName = bucketMap.get(task.bucketId);
                     if (bucketName) {
-                      console.log('[PLANNER] Looking for stage matching bucket:', bucketName);
-                      // Find existing stage with matching name
-                      const projectStages = await storage.getProjectStages(projectId);
-                      const matchingStage = projectStages.find(s => 
-                        s.name.toLowerCase() === bucketName.toLowerCase()
-                      );
-                      if (matchingStage) {
-                        projectStageId = matchingStage.id;
-                        console.log('[PLANNER] Mapped bucket to existing stage:', matchingStage.name);
+                      const key = bucketName.toLowerCase();
+                      const existingStageId = bucketNameToStageId.get(key);
+                      if (existingStageId) {
+                        projectStageId = existingStageId;
+                        console.log('[PLANNER] Mapped bucket to stage:', bucketName);
                       } else {
-                        // Create new stage based on bucket name
-                        console.log('[PLANNER] Creating new stage from bucket:', bucketName);
-                        const newStage = await storage.createProjectStage({
-                          projectId,
+                        // No matching stage anywhere in the project's epics — create
+                        // one under the "Planner Tasks" catch-all epic (lazy-created).
+                        const catchAllEpic = await ensurePlannerCatchAllEpic();
+                        const stagesUnderEpic = stagesByEpic.get(catchAllEpic.id) || [];
+                        const nextOrder = stagesUnderEpic.length > 0
+                          ? Math.max(...stagesUnderEpic.map(s => s.order)) + 1
+                          : 0;
+                        const [newStage] = await db.insert(projectStages).values({
+                          epicId: catchAllEpic.id,
                           name: bucketName,
-                          description: `Imported from Planner bucket`,
-                          sortOrder: projectStages.length + 1
-                        });
+                          order: nextOrder,
+                        }).returning();
                         projectStageId = newStage.id;
+                        bucketNameToStageId.set(key, newStage.id);
+                        stagesByEpic.set(catchAllEpic.id, [...stagesUnderEpic, newStage]);
+                        console.log('[PLANNER] Created stage from bucket:', bucketName);
                       }
                     }
                   }
@@ -2809,9 +2846,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
                     projectId,
                     taskDescription: taskDescriptionText,
                     personId,
-                    roleId,
+                    roleId: roleId ?? fallbackRole.id,
                     hours: '8', // Default 8 hours for imported tasks
-                    rackRate,
+                    rackRate: rackRate ?? '0',
                     costRate,
                     pricingMode: personId ? 'person' as const : 'role' as const,
                     status,
@@ -4392,9 +4429,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         }
       }
 
-      if (user.role === "pm" && !isProjectPM && user.role !== "portfolio-manager") {
-        return res.status(403).json({ 
-          message: "You can only view analytics for projects you manage" 
+      if (user.role === "pm" && !isProjectPM) {
+        return res.status(403).json({
+          message: "You can only view analytics for projects you manage"
         });
       }
 
@@ -4451,7 +4488,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.json({ months: [], config: null });
       }
 
-      const estimate = project.estimateId ? await storage.getEstimate(project.estimateId) : null;
+      const projectEstimates = await storage.getEstimatesByProject(project.id);
+      const estimate = projectEstimates[0] ?? null;
 
       const timeEntryRows = await db.select({
         date: timeEntries.date,

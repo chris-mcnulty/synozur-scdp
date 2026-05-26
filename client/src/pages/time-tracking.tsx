@@ -228,7 +228,7 @@ export default function TimeTracking() {
     if (!allUsers) return [];
     return [...allUsers]
       .filter(u => u.isActive)
-      .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+      .sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || ''));
   }, [allUsers]);
 
   // Filter and format projects: only active, with CLIENTSHORTNAME | Project name format

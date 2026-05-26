@@ -38,7 +38,7 @@ import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { formatDateToYYYYMMDD, getTodayUTC } from "./helpers";
+import { formatDateToYYYYMMDD, getTodayUTC, placeholderUser, placeholderProject, placeholderClient } from "./helpers";
 import { convertCurrency } from '../exchange-rates.js';
 
 const usersApprover = alias(users, 'users_approver');
@@ -287,84 +287,9 @@ export const expensesMethods: ThisType<IStorage> = {
     
     // Transform results to expected format with batched project resources
     return filteredRows.map(row => {
-      // Handle case where person might not exist (deleted user, etc.)
-      const person = row.users || {
-        id: row.expenses.personId,
-        email: 'unknown@example.com',
-        name: 'Unknown User',
-        firstName: null,
-        lastName: null,
-        initials: null,
-        title: null,
-        role: 'employee',
-        canLogin: false,
-        isAssignable: false,
-        roleId: null,
-        customRole: null,
-        defaultBillingRate: null,
-        defaultCostRate: null,
-        isSalaried: false,
-        isActive: false,
-        receiveTimeReminders: true,
-        createdAt: new Date()
-      };
-
-      // Handle case where project might not exist
-      const project = row.projects || {
-        id: row.expenses.projectId,
-        clientId: 'unknown',
-        name: 'Unknown Project',
-        description: null,
-        code: 'UNKNOWN',
-        pm: null,
-        startDate: null,
-        endDate: null,
-        commercialScheme: 'tm',
-        retainerBalance: null,
-        retainerTotal: null,
-        baselineBudget: null,
-        sowValue: null,
-        sowDate: null,
-        hasSow: false,
-        status: 'active',
-        estimatedTotal: null,
-        sowTotal: null,
-        actualCost: null,
-        billedTotal: null,
-        profitMargin: null,
-        vocabularyOverrides: null,
-        epicTermId: null,
-        stageTermId: null,
-        workstreamTermId: null,
-        milestoneTermId: null,
-        activityTermId: null,
-        createdAt: new Date()
-      };
-
-      // Handle case where client might not exist
-      const client = row.clients || {
-        id: 'unknown',
-        name: 'Unknown Client',
-        status: 'inactive',
-        currency: 'USD',
-        billingContact: null,
-        contactName: null,
-        contactAddress: null,
-        vocabularyOverrides: null,
-        epicTermId: null,
-        stageTermId: null,
-        workstreamTermId: null,
-        milestoneTermId: null,
-        activityTermId: null,
-        msaDate: null,
-        msaDocument: null,
-        hasMsa: false,
-        sinceDate: null,
-        ndaDate: null,
-        ndaDocument: null,
-        hasNda: false,
-        createdAt: new Date()
-      };
+      const person: User = row.users || placeholderUser(row.expenses.personId);
+      const project: Project = row.projects || placeholderProject(row.expenses.projectId);
+      const client: Client = row.clients || placeholderClient();
 
       // Get project resource from our batched fetch
       const projectResource = row.expenses.projectResourceId 
