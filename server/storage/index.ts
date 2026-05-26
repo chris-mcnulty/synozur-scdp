@@ -258,16 +258,19 @@ export interface IStorage {
   getTimeApprovalsInbox(filters: { tenantId?: string; submitterId?: string; projectId?: string; startDate?: string; endDate?: string; status?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
   
   // Expenses with Project Resource Support
-  getExpenses(filters: { 
-    personId?: string; 
-    projectId?: string; 
-    projectResourceId?: string; 
-    startDate?: string; 
-    endDate?: string 
-  }): Promise<(Expense & { 
-    person: User; 
-    project: Project & { client: Client }; 
-    projectResource?: User; 
+  getExpenses(filters: {
+    personId?: string;
+    projectId?: string;
+    projectResourceId?: string;
+    startDate?: string;
+    endDate?: string;
+    pendingOnly?: boolean;
+    tenantId?: string;
+  }): Promise<(Expense & {
+    person: User;
+    project: Project & { client: Client };
+    projectResource?: User;
+    expenseReport?: { id: string; reportNumber: string; title: string; status: string } | null;
   })[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   updateExpense(id: string, expense: Partial<InsertExpense>): Promise<Expense>;

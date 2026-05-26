@@ -679,7 +679,7 @@ export const adminMethods: ThisType<IStorage & {
 
   async createRaiddEntry(entry: InsertRaiddEntry): Promise<RaiddEntry> {
     const refNumber = await this.getNextRaiddRefNumber(entry.projectId, entry.type);
-    const [created] = await db.insert(raiddEntries).values({ ...entry, refNumber }).returning();
+    const [created] = await db.insert(raiddEntries).values({ ...entry, refNumber } as any).returning();
     return created;
   },
 
@@ -700,7 +700,7 @@ export const adminMethods: ThisType<IStorage & {
       : undefined;
 
     const [updated] = await db.update(raiddEntries)
-      .set({ ...updates, updatedAt: new Date(), ...(closedAt ? { closedAt } : {}) })
+      .set({ ...updates, updatedAt: new Date(), ...(closedAt ? { closedAt } : {}) } as any)
       .where(eq(raiddEntries.id, id))
       .returning();
     return updated;
@@ -760,7 +760,7 @@ export const adminMethods: ThisType<IStorage & {
       type: 'decision',
       refNumber,
       convertedFromId: decisionId,
-    }).returning();
+    } as any).returning();
 
     await db.update(raiddEntries)
       .set({ status: 'superseded', supersededById: newDecision.id, updatedAt: new Date() })
@@ -1294,13 +1294,13 @@ export const adminMethods: ThisType<IStorage & {
     const existing = await this.getAiConfiguration();
     if (existing) {
       const [updated] = await db.update(aiConfiguration)
-        .set({ ...config, updatedAt: new Date() })
+        .set({ ...config, updatedAt: new Date() } as any)
         .where(eq(aiConfiguration.id, existing.id))
         .returning();
       return updated;
     }
     const [created] = await db.insert(aiConfiguration)
-      .values(config as InsertAiConfiguration)
+      .values(config as any)
       .returning();
     return created;
   },
@@ -1418,7 +1418,7 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async createAiUsageAlert(alert: InsertAiUsageAlert): Promise<AiUsageAlert> {
-    const [result] = await db.insert(aiUsageAlerts).values(alert).returning();
+    const [result] = await db.insert(aiUsageAlerts).values(alert as any).returning();
     return result;
   },
 
@@ -1434,7 +1434,7 @@ export const adminMethods: ThisType<IStorage & {
   },
 
   async saveAgentCardHealthCheck(result: InsertAgentCardHealthCheck): Promise<AgentCardHealthCheck> {
-    const [created] = await db.insert(agentCardHealthChecks).values(result).returning();
+    const [created] = await db.insert(agentCardHealthChecks).values(result as any).returning();
     return created;
   },
 

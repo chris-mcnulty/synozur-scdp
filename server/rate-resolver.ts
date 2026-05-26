@@ -343,7 +343,7 @@ export class RateResolver {
     }
     
     // Preload all users and roles to avoid N+1 queries
-    const userIds = [...new Set(lineItems.map(item => item.resourceId).filter(Boolean) as string[])];
+    const userIds = [...new Set(lineItems.map(item => item.assignedUserId).filter(Boolean) as string[])];
     const roleIds = [...new Set(lineItems.map(item => item.roleId).filter(Boolean) as string[])];
     
     const usersMap = new Map<string, User>();
@@ -389,9 +389,9 @@ export class RateResolver {
       let override: EstimateRateOverride | null = null;
       
       // Check person-specific overrides first (higher precedence)
-      if (lineItem.resourceId) {
+      if (lineItem.assignedUserId) {
         override = estimateOverrides.find(o => {
-          if (o.subjectType !== 'person' || o.subjectId !== lineItem.resourceId) return false;
+          if (o.subjectType !== 'person' || o.subjectId !== lineItem.assignedUserId) return false;
           
           // Check date range
           if (new Date(o.effectiveStart) > now) return false;
@@ -447,8 +447,8 @@ export class RateResolver {
       }
       
       // 3. Check for user default rates
-      if (lineItem.resourceId) {
-        const user = usersMap.get(lineItem.resourceId);
+      if (lineItem.assignedUserId) {
+        const user = usersMap.get(lineItem.assignedUserId);
         if (user && (user.defaultBillingRate || user.defaultCostRate)) {
           results.push({
             lineItemId: lineItem.id,

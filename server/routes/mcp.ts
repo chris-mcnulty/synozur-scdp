@@ -80,7 +80,7 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
         ...AGENT_CARD_STATIC,
         url: `${req.protocol}://${req.get("host")}/a2a/tasks/send`,
       };
-      const errors = validateAgentCard(card);
+      const errors = validateAgentCard(card as any);
       if (errors.length === 0) {
         return res.json({
           status: "ok",
@@ -327,7 +327,7 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       const teamMembers = new Map<string, { name: string; hours: number; activities: string[] }>();
       for (const te of timeEntryData) {
         const key = (te as any).personId;
-        const existing = teamMembers.get(key) || { name: (te as any).person?.name || "Unknown", hours: 0, activities: [] };
+        const existing = teamMembers.get(key) || { name: (te as any).person?.name || "Unknown", hours: 0, activities: [] as string[] };
         existing.hours += Number((te as any).hours || 0);
         if ((te as any).description && !existing.activities.includes((te as any).description)) {
           existing.activities.push((te as any).description);
@@ -635,7 +635,7 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
         if (!aggregated[key]) {
           aggregated[key] = { key, totalAmount: 0, invoiceCount: 0, lineCount: 0 };
         }
-        aggregated[key].totalAmount += parseFloat(line.totalAmount?.toString() || "0");
+        aggregated[key].totalAmount += parseFloat(line.amount?.toString() || "0");
         aggregated[key].lineCount += 1;
 
         if (!batchesByKey[key]) batchesByKey[key] = new Set();
