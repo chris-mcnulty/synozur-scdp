@@ -85,7 +85,7 @@ class TeamsAutomationService {
           action: 'sharepoint_provision_failed',
           success: false,
           errorMessage: 'Could not retrieve SharePoint site for team',
-        } as InsertTeamsAutomationLog);
+        } as unknown as InsertTeamsAutomationLog);
         return null;
       }
 
@@ -111,7 +111,7 @@ class TeamsAutomationService {
           siteUrl: site.siteUrl,
           siteName: site.siteName,
         },
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
 
       console.log('[TEAMS-AUTO] SharePoint site provisioned for team:', teamId, site.siteUrl);
       return site;
@@ -122,7 +122,7 @@ class TeamsAutomationService {
         action: 'sharepoint_provision_failed',
         success: false,
         errorMessage: error.message,
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
       return null;
     }
   }
@@ -249,7 +249,7 @@ class TeamsAutomationService {
           siteId: site.siteId,
           siteName: site.siteName,
         },
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
 
       return { newsPostUrl: page.webUrl };
     } catch (error: any) {
@@ -259,7 +259,7 @@ class TeamsAutomationService {
         action: 'sharepoint_news_post_failed',
         success: false,
         errorMessage: error.message,
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
       return null;
     }
   }
@@ -307,7 +307,7 @@ class TeamsAutomationService {
         action: 'sync_started',
         success: true,
         details: { autoAdd, autoRemove, inviteGuests },
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
 
       // Get all project allocations with person assignments
       const allocations = await storage.getProjectAllocations(projectId);
@@ -389,7 +389,7 @@ class TeamsAutomationService {
               targetAzureUserId: azureInfo.azureUserId,
               targetEmail: azureInfo.email,
               success: true,
-            } as InsertTeamsAutomationLog);
+            } as unknown as InsertTeamsAutomationLog);
           } else {
             result.failed.push({ email: azureInfo.email, error: 'Failed to add to team' });
             await storage.createTeamsAutomationLog({
@@ -400,7 +400,7 @@ class TeamsAutomationService {
               targetEmail: azureInfo.email,
               success: false,
               errorMessage: 'Graph API call to add team member failed',
-            } as InsertTeamsAutomationLog);
+            } as unknown as InsertTeamsAutomationLog);
           }
         }
       }
@@ -448,7 +448,7 @@ class TeamsAutomationService {
                 targetAzureUserId: member.id,
                 targetEmail: member.mail || member.userPrincipalName,
                 success: true,
-              } as InsertTeamsAutomationLog);
+              } as unknown as InsertTeamsAutomationLog);
             } catch (error: any) {
               result.failed.push({
                 email: member.mail || member.userPrincipalName,
@@ -461,7 +461,7 @@ class TeamsAutomationService {
                 targetEmail: member.mail || member.userPrincipalName,
                 success: false,
                 errorMessage: error.message,
-              } as InsertTeamsAutomationLog);
+              } as unknown as InsertTeamsAutomationLog);
             }
           }
         }
@@ -513,7 +513,7 @@ class TeamsAutomationService {
           guestsInvited: result.guestsInvited.length,
           guestsFailed: result.guestsFailed.length,
         },
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
 
       return result;
     } catch (error: any) {
@@ -523,7 +523,7 @@ class TeamsAutomationService {
         action: 'sync_failed',
         success: false,
         errorMessage: error.message,
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
       throw error;
     }
   }
@@ -761,7 +761,7 @@ class TeamsAutomationService {
           guestUserId,
           redemptionUrl: invitation.inviteRedeemUrl,
         },
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
 
       console.log(`[TEAMS-AUTO] Guest invitation sent to ${email}, invitationId: ${invitationId}`);
 
@@ -794,7 +794,7 @@ class TeamsAutomationService {
         action: 'guest_invite_failed',
         success: false,
         errorMessage: error.message,
-      } as InsertTeamsAutomationLog);
+      } as unknown as InsertTeamsAutomationLog);
 
       return { success: false, error: error.message };
     }

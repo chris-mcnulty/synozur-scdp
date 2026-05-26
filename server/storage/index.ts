@@ -342,6 +342,7 @@ export interface IStorage {
   createExpenseReport(report: InsertExpenseReport, expenseIds: string[]): Promise<ExpenseReport>;
   updateExpenseReport(id: string, report: Partial<InsertExpenseReport>): Promise<ExpenseReport>;
   deleteExpenseReport(id: string): Promise<void>;
+  getExpenseIdsInReports(): Promise<Set<string>>;
   submitExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
   approveExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
   rejectExpenseReport(id: string, userId: string, rejectionNote: string): Promise<ExpenseReport>;
@@ -945,6 +946,7 @@ export interface IStorage {
   
   // Tenant Methods
   getTenant(id: string): Promise<Tenant | undefined>;
+  getTenants(): Promise<Tenant[]>;
   updateTenant(id: string, updates: Partial<Tenant>): Promise<Tenant>;
   getTenantSpeConfig(tenantId: string): Promise<{
     speContainerIdDev: string | null;

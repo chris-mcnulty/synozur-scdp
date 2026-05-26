@@ -36,7 +36,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     
     return rows.map(row => {
       // Handle case where user might not exist (deleted user, etc.)
-      const person = row.users || {
+      const person: User = row.users || ({
         id: row.time_entries.personId,
         email: 'unknown@example.com',
         name: 'Unknown User',
@@ -57,7 +57,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         primaryTenantId: null,
         platformRole: null,
         createdAt: new Date()
-      };
+      } as User);
       
       return {
         ...row.time_entries,
@@ -73,13 +73,13 @@ export const timeEntriesMethods: ThisType<IStorage> = {
   },
 
   async getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; search?: string; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }> {
-    const defaultPerson = (personId: string) => ({
+    const defaultPerson = (personId: string): User => ({
       id: personId, email: 'unknown@example.com', name: 'Unknown User',
       firstName: null, lastName: null, initials: null, title: null, role: 'employee',
       canLogin: false, isAssignable: false, roleId: null, customRole: null,
       defaultBillingRate: null, defaultCostRate: null, isSalaried: false, isActive: false,
       receiveTimeReminders: true, primaryTenantId: null, platformRole: null, createdAt: new Date()
-    });
+    } as User);
 
     const conditions: any[] = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
@@ -142,7 +142,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     
     const row = rows[0];
     // Handle case where user might not exist (deleted user, etc.)
-    const person = row.users || {
+    const person: User = row.users || ({
       id: row.time_entries.personId,
       email: 'unknown@example.com',
       primaryTenantId: null,
@@ -163,7 +163,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       isActive: false,
       receiveTimeReminders: true,
       createdAt: new Date()
-    };
+    } as User);
     
     return {
       ...row.time_entries,
@@ -520,7 +520,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     const rows = await query.orderBy(desc(timeEntries.date));
 
     return rows.map(row => {
-      const person = row.users || {
+      const person: User = row.users || ({
         id: row.time_entries.personId,
         email: 'unknown@example.com',
         name: 'Unknown User',
@@ -541,7 +541,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         primaryTenantId: null,
         platformRole: null,
         createdAt: new Date()
-      };
+      } as User);
       return {
         ...row.time_entries,
         person,

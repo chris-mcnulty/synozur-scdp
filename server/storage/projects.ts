@@ -156,7 +156,7 @@ export const projectsMethods: ThisType<IStorage> = {
       const project = row.projects;
 
       // Handle case where client might be null (LEFT JOIN)
-      const client = row.clients || {
+      const client: Client = row.clients || {
         id: 'unknown',
         name: 'No Client Assigned',
         status: 'inactive',
@@ -166,6 +166,8 @@ export const projectsMethods: ThisType<IStorage> = {
         billingContact: null,
         contactName: null,
         contactAddress: null,
+        secondaryContactName: null,
+        secondaryContactEmail: null,
         vocabularyOverrides: null,
         epicTermId: null,
         stageTermId: null,
@@ -181,6 +183,10 @@ export const projectsMethods: ThisType<IStorage> = {
         hasNda: false,
         microsoftTeamId: null,
         microsoftTeamName: null,
+        microsoftTeamWebUrl: null,
+        sharepointSiteUrl: null,
+        paymentTerms: null,
+        paymentMethod: null,
         createdAt: new Date(),
       };
 
@@ -254,13 +260,17 @@ export const projectsMethods: ThisType<IStorage> = {
       .offset(params.offset);
     console.log(`[getProjectsPaginated] main query done rows=${projectRows.length}`);
 
-    const defaultClient = {
+    const defaultClient: Client = {
       id: 'unknown', name: 'No Client Assigned', status: 'inactive', currency: 'USD',
       tenantId: null, shortName: null, billingContact: null, contactName: null,
-      contactAddress: null, vocabularyOverrides: null, epicTermId: null, stageTermId: null,
+      contactAddress: null, secondaryContactName: null, secondaryContactEmail: null,
+      vocabularyOverrides: null, epicTermId: null, stageTermId: null,
       workstreamTermId: null, milestoneTermId: null, activityTermId: null, msaDate: null,
       msaDocument: null, hasMsa: false, sinceDate: null, ndaDate: null, ndaDocument: null,
-      hasNda: false, microsoftTeamId: null, microsoftTeamName: null, createdAt: new Date()
+      hasNda: false, microsoftTeamId: null, microsoftTeamName: null,
+      microsoftTeamWebUrl: null, sharepointSiteUrl: null,
+      paymentTerms: null, paymentMethod: null,
+      createdAt: new Date()
     };
 
     const projectIds = projectRows.map(r => r.projects.id);
@@ -272,7 +282,7 @@ export const projectsMethods: ThisType<IStorage> = {
       console.log(`[getProjectsPaginated] starting sow budgets query ids=${projectIds.length}`);
       const sowBudgets = await db.select({
         projectId: sows.projectId,
-        total: sql<number>`COALESCE(SUM(CAST(${sows.contractValue} AS NUMERIC)), 0)`
+        total: sql<number>`COALESCE(SUM(CAST(${sows.value} AS NUMERIC)), 0)`
       })
       .from(sows)
       .where(and(
@@ -350,14 +360,18 @@ export const projectsMethods: ThisType<IStorage> = {
     
     const row = rows[0];
     // Handle case where client might be null (LEFT JOIN)
-    const client = row.clients || {
+    const client: Client = row.clients || {
       id: 'unknown',
+      tenantId: null,
       name: 'No Client Assigned',
+      shortName: null,
       status: 'inactive',
       currency: 'USD',
       billingContact: null,
       contactName: null,
       contactAddress: null,
+      secondaryContactName: null,
+      secondaryContactEmail: null,
       vocabularyOverrides: null,
       epicTermId: null,
       stageTermId: null,
@@ -371,6 +385,12 @@ export const projectsMethods: ThisType<IStorage> = {
       ndaDate: null,
       ndaDocument: null,
       hasNda: false,
+      microsoftTeamId: null,
+      microsoftTeamName: null,
+      microsoftTeamWebUrl: null,
+      sharepointSiteUrl: null,
+      paymentTerms: null,
+      paymentMethod: null,
       createdAt: new Date()
     };
     
