@@ -1253,7 +1253,7 @@ function EstimateDetailContent() {
     try {
       const result = await generateNarrativeMutation.mutateAsync(id);
       setGeneratedNarrative(result.narrative);
-      setNarrativeGeneratedAt(result.generatedAt);
+      setNarrativeGeneratedAt(result.generatedAt ?? null);
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
     } catch (error: any) {
       const errorMsg = error.message || "Failed to generate narrative. Please try again.";
@@ -1457,6 +1457,7 @@ function EstimateDetailContent() {
         confidence: "high",
         comments: "",
         userId: "",
+        roleId: "",
         resourceName: ""
       });
       toast({ title: "Input added successfully" });
@@ -2846,27 +2847,21 @@ function EstimateDetailContent() {
         </div>
 
         {/* Client Signoff Panel - visible to client users on sent estimates */}
-        {((): JSX.Element | null => {
-          if (!user || user.role !== "client" || !estimate || estimate.status !== "sent" || !estimate.id) return null;
-          const sigId = estimate.id;
-          const sigName = estimate.name ?? "Estimate";
-          const sigStatus = estimate.status;
-          return (
-            <Card className="mb-6 border-primary/30 bg-primary/5">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Estimate Review</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ClientSignoffPanel
-                  entityType="estimate"
-                  entityId={sigId}
-                  entityName={sigName}
-                  entityStatus={sigStatus}
-                />
-              </CardContent>
-            </Card>
-          );
-        })()}
+        {!!(user && user.role === "client" && estimate && estimate.status === "sent" && estimate.id) && (
+          <Card className="mb-6 border-primary/30 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Estimate Review</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ClientSignoffPanel
+                entityType="estimate"
+                entityId={estimate!.id}
+                entityName={estimate!.name ?? "Estimate"}
+                entityStatus={estimate!.status}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Pricing Configuration Section */}
         <Card className="mb-6">
@@ -3217,7 +3212,7 @@ function EstimateDetailContent() {
         )}
 
         {/* Show retainer estimate summary for retainer type estimates */}
-        {estimate?.estimateType === 'retainer' && estimate?.retainerConfig && (
+        {estimate?.estimateType === 'retainer' && !!estimate?.retainerConfig && (
           <Card className="mb-4">
             <CardHeader>
               <div className="flex items-center justify-between">

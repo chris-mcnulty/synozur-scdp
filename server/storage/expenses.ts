@@ -310,7 +310,7 @@ export const expensesMethods: ThisType<IStorage> = {
       } as User);
 
       // Handle case where project might not exist
-      const project = row.projects || {
+      const project: Project = row.projects || ({
         id: row.expenses.projectId,
         clientId: 'unknown',
         name: 'Unknown Project',
@@ -339,7 +339,7 @@ export const expensesMethods: ThisType<IStorage> = {
         milestoneTermId: null,
         activityTermId: null,
         createdAt: new Date()
-      };
+      } as Project);
 
       // Handle case where client might not exist
       const client: Client = row.clients || ({

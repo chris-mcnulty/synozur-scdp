@@ -183,7 +183,7 @@ export default function AgentCardHealth() {
   });
 
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/agent-card-health/check"),
+    mutationFn: () => apiRequest("/api/admin/agent-card-health/check", { method: "POST" }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-card-health"] });
       toast({ title: "Health check complete", description: "The agent card health check has finished." });
