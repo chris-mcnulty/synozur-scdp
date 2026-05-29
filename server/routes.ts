@@ -611,6 +611,133 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // ONE-TIME DATA CORRECTION — SAPA payment milestones
+  // Forces Kickoff=$25K and Conclusion=$10K with 9.30% tax reapplied.
+  // GET  → dry-run: shows current vs target values, nothing written.
+  // POST → applies the correction atomically (direct DB bypass of finalize lock).
+  // Protected: admin only. Remove this endpoint after use.
+  app.get("/api/admin/data-corrections/sapa-milestones", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const TAX_RATE = 0.093;
+      const corrections = [
+        {
+          label: "Kickoff (M1)",
+          milestoneId: "8a23c2a7-1368-4a50-8e96-4220e5502dfe",
+          batchId: "INV-2026-02-6969",
+          lineId: "6ed823b8-bbd0-4834-b459-475dfc4ce6f2",
+          targetBase: 25000,
+          targetTax: Math.round(25000 * TAX_RATE * 100) / 100,
+        },
+        {
+          label: "Conclusion (M3)",
+          milestoneId: "5917ff41-0bd9-4c6a-98eb-39eff135439c",
+          batchId: "INV-2026-04-7530",
+          lineId: "ebc1b653-c36e-496b-ad8d-6ff6d5d706a2",
+          targetBase: 10000,
+          targetTax: Math.round(10000 * TAX_RATE * 100) / 100,
+        },
+      ];
+
+      const rows = await db.select({
+        milestoneId: projectMilestones.id,
+        milestoneName: projectMilestones.name,
+        milestoneAmount: projectMilestones.amount,
+        invoiceStatus: projectMilestones.invoiceStatus,
+      }).from(projectMilestones)
+        .where(inArray(projectMilestones.id, corrections.map(c => c.milestoneId)));
+
+      const batchRows = await db.select({
+        batchId: invoiceBatches.batchId,
+        totalAmount: invoiceBatches.totalAmount,
+        taxAmount: invoiceBatches.taxAmount,
+        taxRate: invoiceBatches.taxRate,
+        status: invoiceBatches.status,
+        paymentStatus: invoiceBatches.paymentStatus,
+      }).from(invoiceBatches)
+        .where(inArray(invoiceBatches.batchId, corrections.map(c => c.batchId)));
+
+      const lineRows = await db.select({
+        lineId: invoiceLines.id,
+        amount: invoiceLines.amount,
+        batchId: invoiceLines.batchId,
+      }).from(invoiceLines)
+        .where(inArray(invoiceLines.id, corrections.map(c => c.lineId)));
+
+      const preview = corrections.map(c => {
+        const ms = rows.find(r => r.milestoneId === c.milestoneId);
+        const batch = batchRows.find(b => b.batchId === c.batchId);
+        const line = lineRows.find(l => l.lineId === c.lineId);
+        return {
+          label: c.label,
+          milestone: { current: ms?.milestoneAmount, target: c.targetBase },
+          batchTotal: { current: batch?.totalAmount, target: c.targetBase },
+          taxAmount: { current: batch?.taxAmount, target: c.targetTax },
+          lineAmount: { current: line?.amount, target: c.targetBase },
+          batchStatus: batch?.status,
+          paymentStatus: batch?.paymentStatus,
+        };
+      });
+
+      res.json({ dryRun: true, preview, instructions: "POST to this URL to apply" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/data-corrections/sapa-milestones", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const TAX_RATE = 0.093;
+      const corrections = [
+        {
+          label: "Kickoff (M1)",
+          milestoneId: "8a23c2a7-1368-4a50-8e96-4220e5502dfe",
+          batchId: "INV-2026-02-6969",
+          lineId: "6ed823b8-bbd0-4834-b459-475dfc4ce6f2",
+          targetBase: 25000,
+          targetTax: Math.round(25000 * TAX_RATE * 100) / 100,
+        },
+        {
+          label: "Conclusion (M3)",
+          milestoneId: "5917ff41-0bd9-4c6a-98eb-39eff135439c",
+          batchId: "INV-2026-04-7530",
+          lineId: "ebc1b653-c36e-496b-ad8d-6ff6d5d706a2",
+          targetBase: 10000,
+          targetTax: Math.round(10000 * TAX_RATE * 100) / 100,
+        },
+      ];
+
+      const applied: any[] = [];
+
+      await db.transaction(async (tx) => {
+        for (const c of corrections) {
+          await tx.update(projectMilestones)
+            .set({ amount: String(c.targetBase) })
+            .where(eq(projectMilestones.id, c.milestoneId));
+
+          await tx.update(invoiceBatches)
+            .set({
+              totalAmount: String(c.targetBase) as any,
+              taxAmount: String(c.targetTax) as any,
+              taxRate: String(TAX_RATE * 100) as any,
+            })
+            .where(eq(invoiceBatches.batchId, c.batchId));
+
+          await tx.update(invoiceLines)
+            .set({ amount: String(c.targetBase) as any })
+            .where(eq(invoiceLines.id, c.lineId));
+
+          applied.push({ label: c.label, base: c.targetBase, tax: c.targetTax, total: c.targetBase + c.targetTax });
+        }
+      });
+
+      console.log(`[ADMIN] SAPA milestone correction applied by ${req.user?.email}:`, applied);
+      res.json({ success: true, applied, note: "Remove /api/admin/data-corrections/sapa-milestones when done." });
+    } catch (err: any) {
+      console.error("[ADMIN] SAPA correction failed:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // System Settings (read: admin, write: platform admin only)
   app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
