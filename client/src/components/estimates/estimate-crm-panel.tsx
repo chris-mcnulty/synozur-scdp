@@ -632,8 +632,8 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
                 dealsData?.deals?.map((deal) => (
                   <div
                     key={deal.id}
-                    className={`flex items-center justify-between p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedDealId === deal.id ? "bg-primary/10" : ""} ${deal.isMapped ? "opacity-50" : ""}`}
-                    onClick={() => !deal.isMapped && setSelectedDealId(deal.id)}
+                    className={`flex items-center justify-between p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedDealId === deal.id ? "bg-primary/10" : ""}`}
+                    onClick={() => setSelectedDealId(deal.id)}
                   >
                     <div>
                       <p className="text-sm font-medium">{deal.dealName}</p>
@@ -644,7 +644,7 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
                       </div>
                     </div>
                     {deal.isMapped && (
-                      <Badge variant="secondary" className="text-xs shrink-0">Already linked</Badge>
+                      <Badge variant="outline" className="text-xs shrink-0 border-amber-400 text-amber-700 dark:text-amber-400">Re-link</Badge>
                     )}
                   </div>
                 ))
@@ -657,11 +657,17 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
               </Button>
             </div>
           </div>
+          {selectedDealId && dealsData?.deals?.find(d => d.id === selectedDealId)?.isMapped && (
+            <p className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1 px-1">
+              <AlertTriangle className="w-3 h-3 shrink-0" />
+              This deal is currently linked elsewhere. Continuing will move the link to this estimate.
+            </p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowLinkDealDialog(false); setDealSearch(""); setSelectedDealId(""); }}>Cancel</Button>
             <Button disabled={!selectedDealId || linkDealMutation.isPending} onClick={() => linkDealMutation.mutate(selectedDealId)}>
               {linkDealMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
-              Link Deal
+              {dealsData?.deals?.find(d => d.id === selectedDealId)?.isMapped ? "Re-link Deal" : "Link Deal"}
             </Button>
           </DialogFooter>
         </DialogContent>
