@@ -4346,9 +4346,21 @@ export default function ProjectDetail() {
                                           {milestone.isPaymentMilestone && (
                                             <Badge className="ml-2" variant="outline">Payment</Badge>
                                           )}
+                                          {milestone.isPaymentMilestone && milestone.amount && (
+                                            <span className="text-xs font-semibold text-green-700 dark:text-green-400 ml-2">
+                                              ${Number(milestone.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          )}
                                           {milestone.targetDate && (
                                             <span className="text-xs text-muted-foreground ml-2">
-                                              Target: {format(new Date(milestone.targetDate), 'MMM d, yyyy')}
+                                              Target: {safeFormatDate(milestone.targetDate)}
+                                            </span>
+                                          )}
+                                          {!milestone.isPaymentMilestone && !milestone.targetDate && (milestone.startDate || milestone.endDate) && (
+                                            <span className="text-xs text-muted-foreground ml-2">
+                                              {milestone.startDate && safeFormatDate(milestone.startDate)}
+                                              {milestone.startDate && milestone.endDate && ' – '}
+                                              {milestone.endDate && safeFormatDate(milestone.endDate)}
                                             </span>
                                           )}
                                         </div>
@@ -4469,12 +4481,24 @@ export default function ProjectDetail() {
                                     {milestone.isPaymentMilestone && (
                                       <Badge className="ml-2" variant="outline">Payment</Badge>
                                     )}
+                                    {milestone.isPaymentMilestone && milestone.amount && (
+                                      <span className="text-xs font-semibold text-green-700 dark:text-green-400 ml-2">
+                                        ${Number(milestone.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                    )}
                                     {milestone.description && (
                                       <p className="text-xs text-muted-foreground">{milestone.description}</p>
                                     )}
                                     {milestone.targetDate && (
                                       <p className="text-xs text-muted-foreground">
-                                        Target: {format(new Date(milestone.targetDate), 'MMM d, yyyy')}
+                                        Target: {safeFormatDate(milestone.targetDate)}
+                                      </p>
+                                    )}
+                                    {!milestone.isPaymentMilestone && !milestone.targetDate && (milestone.startDate || milestone.endDate) && (
+                                      <p className="text-xs text-muted-foreground">
+                                        {milestone.startDate && safeFormatDate(milestone.startDate)}
+                                        {milestone.startDate && milestone.endDate && ' – '}
+                                        {milestone.endDate && safeFormatDate(milestone.endDate)}
                                       </p>
                                     )}
                                   </div>
@@ -5777,8 +5801,8 @@ export default function ProjectDetail() {
                               <span className="text-muted-foreground text-sm">—</span>
                             )}
                           </TableCell>
-                          <TableCell>{milestone.startDate ? format(new Date(milestone.startDate), "MMM d, yyyy") : '-'}</TableCell>
-                          <TableCell>{milestone.endDate ? format(new Date(milestone.endDate), "MMM d, yyyy") : '-'}</TableCell>
+                          <TableCell>{safeFormatDate(milestone.startDate)}</TableCell>
+                          <TableCell>{safeFormatDate(milestone.endDate)}</TableCell>
                           <TableCell>
                             {milestone.isPaymentMilestone
                               ? milestone.amount ? `$${Number(milestone.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'
