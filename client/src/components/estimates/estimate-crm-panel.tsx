@@ -644,7 +644,7 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
                       </div>
                     </div>
                     {deal.isMapped && (
-                      <Badge variant="outline" className="text-xs shrink-0 border-amber-400 text-amber-700 dark:text-amber-400">Re-link</Badge>
+                      <Badge variant="outline" className="text-xs shrink-0 border-blue-400 text-blue-700 dark:text-blue-400">Also linked</Badge>
                     )}
                   </div>
                 ))
@@ -658,16 +658,16 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
             </div>
           </div>
           {selectedDealId && dealsData?.deals?.find(d => d.id === selectedDealId)?.isMapped && (
-            <p className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1 px-1">
-              <AlertTriangle className="w-3 h-3 shrink-0" />
-              This deal is currently linked elsewhere. Continuing will move the link to this estimate.
+            <p className="text-xs text-blue-700 dark:text-blue-400 flex items-center gap-1 px-1">
+              <Link2 className="w-3 h-3 shrink-0" />
+              This deal is already linked to other estimates — this will add an additional link.
             </p>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowLinkDealDialog(false); setDealSearch(""); setSelectedDealId(""); }}>Cancel</Button>
             <Button disabled={!selectedDealId || linkDealMutation.isPending} onClick={() => linkDealMutation.mutate(selectedDealId)}>
               {linkDealMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
-              {dealsData?.deals?.find(d => d.id === selectedDealId)?.isMapped ? "Re-link Deal" : "Link Deal"}
+              Link Deal
             </Button>
           </DialogFooter>
         </DialogContent>

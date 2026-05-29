@@ -587,20 +587,13 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const existingMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
 
       // Exact match already exists — idempotent success, nothing to do.
+      // A deal may legitimately be linked to multiple estimates (iterative pursuit),
+      // so we only block the exact duplicate pair, never other estimates on the same deal.
       const exactMatch = existingMappings.find(
         m => m.crmObjectId === dealId && m.localObjectId === body.estimateId
       );
       if (exactMatch) {
         return res.json({ success: true, dealId, estimateId: body.estimateId, relinked: false });
-      }
-
-      // Deal is mapped to a DIFFERENT estimate — remove the stale mapping so the
-      // caller can replace it (covers the "lost link" scenario where the deal still
-      // shows "Already linked" but the current estimate shows "Not linked").
-      const staleMappings = existingMappings.filter(m => m.crmObjectId === dealId);
-      for (const stale of staleMappings) {
-        await storage.deleteCrmObjectMapping(stale.id);
-        console.log(`[CRM] Removed stale deal mapping ${stale.id} (was linked to ${stale.localObjectId}) to allow re-link to ${body.estimateId}`);
       }
 
       const deal = await getHubSpotDealById(tenantId, dealId);
