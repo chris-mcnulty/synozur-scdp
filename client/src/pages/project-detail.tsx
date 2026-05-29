@@ -1565,12 +1565,15 @@ export default function ProjectDetail() {
   });
 
   // Project estimates — used to distinguish "no approved estimate" vs "approved but empty"
-  const { data: projectEstimates } = useQuery<Array<{ id: string; status: string }>>({
+  const { data: projectEstimates } = useQuery<Array<{ id: string; status: string; totalHours: string | null; totalFees: string | null; name: string }>>({
     queryKey: ['/api/projects', id, 'estimates'],
     enabled: !!id,
     staleTime: 2 * 60 * 1000,
   });
-  const hasApprovedEstimate = !!projectEstimates?.some((e) => e.status === 'approved');
+  const approvedEstimate = projectEstimates?.find((e) => e.status === 'approved');
+  const hasApprovedEstimate = !!approvedEstimate;
+  // Dollar-only estimates intentionally have no hours — don't alert on them
+  const approvedEstimateIsDollarOnly = hasApprovedEstimate && Number(approvedEstimate?.totalHours ?? 0) === 0;
   const noBudgetReason = hasApprovedEstimate ? "Approved estimate has no budgeted hours" : "No approved estimate";
 
   // Auto-open edit dialog when ?edit=true is in the URL
@@ -3409,10 +3412,13 @@ export default function ProjectDetail() {
         {(() => {
           const effectiveBudgetedHours = hoursSummary?.budgetedHours ?? burnRate.estimatedHours ?? 0;
           if (effectiveBudgetedHours > 0) return null;
-          // Milestone / fixed-price deals are dollar-tracked, not hours-tracked.
-          // If a dollar budget exists, don't nag about missing hours budget —
-          // remaining-hours metrics are optional on those engagements.
+          // Dollar-only / milestone estimates have no hours by design — don't alert.
           if ((burnRate.totalBudget || 0) > 0) return null;
+          if (approvedEstimateIsDollarOnly) return null;
+          // Only show the alert when there is genuinely no approved estimate,
+          // or when an approved estimate has hours-based line items but the
+          // computed budget came out to zero (data inconsistency worth surfacing).
+          const estimateHref = approvedEstimate?.id ? `/estimates/${approvedEstimate.id}` : '/estimates';
           return (
             <div
               className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 p-4"
@@ -3428,12 +3434,12 @@ export default function ProjectDetail() {
                   </p>
                   <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
                     {hasApprovedEstimate
-                      ? "Add line items to the approved estimate, or set a Target Effort Hours on the estimate, to track Remaining Hours and Hours Variance against a budget."
+                      ? "Open the estimate and add hours-based line items, or set a Target Effort Hours, to enable Remaining Hours and Hours Variance tracking."
                       : "Approve an estimate to track Remaining Hours and Hours Variance against a budget."}
                   </p>
                 </div>
               </div>
-              <Link href="/estimates">
+              <Link href={estimateHref}>
                 <Button
                   variant="outline"
                   size="sm"
@@ -3441,7 +3447,7 @@ export default function ProjectDetail() {
                   data-testid="button-go-to-estimates"
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  Go to Estimates
+                  {approvedEstimate?.id ? "Open Estimate" : "Go to Estimates"}
                   <ExternalLink className="w-3 h-3 ml-2" />
                 </Button>
               </Link>
