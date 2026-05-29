@@ -766,10 +766,29 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         }
       }
       
+      // Compute project-relative week number from plannedStartDate when manually creating.
+      // If caller already supplied an explicit weekNumber (e.g. estimate import), honour it.
+      let computedWeekNumber: number = req.body.weekNumber ?? 0;
+      if (!req.body.weekNumber && req.body.plannedStartDate) {
+        try {
+          const project = await storage.getProject(req.params.projectId);
+          if (project?.startDate && typeof project.startDate === 'string') {
+            const [py, pm, pd] = (project.startDate as string).split('-').map(Number);
+            const [ay, am, ad] = (req.body.plannedStartDate as string).split('-').map(Number);
+            const projStart = new Date(py, pm - 1, pd);
+            const allocStart = new Date(ay, am - 1, ad);
+            const diffDays = Math.floor((allocStart.getTime() - projStart.getTime()) / 86400000);
+            computedWeekNumber = Math.max(1, Math.floor(diffDays / 7) + 1);
+          }
+        } catch {
+          // non-fatal — fall back to 0
+        }
+      }
+
       const allocationData = {
         ...req.body,
         projectId: req.params.projectId,
-        weekNumber: req.body.weekNumber ?? 0,
+        weekNumber: computedWeekNumber,
         hours: hours,
         rackRate: rackRate,
         costRate: costRate || null,

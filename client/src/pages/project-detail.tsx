@@ -5047,7 +5047,7 @@ export default function ProjectDetail() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {allocation.weekNumber !== null ? 
+                            {allocation.weekNumber ? 
                               `Week ${allocation.weekNumber}` : 
                               '—'
                             }
