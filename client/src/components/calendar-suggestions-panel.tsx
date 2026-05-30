@@ -45,6 +45,7 @@ interface CalendarSuggestion {
   projectId: string | null;
   confidence: 'high' | 'medium' | 'low' | 'none';
   mappingReason: string;
+  alreadyAccepted: boolean;
 }
 
 interface CalendarSuggestionsResponse {
@@ -314,7 +315,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
 
   const handleAcceptAllMatched = () => {
     const toAccept = visibleSuggestions
-      .filter(s => (projectOverrides[s.eventId] || s.projectId))
+      .filter(s => !s.alreadyAccepted && (projectOverrides[s.eventId] || s.projectId))
       .map(s => ({
         eventId: s.eventId,
         eventKey: s.eventKey,
@@ -430,8 +431,9 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   }
 
   const matchedCount = visibleSuggestions.filter(
-    s => (projectOverrides[s.eventId] || s.projectId)
+    s => !s.alreadyAccepted && (projectOverrides[s.eventId] || s.projectId)
   ).length;
+  const alreadyAcceptedCount = visibleSuggestions.filter(s => s.alreadyAccepted).length;
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -592,16 +594,19 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                     a => a.email && !a.email.endsWith(suggestion.organizer?.email?.split('@')[1] ?? '__none__')
                   );
 
+                  const isLogged = suggestion.alreadyAccepted;
+
                   return (
                     <div
                       key={suggestion.eventId}
-                      className={`flex items-start gap-3 p-3 bg-background rounded-lg border transition-colors ${selectedForMerge.has(suggestion.eventId) ? "border-primary/50 bg-primary/5" : "border-border/50"}`}
+                      className={`flex items-start gap-3 p-3 bg-background rounded-lg border transition-colors ${isLogged ? "border-border/30 opacity-60" : selectedForMerge.has(suggestion.eventId) ? "border-primary/50 bg-primary/5" : "border-border/50"}`}
                     >
                       {visibleSuggestions.length >= 2 && (
                         <div className="pt-0.5 shrink-0">
                           <Checkbox
                             checked={selectedForMerge.has(suggestion.eventId)}
                             onCheckedChange={(checked) => {
+                              if (isLogged) return;
                               setSelectedForMerge(prev => {
                                 const next = new Set(prev);
                                 if (checked) next.add(suggestion.eventId);
@@ -609,6 +614,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                                 return next;
                               });
                             }}
+                            disabled={isLogged}
                             aria-label={`Select "${suggestion.subject}" for merge`}
                           />
                         </div>
@@ -619,6 +625,11 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                           <span className="font-medium text-sm truncate max-w-[200px]" title={suggestion.subject}>
                             {suggestion.subject}
                           </span>
+                          {isLogged && (
+                            <Badge variant="secondary" className="text-xs h-4 px-1.5 shrink-0">
+                              Logged
+                            </Badge>
+                          )}
                           <div className="flex items-center gap-1 text-muted-foreground text-xs shrink-0">
                             <Clock className="w-3 h-3" />
                             {formatLocalTime(suggestion.startIso, suggestion.endIso)}
@@ -810,41 +821,58 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
 
                       {/* Accept / Dismiss actions */}
                       <div className="flex gap-1 shrink-0 mt-0.5">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                onClick={() => handleAcceptOne(suggestion)}
-                                disabled={acceptMutation.isPending || !resolvedProjectId}
-                              >
-                                <CheckCheck className="w-3.5 h-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              <p className="text-xs">Use as time entry</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                                onClick={() => handleDismiss(suggestion.eventId)}
-                                disabled={acceptMutation.isPending}
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              <p className="text-xs">Dismiss</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        {isLogged ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="h-7 w-7 flex items-center justify-center text-muted-foreground/50">
+                                  <CheckCheck className="w-3.5 h-3.5" />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <p className="text-xs">Already logged as a time entry</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    onClick={() => handleAcceptOne(suggestion)}
+                                    disabled={acceptMutation.isPending || !resolvedProjectId}
+                                  >
+                                    <CheckCheck className="w-3.5 h-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p className="text-xs">Use as time entry</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                    onClick={() => handleDismiss(suggestion.eventId)}
+                                    disabled={acceptMutation.isPending}
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p className="text-xs">Dismiss</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </>
+                        )}
                       </div>
                     </div>
                   );

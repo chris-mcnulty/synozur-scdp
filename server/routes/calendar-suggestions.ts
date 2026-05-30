@@ -70,9 +70,10 @@ export function registerCalendarSuggestionsRoutes(
     try {
       const events = await getEventsForUser(userId, date, ssoRefreshToken);
 
-      const [projects, userMappings] = await Promise.all([
+      const [projects, userMappings, acceptedEventIds] = await Promise.all([
         storage.getProjects(tenantId),
         storage.getUserCalendarMappings(userId),
+        storage.getAcceptedCalendarEventIds(userId, date),
       ]);
 
       const defaultProjectId = currentUser?.calendarDefaultProjectId ?? null;
@@ -120,6 +121,7 @@ export function registerCalendarSuggestionsRoutes(
           projectId: mapping.projectId,
           confidence: mapping.confidence,
           mappingReason: mapping.reason,
+          alreadyAccepted: acceptedEventIds.has(event.id),
         };
       });
 
@@ -199,10 +201,31 @@ export function registerCalendarSuggestionsRoutes(
       projectMap.set(projectId, project);
     }
 
+    // Collect unique dates across the batch so we can bulk-check for duplicates.
+    const uniqueDates = [...new Set(items.map(i => i.date))];
+    const acceptedByDate = new Map<string, Set<string>>();
+    await Promise.all(
+      uniqueDates.map(async d => {
+        acceptedByDate.set(d, await storage.getAcceptedCalendarEventIds(userId, d));
+      })
+    );
+
     const created = [];
+    const alreadyExists: string[] = [];
     const errors: string[] = [];
 
     for (const item of items) {
+      // Guard against duplicate imports — if a time entry already exists for this
+      // calendar event on this date, skip creation silently.
+      const acceptedForDate = acceptedByDate.get(item.date);
+      if (acceptedForDate?.has(item.eventId)) {
+        alreadyExists.push(item.eventId);
+        console.log(
+          `[CALENDAR_SUGGESTIONS] user=${userId} skipped duplicate eventId=${item.eventId} date=${item.date}`
+        );
+        continue;
+      }
+
       try {
         const timeEntry = await storage.createTimeEntry({
           personId: userId,
@@ -241,6 +264,7 @@ export function registerCalendarSuggestionsRoutes(
       created: created.length,
       total: items.length,
       entries: created,
+      ...(alreadyExists.length > 0 ? { alreadyExists } : {}),
       ...(errors.length > 0 ? { errors } : {}),
     });
   });

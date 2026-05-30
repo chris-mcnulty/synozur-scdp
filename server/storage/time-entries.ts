@@ -11,7 +11,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import type { IStorage } from "./index";
-import { eq, desc, and, or, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, sql, inArray, isNotNull } from "drizzle-orm";
 import { placeholderUser } from "./helpers";
 
 export const timeEntriesMethods: ThisType<IStorage> = {
@@ -482,5 +482,25 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         }
       };
     });
+  },
+
+  /**
+   * Returns the set of Outlook calendar event IDs that have already been
+   * imported as time entries for a given user on a specific date.
+   * Used to prevent duplicate entries when navigating back in the calendar
+   * suggestion panel.
+   */
+  async getAcceptedCalendarEventIds(userId: string, date: string): Promise<Set<string>> {
+    const rows = await db
+      .select({ calendarEventId: timeEntries.calendarEventId })
+      .from(timeEntries)
+      .where(
+        and(
+          eq(timeEntries.personId, userId),
+          eq(timeEntries.date, date),
+          isNotNull(timeEntries.calendarEventId),
+        )
+      );
+    return new Set(rows.map(r => r.calendarEventId!).filter(Boolean));
   },
 };
