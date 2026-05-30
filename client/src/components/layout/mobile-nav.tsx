@@ -135,7 +135,7 @@ interface SectionRoute {
 
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/me/paystubs", "/my-raidd"] },
-  { sectionId: "payroll", paths: ["/payroll", "/payroll/employees", "/payroll/schedules", "/payroll/runs", "/payroll/gl", "/payroll/audit", "/distributions", "/payroll/jurisdictions", "/payroll/tax-settings"] },
+  { sectionId: "payroll", paths: ["/payroll", "/payroll/employees", "/payroll/schedules", "/payroll/runs", "/payroll/gl", "/payroll/audit", "/distributions", "/payroll/jurisdictions", "/payroll/tax-settings", "/payroll/ach-originator"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/vocabulary", "/ai-grounding", "/ai-settings"] },
@@ -279,6 +279,7 @@ export function MobileNav() {
                     <MobileNavItem href="/payroll/gl" icon={<Calculator />} label="General Ledger" onClick={handleNavClick} />
                     <MobileNavItem href="/payroll/audit" icon={<ScrollText />} label="Audit Log" onClick={handleNavClick} />
                     <MobileNavItem href="/payroll/jurisdictions" icon={<Globe />} label="Jurisdictions" onClick={handleNavClick} />
+                    <MobileNavItem href="/payroll/ach-originator" icon={<Building2 />} label="ACH / Direct Deposit" onClick={handleNavClick} />
                     <MobileNavItem href="/payroll/tax-settings" icon={<Settings />} label="Tax Settings" onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>

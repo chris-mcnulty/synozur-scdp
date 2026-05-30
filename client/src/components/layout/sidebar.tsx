@@ -285,6 +285,7 @@ export function Sidebar() {
                 <SidebarItem href="/payroll/gl" icon={<Calculator />} label="General Ledger" />
                 <SidebarItem href="/payroll/audit" icon={<ScrollText />} label="Audit Log" />
                 <SidebarItem href="/payroll/jurisdictions" icon={<Globe />} label="Jurisdictions" />
+                <SidebarItem href="/payroll/ach-originator" icon={<Building2 />} label="ACH / Direct Deposit" />
                 <SidebarItem href="/payroll/tax-settings" icon={<Settings />} label="Tax Settings" />
               </CollapsibleSection>
             )}

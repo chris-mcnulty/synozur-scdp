@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
-import { Users, Wallet, Receipt, Play, Landmark, FileSpreadsheet, FileText } from "lucide-react";
+import { Users, Wallet, Receipt, Play, Landmark, FileSpreadsheet, FileText, Building2 } from "lucide-react";
 
 export default function PayrollDashboard() {
   const { data: summary } = useQuery<any>({ queryKey: ["/api/payroll/summary"] });
@@ -19,6 +19,9 @@ export default function PayrollDashboard() {
             <p className="text-sm text-muted-foreground">Gemini · Workforce & Payroll</p>
           </div>
           <div className="flex gap-2">
+            <Link href="/payroll/ach-originator">
+              <Button variant="outline" data-testid="button-go-ach"><Building2 className="h-4 w-4 mr-2" />ACH / Direct deposit</Button>
+            </Link>
             <Link href="/payroll/tax-forms">
               <Button variant="outline" data-testid="button-go-tax-forms"><FileText className="h-4 w-4 mr-2" />Tax forms</Button>
             </Link>
