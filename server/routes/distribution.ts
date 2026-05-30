@@ -194,11 +194,36 @@ export function registerDistributionRoutes(app: Express, deps: Deps) {
       if (run.status !== 'draft' && run.status !== 'previewed') {
         return res.status(409).json({ message: `Cannot preview a ${run.status} run.` });
       }
+      const body = z.object({
+        // Optional manual override: skip the formula and distribute this
+        // specific amount. Useful before invoice/expense data is in the system.
+        manualAvailableCents: z.number().int().positive().optional(),
+      }).optional().parse(req.body);
+
       const policy = await fetchPolicy(tenantId);
-      const funds = await computeAvailableFunds(tenantId, run.periodStart, run.periodEnd, policy);
+      let funds: import('../services/distribution-engine').AvailableFundsBreakdown;
+      const manualOverride = body?.manualAvailableCents;
+      if (manualOverride) {
+        // Manual mode: caller supplies the total to distribute. The breakdown
+        // fields are zeroed so the available funds card shows a clean picture.
+        funds = {
+          revenueCollectedCents: manualOverride,
+          operatingExpenseCents: 0,
+          payrollBurdenCents: 0,
+          taxReserveCents: 0,
+          operatingReserveCents: 0,
+          waBoAccrualCents: 0,
+          availableFundsCents: manualOverride,
+        };
+      } else {
+        funds = await computeAvailableFunds(tenantId, run.periodStart, run.periodEnd, policy);
+      }
       const owners = await fetchActiveOwners(tenantId);
       const candidates = await fetchFteCandidates(tenantId, run.periodStart, run.periodEnd);
       const preview = allocateDistribution(funds, policy, owners, candidates);
+      if (manualOverride) {
+        preview.warnings.unshift(`Manual override: distributing $${(manualOverride / 100).toFixed(2)} (formula bypassed).`);
+      }
 
       await distributionStorage.replaceLines(
         tenantId, run.id,

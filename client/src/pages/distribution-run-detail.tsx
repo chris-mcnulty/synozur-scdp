@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
-import { ArrowLeft, Download, AlertTriangle, ArrowRight } from "lucide-react";
+import { ArrowLeft, Download, AlertTriangle, ArrowRight, PencilLine } from "lucide-react";
 import { useState } from "react";
 import { ManualTransferSheet, type TransferRecipient } from "@/components/payroll/manual-transfer-sheet";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function DistributionRunDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,9 +22,16 @@ export default function DistributionRunDetail() {
   // once the run advances past 'previewed'.
   const [ftePayrollRunId, setFtePayrollRunId] = useState<string | null>(null);
   const [achReady, setAchReady] = useState<boolean>(false);
+  const [manualAmount, setManualAmount] = useState<string>("");
 
   const preview = useMutation({
-    mutationFn: () => apiRequest(`/api/distributions/runs/${id}/preview`, { method: "POST", body: JSON.stringify({}) }),
+    mutationFn: () => {
+      const dollars = parseFloat(manualAmount);
+      const body = isFinite(dollars) && dollars > 0
+        ? { manualAvailableCents: Math.round(dollars * 100) }
+        : {};
+      return apiRequest(`/api/distributions/runs/${id}/preview`, { method: "POST", body: JSON.stringify(body) });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/distributions/runs", id] });
       toast({ title: "Preview computed" });
@@ -110,11 +119,35 @@ export default function DistributionRunDetail() {
               Period {fmtDate(r.periodStart)} – {fmtDate(r.periodEnd)} · status <strong>{r.status}</strong>
             </p>
           </div>
-          <div className="flex gap-2 flex-wrap justify-end">
+          <div className="flex flex-col gap-3 items-end">
             {(r.status === 'draft' || r.status === 'previewed') && (
-              <Button variant="outline" onClick={() => preview.mutate()} disabled={preview.isPending} data-testid="button-preview">
-                {r.status === 'previewed' ? 'Re-preview' : 'Preview'}
-              </Button>
+              <div className="flex items-end gap-2 flex-wrap justify-end">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs flex items-center gap-1">
+                    <PencilLine className="h-3 w-3" />
+                    Distribute specific amount
+                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground text-sm">$</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="auto"
+                      value={manualAmount}
+                      onChange={e => setManualAmount(e.target.value)}
+                      className="w-36 h-9"
+                      data-testid="input-manual-amount"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground max-w-xs">
+                    Leave blank to auto-compute from invoices &amp; expenses. Enter a dollar amount to distribute exactly that.
+                  </p>
+                </div>
+                <Button variant="outline" onClick={() => preview.mutate()} disabled={preview.isPending} data-testid="button-preview">
+                  {r.status === 'previewed' ? 'Re-preview' : 'Preview'}
+                </Button>
+              </div>
             )}
             {r.status === 'previewed' && (
               <Button onClick={() => approve.mutate()} disabled={approve.isPending} data-testid="button-approve">
