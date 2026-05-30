@@ -1572,9 +1572,6 @@ export default function ProjectDetail() {
   });
   const approvedEstimate = projectEstimates?.find((e) => e.status === 'approved');
   const hasApprovedEstimate = !!approvedEstimate;
-  // Dollar-only estimates intentionally have no hours — don't alert on them
-  const approvedEstimateIsDollarOnly = hasApprovedEstimate && Number(approvedEstimate?.totalHours ?? 0) === 0;
-  const noBudgetReason = hasApprovedEstimate ? "Approved estimate has no budgeted hours" : "No approved estimate";
 
   // Auto-open edit dialog when ?edit=true is in the URL
   useEffect(() => {
@@ -3410,15 +3407,15 @@ export default function ProjectDetail() {
         {/* Key Metrics */}
         <UITooltipProvider>
         {(() => {
-          const effectiveBudgetedHours = hoursSummary?.budgetedHours ?? burnRate.estimatedHours ?? 0;
+          const effectiveBudgetedHours = burnRate.estimatedHours ?? 0;
           if (effectiveBudgetedHours > 0) return null;
-          // Dollar-only / milestone estimates have no hours by design — don't alert.
+          // Suppress when a dollar budget is set — hours tracking is optional.
           if ((burnRate.totalBudget || 0) > 0) return null;
-          if (approvedEstimateIsDollarOnly) return null;
-          // Only show the alert when there is genuinely no approved estimate,
-          // or when an approved estimate has hours-based line items but the
-          // computed budget came out to zero (data inconsistency worth surfacing).
-          const estimateHref = approvedEstimate?.id ? `/estimates/${approvedEstimate.id}` : '/estimates';
+          // Suppress when there is an approved estimate — it may be intentionally
+          // dollar-only (flat fee, milestone payments) with no hours to track.
+          // The metric cards already show "—" gracefully in that case.
+          if (hasApprovedEstimate) return null;
+          // Only alert when there is genuinely NO approved estimate at all.
           return (
             <div
               className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 p-4"
@@ -3428,18 +3425,14 @@ export default function ProjectDetail() {
                 <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                 <div>
                   <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                    {hasApprovedEstimate
-                      ? "Approved estimate has no budgeted hours"
-                      : "No approved estimate — hours budget unavailable"}
+                    No approved estimate — hours budget unavailable
                   </p>
                   <p className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-                    {hasApprovedEstimate
-                      ? "Open the estimate and add hours-based line items, or set a Target Effort Hours, to enable Remaining Hours and Hours Variance tracking."
-                      : "Approve an estimate to track Remaining Hours and Hours Variance against a budget."}
+                    Approve an estimate to enable Remaining Hours and Hours Variance tracking.
                   </p>
                 </div>
               </div>
-              <Link href={estimateHref}>
+              <Link href={`/estimates?projectId=${id}`}>
                 <Button
                   variant="outline"
                   size="sm"
@@ -3447,7 +3440,7 @@ export default function ProjectDetail() {
                   data-testid="button-go-to-estimates"
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  {approvedEstimate?.id ? "Open Estimate" : "Go to Estimates"}
+                  Go to Estimates
                   <ExternalLink className="w-3 h-3 ml-2" />
                 </Button>
               </Link>
@@ -3473,13 +3466,23 @@ export default function ProjectDetail() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="text-sm text-muted-foreground">Total Budget</p>
                   <p className="text-2xl font-bold" data-testid="total-budget">
                     ${(burnRate.totalBudget || 0).toLocaleString()}
                   </p>
+                  {approvedEstimate ? (
+                    <Link href={`/estimates/${approvedEstimate.id}`}>
+                      <p className="text-xs text-primary hover:underline truncate mt-1 cursor-pointer" title={approvedEstimate.name}>
+                        <FileText className="w-3 h-3 inline-block mr-1 shrink-0" />
+                        {approvedEstimate.name}
+                      </p>
+                    </Link>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">No approved estimate</p>
+                  )}
                 </div>
-                <DollarSign className="w-8 h-8 text-muted-foreground opacity-50" />
+                <DollarSign className="w-8 h-8 text-muted-foreground opacity-50 shrink-0" />
               </div>
             </CardContent>
           </Card>

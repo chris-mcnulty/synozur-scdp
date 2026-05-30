@@ -201,6 +201,7 @@ interface HubSpotDealResult {
   dealStageName: string;
   pipelineName: string;
   isMapped: boolean;
+  mappings?: { localObjectId: string; estimateName: string; mappingId: string }[];
 }
 
 interface HubSpotCompanyResult {
@@ -644,7 +645,14 @@ export function EstimateCrmPanel({ estimateId, estimateName, clientId, clientNam
                       </div>
                     </div>
                     {deal.isMapped && (
-                      <Badge variant="outline" className="text-xs shrink-0 border-blue-400 text-blue-700 dark:text-blue-400">Also linked</Badge>
+                      <div className="flex flex-col items-end gap-0.5 shrink-0">
+                        <Badge variant="outline" className="text-xs border-blue-400 text-blue-700 dark:text-blue-400">Also linked</Badge>
+                        {deal.mappings && deal.mappings.length > 0 && (
+                          <span className="text-[10px] text-muted-foreground max-w-[120px] text-right truncate" title={deal.mappings.map(m => m.estimateName).join(', ')}>
+                            {deal.mappings[0].estimateName}{deal.mappings.length > 1 ? ` +${deal.mappings.length - 1}` : ''}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))

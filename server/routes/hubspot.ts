@@ -428,16 +428,35 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       const deals = await searchHubSpotDeals(tenantId, query);
 
-      const dealMappingResults = await Promise.all(
-        deals.map(deal => storage.getCrmObjectMapping(tenantId, "hubspot", "deal", deal.id))
-      );
+      // Batch-fetch all deal mappings once (avoids N+1 queries)
+      const allDealMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
+      const dealMappingsMap = new Map<string, typeof allDealMappings>();
+      for (const m of allDealMappings) {
+        const existing = dealMappingsMap.get(m.crmObjectId) || [];
+        existing.push(m);
+        dealMappingsMap.set(m.crmObjectId, existing);
+      }
 
-      const enrichedDeals = deals.map((deal, i) => {
-        const mapping = dealMappingResults[i];
+      // Fetch estimate names for linked estimates
+      const allEstimateIds = [...new Set(allDealMappings.map(m => m.localObjectId))];
+      const estimateNames = new Map<string, string>();
+      for (const estId of allEstimateIds) {
+        try {
+          const est = await storage.getEstimate(estId);
+          if (est) estimateNames.set(estId, est.name);
+        } catch {}
+      }
+
+      const enrichedDeals = deals.map((deal) => {
+        const dealMappings = dealMappingsMap.get(deal.id) || [];
         return {
           ...deal,
-          isMapped: !!mapping,
-          mappings: mapping ? [{ localObjectId: mapping.localObjectId, mappingId: mapping.id }] : [],
+          isMapped: dealMappings.length > 0,
+          mappings: dealMappings.map(m => ({
+            localObjectId: m.localObjectId,
+            estimateName: estimateNames.get(m.localObjectId) || 'Unknown Estimate',
+            mappingId: m.id,
+          })),
         };
       });
 
