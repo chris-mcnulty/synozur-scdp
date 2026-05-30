@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
-import { ArrowLeft, Download, AlertTriangle, ArrowRight, PencilLine } from "lucide-react";
+import { ArrowLeft, Download, AlertTriangle, ArrowRight, PencilLine, Info } from "lucide-react";
 import { useState } from "react";
 import { ManualTransferSheet, type TransferRecipient } from "@/components/payroll/manual-transfer-sheet";
 import { Input } from "@/components/ui/input";
@@ -214,6 +214,56 @@ export default function DistributionRunDetail() {
                   Open payroll run<ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               </Link>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Owner tax withholding reminder — shown once lines exist */}
+        {ownerLines.length > 0 && (
+          <Card className="border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2 text-blue-800 dark:text-blue-300">
+                <Info className="h-4 w-4 shrink-0" />
+                No withholding on owner distributions — owners must pay their own estimated taxes
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Owner profit distributions are <strong>not wages</strong> — the company does not withhold federal, state, or self-employment tax.
+                Each owner receives the full gross amount and is responsible for making quarterly estimated tax payments (IRS Form 1040-ES).
+              </p>
+              {ownerLines.length > 0 && (
+                <table className="w-full text-xs">
+                  <thead className="text-left text-muted-foreground border-b">
+                    <tr>
+                      <th className="py-1.5">Owner</th>
+                      <th className="text-right">Distribution</th>
+                      <th className="text-right">Set aside ~25%</th>
+                      <th className="text-right">Set aside ~32%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ownerLines.map(l => {
+                      const low  = Math.round(l.amountCents * 0.25);
+                      const high = Math.round(l.amountCents * 0.32);
+                      return (
+                        <tr key={l.id} className="border-b last:border-0">
+                          <td className="py-1.5 font-medium">{l.recipient?.name ?? l.recipient?.email ?? l.recipientUserId}</td>
+                          <td className="text-right tabular-nums">{fmtMoney(l.amountCents)}</td>
+                          <td className="text-right tabular-nums text-amber-700 dark:text-amber-400">{fmtMoney(low)}</td>
+                          <td className="text-right tabular-nums text-amber-700 dark:text-amber-400">{fmtMoney(high)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <p className="text-xs text-muted-foreground">
+                <strong>25%</strong> is a minimum floor (lower brackets or offset by deductions).{" "}
+                <strong>32%</strong> covers most owners who also pay SE tax (15.3%) on their share.{" "}
+                Estimated tax due dates: <strong>Apr 15 · Jun 16 · Sep 15 · Jan 15</strong>.
+                Consult your CPA for your specific situation.
+              </p>
             </CardContent>
           </Card>
         )}
