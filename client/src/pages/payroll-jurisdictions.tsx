@@ -206,6 +206,66 @@ export default function PayrollJurisdictions() {
             </table>
           </CardContent>
         </Card>
+
+        {/* Federal / FICA reference rates — hardcoded in the payroll engine */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Federal tax rates (platform-managed)</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              These are the rates the payroll engine applies automatically. They are updated by Synozur when the IRS or SSA publishes new figures.
+              No action is needed from you unless you receive a SUTA experience-rate notice from your state.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">FICA — Social Security</p>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Employee rate</td><td className="text-right font-medium">6.2%</td></tr>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Employer rate</td><td className="text-right font-medium">6.2%</td></tr>
+                    <tr><td className="py-1.5 text-muted-foreground">2025 wage base</td><td className="text-right font-medium">$176,100</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">FICA — Medicare</p>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Employee rate</td><td className="text-right font-medium">1.45%</td></tr>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Employer rate</td><td className="text-right font-medium">1.45%</td></tr>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Wage base</td><td className="text-right font-medium">No cap</td></tr>
+                    <tr><td className="py-1.5 text-muted-foreground">Additional Medicare (employee only, &gt;$200k)</td><td className="text-right font-medium">+0.9%</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">FUTA — Federal unemployment</p>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Statutory rate</td><td className="text-right font-medium">6.0%</td></tr>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Normal FUTA credit (state SUI paid)</td><td className="text-right font-medium">−5.4%</td></tr>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Effective net rate</td><td className="text-right font-medium">0.6%</td></tr>
+                    <tr><td className="py-1.5 text-muted-foreground">2025 wage base</td><td className="text-right font-medium">$7,000</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Supplemental / bonus withholding</p>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr className="border-b"><td className="py-1.5 text-muted-foreground">Federal flat rate (under $1M)</td><td className="text-right font-medium">22%</td></tr>
+                    <tr><td className="py-1.5 text-muted-foreground">Federal flat rate (over $1M)</td><td className="text-right font-medium">37%</td></tr>
+                  </tbody>
+                </table>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Bonus runs use the supplemental flat rate for federal income tax withholding.
+                  FICA and Medicare still apply normally.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </Layout>
   );

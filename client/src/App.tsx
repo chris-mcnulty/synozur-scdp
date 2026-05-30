@@ -83,6 +83,7 @@ import PayrollGl from "@/pages/payroll-gl";
 import PayrollAudit from "@/pages/payroll-audit";
 import PayrollJurisdictions from "@/pages/payroll-jurisdictions";
 import PayrollTaxSettings from "@/pages/payroll-tax-settings";
+import PayrollTaxForms from "@/pages/payroll-tax-forms";
 import Distributions from "@/pages/distributions";
 import DistributionRunDetail from "@/pages/distribution-run-detail";
 import MyPaystubs from "@/pages/my-paystubs";
@@ -548,6 +549,9 @@ function Router() {
       </Route>
       <Route path="/payroll/tax-settings">
         {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollTaxSettings /></PermissionGuard> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/payroll/tax-forms">
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollTaxForms /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/distributions">
         {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><Distributions /></PermissionGuard> : <Redirect to="/login" />}
