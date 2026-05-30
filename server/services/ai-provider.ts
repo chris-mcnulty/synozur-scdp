@@ -327,6 +327,22 @@ export class AzureFoundryProvider implements IAIProvider {
   }
 }
 
+/**
+ * Returns true when an error from an AI provider is a content safety / content
+ * filter rejection.  Azure AI Foundry and Azure OpenAI surface these as HTTP 400
+ * errors with recognisable strings in the message.
+ */
+export function isContentFilterError(error: unknown): boolean {
+  const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return (
+    msg.includes("content management policy") ||
+    msg.includes("content_filter") ||
+    msg.includes("responsibleai") ||
+    msg.includes("content filter") ||
+    msg.includes("content was filtered")
+  );
+}
+
 export type AIProviderType = 'replit' | 'azure' | 'foundry' | 'openai' | 'anthropic';
 
 let cachedConfig: { provider: string; model: string; fetchedAt: number } | null = null;

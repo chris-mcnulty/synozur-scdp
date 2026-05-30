@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { aiService } from "../services/ai-service.js";
-import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider } from "../services/ai-provider.js";
+import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider, isContentFilterError } from "../services/ai-provider.js";
 import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO } from "@shared/schema";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
@@ -596,16 +596,17 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input", errors: error.errors });
       }
-      // Azure AI Foundry content filter returns a 400 with a recognisable message.
-      // Surface a clean, actionable message to the client rather than the raw Azure error.
-      const msg: string = error.message || "";
-      if (msg.includes("content management policy") || msg.includes("content_filter") || msg.includes("ResponsibleAI")) {
+      // Azure AI Foundry can return content filter errors even for mundane text.
+      // The service already attempts a Replit AI fallback automatically, so reaching
+      // here means both providers refused.  Surface a clear message without blaming
+      // the user's input.
+      if (isContentFilterError(error)) {
         return res.status(422).json({
-          message: "The AI was unable to process this description due to content safety filters. Try rephrasing or simplifying the text.",
+          message: "The AI service was temporarily unable to process this description. Please try again in a moment.",
           contentFiltered: true,
         });
       }
-      res.status(500).json({ message: msg || "Failed to rewrite time entry description" });
+      res.status(500).json({ message: error.message || "Failed to rewrite time entry description" });
     }
   });
 

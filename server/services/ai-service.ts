@@ -1,4 +1,4 @@
-import { getAIProvider, getAIProviderAsync, ChatMessage, ChatCompletionResult } from './ai-provider.js';
+import { getAIProvider, getAIProviderAsync, ChatMessage, ChatCompletionResult, ReplitAIProvider, isContentFilterError } from './ai-provider.js';
 import type { GroundingDocument, GroundingDocCategory } from '@shared/schema';
 import { GROUNDING_DOC_CATEGORY_LABELS, type AIFeature, AI_FEATURES } from '@shared/schema';
 import { calculateEstimatedCost } from './ai-pricing.js';
@@ -689,6 +689,30 @@ Write a professional narrative suitable for the invoice.`;
       return result.content.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
     } catch (error: any) {
       logAiUsage(usageCtx || { feature: AI_FEATURES.TIME_ENTRY_REWRITE }, provider, null, Date.now() - startTime, error);
+
+      // Azure content safety filters sometimes fire on completely mundane text.
+      // Automatically fall back to Replit AI (which has no aggressive content filter)
+      // so the user never sees a spurious "content safety" rejection.
+      if (isContentFilterError(error)) {
+        const fallback = new ReplitAIProvider();
+        if (fallback.isConfigured() && fallback.getProviderName() !== provider.getProviderName()) {
+          console.warn('[AI_SERVICE] Content filter false positive detected — retrying time entry rewrite with Replit AI fallback');
+          const fallbackStart = Date.now();
+          try {
+            const fallbackResult = await fallback.chatCompletion({
+              messages,
+              temperature: 0.4,
+              maxTokens: 400,
+            });
+            logAiUsage(usageCtx || { feature: AI_FEATURES.TIME_ENTRY_REWRITE }, fallback, fallbackResult, Date.now() - fallbackStart);
+            return fallbackResult.content.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+          } catch (fallbackError: any) {
+            logAiUsage(usageCtx || { feature: AI_FEATURES.TIME_ENTRY_REWRITE }, fallback, null, Date.now() - fallbackStart, fallbackError);
+            // Fall through and throw the original content filter error
+          }
+        }
+      }
+
       throw error;
     }
   }
