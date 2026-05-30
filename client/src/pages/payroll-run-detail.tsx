@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
 import { ArrowLeft, Download, DollarSign } from "lucide-react";
 import { ManualTransferSheet, type TransferRecipient } from "@/components/payroll/manual-transfer-sheet";
+import { TaxDepositSummary } from "@/components/payroll/tax-deposit-summary";
 
 export default function PayrollRunDetail() {
   const { id } = useParams<{ id: string }>();
@@ -233,6 +234,8 @@ export default function PayrollRunDetail() {
             description="After-tax net amounts to send each employee. Email addresses are Zelle-compatible. Copy individual amounts or export CSV. Check each row as you send."
           />
         )}
+
+        <TaxDepositSummary items={items} payDate={r.payDate ? fmtDate(r.payDate) : undefined} />
       </div>
     </Layout>
   );
