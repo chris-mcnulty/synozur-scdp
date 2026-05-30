@@ -520,40 +520,40 @@ function Router() {
       </Route>
       {/* Payroll admin routes */}
       <Route path="/payroll">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollDashboard /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollDashboard /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/employees">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollEmployees /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollEmployees /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/employees/:id">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollEmployeeDetail /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollEmployeeDetail /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/schedules">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollSchedules /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollSchedules /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/runs">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollRuns /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollRuns /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/runs/:id">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollRunDetail /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollRunDetail /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/gl">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollGl /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollGl /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/audit">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollAudit /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollAudit /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/jurisdictions">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollJurisdictions /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollJurisdictions /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/payroll/tax-settings">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><PayrollTaxSettings /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><PayrollTaxSettings /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/distributions">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><Distributions /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><Distributions /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/distributions/runs/:id">
-        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin"]}><DistributionRunDetail /></PermissionGuard> : <Redirect to="/login" />}
+        {user ? <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}><DistributionRunDetail /></PermissionGuard> : <Redirect to="/login" />}
       </Route>
       <Route path="/me/paystubs">
         {user ? <MyPaystubs /> : <Redirect to="/login" />}

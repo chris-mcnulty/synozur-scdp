@@ -175,6 +175,7 @@ export function Sidebar() {
   
   const isManager = hasAnyRole(['admin', 'pm', 'portfolio-manager', 'executive']);
   const isFinanceRole = hasAnyRole(['admin', 'billing-admin']);
+  const isPayrollRole = hasAnyRole(['admin', 'billing-admin', 'executive']);
   const isAdmin = hasAnyRole(['admin']);
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
@@ -265,7 +266,7 @@ export function Sidebar() {
               </CollapsibleSection>
             )}
             
-            {isFinanceRole && (
+            {isPayrollRole && (
               <CollapsibleSection
                 id="payroll"
                 title="Payroll"

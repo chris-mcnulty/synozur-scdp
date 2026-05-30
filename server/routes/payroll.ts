@@ -6,7 +6,7 @@
  * never specify tenantId in the body or query for access-control purposes.
  *
  * Roles:
- *   - 'admin' or 'billing-admin' = Payroll Manager (write/run payroll)
+ *   - 'admin', 'billing-admin', or 'executive' = Payroll Manager (write/run payroll)
  *   - all authenticated users can read their own employee record (TODO).
  */
 
@@ -41,7 +41,7 @@ function tenantOf(req: Request): string {
   return tid;
 }
 
-const PAYROLL_MANAGER = ['admin', 'billing-admin'];
+const PAYROLL_MANAGER = ['admin', 'billing-admin', 'executive'];
 
 export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
   const { requireAuth, requireRole } = deps;

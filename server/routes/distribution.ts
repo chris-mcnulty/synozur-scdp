@@ -2,8 +2,9 @@
  * Quarterly profit distribution API routes.
  *
  * Mirrors the payroll routes pattern: tenant boundary derived server-side,
- * role-gated to PAYROLL_MANAGER (admin / billing-admin). Distribution data
- * is owner-class compensation — never expose it to non-finance roles.
+ * role-gated to PAYROLL_MANAGER (admin / billing-admin / executive).
+ * Distribution data is owner-class compensation — never expose it to
+ * non-authorized roles.
  *
  * Lifecycle endpoints follow the same FSM as payroll runs:
  *   POST   /api/distributions/runs/:id/preview   draft → previewed
@@ -45,7 +46,7 @@ function tenantOf(req: Request): string {
   return tid;
 }
 
-const ROLES = ['admin', 'billing-admin'];
+const ROLES = ['admin', 'billing-admin', 'executive'];
 
 export function registerDistributionRoutes(app: Express, deps: Deps) {
   const { requireAuth, requireRole } = deps;
