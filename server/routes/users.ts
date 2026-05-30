@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage, db } from "../storage";
 import { insertUserSchema, tenantUsers, clients, userRoleCapabilities, users, roles, insertUserRoleCapabilitySchema } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { syncUserPayrollEnrollment } from "../services/payroll-user-sync";
 
 interface UserRouteDeps {
   requireAuth: any;
@@ -213,10 +214,21 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         'customRole', 'roleId', 'contractorBusinessName', 'contractorBusinessAddress',
         'contractorBillingId', 'contractorPhone', 'contractorEmail', 'platformRole',
         'receiveTimeReminders', 'receiveExpenseReminders', 'primaryTenantId',
-        'weeklyCapacityHours', 'capacityNotes', 'capacityEffectiveDate'];
+        'weeklyCapacityHours', 'capacityNotes', 'capacityEffectiveDate', 'payrollEmployeeType'];
       const safeBody = Object.fromEntries(Object.entries(body).filter(([k]) => allowedFields.includes(k)));
 
       const user = await storage.updateUser(req.params.id, safeBody as any);
+
+      // Sync payroll enrollment when payrollEmployeeType was changed.
+      if ('payrollEmployeeType' in safeBody) {
+        const tenantIdForSync = currentUser?.activeTenantId || currentUser?.tenantId;
+        try {
+          await syncUserPayrollEnrollment(user, currentUser?.id, tenantIdForSync);
+        } catch (syncErr) {
+          console.error('[payroll-sync] Failed to sync enrollment for user', req.params.id, syncErr);
+        }
+      }
+
       res.json(user);
     } catch (error) {
       console.error("Error updating user:", error);

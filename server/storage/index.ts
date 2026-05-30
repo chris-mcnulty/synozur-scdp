@@ -84,7 +84,25 @@ import {
   type PushSubscriptionRow, type InsertPushSubscription,
   a2aTasks, type A2ATaskRow, type InsertA2ATask,
   clientSignoffs, type ClientSignoff, type InsertClientSignoff,
+  type PayrollEmployee, type InsertPayrollEmployee,
+  type PayrollCompensation, type InsertPayrollCompensation,
+  type PayrollPaySchedule, type InsertPayrollPaySchedule,
+  type PayrollDeduction, type InsertPayrollDeduction,
+  type PayrollRun, type InsertPayrollRun,
+  type PayrollRunItem,
+  type PayrollGlAccount, type InsertPayrollGlAccount,
+  type PayrollGlMapping,
+  type PayrollTaxJurisdiction, type InsertPayrollTaxJurisdiction,
+  type PayrollAuditLog, type InsertPayrollAuditLog,
+  type PayrollPtoBalance,
+  type PayrollAchOriginator, type InsertPayrollAchOriginator,
+  type PayrollReimbursementLine,
+  type EntityOwner, type InsertEntityOwner,
+  type DistributionPolicy, type InsertDistributionPolicy,
+  type DistributionRun, type InsertDistributionRun,
+  type DistributionLine, type InsertDistributionLine,
 } from "@shared/schema";
+import type { PayrollEngineInputs } from "../services/payroll-engine";
 import { db } from "../db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -1210,6 +1228,77 @@ export interface IStorage {
   updateSupportTicketPlannerSync(id: string, updates: Partial<InsertSupportTicketPlannerSync>): Promise<SupportTicketPlannerSync>;
   getTenantsWithSupportPlannerEnabled(): Promise<Tenant[]>;
   getOpenSupportTicketSyncsByTenant(tenantId: string): Promise<(SupportTicketPlannerSync & { ticketStatus: string })[]>;
+
+  // ---- Gemini Payroll ----
+  appendAudit(entry: InsertPayrollAuditLog): Promise<PayrollAuditLog>;
+  listAudit(tenantId: string, limit?: number): Promise<PayrollAuditLog[]>;
+  listEmployees(tenantId: string, includeTerminated?: boolean): Promise<PayrollEmployee[]>;
+  getEmployee(tenantId: string, id: string): Promise<PayrollEmployee | undefined>;
+  createEmployee(data: InsertPayrollEmployee): Promise<PayrollEmployee>;
+  updateEmployee(tenantId: string, id: string, data: Partial<InsertPayrollEmployee>): Promise<PayrollEmployee>;
+  softDeleteEmployee(tenantId: string, id: string): Promise<void>;
+  findEmployeeByUserId(tenantId: string, userId: string): Promise<PayrollEmployee | undefined>;
+  enrichWithUsers<T extends { userId: string | null }>(rows: T[]): Promise<Array<T & { linkedUser: { id: string; name: string; email: string | null } | null }>>;
+  listEligibleUsers(tenantId: string): Promise<Array<{ id: string; name: string; email: string }>>;
+  syncUserEnrollmentFlag(userId: string, employeeType: string | null, currentTenantId?: string): Promise<void>;
+  listReimbursableExpensesForUser(tenantId: string, userId: string, periodEnd: string, excludeExpenseIds?: Set<string>): Promise<Array<{ id: string; amountCents: number; category: string; description: string | null; date: string }>>;
+  getYtdAccumulators(tenantId: string, employeeId: string, payDate: string): Promise<{ ytdSsWagesCents: number; ytdMedicareWagesCents: number; ytdFutaWagesCents: number }>;
+  sumApprovedHoursForUser(tenantId: string, userId: string, periodStart: string, periodEnd: string): Promise<{ regularHours: number; overtimeHours: number }>;
+  listCompensation(tenantId: string, employeeId: string): Promise<PayrollCompensation[]>;
+  createCompensation(data: InsertPayrollCompensation): Promise<PayrollCompensation>;
+  getEffectiveComp(tenantId: string, employeeId: string, asOf: string): Promise<PayrollCompensation | null>;
+  listSchedules(tenantId: string): Promise<PayrollPaySchedule[]>;
+  getSchedule(tenantId: string, id: string): Promise<PayrollPaySchedule | undefined>;
+  createSchedule(data: InsertPayrollPaySchedule): Promise<PayrollPaySchedule>;
+  updateSchedule(tenantId: string, id: string, data: Partial<InsertPayrollPaySchedule>): Promise<PayrollPaySchedule>;
+  listDeductions(tenantId: string, employeeId?: string): Promise<PayrollDeduction[]>;
+  createDeduction(data: InsertPayrollDeduction): Promise<PayrollDeduction>;
+  deleteDeduction(tenantId: string, id: string): Promise<void>;
+  listJurisdictions(tenantId: string | null): Promise<PayrollTaxJurisdiction[]>;
+  createJurisdiction(data: InsertPayrollTaxJurisdiction): Promise<PayrollTaxJurisdiction>;
+  upsertTenantJurisdiction(data: InsertPayrollTaxJurisdiction): Promise<PayrollTaxJurisdiction>;
+  deleteTenantJurisdiction(tenantId: string, id: string): Promise<void>;
+  listPayrollRuns(tenantId: string): Promise<PayrollRun[]>;
+  getPayrollRun(tenantId: string, id: string): Promise<PayrollRun | undefined>;
+  listRunItems(tenantId: string, runId: string): Promise<PayrollRunItem[]>;
+  listReimbursementsForRun(tenantId: string, runId: string): Promise<Array<{ id: string; runItemId: string; employeeId: string; expenseId: string; amountCents: number; category: string; description: string | null; employeeName: string }>>;
+  listReimbursementsForRunItem(tenantId: string, runItemId: string): Promise<PayrollReimbursementLine[]>;
+  createPayrollRun(data: InsertPayrollRun): Promise<PayrollRun>;
+  previewRun(tenantId: string, runId: string, perEmployeeInputs?: Map<string, Partial<PayrollEngineInputs>>): Promise<{ run: PayrollRun; items: PayrollRunItem[] }>;
+  approveRun(tenantId: string, runId: string, approvedBy: string): Promise<PayrollRun>;
+  finalizeRun(tenantId: string, runId: string): Promise<PayrollRun>;
+  stampReimbursedExpensesForRun(tenantId: string, runId: string): Promise<void>;
+  createReversalRun(tenantId: string, originalRunId: string, actorUserId: string): Promise<PayrollRun>;
+  voidRun(tenantId: string, runId: string): Promise<PayrollRun>;
+  assertTenantOwns(tenantId: string, kind: 'employee' | 'schedule' | 'gl_account', id: string): Promise<void>;
+  listGlAccounts(tenantId: string): Promise<PayrollGlAccount[]>;
+  createGlAccount(data: InsertPayrollGlAccount): Promise<PayrollGlAccount>;
+  listGlMappings(tenantId: string): Promise<PayrollGlMapping[]>;
+  upsertGlMapping(tenantId: string, category: string, glAccountId: string): Promise<PayrollGlMapping>;
+  buildGlExport(tenantId: string, runId: string): Promise<Array<{ accountNumber: string; accountName: string; debitCents: number; creditCents: number; memo: string }>>;
+  scheduleBLiabilities(tenantId: string, startDate: string, endDate: string): Promise<Array<{ date: string; liabilityCents: number }>>;
+  taxTotals(tenantId: string, startDate: string, endDate: string): Promise<any>;
+  accruePtoForRun(tenantId: string, runId: string): Promise<void>;
+  listPaystubsForEmployee(tenantId: string, employeeId: string): Promise<any[]>;
+  getPaystubForEmployee(tenantId: string, employeeId: string, runId: string): Promise<{ run: PayrollRun; item: PayrollRunItem } | null>;
+  getAchOriginator(tenantId: string): Promise<PayrollAchOriginator | undefined>;
+  upsertAchOriginator(data: InsertPayrollAchOriginator): Promise<PayrollAchOriginator>;
+  listPto(tenantId: string, employeeId: string): Promise<PayrollPtoBalance[]>;
+  dashboardSummary(tenantId: string): Promise<{ activeEmployees: number; lastRun: PayrollRun | null; ytdGrossCents: number; ytdNetCents: number; ytdEmployerTaxCents: number }>;
+
+  // ---- Profit Distribution ----
+  listOwners(tenantId: string): Promise<Array<EntityOwner & { user: { id: string; name: string | null; email: string | null } | null }>>;
+  createOwner(data: InsertEntityOwner): Promise<EntityOwner>;
+  updateOwner(tenantId: string, id: string, data: Partial<InsertEntityOwner>): Promise<EntityOwner>;
+  retireOwner(tenantId: string, id: string, effectiveTo: string): Promise<void>;
+  getDistributionPolicy(tenantId: string): Promise<DistributionPolicy | undefined>;
+  upsertDistributionPolicy(tenantId: string, data: Partial<InsertDistributionPolicy>): Promise<DistributionPolicy>;
+  listDistributionRuns(tenantId: string): Promise<DistributionRun[]>;
+  getDistributionRun(tenantId: string, id: string): Promise<DistributionRun | undefined>;
+  createDistributionRun(data: InsertDistributionRun): Promise<DistributionRun>;
+  updateDistributionRun(tenantId: string, id: string, data: Partial<DistributionRun>): Promise<DistributionRun>;
+  listLines(tenantId: string, runId: string): Promise<Array<DistributionLine & { recipient: { id: string; name: string | null; email: string | null } | null }>>;
+  replaceLines(tenantId: string, runId: string, newLines: Omit<InsertDistributionLine, 'tenantId' | 'runId'>[]): Promise<void>;
 }
 
 export class DatabaseStorage {
