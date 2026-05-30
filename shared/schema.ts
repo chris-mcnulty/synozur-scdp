@@ -312,6 +312,7 @@ export const users = pgTable("users", {
   // Calendar suggestions preferences
   calendarSuggestionsEnabled: boolean("calendar_suggestions_enabled").notNull().default(true),
   calendarSuggestionsDaysBack: integer("calendar_suggestions_days_back").notNull().default(0), // 0 = today only
+  calendarDefaultProjectId: varchar("calendar_default_project_id"), // Fallback project when no signal matches
   // Weekly digest preferences
   weeklyDigestEnabled: boolean("weekly_digest_enabled").notNull().default(true),
   weeklyDigestDay: integer("weekly_digest_day").notNull().default(1), // 1=Monday … 7=Sunday

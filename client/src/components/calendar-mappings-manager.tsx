@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Trash2, RefreshCw } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,8 @@ function formatRelative(iso: string): string {
 export function CalendarMappingsManager() {
   const { toast } = useToast();
   const [pendingDelete, setPendingDelete] = useState<CalendarMapping | null>(null);
+  const [showClearAll, setShowClearAll] = useState(false);
+  const [reassignProjectId, setReassignProjectId] = useState("");
 
   const mappingsQuery = useQuery<{ mappings: CalendarMapping[] }>({
     queryKey: ["/api/me/calendar-mappings"],
@@ -101,8 +103,51 @@ export function CalendarMappingsManager() {
     },
   });
 
+  const bulkReassignMutation = useMutation({
+    mutationFn: (projectId: string) =>
+      apiRequest("/api/me/calendar-mappings/bulk-reassign", {
+        method: "POST",
+        body: JSON.stringify({ projectId }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/me/calendar-mappings"] });
+      setReassignProjectId("");
+      toast({
+        title: "Mappings reassigned",
+        description: `${data.updated} event mapping${data.updated === 1 ? "" : "s"} updated.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to reassign mappings",
+        description: err.message || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const clearAllMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/me/calendar-mappings", { method: "DELETE" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/me/calendar-mappings"] });
+      setShowClearAll(false);
+      toast({
+        title: "All mappings cleared",
+        description: `${data.deleted} saved mapping${data.deleted === 1 ? "" : "s"} removed.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to clear mappings",
+        description: err.message || "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const mappings = mappingsQuery.data?.mappings ?? [];
-  const projects = projectsQuery.data ?? [];
+  const projects = (projectsQuery.data ?? []).filter((p: ProjectWithClient) => p.status === 'active');
 
   if (mappingsQuery.isLoading) {
     return (
@@ -124,7 +169,49 @@ export function CalendarMappingsManager() {
 
   return (
     <>
-      <ScrollArea className="max-h-72 pr-2">
+      {/* Bulk actions toolbar */}
+      <div className="flex items-center gap-2 mb-2">
+        <Select
+          value={reassignProjectId}
+          onValueChange={setReassignProjectId}
+          disabled={projectsQuery.isLoading || bulkReassignMutation.isPending}
+        >
+          <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-bulk-reassign-project">
+            <SelectValue placeholder="Reassign all to…" />
+          </SelectTrigger>
+          <SelectContent>
+            {projects.map((p: ProjectWithClient) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+                {p.client?.name ? ` · ${p.client.name}` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs shrink-0"
+          disabled={!reassignProjectId || bulkReassignMutation.isPending}
+          onClick={() => bulkReassignMutation.mutate(reassignProjectId)}
+          data-testid="button-bulk-reassign"
+        >
+          <RefreshCw className="h-3 w-3 mr-1" />
+          Apply
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs text-destructive hover:text-destructive shrink-0"
+          onClick={() => setShowClearAll(true)}
+          disabled={clearAllMutation.isPending}
+          data-testid="button-clear-all-mappings"
+        >
+          Clear all
+        </Button>
+      </div>
+
+      <ScrollArea className="max-h-60 pr-2">
         <ul className="space-y-2" data-testid="list-calendar-mappings">
           {mappings.map(m => (
             <li
@@ -150,7 +237,7 @@ export function CalendarMappingsManager() {
                 disabled={projectsQuery.isLoading || updateMutation.isPending}
               >
                 <SelectTrigger
-                  className="w-48 h-8"
+                  className="w-44 h-8"
                   data-testid={`select-project-${m.eventKey}`}
                 >
                   <SelectValue>
@@ -160,7 +247,7 @@ export function CalendarMappingsManager() {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.map(p => (
+                  {projects.map((p: ProjectWithClient) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                       {p.client?.name ? ` · ${p.client.name}` : ""}
@@ -184,6 +271,7 @@ export function CalendarMappingsManager() {
         </ul>
       </ScrollArea>
 
+      {/* Confirm single delete */}
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent data-testid="dialog-confirm-delete-mapping">
           <AlertDialogHeader>
@@ -201,6 +289,29 @@ export function CalendarMappingsManager() {
               data-testid="button-confirm-delete"
             >
               Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm clear all */}
+      <AlertDialog open={showClearAll} onOpenChange={(open) => !open && setShowClearAll(false)}>
+        <AlertDialogContent data-testid="dialog-confirm-clear-all-mappings">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all saved mappings?</AlertDialogTitle>
+            <AlertDialogDescription>
+              All {mappings.length} saved event-to-project pairing{mappings.length === 1 ? "" : "s"} will be
+              removed. Future suggestions will start fresh with automatic matching.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-clear-all">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => clearAllMutation.mutate()}
+              data-testid="button-confirm-clear-all"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Clear all
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

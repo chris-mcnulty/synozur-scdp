@@ -129,11 +129,13 @@ function domainMatch(event: OutlookCalendarEvent, projects: ProjectWithClient[])
  *   2. Subject keyword match against project/client names
  *   3. Attendee email domain match against client domain
  *   4. Recurring event memory (lastUsed mapping)
+ *   5. User's configured default fallback project
  */
 export function mapEventToProject(
   event: OutlookCalendarEvent,
   projects: ProjectWithClient[],
-  userMappings: UserCalendarMapping[]
+  userMappings: UserCalendarMapping[],
+  defaultProjectId?: string | null,
 ): ProjectMapping {
   const activeProjects = projects.filter(p => p.status === 'active');
 
@@ -168,6 +170,14 @@ export function mapEventToProject(
     const memProject = activeProjects.find(p => p.id === memoryMapping.projectId);
     if (memProject) {
       return { projectId: memProject.id, confidence: 'high', reason: `Remembered from previous mapping to "${memProject.name}"` };
+    }
+  }
+
+  // Signal 5: User's configured default project
+  if (defaultProjectId) {
+    const defaultProject = activeProjects.find(p => p.id === defaultProjectId);
+    if (defaultProject) {
+      return { projectId: defaultProject.id, confidence: 'low', reason: `Default project "${defaultProject.name}"` };
     }
   }
 

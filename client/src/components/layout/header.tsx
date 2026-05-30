@@ -27,10 +27,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import type { Project, Client } from "@shared/schema";
+
+type ProjectWithClient = Project & { client: Client };
+
 interface UserSettings {
   receiveTimeReminders: boolean;
   calendarSuggestionsEnabled: boolean;
   calendarSuggestionsDaysBack: number;
+  calendarDefaultProjectId: string | null;
 }
 
 export function Header() {
@@ -79,8 +84,13 @@ export function Header() {
     },
   });
 
+  const projectsQuery = useQuery<ProjectWithClient[]>({
+    queryKey: ['/api/projects'],
+    enabled: !!user && settingsOpen,
+  });
+
   const updateCalendarSettingsMutation = useMutation({
-    mutationFn: (settings: { calendarSuggestionsEnabled?: boolean; calendarSuggestionsDaysBack?: number }) =>
+    mutationFn: (settings: { calendarSuggestionsEnabled?: boolean; calendarSuggestionsDaysBack?: number; calendarDefaultProjectId?: string | null }) =>
       apiRequest("/api/me/calendar-suggestions/settings", {
         method: "PATCH",
         body: JSON.stringify(settings),
@@ -112,6 +122,8 @@ export function Header() {
 
   const calendarEnabled = reminderSettingsQuery.data?.calendarSuggestionsEnabled ?? true;
   const daysBack = reminderSettingsQuery.data?.calendarSuggestionsDaysBack ?? 0;
+  const calendarDefaultProjectId = reminderSettingsQuery.data?.calendarDefaultProjectId ?? null;
+  const activeProjects = (projectsQuery.data ?? []).filter((p: ProjectWithClient) => p.status === 'active');
 
   return (
     <header className="bg-card border-b border-border sticky top-0 z-50" data-testid="header">
@@ -241,6 +253,37 @@ export function Header() {
                         <SelectItem value="7">Today + 7 days back</SelectItem>
                         <SelectItem value="14">Today + 14 days back</SelectItem>
                         <SelectItem value="30">Today + 30 days back</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2" data-testid="setting-calendar-default-project">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="calendar-default-project">Default project</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Used as a fallback when no meeting matches automatically
+                      </p>
+                    </div>
+                    <Select
+                      value={calendarDefaultProjectId ?? "__none__"}
+                      onValueChange={(val) =>
+                        updateCalendarSettingsMutation.mutate({
+                          calendarDefaultProjectId: val === "__none__" ? null : val,
+                        })
+                      }
+                      disabled={reminderSettingsQuery.isLoading || projectsQuery.isLoading || updateCalendarSettingsMutation.isPending}
+                    >
+                      <SelectTrigger className="w-full" id="calendar-default-project">
+                        <SelectValue placeholder="None — show picker" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">None — show picker</SelectItem>
+                        {activeProjects.map((p: ProjectWithClient) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                            {p.client?.name ? ` · ${p.client.name}` : ""}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

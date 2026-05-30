@@ -1098,6 +1098,8 @@ export interface IStorage {
   upsertCalendarMapping(userId: string, tenantId: string | null, eventKey: string, projectId: string, label?: string | null): Promise<UserCalendarMapping>;
   updateCalendarMappingProject(userId: string, eventKey: string, projectId: string): Promise<UserCalendarMapping | null>;
   deleteCalendarMapping(userId: string, eventKey: string): Promise<void>;
+  bulkReassignCalendarMappings(userId: string, eventKeys: string[], projectId: string): Promise<number>;
+  clearAllCalendarMappings(userId: string): Promise<number>;
 
   // Notifications
   createNotification(data: InsertNotification): Promise<Notification>;

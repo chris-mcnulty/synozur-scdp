@@ -307,6 +307,7 @@ export function registerUserRoutes(app: Express, deps: UserRouteDeps) {
         receiveExpenseReminders: (user as any).receiveExpenseReminders ?? true,
         calendarSuggestionsEnabled: user.calendarSuggestionsEnabled ?? true,
         calendarSuggestionsDaysBack: user.calendarSuggestionsDaysBack ?? 0,
+        calendarDefaultProjectId: (user as any).calendarDefaultProjectId ?? null,
       });
     } catch (error) {
       console.error("Error fetching reminder settings:", error);

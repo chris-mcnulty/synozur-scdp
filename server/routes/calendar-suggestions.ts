@@ -75,8 +75,10 @@ export function registerCalendarSuggestionsRoutes(
         storage.getUserCalendarMappings(userId),
       ]);
 
+      const defaultProjectId = currentUser?.calendarDefaultProjectId ?? null;
+
       const suggestions = events.map(event => {
-        const mapping = mapEventToProject(event, projects, userMappings);
+        const mapping = mapEventToProject(event, projects, userMappings, defaultProjectId);
         const hours = computeEventHours(event);
         const eventKey = buildEventKey(event);
         // Pass raw ISO strings to the client so the browser can format in the
@@ -431,6 +433,45 @@ export function registerCalendarSuggestionsRoutes(
   });
 
   /**
+   * POST /api/me/calendar-mappings/bulk-reassign
+   * Reassign all (or a specific set of) saved mappings to a new project.
+   * Body: { projectId: string, eventKeys?: string[] }
+   * If eventKeys is omitted, ALL mappings for the user are updated.
+   */
+  app.post("/api/me/calendar-mappings/bulk-reassign", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const schema = z.object({
+      projectId: z.string().min(1),
+      eventKeys: z.array(z.string()).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
+    }
+    const { projectId, eventKeys } = parsed.data;
+    let count: number;
+    if (eventKeys) {
+      count = await storage.bulkReassignCalendarMappings(userId, eventKeys, projectId);
+    } else {
+      const all = await storage.getUserCalendarMappings(userId);
+      count = await storage.bulkReassignCalendarMappings(userId, all.map(m => m.eventKey), projectId);
+    }
+    console.log(`[CALENDAR_MAPPINGS] user=${userId} bulk-reassigned ${count} mappings -> project=${projectId}`);
+    return res.json({ updated: count });
+  });
+
+  /**
+   * DELETE /api/me/calendar-mappings
+   * Clear ALL saved calendar event→project mappings for the authenticated user.
+   */
+  app.delete("/api/me/calendar-mappings", deps.requireAuth, async (req, res) => {
+    const userId: string = req.user!.id;
+    const count = await storage.clearAllCalendarMappings(userId);
+    console.log(`[CALENDAR_MAPPINGS] user=${userId} cleared all ${count} mappings`);
+    return res.json({ deleted: count });
+  });
+
+  /**
    * POST /api/me/calendar-suggestions/telemetry
    * Records adoption telemetry events: shown, dismissed, manual_project_pick.
    * Fire-and-forget — the client does not wait for the response.
@@ -470,6 +511,7 @@ export function registerCalendarSuggestionsRoutes(
     const settingsSchema = z.object({
       calendarSuggestionsEnabled: z.boolean().optional(),
       calendarSuggestionsDaysBack: z.number().int().min(0).max(30).optional(),
+      calendarDefaultProjectId: z.string().nullable().optional(),
     });
 
     const parsed = settingsSchema.safeParse(req.body);
@@ -477,18 +519,22 @@ export function registerCalendarSuggestionsRoutes(
       return res.status(400).json({ message: "Invalid settings", errors: parsed.error.errors });
     }
 
-    const updates: Record<string, boolean | number> = {};
+    const updates: Record<string, boolean | number | string | null> = {};
     if (parsed.data.calendarSuggestionsEnabled !== undefined) {
       updates.calendarSuggestionsEnabled = parsed.data.calendarSuggestionsEnabled;
     }
     if (parsed.data.calendarSuggestionsDaysBack !== undefined) {
       updates.calendarSuggestionsDaysBack = parsed.data.calendarSuggestionsDaysBack;
     }
+    if (parsed.data.calendarDefaultProjectId !== undefined) {
+      updates.calendarDefaultProjectId = parsed.data.calendarDefaultProjectId;
+    }
 
     const updatedUser = await storage.updateUser(userId, updates);
     return res.json({
       calendarSuggestionsEnabled: updatedUser.calendarSuggestionsEnabled,
       calendarSuggestionsDaysBack: updatedUser.calendarSuggestionsDaysBack,
+      calendarDefaultProjectId: (updatedUser as any).calendarDefaultProjectId ?? null,
     });
   });
 }

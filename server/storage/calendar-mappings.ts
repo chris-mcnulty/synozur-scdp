@@ -1,6 +1,6 @@
 import { userCalendarMappings, type UserCalendarMapping } from "@shared/schema";
 import { db } from "../db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { IStorage } from "./index";
 
 export const calendarMappingsMethods: ThisType<IStorage> = {
@@ -58,5 +58,24 @@ export const calendarMappingsMethods: ThisType<IStorage> = {
         eq(userCalendarMappings.userId, userId),
         eq(userCalendarMappings.eventKey, eventKey)
       ));
+  },
+
+  async bulkReassignCalendarMappings(userId: string, eventKeys: string[], projectId: string): Promise<number> {
+    if (eventKeys.length === 0) return 0;
+    const rows = await db.update(userCalendarMappings)
+      .set({ projectId, lastUsedAt: new Date() })
+      .where(and(
+        eq(userCalendarMappings.userId, userId),
+        inArray(userCalendarMappings.eventKey, eventKeys)
+      ))
+      .returning();
+    return rows.length;
+  },
+
+  async clearAllCalendarMappings(userId: string): Promise<number> {
+    const rows = await db.delete(userCalendarMappings)
+      .where(eq(userCalendarMappings.userId, userId))
+      .returning();
+    return rows.length;
   },
 };
