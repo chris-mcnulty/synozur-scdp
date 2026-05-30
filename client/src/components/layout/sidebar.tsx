@@ -43,6 +43,8 @@ import {
   TrendingUp,
   Bell,
   Inbox,
+  Wallet,
+  ScrollText,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -133,8 +135,9 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-vendor-invoices", "/my-raidd", "/notifications", "/notifications/preferences"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-vendor-invoices", "/me/paystubs", "/my-raidd", "/notifications", "/notifications/preferences"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
+  { sectionId: "payroll", paths: ["/payroll", "/payroll/employees", "/payroll/schedules", "/payroll/runs", "/payroll/gl", "/payroll/audit", "/distributions", "/payroll/jurisdictions", "/payroll/tax-settings"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/vendor-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/admin/agent-card-health", "/admin/background-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
@@ -225,6 +228,7 @@ export function Sidebar() {
               <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" />
               <SidebarItem href="/my-contractor-invoices" icon={<FileText />} label="My Contractor Invoices" />
               <SidebarItem href="/my-vendor-invoices" icon={<Inbox />} label="My Vendor Invoices" />
+              <SidebarItem href="/me/paystubs" icon={<Wallet />} label="My Paystubs" />
               <SidebarItem href="/my-raidd" icon={<Shield />} label="My RAIDD" />
               <SubGroupLabel label="Notifications" />
               <SidebarItem href="/notifications" icon={<Bell />} label="Notifications" />
@@ -261,6 +265,29 @@ export function Sidebar() {
               </CollapsibleSection>
             )}
             
+            {isFinanceRole && (
+              <CollapsibleSection
+                id="payroll"
+                title="Payroll"
+                isOpen={!!openSections["payroll"]}
+                onToggle={handleToggle}
+              >
+                <SubGroupLabel label="Overview" />
+                <SidebarItem href="/payroll" icon={<Wallet />} label="Payroll Dashboard" />
+                <SubGroupLabel label="People" />
+                <SidebarItem href="/payroll/employees" icon={<Users />} label="Employees" />
+                <SidebarItem href="/payroll/schedules" icon={<CalendarClock />} label="Pay Schedules" />
+                <SubGroupLabel label="Process" />
+                <SidebarItem href="/payroll/runs" icon={<Banknote />} label="Payroll Runs" />
+                <SidebarItem href="/distributions" icon={<Handshake />} label="Distributions" />
+                <SubGroupLabel label="Accounting" />
+                <SidebarItem href="/payroll/gl" icon={<Calculator />} label="General Ledger" />
+                <SidebarItem href="/payroll/audit" icon={<ScrollText />} label="Audit Log" />
+                <SidebarItem href="/payroll/jurisdictions" icon={<Globe />} label="Jurisdictions" />
+                <SidebarItem href="/payroll/tax-settings" icon={<Settings />} label="Tax Settings" />
+              </CollapsibleSection>
+            )}
+
             {isFinanceRole && (
               <CollapsibleSection
                 id="financial"
