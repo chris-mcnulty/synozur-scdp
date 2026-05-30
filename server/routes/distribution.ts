@@ -197,7 +197,7 @@ export function registerDistributionRoutes(app: Express, deps: Deps) {
       const policy = await fetchPolicy(tenantId);
       const funds = await computeAvailableFunds(tenantId, run.periodStart, run.periodEnd, policy);
       const owners = await fetchActiveOwners(tenantId);
-      const candidates = await fetchFteCandidates(tenantId, run.periodEnd);
+      const candidates = await fetchFteCandidates(tenantId, run.periodStart, run.periodEnd);
       const preview = allocateDistribution(funds, policy, owners, candidates);
 
       await distributionStorage.replaceLines(

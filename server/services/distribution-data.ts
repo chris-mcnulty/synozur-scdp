@@ -109,6 +109,7 @@ export async function computeAvailableFunds(
 
 export async function fetchFteCandidates(
   tenantId: string,
+  periodStart: string,
   periodEnd: string,
 ): Promise<FtePoolCandidate[]> {
   const employees = await db.select().from(payrollEmployees).where(and(
@@ -150,7 +151,7 @@ export async function fetchFteCandidates(
       SELECT person_id, COALESCE(SUM(hours), 0)::numeric AS total_hours
       FROM time_entries
       WHERE person_id IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})
-        AND date >= (${periodEnd}::date - interval '3 months')
+        AND date >= ${periodStart}::date
         AND date <= ${periodEnd}::date
       GROUP BY person_id
     `);

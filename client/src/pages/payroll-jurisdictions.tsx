@@ -100,9 +100,9 @@ export default function PayrollJurisdictions() {
               </thead>
               <tbody>
                 {sutaRows.map(row => {
-                  const platRate = row.platform?.rule?.employerPct;
+                  const platRate = row.platform?.rule?.ratePct;
                   const platBase = row.platform?.rule?.wageBaseCents;
-                  const overrideRate = row.tenant?.rule?.employerPct;
+                  const overrideRate = row.tenant?.rule?.ratePct;
                   const overrideBase = row.tenant?.rule?.wageBaseCents;
                   const draftKey = row.code;
                   const d = draft[draftKey] ?? { rate: '', wageBase: '' };
@@ -157,7 +157,7 @@ export default function PayrollJurisdictions() {
                             const rule = {
                               ...(row.platform?.rule ?? row.tenant?.rule ?? { kind: 'suta' }),
                               kind: 'suta',
-                              employerPct: rate,
+                              ratePct: rate,
                               wageBaseCents,
                             };
                             upsert.mutate({

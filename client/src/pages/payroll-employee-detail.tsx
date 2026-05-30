@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
@@ -16,6 +16,8 @@ export default function PayrollEmployeeDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const { data, isLoading } = useQuery<any>({ queryKey: ["/api/payroll/employees", id] });
+  const [filingStatus, setFilingStatus] = useState('single');
+  const [bankAccountType, setBankAccountType] = useState('checking');
   const [comp, setComp] = useState<any>({ compType: 'salary', amountCents: 0, effectiveFrom: new Date().toISOString().slice(0, 10) });
   const [ded, setDed] = useState<any>({ deductionType: 'pre_tax', preTaxScope: 'federal_only', benefitCategory: '', box12Code: '', name: '', amountCents: 0, effectiveFrom: new Date().toISOString().slice(0, 10), isActive: true });
 
@@ -38,6 +40,13 @@ export default function PayrollEmployeeDetail() {
     mutationFn: (dId: string) => apiRequest(`/api/payroll/deductions/${dId}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/payroll/employees", id] }),
   });
+
+  useEffect(() => {
+    if (data?.employee) {
+      setFilingStatus(data.employee.filingStatus ?? 'single');
+      setBankAccountType(data.employee.bankAccountType ?? 'checking');
+    }
+  }, [data]);
 
   if (isLoading || !data) return <Layout><div className="p-6">Loading…</div></Layout>;
   const e = data.employee;
@@ -75,14 +84,14 @@ export default function PayrollEmployeeDetail() {
                 homeStateCode: (fd.get('homeStateCode') as string || '').toUpperCase() || null,
                 homeZip: fd.get('homeZip') || null,
                 workStateCode: (fd.get('workStateCode') as string || '').toUpperCase() || null,
-                filingStatus: fd.get('filingStatus') || null,
+                filingStatus: filingStatus,
                 w4MultipleJobs: fd.get('w4MultipleJobs') === 'on',
                 w4DependentsAmountCents: num('w4DependentsAmount') ?? 0,
                 w4OtherIncomeCents: num('w4OtherIncome') ?? 0,
                 w4DeductionsCents: num('w4Deductions') ?? 0,
                 w4ExtraWithholdingCents: num('w4ExtraWithholding') ?? 0,
                 bankRoutingNumber: fd.get('bankRoutingNumber') || null,
-                bankAccountType: fd.get('bankAccountType') || null,
+                bankAccountType: bankAccountType,
               };
               const acct = fd.get('bankAccountNumber') as string;
               // Empty means "don't change", to preserve the encrypted value.
@@ -103,7 +112,7 @@ export default function PayrollEmployeeDetail() {
                   </p>
                 </div>
                 <div><Label>Filing status</Label>
-                  <Select name="filingStatus" defaultValue={e.filingStatus ?? 'single'}>
+                  <Select value={filingStatus} onValueChange={setFilingStatus}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="single">Single</SelectItem>
@@ -132,7 +141,7 @@ export default function PayrollEmployeeDetail() {
                     {e.hasBankAccount && <p className="text-xs text-muted-foreground mt-1">On file: {e.bankAccountMasked}. Leave blank to keep.</p>}
                   </div>
                   <div><Label>Account type</Label>
-                    <Select name="bankAccountType" defaultValue={e.bankAccountType ?? 'checking'}>
+                    <Select value={bankAccountType} onValueChange={setBankAccountType}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="checking">Checking</SelectItem>

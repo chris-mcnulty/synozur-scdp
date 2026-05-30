@@ -102,6 +102,7 @@ export function render941Html(opts: {
   year: number;
   totals: TaxTotalsInput['totals'];
   w2EmployeeCount: number;
+  additionalMedicareTaxCents?: number;
   scheduleB?: ScheduleBDay[];
 }): string {
   const { tenantName, ein, quarter, year, totals, w2EmployeeCount, scheduleB } = opts;
@@ -116,7 +117,8 @@ export function render941Html(opts: {
   //   13 Total deposits              = same as line 12 (assume fully paid)
   const ssTaxTotal = Math.round(totals.ssWagesCents * 0.124);
   const medicareTaxTotal = Math.round(totals.medicareWagesCents * 0.029);
-  const totalTaxes = totals.fedIncomeTaxWithheldCents + ssTaxTotal + medicareTaxTotal;
+  const additionalMedicareTax = opts.additionalMedicareTaxCents ?? 0;
+  const totalTaxes = totals.fedIncomeTaxWithheldCents + ssTaxTotal + medicareTaxTotal + additionalMedicareTax;
 
   const safeTenant = htmlEsc(tenantName);
   const safeEin = ein ? htmlEsc(ein) : '';
@@ -124,7 +126,7 @@ export function render941Html(opts: {
 <html><head><meta charset="utf-8"><title>Form 941 ${year} Q${quarter} — ${safeTenant}</title>
 <style>
   @page { size: letter; margin: 0.5in; }
-  body { font-family: 'Avenir Next LT Pro', Arial, sans-serif; font-size: 11pt; color: #111; }
+  body { font-family: 'Avenir Next LT Pro'; font-size: 11pt; color: #111; }
   h1 { font-size: 16pt; margin: 0 0 4px; }
   .meta { color: #666; margin-bottom: 18px; font-size: 9.5pt; }
   table.lines { border-collapse: collapse; width: 100%; margin-top: 12px; }

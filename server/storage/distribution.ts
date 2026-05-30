@@ -7,11 +7,6 @@
 import { db } from "../db";
 import { and, eq, desc } from "drizzle-orm";
 
-// Drizzle's `tx` argument inside `db.transaction((tx) => ...)` is a
-// PgTransaction, not the base NeonDatabase, but both expose the same
-// update/insert/delete shape. We extract the callback param type so
-// helpers can be called from inside or outside a transaction.
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 import {
   entityOwners, distributionPolicy, distributionRuns, distributionLines,
   users,
@@ -20,6 +15,12 @@ import {
   type DistributionRun, type InsertDistributionRun,
   type DistributionLine, type InsertDistributionLine,
 } from "@shared/schema";
+
+// Drizzle's `tx` argument inside `db.transaction((tx) => ...)` is a
+// PgTransaction, not the base NeonDatabase, but both expose the same
+// update/insert/delete shape. We extract the callback param type so
+// helpers can be called from inside or outside a transaction.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export const distributionStorage = {
   // ---- Owners --------------------------------------------------------------
