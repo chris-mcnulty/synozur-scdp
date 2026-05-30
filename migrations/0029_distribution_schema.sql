@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS "distribution_lines" (
   -- For owner lines: NACHA trace number once the ACH file was generated.
   "ach_trace_number"         varchar(15),
   "status"                   varchar(16) NOT NULL DEFAULT 'pending',
-    -- pending | paid | reversed
+    -- pending | issued | paid | reversed
   -- Breakdown of how the weight was computed (salary/tenure/perf/hours contribs).
   "breakdown"                jsonb,
   "created_at"               timestamp NOT NULL DEFAULT now()
@@ -126,3 +126,6 @@ CREATE INDEX IF NOT EXISTS "idx_distribution_lines_recipient"
 -- Owners-who-are-also-W-2-employees opt out of the FTE bonus pool.
 ALTER TABLE "payroll_employees"
   ADD COLUMN IF NOT EXISTS "is_owner" boolean NOT NULL DEFAULT false;
+
+ALTER TABLE "payroll_employees"
+  ADD COLUMN IF NOT EXISTS "deleted_at" timestamp;
