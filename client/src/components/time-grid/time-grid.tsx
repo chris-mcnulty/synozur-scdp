@@ -1119,7 +1119,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
                 <DropdownMenuSeparator />
                 {projects.slice(0, 8).map((p) => (
                   <DropdownMenuItem key={p.id} onClick={() => handleBulkSetProject(p.id)}>
-                    Project: {p.code ? `${p.code} · ${formatProjectLabel(p)}` : formatProjectLabel(p)}
+                    Project: {p.code ? `${formatProjectLabel(p)} (${p.code})` : formatProjectLabel(p)}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -1174,7 +1174,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
                 <option value="">All projects</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.code ? `${p.code} · ${formatProjectLabel(p)}` : formatProjectLabel(p)}
+                    {p.code ? `${formatProjectLabel(p)} (${p.code})` : formatProjectLabel(p)}
                   </option>
                 ))}
               </select>
@@ -1605,7 +1605,7 @@ function CellContent(props: {
     }
     if (col === "projectId") {
       const p = projects.find((p) => p.id === value);
-      display = p ? (p.code ? `${p.code} · ${formatProjectLabel(p)}` : formatProjectLabel(p)) : <span className="text-muted-foreground italic">—</span>;
+      display = p ? (p.code ? `${formatProjectLabel(p)} (${p.code})` : formatProjectLabel(p)) : <span className="text-muted-foreground italic">—</span>;
     } else if (col === "allocationId") {
       display = value ? <AllocationLabel allocationId={String(value)} projectId={row.projectId} personId={personId} /> : <span className="text-muted-foreground italic">—</span>;
     } else if (col === "milestoneId") {
@@ -1642,7 +1642,7 @@ function CellContent(props: {
       <ComboEditor
         items={projects.map((p) => ({
           id: p.id,
-          label: p.code ? `${p.code} · ${formatProjectLabel(p)}` : formatProjectLabel(p),
+          label: p.code ? `${formatProjectLabel(p)} (${p.code})` : formatProjectLabel(p),
         }))}
         value={strValue}
         onCommit={(v) => { updateCell(rowIndex, "projectId", v); close(); }}
