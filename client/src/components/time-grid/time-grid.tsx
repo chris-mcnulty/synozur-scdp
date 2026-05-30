@@ -52,14 +52,14 @@ type ColKey = "date" | "projectId" | "allocationId" | "description" | "hours" | 
 const COLUMNS: { key: ColKey; label: string; width: string }[] = [
   { key: "date", label: "Date", width: "w-[120px]" },
   { key: "projectId", label: "Project", width: "w-[200px]" },
-  { key: "allocationId", label: "Allocation", width: "w-[180px]" },
+  { key: "allocationId", label: "Task", width: "w-[180px]" },
   { key: "description", label: "Description", width: "w-[280px]" },
   { key: "hours", label: "Hours", width: "w-[80px]" },
   { key: "billable", label: "Billable", width: "w-[80px]" },
   { key: "milestoneId", label: "Milestone", width: "w-[160px]" },
 ];
 
-const HEADER_ROW = ["Date", "Project", "Allocation", "Description", "Hours", "Billable", "Milestone"];
+const HEADER_ROW = ["Date", "Project", "Task", "Description", "Hours", "Billable", "Milestone"];
 
 function uid() {
   return "tmp_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -1706,35 +1706,22 @@ function RowStateIndicator({ row }: { row: DraftRow }) {
 
 function DateEditor({ value, onCommit, onCancel }: { value: string; onCommit: (v: string) => void; onCancel: () => void }) {
   const [text, setText] = useState(value || "");
+  // Use a native date input to avoid the blur-before-click race condition that
+  // occurred with the old Popover+Calendar approach (onBlur fired during the
+  // calendar's mousedown, committing today before onSelect could run).
   return (
-    <Popover open onOpenChange={(o) => !o && onCancel()}>
-      <PopoverTrigger asChild>
-        <Input
-          autoFocus
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={() => { const c = coerceDate(text) ?? text; onCommit(c); }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); const c = coerceDate(text) ?? text; onCommit(c); }
-            if (e.key === "Escape") onCancel();
-          }}
-          className="h-8 px-2 border-0 rounded-none"
-          placeholder="YYYY-MM-DD or M/D"
-        />
-      </PopoverTrigger>
-      <PopoverContent className="p-0 w-auto" align="start">
-        <Calendar
-          mode="single"
-          selected={value ? new Date(value + "T00:00:00") : undefined}
-          onSelect={(d) => {
-            if (d) {
-              const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-              onCommit(v);
-            }
-          }}
-        />
-      </PopoverContent>
-    </Popover>
+    <input
+      type="date"
+      autoFocus
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => { onCommit(text || value); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); onCommit(text || value); }
+        if (e.key === "Escape") onCancel();
+      }}
+      className="h-8 px-2 border-0 rounded-none w-full text-sm bg-transparent"
+    />
   );
 }
 
