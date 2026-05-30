@@ -21,6 +21,8 @@ import { registerPlatformRoutes, enforcePlanStatus } from "./routes/platform.js"
 import { registerSharePointContainerRoutes } from "./routes/sharepoint-containers.js";
 import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerVendorInvoiceRoutes } from "./routes/vendor-invoices.js";
+import { registerPayrollRoutes } from "./routes/payroll.js";
+import { registerDistributionRoutes } from "./routes/distribution.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
@@ -555,6 +557,8 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerTeamsAutomationRoutes(app, { requireAuth, requireRole });
     registerClientRoutes(app, { requireAuth, requireRole, sharePointFileStorage });
     registerTimeEntryRoutes(app, { requireAuth, requireRole });
+    registerPayrollRoutes(app, { requireAuth, requireRole });
+    registerDistributionRoutes(app, { requireAuth, requireRole });
     registerAiRoutes(app, { requireAuth, requireRole, requirePlatformAdmin });
     registerProjectAgentRoutes(app, { requireAuth, requireRole });
     registerRaiddRoutes(app, { requireAuth, requireRole });

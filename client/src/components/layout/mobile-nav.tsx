@@ -37,6 +37,8 @@ import {
   LifeBuoy,
   Handshake,
   TrendingUp,
+  Wallet,
+  ScrollText,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -132,7 +134,8 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-raidd"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/me/paystubs", "/my-raidd"] },
+  { sectionId: "payroll", paths: ["/payroll", "/payroll/employees", "/payroll/schedules", "/payroll/runs", "/payroll/gl", "/payroll/audit", "/distributions", "/payroll/jurisdictions", "/payroll/tax-settings"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/vocabulary", "/ai-grounding", "/ai-settings"] },
@@ -172,6 +175,7 @@ export function MobileNav() {
   
   const isManager = hasAnyRole(['admin', 'pm', 'portfolio-manager', 'executive']);
   const isFinanceRole = hasAnyRole(['admin', 'billing-admin']);
+  const isPayrollRole = hasAnyRole(['admin', 'billing-admin', 'executive']);
   const isAdmin = hasAnyRole(['admin']);
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
@@ -250,9 +254,36 @@ export function MobileNav() {
                 <MobileNavItem href="/expense-reports" icon={<FileText />} label="Expense Reports" onClick={handleNavClick} />
                 <MobileSubGroupLabel label="Tracking" />
                 <MobileNavItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" onClick={handleNavClick} />
+                <MobileNavItem href="/me/paystubs" icon={<Wallet />} label="My Paystubs" onClick={handleNavClick} />
                 <MobileNavItem href="/my-raidd" icon={<Shield />} label="My RAIDD" onClick={handleNavClick} />
               </MobileCollapsibleSection>
-              
+
+              {isPayrollRole && (
+                <>
+                  <Separator className="my-2" />
+                  <MobileCollapsibleSection
+                    id="payroll"
+                    title="Payroll"
+                    isOpen={!!openSections["payroll"]}
+                    onToggle={handleToggle}
+                  >
+                    <MobileSubGroupLabel label="Overview" />
+                    <MobileNavItem href="/payroll" icon={<Wallet />} label="Payroll Dashboard" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="People" />
+                    <MobileNavItem href="/payroll/employees" icon={<Users />} label="Employees" onClick={handleNavClick} />
+                    <MobileNavItem href="/payroll/schedules" icon={<CalendarClock />} label="Pay Schedules" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Process" />
+                    <MobileNavItem href="/payroll/runs" icon={<Banknote />} label="Payroll Runs" onClick={handleNavClick} />
+                    <MobileNavItem href="/distributions" icon={<Handshake />} label="Distributions" onClick={handleNavClick} />
+                    <MobileSubGroupLabel label="Accounting" />
+                    <MobileNavItem href="/payroll/gl" icon={<Calculator />} label="General Ledger" onClick={handleNavClick} />
+                    <MobileNavItem href="/payroll/audit" icon={<ScrollText />} label="Audit Log" onClick={handleNavClick} />
+                    <MobileNavItem href="/payroll/jurisdictions" icon={<Globe />} label="Jurisdictions" onClick={handleNavClick} />
+                    <MobileNavItem href="/payroll/tax-settings" icon={<Settings />} label="Tax Settings" onClick={handleNavClick} />
+                  </MobileCollapsibleSection>
+                </>
+              )}
+
               {isManager && (
                 <>
                   <Separator className="my-2" />

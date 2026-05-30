@@ -110,6 +110,8 @@ import { a2aTasksMethods } from "./a2a";
 import { signoffsMethods } from "./signoffs";
 import { galaxyMethods } from "./galaxy";
 import { agentMethods } from "./agent";
+import { payrollStorage } from "./payroll";
+import { distributionStorage } from "./distribution";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers, placeholderUser, placeholderClient, placeholderProject } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
@@ -1235,6 +1237,8 @@ Object.assign(
   galaxyMethods,
   agentMethods,
   vendorInvoicesMethods,
+  payrollStorage,
+  distributionStorage,
 );
 
 export const storage: IStorage & VendorInvoicesMethods = new DatabaseStorage() as DatabaseStorage;
