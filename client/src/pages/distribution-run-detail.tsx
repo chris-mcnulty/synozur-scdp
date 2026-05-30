@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
 import { ArrowLeft, Download, AlertTriangle, ArrowRight } from "lucide-react";
 import { useState } from "react";
+import { ManualTransferSheet, type TransferRecipient } from "@/components/payroll/manual-transfer-sheet";
 
 export default function DistributionRunDetail() {
   const { id } = useParams<{ id: string }>();
@@ -81,6 +82,21 @@ export default function DistributionRunDetail() {
   const lines = (data.lines ?? []) as any[];
   const ownerLines = lines.filter(l => l.recipientType === 'owner');
   const fteLines = lines.filter(l => l.recipientType === 'fte');
+
+  const ownerTransferRecipients: TransferRecipient[] = ownerLines.map(l => ({
+    id: l.id,
+    name: l.recipient?.name ?? l.recipient?.email ?? l.recipientUserId,
+    email: l.recipient?.email ?? null,
+    amountCents: l.amountCents,
+  }));
+
+  const fteTransferRecipients: TransferRecipient[] = fteLines.map(l => ({
+    id: l.id,
+    name: l.recipient?.name ?? l.recipient?.email ?? l.recipientUserId,
+    email: l.recipient?.email ?? null,
+    amountCents: l.amountCents,
+    note: "Gross pool share — after-tax net will differ once payroll run is previewed",
+  }));
 
   return (
     <Layout>
@@ -246,6 +262,22 @@ export default function DistributionRunDetail() {
             </CardContent>
           </Card>
         </div>
+
+        {ownerTransferRecipients.length > 0 && (
+          <ManualTransferSheet
+            recipients={ownerTransferRecipients}
+            title="Owner manual transfers"
+            description="Use these amounts to send each owner's distribution via Zelle, Venmo, or wire. Email addresses are Zelle-compatible. Check each row as you send."
+          />
+        )}
+
+        {fteTransferRecipients.length > 0 && (
+          <ManualTransferSheet
+            recipients={fteTransferRecipients}
+            title="FTE pool — gross amounts"
+            description="These are the gross pool shares before payroll withholding. The actual after-tax net pay will be on the bonus payroll run once it's previewed. Use this as a reference only until the payroll run is finalized."
+          />
+        )}
       </div>
     </Layout>
   );

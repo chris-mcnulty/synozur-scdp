@@ -10,6 +10,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
 import { ArrowLeft, Download, DollarSign } from "lucide-react";
+import { ManualTransferSheet, type TransferRecipient } from "@/components/payroll/manual-transfer-sheet";
 
 export default function PayrollRunDetail() {
   const { id } = useParams<{ id: string }>();
@@ -60,6 +61,18 @@ export default function PayrollRunDetail() {
   const canEdit = r.status !== 'finalized' && r.status !== 'voided';
   // For bonus runs, the target employees come from the run itself
   const targetEmpIds: string[] = r.targetEmployeeIds ?? [];
+
+  const transferRecipients: TransferRecipient[] = items
+    .filter(it => it.netPayCents > 0)
+    .map(it => {
+      const emp = empMap.get(it.employeeId);
+      return {
+        id: it.id,
+        name: emp ? `${emp.firstName} ${emp.lastName}` : it.employeeId,
+        email: emp?.email ?? null,
+        amountCents: it.netPayCents,
+      };
+    });
 
   return (
     <Layout>
@@ -212,6 +225,14 @@ export default function PayrollRunDetail() {
             )}
           </CardContent>
         </Card>
+
+        {transferRecipients.length > 0 && (
+          <ManualTransferSheet
+            recipients={transferRecipients}
+            title="Manual transfer sheet — net pay"
+            description="After-tax net amounts to send each employee. Email addresses are Zelle-compatible. Copy individual amounts or export CSV. Check each row as you send."
+          />
+        )}
       </div>
     </Layout>
   );
