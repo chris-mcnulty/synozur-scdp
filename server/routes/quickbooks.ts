@@ -390,7 +390,7 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
-      await storage.deleteQuickbooksMapping(req.params.id);
+      await storage.deleteQuickbooksMapping(req.params.id, tenantId);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -474,6 +474,22 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
       const created: Array<{ clientId: string; qboInvoiceId: string; docNumber: string | null }> = [];
 
       for (const [clientId, group] of groups) {
+        const localObjectId = multiClient ? `${batchId}::${clientId}` : batchId;
+
+        // Idempotency: if this client already has an active QBO invoice (e.g. a
+        // prior multi-client push that partially succeeded, or a later local
+        // write failed while exportedToQBO was still false), reuse it instead
+        // of creating a duplicate.
+        const existingMapping = await storage.getQuickbooksMappingByLocal(tenantId, "invoice_batch", localObjectId);
+        if (existingMapping && existingMapping.status === "active") {
+          created.push({
+            clientId,
+            qboInvoiceId: existingMapping.qboObjectId,
+            docNumber: (existingMapping.metadata as any)?.docNumber ?? null,
+          });
+          continue;
+        }
+
         const customerId = await resolveCustomerId(tenantId, clientId, group.client.name);
         const terms = group.client.paymentTerms || batch.paymentTerms || "Net 30";
 
@@ -518,7 +534,6 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
           lines: qboLines,
         });
 
-        const localObjectId = multiClient ? `${batchId}::${clientId}` : batchId;
         await storage.upsertQuickbooksMapping({
           tenantId,
           localObjectType: "invoice_batch",
@@ -588,6 +603,16 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
         m.status === "active" &&
         (m.localObjectId === batchId || m.localObjectId.startsWith(`${batchId}::`)),
       );
+
+      // If nothing was pushed through the API (e.g. the batch was marked
+      // exported via the CSV flow, or its mapping was already voided), do NOT
+      // silently clear the export lock — an invoice may still exist in QBO.
+      // Resolve those directly in QuickBooks.
+      if (mappings.length === 0) {
+        return res.status(400).json({
+          message: "No QuickBooks invoice is tracked for this batch (it may have been exported via CSV or already cancelled). Resolve it directly in QuickBooks; Cancel & Reissue only voids invoices pushed through the API.",
+        });
+      }
 
       const voided: string[] = [];
       for (const mapping of mappings) {
@@ -719,6 +744,22 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
       }
       if (invoice.exportedToQBO) {
         return res.status(409).json({ message: "This vendor invoice is already in QuickBooks. Cancel it there first to re-push." });
+      }
+      // Idempotency: if a prior push created the Bill but failed before the
+      // local export fields were written, a retry would create a duplicate.
+      // Detect the existing active Bill mapping and reconcile the local state
+      // instead of pushing again.
+      const existingBillMapping = await storage.getQuickbooksMappingByLocal(tenantId, "vendor_invoice", id);
+      if (existingBillMapping && existingBillMapping.status === "active") {
+        await storage.updateVendorInvoice(id, {
+          glBillNumber: existingBillMapping.qboObjectId,
+          exportedToQBO: true,
+          exportedAt: new Date(),
+        } as any);
+        return res.status(409).json({
+          message: "This vendor invoice already has a QuickBooks bill (the previous push completed in QuickBooks). The local status has been reconciled — cancel it to re-push.",
+          billId: existingBillMapping.qboObjectId,
+        });
       }
       if (!invoice.vendorUserId) {
         return res.status(400).json({ message: "This invoice has no resolved vendor. Assign a contractor before pushing." });

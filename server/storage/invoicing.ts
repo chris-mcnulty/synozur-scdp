@@ -410,6 +410,10 @@ export const invoicingMethods: ThisType<IStorage & {
 
     if (paymentData.paymentDate) {
       updateData.paymentDate = paymentData.paymentDate;
+    } else if (paymentData.paymentStatus !== 'paid') {
+      // Clear any stale paid date when an invoice reverts to unpaid/partial
+      // (e.g. a QBO sync that reflects a reopened/voided payment).
+      updateData.paymentDate = null;
     }
 
     if (paymentData.paymentAmount) {

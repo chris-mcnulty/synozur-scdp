@@ -24,7 +24,7 @@ export interface QuickbooksMethods {
   getQuickbooksMappings(tenantId: string, localObjectType?: string): Promise<QuickbooksEntityMapping[]>;
   upsertQuickbooksMapping(data: InsertQuickbooksEntityMapping): Promise<QuickbooksEntityMapping>;
   updateQuickbooksMapping(id: string, updates: Partial<InsertQuickbooksEntityMapping>): Promise<QuickbooksEntityMapping>;
-  deleteQuickbooksMapping(id: string): Promise<void>;
+  deleteQuickbooksMapping(id: string, tenantId: string): Promise<void>;
 
   createQuickbooksSyncLog(data: InsertQuickbooksSyncLog): Promise<QuickbooksSyncLog>;
   getQuickbooksSyncLogs(tenantId: string, limit?: number): Promise<QuickbooksSyncLog[]>;
@@ -123,8 +123,13 @@ export const quickbooksMethods: QuickbooksMethods = {
     return updated;
   },
 
-  async deleteQuickbooksMapping(id: string): Promise<void> {
-    await db.delete(quickbooksEntityMappings).where(eq(quickbooksEntityMappings.id, id));
+  async deleteQuickbooksMapping(id: string, tenantId: string): Promise<void> {
+    // Tenant-scoped delete: never let a guessed/leaked mapping id remove
+    // another tenant's mapping.
+    await db.delete(quickbooksEntityMappings).where(and(
+      eq(quickbooksEntityMappings.id, id),
+      eq(quickbooksEntityMappings.tenantId, tenantId),
+    ));
   },
 
   async createQuickbooksSyncLog(data: InsertQuickbooksSyncLog): Promise<QuickbooksSyncLog> {
