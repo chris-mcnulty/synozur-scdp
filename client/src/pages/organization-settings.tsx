@@ -383,6 +383,321 @@ function PresentationTemplatesCard({ settings }: { settings: TenantSettings | un
   );
 }
 
+function QuickBooksCustomerMappings() {
+  const { toast } = useToast();
+
+  interface ClientRow { id: string; name: string }
+  interface QboMapping { id: string; localObjectId: string; qboObjectId: string; metadata: { displayName?: string } | null }
+
+  const { data: clients } = useQuery<ClientRow[]>({ queryKey: ["/api/clients"] });
+  const { data: mappings } = useQuery<QboMapping[]>({ queryKey: ["/api/accounting/quickbooks/mappings?type=client"] });
+
+  const byClient = new Map<string, QboMapping>();
+  (mappings || []).forEach((m) => byClient.set(m.localObjectId, m));
+
+  const link = useMutation({
+    mutationFn: (clientId: string) =>
+      apiRequest(`/api/accounting/quickbooks/clients/${clientId}/link`, { method: "POST", body: JSON.stringify({}) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/mappings?type=client"] });
+      toast({ title: "Client linked to QuickBooks customer" });
+    },
+    onError: (error: Error) => toast({ title: "Link failed", description: error.message, variant: "destructive" }),
+  });
+
+  const unlink = useMutation({
+    mutationFn: (mappingId: string) =>
+      apiRequest(`/api/accounting/quickbooks/mappings/${mappingId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/mappings?type=client"] });
+      toast({ title: "Mapping removed" });
+    },
+    onError: (error: Error) => toast({ title: "Unlink failed", description: error.message, variant: "destructive" }),
+  });
+
+  if (!clients || clients.length === 0) {
+    return <p className="text-xs text-muted-foreground">No clients to map yet.</p>;
+  }
+
+  return (
+    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+      {clients.map((client) => {
+        const mapping = byClient.get(client.id);
+        return (
+          <div key={client.id} className="flex items-center justify-between gap-2 text-sm border-b pb-1.5">
+            <span className="truncate">{client.name}</span>
+            {mapping ? (
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant="outline" className="text-green-600 border-green-600 text-[10px]">
+                  {mapping.metadata?.displayName || `Customer ${mapping.qboObjectId}`}
+                </Badge>
+                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => unlink.mutate(mapping.id)} disabled={unlink.isPending}>
+                  Unlink
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" className="h-6 text-xs shrink-0" onClick={() => link.mutate(client.id)} disabled={link.isPending}>
+                <Link2 className="h-3 w-3 mr-1" /> Link
+              </Button>
+            )}
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-muted-foreground pt-1">
+        "Link" matches a QuickBooks customer by name, creating one if none exists. Batches also auto-link on first push.
+      </p>
+    </div>
+  );
+}
+
+function QuickBooksIntegrationCard() {
+  const { toast } = useToast();
+
+  interface QboStatus {
+    platformConfigured: boolean;
+    connected: boolean;
+    isEnabled: boolean;
+    sandbox: boolean;
+    realmId: string | null;
+    syncDirection: string;
+    defaults: { defaultItemId: string | null; expenseItemId: string | null; defaultExpenseAccountId: string | null; defaultBankAccountId: string | null };
+    lastSyncAt: string | null;
+    lastSyncStatus: string | null;
+    lastSyncError: string | null;
+  }
+  interface QboItem { id: string; name: string; type: string }
+  interface QboAccount { id: string; name: string; accountType: string }
+
+  const { data: status, isLoading } = useQuery<QboStatus>({
+    queryKey: ["/api/accounting/quickbooks/status"],
+  });
+
+  const { data: items } = useQuery<QboItem[]>({
+    queryKey: ["/api/accounting/quickbooks/items"],
+    enabled: !!status?.connected && !!status?.isEnabled,
+  });
+
+  const { data: accounts } = useQuery<QboAccount[]>({
+    queryKey: ["/api/accounting/quickbooks/accounts"],
+    enabled: !!status?.connected && !!status?.isEnabled,
+  });
+
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const updateConnection = useMutation({
+    mutationFn: (data: { isEnabled?: boolean; sandbox?: boolean; defaultItemId?: string | null; expenseItemId?: string | null; defaultExpenseAccountId?: string | null; defaultBankAccountId?: string | null }) =>
+      apiRequest("/api/accounting/quickbooks/connection", { method: "PUT", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/status"] });
+      toast({ title: "QuickBooks settings updated" });
+    },
+    onError: (error: Error) => toast({ title: "Failed to update", description: error.message, variant: "destructive" }),
+  });
+
+  const disconnect = useMutation({
+    mutationFn: () => apiRequest("/api/accounting/quickbooks/oauth/disconnect", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/status"] });
+      toast({ title: "QuickBooks disconnected" });
+    },
+    onError: (error: Error) => toast({ title: "Failed to disconnect", description: error.message, variant: "destructive" }),
+  });
+
+  const syncPayments = useMutation({
+    mutationFn: () => apiRequest("/api/accounting/quickbooks/sync/payments", { method: "POST" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/status"] });
+      toast({ title: "Payment sync complete", description: `${data?.updated ?? 0} of ${data?.batches ?? 0} invoice batch(es) updated.` });
+    },
+    onError: (error: Error) => toast({ title: "Payment sync failed", description: error.message, variant: "destructive" }),
+  });
+
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    try {
+      const data = await apiRequest("/api/accounting/quickbooks/oauth/start");
+      if (data.authorizeUrl) {
+        window.open(data.authorizeUrl, "_blank", "width=600,height=700");
+        const pollInterval = setInterval(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/status"] });
+        }, 3000);
+        setTimeout(() => clearInterval(pollInterval), 120000);
+      }
+    } catch (error: any) {
+      toast({ title: "Failed to start connection", description: error.message, variant: "destructive" });
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Card className="border-2">
+        <CardContent className="py-6"><Skeleton className="h-20 w-full" /></CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-2">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <DollarSign className="h-5 w-5" />
+            QuickBooks Online
+          </CardTitle>
+          {status?.connected ? (
+            <Badge variant="outline" className="text-green-600 border-green-600">
+              <CheckCircle className="h-3 w-3 mr-1" />
+              {status.sandbox ? "Connected (Sandbox)" : "Connected"}
+            </Badge>
+          ) : status?.platformConfigured ? (
+            <Badge variant="outline" className="text-orange-600 border-orange-600">Not Connected</Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">Not Available</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Push finalized invoice batches to QuickBooks Online as invoices. Use "Cancel &amp; Reissue" on a batch to void the QuickBooks invoice and unlock the batch for correction.
+        </p>
+
+        {!status?.platformConfigured && (
+          <div className="rounded-lg border p-3 bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-orange-800 dark:text-orange-300">
+                QuickBooks integration is not yet available. Please contact your platform administrator.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {status?.platformConfigured && !status?.connected && (
+          <div className="border-t pt-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Use sandbox company</p>
+                <p className="text-xs text-muted-foreground">Connect to a QuickBooks developer/sandbox company instead of live</p>
+              </div>
+              <Switch
+                checked={status?.sandbox ?? false}
+                onCheckedChange={(checked) => updateConnection.mutate({ sandbox: checked })}
+              />
+            </div>
+            <Button onClick={handleConnect} disabled={isConnecting} className="w-full">
+              <ExternalLink className="h-4 w-4 mr-2" />
+              {isConnecting ? "Opening QuickBooks..." : "Connect to QuickBooks"}
+            </Button>
+            <p className="text-xs text-muted-foreground text-center">
+              You'll be redirected to Intuit to authorize access to your company
+            </p>
+          </div>
+        )}
+
+        {status?.connected && (
+          <>
+            <div className="flex items-center justify-between py-2 border-t pt-3">
+              <div>
+                <p className="text-sm font-medium">Enable QuickBooks Sync</p>
+                <p className="text-xs text-muted-foreground">Allow pushing invoices to this QuickBooks company</p>
+              </div>
+              <Switch
+                checked={status?.isEnabled ?? false}
+                onCheckedChange={(checked) => updateConnection.mutate({ isEnabled: checked })}
+              />
+            </div>
+
+            {status?.isEnabled && (
+              <div className="space-y-3 border-t pt-3">
+                <div>
+                  <p className="text-sm font-medium">Default Service Item</p>
+                  <p className="text-xs text-muted-foreground">QuickBooks Item used for invoice lines (required to push invoices)</p>
+                </div>
+                <Select
+                  value={status?.defaults?.defaultItemId || "__none__"}
+                  onValueChange={(val) => updateConnection.mutate({ defaultItemId: val === "__none__" ? null : val })}
+                >
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Select a QuickBooks item" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {(items || []).map((i) => (
+                      <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div>
+                  <p className="text-sm font-medium mt-2">Expense Item (optional)</p>
+                  <p className="text-xs text-muted-foreground">Item used for expense lines; falls back to the default item</p>
+                </div>
+                <Select
+                  value={status?.defaults?.expenseItemId || "__none__"}
+                  onValueChange={(val) => updateConnection.mutate({ expenseItemId: val === "__none__" ? null : val })}
+                >
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Same as default item" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Same as default item</SelectItem>
+                    {(items || []).map((i) => (
+                      <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="border-t pt-3">
+                  <p className="text-sm font-medium">Default Expense Account (Bills)</p>
+                  <p className="text-xs text-muted-foreground mb-2">QuickBooks expense account used for contractor/vendor bill lines (required to push bills)</p>
+                  <Select
+                    value={status?.defaults?.defaultExpenseAccountId || "__none__"}
+                    onValueChange={(val) => updateConnection.mutate({ defaultExpenseAccountId: val === "__none__" ? null : val })}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Select an expense account" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {(accounts || []).filter((a) => /expense/i.test(a.accountType)).map((a) => (
+                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="border-t pt-3">
+                  <p className="text-sm font-medium">Customer Mappings</p>
+                  <p className="text-xs text-muted-foreground mb-2">Map Constellation clients to QuickBooks customers</p>
+                  <QuickBooksCustomerMappings />
+                </div>
+              </div>
+            )}
+
+            {status?.lastSyncAt && (
+              <div className="border-t pt-3 text-xs text-muted-foreground">
+                <span className="font-medium">Last sync:</span>{" "}
+                <span className={status?.lastSyncStatus === "error" ? "text-destructive" : "text-green-600"}>
+                  {status?.lastSyncStatus || "—"}
+                </span>
+                {status?.lastSyncError && <p className="text-destructive mt-1">{status.lastSyncError}</p>}
+              </div>
+            )}
+
+            <div className="border-t pt-3 flex items-center gap-2">
+              {status?.isEnabled && (
+                <Button variant="outline" size="sm" onClick={() => syncPayments.mutate()} disabled={syncPayments.isPending}>
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  {syncPayments.isPending ? "Syncing…" : "Sync Payments Now"}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => disconnect.mutate()} disabled={disconnect.isPending}>
+                Disconnect QuickBooks
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function HubSpotIntegrationCard() {
   const { toast } = useToast();
 
@@ -3837,6 +4152,8 @@ export default function OrganizationSettings() {
                   </Card>
 
                   <HubSpotIntegrationCard />
+
+                  <QuickBooksIntegrationCard />
 
                   <TeamsAppPackageCard tenantSettings={tenantSettings ?? null} />
 

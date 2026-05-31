@@ -272,6 +272,15 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       }).catch((importError: any) => {
         log(`⚠️ Failed to import time reminder scheduler: ${importError.message}`);
       });
+
+      // Start the QuickBooks payment-status sync scheduler
+      log('🔄 Starting QuickBooks payment sync scheduler...');
+      import('./services/quickbooks-payment-scheduler.js').then(({ startQuickbooksPaymentScheduler }) => {
+        startQuickbooksPaymentScheduler();
+        log('✅ QuickBooks payment sync scheduler started');
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import QuickBooks payment sync scheduler: ${importError.message}`);
+      });
       
       // Start the expense reminder scheduler
       log('🔄 Starting expense reminder scheduler...');

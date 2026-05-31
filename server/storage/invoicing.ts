@@ -385,7 +385,7 @@ export const invoicingMethods: ThisType<IStorage & {
     paymentDate?: string;
     paymentAmount?: string;
     paymentNotes?: string;
-    updatedBy: string;
+    updatedBy: string | null;
   }): Promise<InvoiceBatch> {
     // First check if the batch exists and is finalized
     const [batch] = await db

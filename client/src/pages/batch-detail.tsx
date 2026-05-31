@@ -70,7 +70,8 @@ import {
   ExternalLink,
   Wrench,
   Upload,
-  Archive
+  Archive,
+  RefreshCw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -475,6 +476,72 @@ export default function BatchDetail() {
   const handleExportToQBO = async () => {
     if (!batchDetails?.id) return;
     exportToQBOMutation.mutate(batchDetails.id);
+  };
+
+  // QuickBooks Online (live API) connection status — gates the push/cancel actions.
+  const { data: qboStatus } = useQuery<{ connected: boolean; isEnabled: boolean }>({
+    queryKey: ['/api/accounting/quickbooks/status'],
+  });
+  const qboReady = !!(qboStatus?.connected && qboStatus?.isEnabled);
+
+  // Push the finalized batch to QuickBooks Online as a real Invoice.
+  const pushToQBOMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/invoice-batches/${batchId}/push-qbo`, { method: 'POST' });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      const count = Array.isArray(data?.invoices) ? data.invoices.length : 1;
+      toast({
+        title: "Pushed to QuickBooks",
+        description: `${count} invoice${count === 1 ? '' : 's'} created in QuickBooks Online.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "QuickBooks push failed", description: error.message || "Failed to push invoice to QuickBooks.", variant: "destructive" });
+    },
+  });
+
+  // Cancel & Reissue: void the QBO invoice(s) and release the export lock so the
+  // batch can be reverted to draft, corrected, and pushed again.
+  const cancelQBOMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/invoice-batches/${batchId}/qbo-cancel`, { method: 'POST' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({
+        title: "QuickBooks invoice voided",
+        description: "You can now revert this batch to draft, correct it, and reissue.",
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Cancel failed", description: error.message || "Failed to void the QuickBooks invoice.", variant: "destructive" });
+    },
+  });
+
+  // Pull the latest paid/partial/unpaid status from QuickBooks onto this batch.
+  const paymentSyncMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/invoice-batches/${batchId}/qbo-payment-sync`, { method: 'POST' });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({
+        title: "Payment status synced",
+        description: `QuickBooks reports this invoice as ${data?.paymentStatus ?? 'updated'}.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Payment sync failed", description: error.message || "Failed to sync payment status from QuickBooks.", variant: "destructive" });
+    },
+  });
+
+  const handlePushToQBO = () => pushToQBOMutation.mutate();
+  const handleCancelQBO = () => {
+    if (window.confirm("Void the QuickBooks invoice for this batch? This reverses it in QuickBooks (kept for audit) and unlocks the batch so you can correct and reissue it.")) {
+      cancelQBOMutation.mutate();
+    }
   };
 
   // Bulk Edit Mutation
@@ -1348,15 +1415,33 @@ export default function BatchDetail() {
                 {batchDetails.status === 'finalized' && !batchDetails.exportedToQBO && (
                   <>
                     <DropdownMenuSeparator />
+                    {qboReady && (
+                      <DropdownMenuItem onClick={handlePushToQBO} disabled={pushToQBOMutation.isPending}>
+                        <Upload className="mr-2 h-4 w-4" /> {pushToQBOMutation.isPending ? 'Pushing…' : 'Push to QuickBooks'}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={handleExportToQBO}>
-                      <Building className="mr-2 h-4 w-4" /> Export to QBO
+                      <Building className="mr-2 h-4 w-4" /> Mark Exported (CSV)
                     </DropdownMenuItem>
                   </>
                 )}
                 {batchDetails.exportedToQBO && (
-                  <DropdownMenuItem disabled>
-                    <CheckCircle className="mr-2 h-4 w-4" /> Exported to QBO
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled>
+                      <CheckCircle className="mr-2 h-4 w-4" /> In QuickBooks
+                    </DropdownMenuItem>
+                    {qboReady && (
+                      <DropdownMenuItem onClick={() => paymentSyncMutation.mutate()} disabled={paymentSyncMutation.isPending}>
+                        <RefreshCw className="mr-2 h-4 w-4" /> {paymentSyncMutation.isPending ? 'Syncing…' : 'Sync Payment from QBO'}
+                      </DropdownMenuItem>
+                    )}
+                    {qboReady && (
+                      <DropdownMenuItem onClick={handleCancelQBO} disabled={cancelQBOMutation.isPending} className="text-orange-600">
+                        <Undo className="mr-2 h-4 w-4" /> {cancelQBOMutation.isPending ? 'Voiding…' : 'Cancel & Reissue'}
+                      </DropdownMenuItem>
+                    )}
+                  </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 

@@ -84,6 +84,7 @@ interface VendorInvoiceDetail {
   paymentRef: string | null;
   paymentNote: string | null;
   glBillNumber: string | null;
+  exportedToQBO: boolean;
   uploadId: string | null;
   vendor: {
     id: string; name: string;
@@ -227,6 +228,24 @@ export default function VendorInvoiceDetailPage() {
     onError: (e: any) => toast({ title: "Could not void", description: e.message, variant: "destructive" }),
   });
 
+  // QuickBooks (live API) connection status gates the bill push/cancel actions.
+  const { data: qboStatus } = useQuery<{ connected: boolean; isEnabled: boolean }>({
+    queryKey: ["/api/accounting/quickbooks/status"],
+  });
+  const qboReady = !!(qboStatus?.connected && qboStatus?.isEnabled);
+
+  const pushBill = useMutation({
+    mutationFn: () => apiRequest(`/api/vendor-invoices/${id}/push-qbo`, { method: "POST" }),
+    onSuccess: () => { invalidate(); toast({ title: "Pushed to QuickBooks", description: "A bill was created in QuickBooks Online." }); },
+    onError: (e: any) => toast({ title: "QuickBooks push failed", description: e.message, variant: "destructive" }),
+  });
+
+  const cancelBill = useMutation({
+    mutationFn: () => apiRequest(`/api/vendor-invoices/${id}/qbo-cancel`, { method: "POST" }),
+    onSuccess: () => { invalidate(); toast({ title: "QuickBooks bill removed", description: "You can correct and re-push this invoice." }); },
+    onError: (e: any) => toast({ title: "Cancel failed", description: e.message, variant: "destructive" }),
+  });
+
   const reconcileSummary = useMemo(() => {
     if (!invoice) return null;
     const lines = invoice.lines.filter((l) => l.kind === "service" || l.kind === "expense");
@@ -256,6 +275,8 @@ export default function VendorInvoiceDetailPage() {
   // Backend supports voiding a posted-but-unpaid invoice (reverses postings
   // atomically), so only paid + already-void are off-limits.
   const canVoid = !["paid", "void"].includes(invoice.status);
+  const canPushBill = qboReady && ["approved", "posted"].includes(invoice.status) && !invoice.exportedToQBO;
+  const canCancelBill = qboReady && !!invoice.exportedToQBO;
 
   return (
     <Layout>
@@ -334,6 +355,29 @@ export default function VendorInvoiceDetailPage() {
               >
                 <Banknote className="mr-2 h-4 w-4" />
                 Mark Paid
+              </Button>
+            )}
+            {canPushBill && (
+              <Button
+                variant="outline"
+                onClick={() => pushBill.mutate()}
+                disabled={pushBill.isPending}
+                data-testid="button-push-qbo"
+              >
+                {pushBill.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
+                Push to QuickBooks
+              </Button>
+            )}
+            {canCancelBill && (
+              <Button
+                variant="outline"
+                onClick={() => cancelBill.mutate()}
+                disabled={cancelBill.isPending}
+                className="text-orange-600"
+                data-testid="button-cancel-qbo"
+              >
+                {cancelBill.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+                Cancel in QuickBooks
               </Button>
             )}
             {canVoid && (
