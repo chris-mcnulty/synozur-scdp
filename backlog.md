@@ -371,17 +371,19 @@ Estimate approval/status transitions, invoice generation, line-item-level edits 
 
 ### QuickBooks Online Integration
 **Status:** Planned — #1 user-requested feature (94 marketplace coins, Feb 2026 feedback)
-**Effort:** High (8-12 weeks)
+**Effort:** Medium-High, phased (reduced from original 8-12 wks via QuickBooks MCP Bundle)
+**Plan:** `docs/design/quickbooks-integration-plan.md` (reworked around the QuickBooks MCP Bundle, which removes the bespoke Intuit OAuth2/REST client work)
 
-- [ ] OAuth2 authentication with QuickBooks Online
-- [ ] Client → QBO Customer mapping interface
-- [ ] Role/Service → QBO Items mapping
-- [ ] Expense categories → QBO Account mappings
-- [ ] Invoice Batch → QBO Invoice (Draft) creation
-- [ ] Batch ID deduplication to prevent duplicates
-- [ ] Webhook integration for sync status
-- [ ] QBO sync dashboard with error reporting
-- [ ] Retry mechanism for failed syncs
+Approach: mirror the HubSpot integration pattern (per-tenant OAuth, `quickbooks_connections` / `quickbooks_entity_mappings` / `quickbooks_sync_log` tables, settings-page card, sync audit log). Reuse dormant plumbing (`invoice_batches.glInvoiceNumber/exportedToQBO`, `vendor_invoices.glBillNumber/exportedToQBO`). Three phased workstreams below.
+
+- [ ] **Phase 0 — Foundation (~2 wks):** OAuth + connection/mapping/log schema, settings card, token refresh, mapping manager (Customers/Items/Accounts), sandbox flag
+- [ ] **Phase 1 — Invoicing / A/R (~2-3 wks):** push finalized invoice batch → QBO Invoice (batch tool, tax, currency, `Project:Type:Category` items, `billedAmount` w/ adjustments); write-back `glInvoiceNumber`/`exportedToQBO`; CDC payment-status pull-back; optional PDF attach. **Replaces** the manual `export-qbo-csv` (kept as fallback)
+- [ ] **Phase 2 — Contractor/Vendor A/P (~2 wks):** vendor match-or-create; push approved vendor & contractor invoices → QBO Bills; BillPayments on paid. Activates dormant `glBillNumber` plumbing
+- [ ] **Phase 3 — Payroll GL (~1-2 wks):** finalized payroll run → QBO Journal Entry (keep in-house payroll engine; QBO is GL book of record); 1099 contractor pay as Bills option
+- [ ] **Phase 4 — Agentic + reports (additive, ~2 wks):** in-app assistant over MCP query/report tools; AgedReceivables/Payables & P&L surfaced in-app; optional webhooks
+- [ ] Cross-cutting: idempotent create-or-update via mappings, retry/backoff, 3100/403 sandbox-vs-prod error surfacing, sync dashboard
+
+Note: AP-side `glBillNumber` export (previously tracked at line 141 as a v2.6.x follow-up) is folded into Phase 2 above.
 
 ### Advanced Resource Management
 **Status:** Complete — All 6 phases implemented (`docs/design/advanced-resource-management.md`)
