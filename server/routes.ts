@@ -26,6 +26,7 @@ import { registerDistributionRoutes } from "./routes/distribution.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
+import { registerQuickbooksRoutes } from "./routes/quickbooks.js";
 import { registerTenantStorageRoutes } from "./routes/tenant-storage.js";
 import { registerMcpRoutes } from "./routes/mcp.js";
 import { registerMcpWriteRoutes } from "./routes/mcp-write.js";
@@ -338,6 +339,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register HubSpot CRM routes (extracted module)
   registerHubSpotRoutes(app, {
+    requireAuth,
+    requireRole,
+  });
+
+  // Register QuickBooks Online accounting routes
+  registerQuickbooksRoutes(app, {
     requireAuth,
     requireRole,
   });

@@ -4018,6 +4018,111 @@ export type InsertCrmSyncLog = z.infer<typeof insertCrmSyncLogSchema>;
 export type CrmSyncLog = typeof crmSyncLog.$inferSelect;
 
 // ============================================================================
+// QUICKBOOKS ONLINE INTEGRATION (Accounting)
+// See docs/design/quickbooks-integration-plan.md
+// ============================================================================
+
+// Per-tenant QuickBooks Online connection. One realm per tenant. OAuth tokens
+// live in `settings` (JSONB) exactly like the CRM connections pattern. The
+// `sandbox` flag selects the Intuit API host (production vs sandbox) to avoid
+// the 3100 / 403 cross-environment error.
+export const quickbooksConnections = pgTable("quickbooks_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  realmId: varchar("realm_id", { length: 64 }),
+  sandbox: boolean("sandbox").notNull().default(false),
+  isEnabled: boolean("is_enabled").notNull().default(false),
+  syncDirection: varchar("sync_direction", { length: 20 }).notNull().default("push"),
+  // CDC watermark for pulling payment status back from QBO
+  cdcWatermark: timestamp("cdc_watermark"),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: varchar("last_sync_status", { length: 20 }),
+  lastSyncError: text("last_sync_error"),
+  // { accessToken, refreshToken, expiresAt, connectedAt, defaultIncomeAccountId,
+  //   defaultItemId, expenseItemId, defaultTermId, classMode, ... }
+  settings: jsonb("settings").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_qbo_connections_tenant").on(table.tenantId),
+  uniqueTenant: uniqueIndex("unique_qbo_tenant").on(table.tenantId),
+}));
+
+export const insertQuickbooksConnectionSchema = createInsertSchema(quickbooksConnections, {
+  settings: z.record(z.string(), z.any()).optional(),
+}).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastSyncAt: true,
+  lastSyncStatus: true,
+  lastSyncError: true,
+});
+export type InsertQuickbooksConnection = z.infer<typeof insertQuickbooksConnectionSchema>;
+export type QuickbooksConnection = typeof quickbooksConnections.$inferSelect;
+
+// Links a Constellation entity to its QuickBooks counterpart. This is the
+// idempotency backbone: a local entity maps to exactly one QBO entity, so a
+// re-push is always "update", never "duplicate". The cached `qboSyncToken`
+// satisfies QBO's optimistic-concurrency requirement on updates/voids.
+export const quickbooksEntityMappings = pgTable("quickbooks_entity_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  localObjectType: varchar("local_object_type", { length: 50 }).notNull(), // 'client' | 'vendor_user' | 'invoice_batch' | 'item' | 'account'
+  localObjectId: varchar("local_object_id", { length: 255 }).notNull(),
+  qboObjectType: varchar("qbo_object_type", { length: 50 }).notNull(), // 'Customer' | 'Vendor' | 'Invoice' | 'Item' | 'Account'
+  qboObjectId: varchar("qbo_object_id", { length: 64 }).notNull(),
+  qboSyncToken: varchar("qbo_sync_token", { length: 32 }),
+  lastSyncedHash: varchar("last_synced_hash", { length: 64 }),
+  status: varchar("status", { length: 20 }).notNull().default("active"), // 'active' | 'voided'
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  lastSyncAt: timestamp("last_sync_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_qbo_mappings_tenant").on(table.tenantId),
+  qboObjectIdx: index("idx_qbo_mappings_qbo_object").on(table.qboObjectType, table.qboObjectId),
+  uniqueLocal: uniqueIndex("unique_qbo_local_mapping").on(table.tenantId, table.localObjectType, table.localObjectId),
+}));
+
+export const insertQuickbooksEntityMappingSchema = createInsertSchema(quickbooksEntityMappings, {
+  metadata: z.record(z.string(), z.any()).optional(),
+}).omit({
+  id: true,
+  createdAt: true,
+  lastSyncAt: true,
+});
+export type InsertQuickbooksEntityMapping = z.infer<typeof insertQuickbooksEntityMappingSchema>;
+export type QuickbooksEntityMapping = typeof quickbooksEntityMappings.$inferSelect;
+
+export const quickbooksSyncLog = pgTable("quickbooks_sync_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  action: varchar("action", { length: 50 }).notNull(),
+  localObjectType: varchar("local_object_type", { length: 50 }),
+  localObjectId: varchar("local_object_id", { length: 255 }),
+  qboObjectType: varchar("qbo_object_type", { length: 50 }),
+  qboObjectId: varchar("qbo_object_id", { length: 64 }),
+  status: varchar("status", { length: 20 }).notNull(),
+  errorMessage: text("error_message"),
+  requestPayload: jsonb("request_payload"),
+  responsePayload: jsonb("response_payload"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_qbo_sync_log_tenant").on(table.tenantId),
+  createdAtIdx: index("idx_qbo_sync_log_created").on(table.createdAt),
+}));
+
+export const insertQuickbooksSyncLogSchema = createInsertSchema(quickbooksSyncLog, {
+  requestPayload: z.any().optional(),
+  responsePayload: z.any().optional(),
+}).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertQuickbooksSyncLog = z.infer<typeof insertQuickbooksSyncLogSchema>;
+export type QuickbooksSyncLog = typeof quickbooksSyncLog.$inferSelect;
+
+// ============================================================================
 // PROJECT DELIVERABLES
 // ============================================================================
 

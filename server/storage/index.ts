@@ -118,6 +118,7 @@ import {
   type VendorInvoicesMethods,
 } from "./vendor-invoices";
 import { adminMethods } from "./admin";
+import { quickbooksMethods, type QuickbooksMethods } from "./quickbooks";
 import { documentsMethods } from "./documents";
 import { plannerMethods } from "./planner";
 import { tenantMethods } from "./tenant";
@@ -456,7 +457,7 @@ export interface IStorage {
     paymentDate?: string;
     paymentAmount?: string;
     paymentNotes?: string;
-    updatedBy: string;
+    updatedBy: string | null;
   }): Promise<InvoiceBatch>;
   getInvoiceLinesForBatch(batchId: string): Promise<(InvoiceLine & {
     project: Project;
@@ -1304,7 +1305,7 @@ export interface IStorage {
 export class DatabaseStorage {
 }
 
-export interface DatabaseStorage extends IStorage, VendorInvoicesMethods {}
+export interface DatabaseStorage extends IStorage, VendorInvoicesMethods, QuickbooksMethods {}
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -1315,6 +1316,7 @@ Object.assign(
   expensesMethods,
   invoicingMethods,
   adminMethods,
+  quickbooksMethods,
   documentsMethods,
   plannerMethods,
   tenantMethods,
@@ -1330,7 +1332,7 @@ Object.assign(
   distributionStorage,
 );
 
-export const storage: IStorage & VendorInvoicesMethods = new DatabaseStorage() as DatabaseStorage;
+export const storage: IStorage & VendorInvoicesMethods & QuickbooksMethods = new DatabaseStorage() as DatabaseStorage;
 
 /**
  * Shared rate resolution helper that implements the complete rate hierarchy:

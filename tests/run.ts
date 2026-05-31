@@ -15,6 +15,7 @@ import "./galaxy-routes.spec.js";
 import "./galaxy-enqueue.spec.js";
 import "./planner-conflict.spec.js";
 import "./payroll-engine.spec.js";
+import "./quickbooks-mapping.spec.js";
 import { run } from "./_harness.js";
 
 await run();

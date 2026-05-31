@@ -1,0 +1,110 @@
+// Pure QuickBooks Online mapping helpers — no database, no Express, no Intuit
+// API. Kept dependency-free so they can be unit-tested in isolation (see
+// tests/quickbooks-mapping.spec.ts), mirroring the payroll-engine pattern.
+
+export interface QboInvoiceLine {
+  description: string;
+  amount: number;
+  qty?: number;
+  unitPrice?: number;
+  itemRef?: string;
+  serviceDate?: string; // YYYY-MM-DD
+}
+
+export interface QboInvoiceInput {
+  customerId: string;
+  docNumber?: string;
+  txnDate?: string; // YYYY-MM-DD
+  dueDate?: string; // YYYY-MM-DD
+  currencyCode?: string;
+  customerMemo?: string;
+  billEmail?: string;
+  lines: QboInvoiceLine[];
+}
+
+/** Escape a string literal for the QBO SQL-like query language. */
+export function escapeQbo(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+// Add `daysToAdd` (derived from payment terms) to an ISO date, returning ISO
+// (YYYY-MM-DD). "Net N" → N days; "...receipt..." → 0; default 30.
+export function computeDueDateIso(invoiceIso: string, paymentTerms?: string | null): string {
+  const [year, month, day] = invoiceIso.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  let daysToAdd = 30;
+  if (paymentTerms) {
+    const match = paymentTerms.match(/Net\s*(\d+)/i);
+    if (match) daysToAdd = parseInt(match[1], 10);
+    else if (paymentTerms.toLowerCase().includes("receipt")) daysToAdd = 0;
+  }
+  d.setUTCDate(d.getUTCDate() + daysToAdd);
+  return d.toISOString().split("T")[0];
+}
+
+export interface QboBillLine {
+  description: string;
+  amount: number;
+  accountRef: string;       // QBO expense Account id (AccountBasedExpenseLineDetail)
+  customerRef?: string;     // optional: bill the line to a QBO Customer (job costing)
+}
+
+export interface QboBillInput {
+  vendorId: string;
+  docNumber?: string;
+  txnDate?: string; // YYYY-MM-DD
+  dueDate?: string; // YYYY-MM-DD
+  currencyCode?: string;
+  privateNote?: string;
+  lines: QboBillLine[];
+}
+
+/** Build the Intuit Bill create payload from a normalized input. */
+export function buildBillPayload(input: QboBillInput): Record<string, any> {
+  const payload: Record<string, any> = {
+    VendorRef: { value: input.vendorId },
+    Line: input.lines.map((line) => {
+      const detail: Record<string, any> = { AccountRef: { value: line.accountRef } };
+      if (line.customerRef) detail.CustomerRef = { value: line.customerRef };
+      return {
+        DetailType: "AccountBasedExpenseLineDetail",
+        Amount: Number(line.amount.toFixed(2)),
+        Description: line.description,
+        AccountBasedExpenseLineDetail: detail,
+      };
+    }),
+  };
+  if (input.docNumber) payload.DocNumber = input.docNumber;
+  if (input.txnDate) payload.TxnDate = input.txnDate;
+  if (input.dueDate) payload.DueDate = input.dueDate;
+  if (input.currencyCode) payload.CurrencyRef = { value: input.currencyCode };
+  if (input.privateNote) payload.PrivateNote = input.privateNote;
+  return payload;
+}
+
+/** Build the Intuit Invoice create/update payload from a normalized input. */
+export function buildInvoicePayload(input: QboInvoiceInput): Record<string, any> {
+  const payload: Record<string, any> = {
+    CustomerRef: { value: input.customerId },
+    Line: input.lines.map((line) => {
+      const detail: Record<string, any> = {};
+      if (line.itemRef) detail.ItemRef = { value: line.itemRef };
+      if (line.qty !== undefined) detail.Qty = line.qty;
+      if (line.unitPrice !== undefined) detail.UnitPrice = line.unitPrice;
+      if (line.serviceDate) detail.ServiceDate = line.serviceDate;
+      return {
+        DetailType: "SalesItemLineDetail",
+        Amount: Number(line.amount.toFixed(2)),
+        Description: line.description,
+        SalesItemLineDetail: detail,
+      };
+    }),
+  };
+  if (input.docNumber) payload.DocNumber = input.docNumber;
+  if (input.txnDate) payload.TxnDate = input.txnDate;
+  if (input.dueDate) payload.DueDate = input.dueDate;
+  if (input.currencyCode) payload.CurrencyRef = { value: input.currencyCode };
+  if (input.customerMemo) payload.CustomerMemo = { value: input.customerMemo };
+  if (input.billEmail) payload.BillEmail = { Address: input.billEmail };
+  return payload;
+}

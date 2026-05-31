@@ -385,7 +385,7 @@ export const invoicingMethods: ThisType<IStorage & {
     paymentDate?: string;
     paymentAmount?: string;
     paymentNotes?: string;
-    updatedBy: string;
+    updatedBy: string | null;
   }): Promise<InvoiceBatch> {
     // First check if the batch exists and is finalized
     const [batch] = await db
@@ -410,6 +410,10 @@ export const invoicingMethods: ThisType<IStorage & {
 
     if (paymentData.paymentDate) {
       updateData.paymentDate = paymentData.paymentDate;
+    } else if (paymentData.paymentStatus !== 'paid') {
+      // Clear any stale paid date when an invoice reverts to unpaid/partial
+      // (e.g. a QBO sync that reflects a reopened/voided payment).
+      updateData.paymentDate = null;
     }
 
     if (paymentData.paymentAmount) {

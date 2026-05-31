@@ -596,24 +596,29 @@ The following major features have been delivered and are live in production. See
 
 ### 💹 Priority: QuickBooks Online Integration for Consultants
 
-**Status:** 📋 Planned  
+**Status:** 📋 Planned — scoping complete (`docs/design/quickbooks-integration-plan.md`)  
 **Target Completion:** Q2 2026  
-**User Feedback:** Ranked #1 overall in stack ranking with the highest marketplace coin allocation (94 coins), indicating strong consensus on its importance. Two QuickBooks-related ideas (Accounting Integration and Tool Integrations) collectively dominated the feedback session. The 2×2 priority matrix scored it as high impact but also high effort, so detailed scoping and resource planning is recommended before implementation begins.  
-**Value Proposition:** Bidirectional sync with QuickBooks Online eliminates manual data entry and ensures financial accuracy for consultants managing their own books.
+**User Feedback:** Ranked #1 overall in stack ranking with the highest marketplace coin allocation (94 coins), indicating strong consensus on its importance. Two QuickBooks-related ideas (Accounting Integration and Tool Integrations) collectively dominated the feedback session.  
+**Value Proposition:** Bidirectional sync with QuickBooks Online eliminates manual data entry and ensures financial accuracy for consultants managing their own books — **invoicing first**, then contractor payments, then payroll GL.
 
-#### Deliverables
-- OAuth2 authentication with QuickBooks Online
-- Client → QBO Customer mapping interface
-- Role/Service → QBO Items mapping
-- Expense categories → QBO Account mappings
-- Automated invoice creation in QBO (draft status)
-- Batch ID deduplication to prevent duplicates
-- Webhook integration for sync status updates
-- QBO sync dashboard with error reporting
-- Retry mechanism for failed syncs
-- Real-time validation and error handling
+**Approach update:** The arrival of the QuickBooks MCP Bundle removes the bespoke Intuit OAuth2/REST client work that drove the original high-effort estimate. The integration now mirrors the proven HubSpot pattern (per-tenant OAuth, connection/mapping/sync-log tables, settings card) and is delivered in independently shippable phases.
 
-**Implementation Note:** Given the high effort rating from user feedback, a detailed scoping and resource allocation plan should be completed before development begins.
+#### Phase 1 (Q2 2026) — Invoicing / Accounts Receivable
+- Per-tenant OAuth + connection, mapping manager (Customers / Items / Accounts), sandbox flag
+- Push finalized invoice batch → QBO Invoice (tax, multi-currency, `Project:Type:Category` items, post-adjustment amounts)
+- Pull payment status back into Constellation via CDC; replaces the manual QBO CSV export
+- QBO sync dashboard with error reporting and retry
+
+#### Phase 2 (Q2 2026) — Contractor & Vendor Payments / Accounts Payable
+- Vendor match-or-create; push approved vendor & contractor invoices → QBO Bills
+- Record Bill Payments when marked paid; activates dormant `glBillNumber` plumbing
+
+#### Phase 3 (Q2/Q3 2026) — Payroll GL Sync
+- Finalized payroll runs → QBO Journal Entries (Constellation keeps its in-house payroll engine; QBO becomes the GL book of record)
+- 1099 contractor pay as Bills option
+
+#### Phase 4 (additive) — Agentic assistant & live financials
+- In-app assistant over MCP query/report tools; AgedReceivables/Payables and P&L surfaced in-app; optional webhooks
 
 ---
 
