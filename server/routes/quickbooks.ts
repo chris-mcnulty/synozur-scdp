@@ -27,6 +27,8 @@ import {
   createQboJournalEntry,
   getQboJournalEntry,
   deleteQboJournalEntry,
+  getQboReport,
+  QBO_REPORT_SLUGS,
   type QboInvoiceLine,
   type QboBillLine,
   type QboJournalLine,
@@ -335,6 +337,29 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
       if (!tenantId) return;
       const accounts = await listQboAccounts(tenantId);
       res.json(accounts.map((a: any) => ({ id: a.Id, name: a.Name, accountType: a.AccountType })));
+    } catch (error: any) {
+      res.status(502).json({ message: error.message });
+    }
+  });
+
+  // Read-only financial reports surfaced in-app (Phase 4). Supported slugs:
+  // aged-receivables, aged-payables, profit-and-loss. Date params (start_date,
+  // end_date, date_macro) pass straight through to Intuit.
+  app.get("/api/accounting/quickbooks/reports/:name", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = await requireEnabled(req, res);
+      if (!tenantId) return;
+      const name = req.params.name;
+      if (!QBO_REPORT_SLUGS.includes(name)) {
+        return res.status(404).json({ message: `Unknown report '${name}'. Supported: ${QBO_REPORT_SLUGS.join(", ")}` });
+      }
+      const params: Record<string, string> = {};
+      for (const key of ["start_date", "end_date", "date_macro"]) {
+        const v = req.query[key];
+        if (typeof v === "string" && v) params[key] = v;
+      }
+      const report = await getQboReport(tenantId, name, params);
+      res.json(report);
     } catch (error: any) {
       res.status(502).json({ message: error.message });
     }

@@ -153,3 +153,68 @@ export function buildJournalEntryPayload(input: QboJournalEntryInput): Record<st
   if (input.privateNote) payload.PrivateNote = input.privateNote;
   return payload;
 }
+
+// ============================================================================
+// Report normalization (Phase 4 — in-app financials)
+// ============================================================================
+//
+// QBO report responses are a recursively nested structure (Rows containing
+// Sections containing Rows, each with optional Header/Summary). The UI just
+// wants a flat list of rows with a depth for indentation. normalizeQboReport
+// flattens that tree into a render-ready shape so the React side stays dumb.
+
+export interface NormalizedReportRow {
+  cells: string[];
+  depth: number;
+  kind: "data" | "header" | "summary";
+}
+
+export interface NormalizedReport {
+  reportName: string;
+  startPeriod?: string;
+  endPeriod?: string;
+  currency?: string;
+  columns: string[];
+  rows: NormalizedReportRow[];
+}
+
+function colDataToCells(colData: any[]): string[] {
+  return (colData || []).map((c) => (c?.value ?? "").toString());
+}
+
+function walkReportRows(rowNode: any, depth: number, out: NormalizedReportRow[]): void {
+  const rows = rowNode?.Row;
+  if (!Array.isArray(rows)) return;
+  for (const row of rows) {
+    if (row?.Header?.ColData) {
+      out.push({ cells: colDataToCells(row.Header.ColData), depth, kind: "header" });
+    }
+    if (row?.ColData) {
+      out.push({ cells: colDataToCells(row.ColData), depth, kind: "data" });
+    }
+    if (row?.Rows) {
+      walkReportRows(row.Rows, depth + 1, out);
+    }
+    if (row?.Summary?.ColData) {
+      out.push({ cells: colDataToCells(row.Summary.ColData), depth, kind: "summary" });
+    }
+  }
+}
+
+/** Flatten a raw Intuit report payload into a render-ready table. */
+export function normalizeQboReport(report: any): NormalizedReport {
+  const header = report?.Header || {};
+  const columns = ((report?.Columns?.Column as any[]) || []).map(
+    (c) => (c?.ColTitle ?? "").toString(),
+  );
+  const rows: NormalizedReportRow[] = [];
+  walkReportRows(report?.Rows, 0, rows);
+  return {
+    reportName: (header.ReportName ?? "").toString(),
+    startPeriod: header.StartPeriod,
+    endPeriod: header.EndPeriod,
+    currency: header.Currency,
+    columns,
+    rows,
+  };
+}

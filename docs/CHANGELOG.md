@@ -17,6 +17,29 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 2.7 (June 5, 2026)
+
+**Release Date:** June 5, 2026
+**Status:** Production Release
+**Codename:** Realm
+
+Version 2.7 makes QuickBooks Online a true two-way book of record. Building on the A/R invoice sync and A/P bill sync from 2.6.x, this release adds **payroll GL posting** and **live in-app financial reports** — completing the phased QuickBooks integration. Constellation's in-house payroll engine still owns computation, taxes, and NACHA; QuickBooks now receives the accounting impact, and admins can read core financials without leaving the app.
+
+#### Payroll GL → QuickBooks Journal Entries (Phase 3)
+
+- **One-click GL posting** — a finalized payroll run posts to QuickBooks Online as a single balanced **Journal Entry** from the run detail page ("Post GL to QuickBooks").
+- **Reuses the existing payroll GL setup** — the journal is built from the same per-tenant payroll GL chart of accounts and category mappings that already drive the GL CSV export (wages, employer tax, taxes withheld, deductions, garnishments, net-pay clearing). Account numbers are matched to QuickBooks accounts by account number (`AcctNum`); if any are unmapped, the push reports exactly which numbers to align.
+- **Idempotent & reversible** — one journal entry per run; "Remove QBO Journal" deletes it in QuickBooks and unlocks the run for re-posting after a correction.
+
+#### In-App Financial Reports (Phase 4)
+
+- **Live QuickBooks reports** on the Organization Settings → QuickBooks card: **A/R Aging Summary**, **A/P Aging Summary**, and **Profit & Loss** (with a date range).
+- Read-only — pulled on demand from QuickBooks Online and rendered in-app, so finance leads get current aging and profitability without opening QuickBooks.
+
+> Deferred for a later release: an in-app agentic assistant over QuickBooks query tools, inbound QuickBooks webhooks, and posting 1099 contractor pay as Bills (currently a summary journal entry).
+
+---
+
 ### Version 2.6 (May 25, 2026)
 
 **Release Date:** May 25, 2026

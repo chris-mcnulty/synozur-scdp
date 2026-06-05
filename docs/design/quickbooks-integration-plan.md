@@ -1,10 +1,10 @@
 # QuickBooks Online Integration Plan
 
-**Status:** 📋 Proposed (supersedes the original backlog scoping)
+**Status:** 🟢 Phases 0–4 implemented (A/R, A/P, Payroll GL, in-app reports)
 **Priority:** P1 — #1 user-requested feature (94 marketplace coins, Feb 2026)
 **Target:** Q2 2026 (phased)
 **Owner:** TBD
-**Last updated:** 2026-05-31
+**Last updated:** 2026-06-05
 
 ---
 
@@ -244,6 +244,29 @@ the **accounting impact** only:
 > Payroll GL sync is **Phase 3** — sequenced last because the in-house engine
 > already produces compliant outputs, so this is a convenience/bookkeeping layer.
 
+**Implemented (Phase 3).** A finalized run posts as a single summary
+**JournalEntry** via `POST /api/payroll/runs/:id/push-qbo`. Rather than a separate
+payroll account map, it **reuses the existing payroll GL system** — the per-tenant
+GL chart of accounts (`payroll_gl_accounts`) and category mappings
+(`payroll_gl_mappings`) that already back the GL CSV export. The shared
+`payrollStorage.buildGlExport` builder emits balanced debit/credit lines keyed by
+payroll GL account number; the push resolves each number to a QBO Account by
+`AcctNum`, so the operator aligns numbers once. The push is idempotent (one
+`payroll_run` → `JournalEntry` mapping); `POST .../qbo-cancel` deletes the entry
+and releases the mapping for re-push. The 1099-as-Bills option remains deferred.
+
+### 7.4 In-app financial reports (Phase 4)
+
+Read-only QBO reports surfaced inside Constellation so admins/executives see live
+financials without leaving the app: **A/R Aging Summary** (`AgedReceivables`),
+**A/P Aging Summary** (`AgedPayables`), and **Profit & Loss** (`ProfitAndLoss`).
+`GET /api/accounting/quickbooks/reports/:name` fetches the Intuit report (passing
+`start_date`/`end_date` through for dated reports) and a pure `normalizeQboReport`
+helper flattens Intuit's nested Rows/Sections tree into a render-ready table
+(columns + flat rows with depth + row kind). The QuickBooks card on the
+Organization Settings page renders the result. The "agentic assistant over MCP
+query tools" and inbound webhooks from §12 remain deferred.
+
 ---
 
 ## 8. Database schema additions
@@ -313,13 +336,16 @@ POST   /api/accounting/quickbooks/vendors/:userId/link
 POST   /api/invoice-batches/:batchId/push-qbo          // A/R push (replaces CSV as primary)
 POST   /api/vendor-invoices/:id/push-qbo               // A/P Bill push
 POST   /api/contractor-invoices/:id/push-qbo
-POST   /api/payroll-runs/:id/push-qbo                  // Journal Entry (Phase 3)
+POST   /api/payroll/runs/:id/push-qbo                  // Journal Entry from GL export (Phase 3)
+POST   /api/payroll/runs/:id/qbo-cancel                // delete Journal Entry, release mapping (Phase 3)
+GET    /api/accounting/quickbooks/reports/:name        // aged-receivables | aged-payables | profit-and-loss (Phase 4)
 POST   /api/accounting/quickbooks/sync/payments        // CDC pull of A/R status (also scheduled)
 GET    /api/accounting/quickbooks/sync-log?limit=50
 ```
 
-All write routes gated by `requireRole(["admin","billing-admin"])` and an
-`isEnabled` connection check, matching existing billing/CRM routes.
+All write routes gated by `requireRole(["admin","billing-admin"])` (payroll GL and
+reports also allow `executive`) and an `isEnabled` connection check, matching
+existing billing/CRM routes.
 
 ---
 
@@ -358,13 +384,13 @@ All write routes gated by `requireRole(["admin","billing-admin"])` and an
 
 ## 12. Phasing & timeline
 
-| Phase | Scope | Est. | Outcome |
-|-------|-------|------|---------|
-| **0 — Foundation** | OAuth + connection/mapping/log schema, settings card, token refresh, mapping manager (Customers/Items/Accounts) | ~2 wks | Tenants can connect a realm and map entities. |
-| **1 — Invoicing (A/R)** | Push finalized batch → QBO Invoice (batch tool, tax, currency); write-back ids; CDC payment status pull; PDF attach | ~2–3 wks | One-click invoice sync + paid status. Headline value. |
-| **2 — Contractor/Vendor A/P** | Vendor match-or-create; push approved vendor/contractor invoices → Bills; BillPayments on paid | ~2 wks | Activates dormant A/P plumbing end-to-end. |
-| **3 — Payroll GL** | Finalized run → JournalEntry; 1099 → Bills option; payroll account map | ~1–2 wks | QBO is the GL book of record. |
-| **4 — Agentic + reports (additive)** | In-app assistant over MCP query/report tools; AgedReceivables/Payables, P&L surfaced in-app; optional webhooks | ~2 wks | Ad-hoc Q&A and live financials. |
+| Phase | Scope | Est. | Outcome | Status |
+|-------|-------|------|---------|--------|
+| **0 — Foundation** | OAuth + connection/mapping/log schema, settings card, token refresh, mapping manager (Customers/Items/Accounts) | ~2 wks | Tenants can connect a realm and map entities. | ✅ Shipped |
+| **1 — Invoicing (A/R)** | Push finalized batch → QBO Invoice (batch tool, tax, currency); write-back ids; CDC payment status pull; PDF attach | ~2–3 wks | One-click invoice sync + paid status. Headline value. | ✅ Shipped |
+| **2 — Contractor/Vendor A/P** | Vendor match-or-create; push approved vendor/contractor invoices → Bills; BillPayments on paid | ~2 wks | Activates dormant A/P plumbing end-to-end. | ✅ Shipped |
+| **3 — Payroll GL** | Finalized run → JournalEntry; 1099 → Bills option; payroll account map | ~1–2 wks | QBO is the GL book of record. | ✅ Shipped (Journal Entry; 1099-as-Bills deferred) |
+| **4 — Agentic + reports (additive)** | In-app assistant over MCP query/report tools; AgedReceivables/Payables, P&L surfaced in-app; optional webhooks | ~2 wks | Ad-hoc Q&A and live financials. | 🟡 Reports shipped; assistant/webhooks deferred |
 
 Because the MCP Bundle removes the bespoke-client work, total is meaningfully
 below the original 8–12 week estimate; Phases 0–2 (the requested core) land first

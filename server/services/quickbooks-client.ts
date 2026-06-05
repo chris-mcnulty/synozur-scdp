@@ -1,10 +1,10 @@
 import { storage } from "../storage.js";
-import { escapeQbo, buildInvoicePayload, buildBillPayload, buildJournalEntryPayload, type QboInvoiceInput, type QboInvoiceLine, type QboBillInput, type QboBillLine, type QboJournalEntryInput, type QboJournalLine } from "./quickbooks-mapping.js";
+import { escapeQbo, buildInvoicePayload, buildBillPayload, buildJournalEntryPayload, normalizeQboReport, type QboInvoiceInput, type QboInvoiceLine, type QboBillInput, type QboBillLine, type QboJournalEntryInput, type QboJournalLine, type NormalizedReport } from "./quickbooks-mapping.js";
 
 // Re-export the pure mapping helpers so existing importers (routes) keep a
 // single import surface.
-export { escapeQbo, computeDueDateIso, buildInvoicePayload, buildBillPayload, buildJournalEntryPayload } from "./quickbooks-mapping.js";
-export type { QboInvoiceInput, QboInvoiceLine, QboBillInput, QboBillLine, QboJournalEntryInput, QboJournalLine } from "./quickbooks-mapping.js";
+export { escapeQbo, computeDueDateIso, buildInvoicePayload, buildBillPayload, buildJournalEntryPayload, normalizeQboReport } from "./quickbooks-mapping.js";
+export type { QboInvoiceInput, QboInvoiceLine, QboBillInput, QboBillLine, QboJournalEntryInput, QboJournalLine, NormalizedReport } from "./quickbooks-mapping.js";
 
 // Thin QuickBooks Online (Intuit) API client.
 //
@@ -321,3 +321,37 @@ export async function deleteQboJournalEntry(tenantId: string, journalEntryId: st
   const result = await qboRequest(ctx, "POST", "journalentry", { Id: journalEntryId, SyncToken: syncToken }, { operation: "delete" });
   return result;
 }
+
+// ============================================================================
+// Reports  (Phase 4 — read-only in-app financials)
+// ============================================================================
+
+// Reports the in-app financials surface supports, mapped to Intuit report names.
+const QBO_REPORTS: Record<string, string> = {
+  "aged-receivables": "AgedReceivables",
+  "aged-payables": "AgedPayables",
+  "profit-and-loss": "ProfitAndLoss",
+};
+
+/**
+ * Fetch a QBO report and return it flattened for rendering. `params` are passed
+ * through to Intuit (e.g. start_date, end_date, date_macro). Unknown report
+ * slugs throw rather than silently returning nothing.
+ */
+export async function getQboReport(
+  tenantId: string,
+  reportSlug: string,
+  params: Record<string, string> = {},
+): Promise<NormalizedReport> {
+  const reportName = QBO_REPORTS[reportSlug];
+  if (!reportName) throw new Error(`Unknown QuickBooks report: ${reportSlug}`);
+  const ctx = await getContext(tenantId);
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") clean[k] = String(v);
+  }
+  const raw = await qboRequest(ctx, "GET", `reports/${reportName}`, undefined, clean);
+  return normalizeQboReport(raw);
+}
+
+export const QBO_REPORT_SLUGS = Object.keys(QBO_REPORTS);

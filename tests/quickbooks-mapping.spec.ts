@@ -13,6 +13,7 @@ import {
   buildInvoicePayload,
   buildBillPayload,
   buildJournalEntryPayload,
+  normalizeQboReport,
 } from "../server/services/quickbooks-mapping.js";
 
 describe("quickbooks: escapeQbo", () => {
@@ -172,5 +173,60 @@ describe("quickbooks: buildJournalEntryPayload", () => {
       .reduce((s: number, l: any) => s + l.Amount, 0);
     expect(debits).toBe(5400);
     expect(credits).toBe(5400);
+  });
+});
+
+describe("quickbooks: normalizeQboReport", () => {
+  // A trimmed but representative ProfitAndLoss payload with a nested section.
+  const sample = {
+    Header: { ReportName: "ProfitAndLoss", StartPeriod: "2026-01-01", EndPeriod: "2026-03-31", Currency: "USD" },
+    Columns: { Column: [{ ColTitle: "", ColType: "Account" }, { ColTitle: "Total", ColType: "Money" }] },
+    Rows: {
+      Row: [
+        {
+          Header: { ColData: [{ value: "Income" }, { value: "" }] },
+          Rows: {
+            Row: [
+              { ColData: [{ value: "Consulting", id: "1" }, { value: "10000.00" }], type: "Data" },
+              { ColData: [{ value: "Reimbursed", id: "2" }, { value: "500.00" }], type: "Data" },
+            ],
+          },
+          Summary: { ColData: [{ value: "Total Income" }, { value: "10500.00" }] },
+          type: "Section",
+        },
+        { ColData: [{ value: "Net Income" }, { value: "10500.00" }], type: "Data" },
+      ],
+    },
+  };
+
+  it("extracts header metadata and column titles", () => {
+    const r = normalizeQboReport(sample);
+    expect(r.reportName).toBe("ProfitAndLoss");
+    expect(r.startPeriod).toBe("2026-01-01");
+    expect(r.currency).toBe("USD");
+    expect(r.columns).toEqual(["", "Total"]);
+  });
+
+  it("flattens nested sections with depth and row kinds", () => {
+    const r = normalizeQboReport(sample);
+    // header(Income) + 2 data + summary(Total Income) + data(Net Income) = 5
+    expect(r.rows.length).toBe(5);
+    expect(r.rows[0].kind).toBe("header");
+    expect(r.rows[0].cells[0]).toBe("Income");
+    expect(r.rows[0].depth).toBe(0);
+    // Nested data rows are one level deeper.
+    expect(r.rows[1].kind).toBe("data");
+    expect(r.rows[1].depth).toBe(1);
+    expect(r.rows[1].cells).toEqual(["Consulting", "10000.00"]);
+    expect(r.rows[3].kind).toBe("summary");
+    expect(r.rows[3].cells).toEqual(["Total Income", "10500.00"]);
+    expect(r.rows[4].cells).toEqual(["Net Income", "10500.00"]);
+  });
+
+  it("handles an empty report without throwing", () => {
+    const r = normalizeQboReport({ Header: { ReportName: "AgedReceivables" }, Columns: {}, Rows: {} });
+    expect(r.reportName).toBe("AgedReceivables");
+    expect(r.columns).toEqual([]);
+    expect(r.rows).toEqual([]);
   });
 });
