@@ -28,6 +28,7 @@ import {
   raiddEntries,
   type RaiddEntry,
   type InsertRaiddEntry,
+  projectAllocations,
   groundingDocuments,
   type GroundingDocument,
   type InsertGroundingDocument,
@@ -950,10 +951,28 @@ export const adminMethods: ThisType<IStorage & {
     };
   },
 
-  async getMyRaiddEntries(userId: string, tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]> {
+  async getMyRaiddEntries(userId: string, tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string; myRole?: string })[]> {
+    // Collect project IDs where this user has any allocation (personId match).
+    // Used to surface RAIDD items the user cares about as a team member, even
+    // when they aren't explicitly set as owner or assignee.
+    const allocationRows = await db
+      .selectDistinct({ projectId: projectAllocations.projectId })
+      .from(projectAllocations)
+      .where(and(
+        eq(projectAllocations.personId, userId),
+        eq(projectAllocations.tenantId, tenantId),
+      ));
+    const allocatedProjectIds = allocationRows.map(r => r.projectId);
+
     const conditions: SQL[] = [
       eq(raiddEntries.tenantId, tenantId),
-      or(eq(raiddEntries.ownerId, userId), eq(raiddEntries.assigneeId, userId))!,
+      allocatedProjectIds.length > 0
+        ? or(
+            eq(raiddEntries.ownerId, userId),
+            eq(raiddEntries.assigneeId, userId),
+            inArray(raiddEntries.projectId, allocatedProjectIds),
+          )!
+        : or(eq(raiddEntries.ownerId, userId), eq(raiddEntries.assigneeId, userId))!,
     ];
     if (filters?.type) conditions.push(eq(raiddEntries.type, filters.type));
     if (filters?.status) conditions.push(eq(raiddEntries.status, filters.status));
@@ -970,21 +989,32 @@ export const adminMethods: ThisType<IStorage & {
     })
     .from(raiddEntries)
     .innerJoin(projects, eq(raiddEntries.projectId, projects.id))
-    .innerJoin(clients, eq(projects.clientId, clients.id))
+    .leftJoin(clients, eq(projects.clientId, clients.id))
     .leftJoin(raiddOwnerAlias, eq(raiddEntries.ownerId, raiddOwnerAlias.id))
     .leftJoin(raiddAssigneeAlias, eq(raiddEntries.assigneeId, raiddAssigneeAlias.id))
     .leftJoin(raiddCreatedByAlias, eq(raiddEntries.createdBy, raiddCreatedByAlias.id))
     .where(and(...conditions))
     .orderBy(desc(raiddEntries.createdAt));
 
-    return rows.map(r => ({
-      ...r.entry,
-      ownerName: r.ownerName ?? undefined,
-      assigneeName: r.assigneeName ?? undefined,
-      createdByName: r.createdByName ?? undefined,
-      projectName: r.projectName ?? undefined,
-      clientName: r.clientName ?? undefined,
-    }));
+    const allocatedSet = new Set(allocatedProjectIds);
+    return rows.map(r => {
+      const isOwner = r.entry.ownerId === userId;
+      const isAssignee = r.entry.assigneeId === userId;
+      const myRole = isOwner && isAssignee ? 'owner_assignee'
+                   : isOwner ? 'owner'
+                   : isAssignee ? 'assignee'
+                   : allocatedSet.has(r.entry.projectId) ? 'member'
+                   : undefined;
+      return {
+        ...r.entry,
+        ownerName: r.ownerName ?? undefined,
+        assigneeName: r.assigneeName ?? undefined,
+        createdByName: r.createdByName ?? undefined,
+        projectName: r.projectName ?? undefined,
+        clientName: r.clientName ?? undefined,
+        myRole,
+      };
+    });
   },
 
   async getGroundingDocuments(filters?: { tenantId?: string | null; category?: string; isActive?: boolean }): Promise<GroundingDocument[]> {

@@ -47,6 +47,7 @@ interface RaiddEntry {
   createdByName?: string;
   projectName?: string;
   clientName?: string;
+  myRole?: string; // 'owner' | 'assignee' | 'owner_assignee' | 'member'
 }
 
 interface MyRaiddData {
@@ -106,7 +107,7 @@ function formatLabel(value: string) {
   return value.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-type RoleFilter = "all" | "owner" | "assignee";
+type RoleFilter = "all" | "owner" | "assignee" | "member";
 type GroupBy = "none" | "project" | "type" | "priority" | "status";
 
 export default function MyRaidd() {
@@ -135,10 +136,11 @@ export default function MyRaidd() {
     if (typeFilter !== "all") entries = entries.filter(e => e.type === typeFilter);
     if (priorityFilter !== "all") entries = entries.filter(e => e.priority === priorityFilter);
     if (projectFilter !== "all") entries = entries.filter(e => e.projectId === projectFilter);
-    if (roleFilter === "owner") entries = entries.filter(e => e.ownerId === user?.id);
-    if (roleFilter === "assignee") entries = entries.filter(e => e.assigneeId === user?.id);
+    if (roleFilter === "owner") entries = entries.filter(e => e.myRole === "owner" || e.myRole === "owner_assignee");
+    if (roleFilter === "assignee") entries = entries.filter(e => e.myRole === "assignee" || e.myRole === "owner_assignee");
+    if (roleFilter === "member") entries = entries.filter(e => e.myRole === "member");
     return entries;
-  }, [data, typeFilter, priorityFilter, projectFilter, roleFilter, user?.id]);
+  }, [data, typeFilter, priorityFilter, projectFilter, roleFilter]);
 
   const grouped = useMemo(() => {
     if (groupBy === "none") return null;
@@ -281,6 +283,7 @@ export default function MyRaidd() {
                     <TabsTrigger value="all" className="text-xs px-3">All</TabsTrigger>
                     <TabsTrigger value="owner" className="text-xs px-3">Owner</TabsTrigger>
                     <TabsTrigger value="assignee" className="text-xs px-3">Assignee</TabsTrigger>
+                    <TabsTrigger value="member" className="text-xs px-3">Team member</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -384,7 +387,7 @@ export default function MyRaidd() {
                 <Shield className="h-12 w-12 mb-3 opacity-40" />
                 <p className="text-lg font-medium">No RAIDD entries found</p>
                 <p className="text-sm mt-1">
-                  {hasFilters ? "Try adjusting your filters" : "You have no RAIDD entries assigned to you"}
+                  {hasFilters ? "Try adjusting your filters" : "No RAIDD entries found for your projects"}
                 </p>
               </div>
             ) : (
@@ -482,12 +485,13 @@ function EntryRow({ entry, isOverdue, showProject, isExpanded, onToggle, userId 
   onToggle: () => void;
   userId?: string;
 }) {
-  const myRole = entry.ownerId === userId && entry.assigneeId === userId ? "Both" :
-                  entry.ownerId === userId ? "Owner" : "Assignee";
-
-  const roleColor = myRole === "Owner" ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" :
-                    myRole === "Assignee" ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400" :
-                    "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400";
+  const roleMap: Record<string, { label: string; color: string }> = {
+    owner:          { label: "Owner",         color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
+    assignee:       { label: "Assignee",      color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400" },
+    owner_assignee: { label: "Owner & Assignee", color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400" },
+    member:         { label: "Team member",   color: "bg-slate-100 text-slate-700 dark:bg-slate-700/30 dark:text-slate-300" },
+  };
+  const { label: myRoleLabel, color: roleColor } = roleMap[entry.myRole ?? "member"] ?? roleMap.member;
 
   return (
     <TableRow
@@ -534,7 +538,7 @@ function EntryRow({ entry, isOverdue, showProject, isExpanded, onToggle, userId 
       </TableCell>
       <TableCell>
         <Badge variant="secondary" className={`text-xs ${roleColor}`}>
-          {myRole}
+          {myRoleLabel}
         </Badge>
       </TableCell>
       <TableCell>
