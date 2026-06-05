@@ -108,3 +108,48 @@ export function buildInvoicePayload(input: QboInvoiceInput): Record<string, any>
   if (input.billEmail) payload.BillEmail = { Address: input.billEmail };
   return payload;
 }
+
+export interface QboJournalLine {
+  // Exactly one of debit/credit is non-zero (in dollars).
+  debit: number;
+  credit: number;
+  accountRef: string; // QBO Account id
+  description?: string;
+}
+
+export interface QboJournalEntryInput {
+  docNumber?: string;
+  txnDate?: string; // YYYY-MM-DD
+  currencyCode?: string;
+  privateNote?: string;
+  lines: QboJournalLine[];
+}
+
+/**
+ * Build the Intuit JournalEntry create payload. Each line carries a
+ * PostingType of Debit or Credit; QBO requires total debits == total credits.
+ * Lines with both debit and credit zero are skipped.
+ */
+export function buildJournalEntryPayload(input: QboJournalEntryInput): Record<string, any> {
+  const payload: Record<string, any> = {
+    Line: input.lines
+      .filter((l) => Number(l.debit.toFixed(2)) !== 0 || Number(l.credit.toFixed(2)) !== 0)
+      .map((l) => {
+        const isDebit = Number(l.debit.toFixed(2)) !== 0;
+        return {
+          DetailType: "JournalEntryLineDetail",
+          Amount: Number((isDebit ? l.debit : l.credit).toFixed(2)),
+          Description: l.description,
+          JournalEntryLineDetail: {
+            PostingType: isDebit ? "Debit" : "Credit",
+            AccountRef: { value: l.accountRef },
+          },
+        };
+      }),
+  };
+  if (input.docNumber) payload.DocNumber = input.docNumber;
+  if (input.txnDate) payload.TxnDate = input.txnDate;
+  if (input.currencyCode) payload.CurrencyRef = { value: input.currencyCode };
+  if (input.privateNote) payload.PrivateNote = input.privateNote;
+  return payload;
+}

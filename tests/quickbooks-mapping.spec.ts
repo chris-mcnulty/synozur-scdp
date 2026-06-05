@@ -12,6 +12,7 @@ import {
   computeDueDateIso,
   buildInvoicePayload,
   buildBillPayload,
+  buildJournalEntryPayload,
 } from "../server/services/quickbooks-mapping.js";
 
 describe("quickbooks: escapeQbo", () => {
@@ -120,5 +121,56 @@ describe("quickbooks: buildBillPayload", () => {
       lines: [{ description: "x", amount: 50, accountRef: "63", customerRef: "12" }],
     });
     expect(payload.Line[0].AccountBasedExpenseLineDetail.CustomerRef.value).toBe("12");
+  });
+});
+
+describe("quickbooks: buildJournalEntryPayload", () => {
+  it("emits Debit/Credit posting types and skips zero lines", () => {
+    const payload = buildJournalEntryPayload({
+      docNumber: "PR-abc12345",
+      txnDate: "2026-05-15",
+      privateNote: "Payroll run x",
+      lines: [
+        { debit: 1000, credit: 0, accountRef: "60", description: "Wages" },
+        { debit: 0, credit: 250, accountRef: "70", description: "Taxes withheld" },
+        { debit: 0, credit: 750, accountRef: "80", description: "Net pay clearing" },
+        { debit: 0, credit: 0, accountRef: "99", description: "Unmapped (skip)" },
+      ],
+    });
+
+    expect(payload.DocNumber).toBe("PR-abc12345");
+    expect(payload.TxnDate).toBe("2026-05-15");
+    expect(payload.Line.length).toBe(3); // zero line dropped
+
+    const debitLine = payload.Line[0];
+    expect(debitLine.DetailType).toBe("JournalEntryLineDetail");
+    expect(debitLine.Amount).toBe(1000);
+    expect(debitLine.JournalEntryLineDetail.PostingType).toBe("Debit");
+    expect(debitLine.JournalEntryLineDetail.AccountRef.value).toBe("60");
+
+    const creditLine = payload.Line[1];
+    expect(creditLine.Amount).toBe(250);
+    expect(creditLine.JournalEntryLineDetail.PostingType).toBe("Credit");
+    expect(creditLine.JournalEntryLineDetail.AccountRef.value).toBe("70");
+  });
+
+  it("produces balanced debits and credits from a payroll GL split", () => {
+    const payload = buildJournalEntryPayload({
+      lines: [
+        { debit: 5000, credit: 0, accountRef: "wages" },
+        { debit: 400, credit: 0, accountRef: "er_tax" },
+        { debit: 0, credit: 900, accountRef: "ee_tax_liab" },
+        { debit: 0, credit: 400, accountRef: "er_tax_liab" },
+        { debit: 0, credit: 4100, accountRef: "net_clearing" },
+      ],
+    });
+    const debits = payload.Line
+      .filter((l: any) => l.JournalEntryLineDetail.PostingType === "Debit")
+      .reduce((s: number, l: any) => s + l.Amount, 0);
+    const credits = payload.Line
+      .filter((l: any) => l.JournalEntryLineDetail.PostingType === "Credit")
+      .reduce((s: number, l: any) => s + l.Amount, 0);
+    expect(debits).toBe(5400);
+    expect(credits).toBe(5400);
   });
 });

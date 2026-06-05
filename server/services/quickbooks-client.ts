@@ -1,10 +1,10 @@
 import { storage } from "../storage.js";
-import { escapeQbo, buildInvoicePayload, buildBillPayload, type QboInvoiceInput, type QboInvoiceLine, type QboBillInput, type QboBillLine } from "./quickbooks-mapping.js";
+import { escapeQbo, buildInvoicePayload, buildBillPayload, buildJournalEntryPayload, type QboInvoiceInput, type QboInvoiceLine, type QboBillInput, type QboBillLine, type QboJournalEntryInput, type QboJournalLine } from "./quickbooks-mapping.js";
 
 // Re-export the pure mapping helpers so existing importers (routes) keep a
 // single import surface.
-export { escapeQbo, computeDueDateIso, buildInvoicePayload, buildBillPayload } from "./quickbooks-mapping.js";
-export type { QboInvoiceInput, QboInvoiceLine, QboBillInput, QboBillLine } from "./quickbooks-mapping.js";
+export { escapeQbo, computeDueDateIso, buildInvoicePayload, buildBillPayload, buildJournalEntryPayload } from "./quickbooks-mapping.js";
+export type { QboInvoiceInput, QboInvoiceLine, QboBillInput, QboBillLine, QboJournalEntryInput, QboJournalLine } from "./quickbooks-mapping.js";
 
 // Thin QuickBooks Online (Intuit) API client.
 //
@@ -277,5 +277,47 @@ export async function getQboBill(tenantId: string, billId: string): Promise<any 
 export async function deleteQboBill(tenantId: string, billId: string, syncToken: string): Promise<any> {
   const ctx = await getContext(tenantId);
   const result = await qboRequest(ctx, "POST", "bill", { Id: billId, SyncToken: syncToken }, { operation: "delete" });
+  return result;
+}
+
+// ============================================================================
+// Account lookup  (used by payroll GL → JournalEntry)
+// ============================================================================
+
+/**
+ * Map QBO Account ids by their chart-of-accounts number (AcctNum). Constellation
+ * payroll GL accounts carry an accountNumber that the operator sets to match the
+ * QBO account number, so this is how a payroll GL line resolves to a QBO account.
+ */
+export async function getQboAccountIdsByNumber(tenantId: string): Promise<Map<string, string>> {
+  const accounts = await queryQbo(tenantId, "SELECT * FROM Account WHERE Active = true MAXRESULTS 1000");
+  const byNumber = new Map<string, string>();
+  for (const a of accounts) {
+    if (a?.AcctNum) byNumber.set(String(a.AcctNum), String(a.Id));
+  }
+  return byNumber;
+}
+
+// ============================================================================
+// JournalEntry create / delete  (payroll GL)
+// ============================================================================
+
+export async function createQboJournalEntry(tenantId: string, input: QboJournalEntryInput): Promise<any> {
+  const ctx = await getContext(tenantId);
+  const payload = buildJournalEntryPayload(input);
+  const result = await qboRequest(ctx, "POST", "journalentry", payload);
+  return result?.JournalEntry;
+}
+
+export async function getQboJournalEntry(tenantId: string, journalEntryId: string): Promise<any | undefined> {
+  const ctx = await getContext(tenantId);
+  const result = await qboRequest(ctx, "GET", `journalentry/${journalEntryId}`);
+  return result?.JournalEntry;
+}
+
+/** JournalEntries are reversed by delete (preserves nothing in QBO; mapping tracks it). */
+export async function deleteQboJournalEntry(tenantId: string, journalEntryId: string, syncToken: string): Promise<any> {
+  const ctx = await getContext(tenantId);
+  const result = await qboRequest(ctx, "POST", "journalentry", { Id: journalEntryId, SyncToken: syncToken }, { operation: "delete" });
   return result;
 }
