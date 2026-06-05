@@ -230,3 +230,51 @@ describe("quickbooks: normalizeQboReport", () => {
     expect(r.rows).toEqual([]);
   });
 });
+
+import { parseQboNeeds, QBO_ASSISTANT_TOOLS } from "../server/services/quickbooks-assistant.js";
+
+describe("quickbooks: parseQboNeeds (assistant tool gating)", () => {
+  it("accepts known tools with valid args", () => {
+    const { valid, rejected } = parseQboNeeds({
+      qboNeeds: [
+        { tool: "aging_summary", args: { type: "receivable" } },
+        { tool: "list_overdue_invoices", args: {} },
+        { tool: "profit_and_loss", args: { start_date: "2026-01-01", end_date: "2026-03-31" } },
+      ],
+    });
+    expect(valid.length).toBe(3);
+    expect(rejected.length).toBe(0);
+    expect(valid[0].args.type).toBe("receivable");
+  });
+
+  it("rejects unknown tools and bad args without throwing", () => {
+    const { valid, rejected } = parseQboNeeds({
+      qboNeeds: [
+        { tool: "delete_everything", args: {} },
+        { tool: "aging_summary", args: { type: "nonsense" } },
+        { tool: "profit_and_loss", args: { start_date: "01/01/2026" } },
+      ],
+    });
+    expect(valid.length).toBe(0);
+    expect(rejected.length).toBe(3);
+    expect(rejected[0].reason).toBe("unknown tool");
+  });
+
+  it("caps the number of tool requests", () => {
+    const needs = Array.from({ length: 10 }, () => ({ tool: "list_open_bills", args: {} }));
+    const { valid } = parseQboNeeds({ qboNeeds: needs }, 4);
+    expect(valid.length).toBe(4);
+  });
+
+  it("returns empty when there are no needs", () => {
+    expect(parseQboNeeds({ answer: "hi" }).valid).toEqual([]);
+    expect(parseQboNeeds(null).valid).toEqual([]);
+  });
+
+  it("exposes a read-only tool set (no write verbs)", () => {
+    expect(QBO_ASSISTANT_TOOLS).toContain("aging_summary");
+    for (const t of QBO_ASSISTANT_TOOLS) {
+      expect(/create|update|delete|push|void|pay/.test(t)).toBe(false);
+    }
+  });
+});

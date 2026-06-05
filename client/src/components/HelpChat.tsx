@@ -198,6 +198,15 @@ export function HelpChat() {
     }
   }, [isOpen]);
 
+  // Allow other surfaces (e.g. the header "Ask Constellation" button) to open
+  // the assistant, so it's reachable from a persistent control, not just the
+  // floating pill.
+  useEffect(() => {
+    const open = () => setIsOpen(true);
+    window.addEventListener("constellation:open-help-chat", open);
+    return () => window.removeEventListener("constellation:open-help-chat", open);
+  }, []);
+
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
       const response = await apiRequest("/api/ai/help-chat", {

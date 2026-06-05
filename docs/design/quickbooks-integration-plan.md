@@ -125,10 +125,12 @@ add the other without changing callers:
   the SQL query + report tools. This is high-value but should not gate the
   deterministic sync.
 
-> **Decision needed (see §13):** confirm how the MCP Bundle realm connection is
-> provisioned per tenant for path (A) vs. whether path (A) uses stored OAuth
-> tokens against the Intuit API directly with the MCP surface as the design
-> reference. Both are viable; the connection schema below supports either.
+> **Decision (resolved 2026-06-05):** both paths use **stored per-tenant OAuth
+> tokens against the Intuit REST API directly** (`quickbooks-client.ts`), with the
+> MCP tool surface kept only as a design reference. The hosted MCP Bundle was not
+> wired — its main benefit (avoiding a bespoke client) is moot now that the thin
+> REST client and report layer exist, and the repo has no outbound MCP client.
+> Path (B), the in-app assistant, reuses that same REST surface (see §7.5).
 
 ### 5.2 OAuth & token storage (mirror HubSpot)
 
@@ -264,8 +266,33 @@ financials without leaving the app: **A/R Aging Summary** (`AgedReceivables`),
 `start_date`/`end_date` through for dated reports) and a pure `normalizeQboReport`
 helper flattens Intuit's nested Rows/Sections tree into a render-ready table
 (columns + flat rows with depth + row kind). The QuickBooks card on the
-Organization Settings page renders the result. The "agentic assistant over MCP
-query tools" and inbound webhooks from §12 remain deferred.
+Organization Settings page renders the result.
+
+### 7.5 In-app finance assistant (Phase 4 — read-only)
+
+The existing global help assistant (`HelpChat`, `POST /api/ai/help-chat`) gains a
+small **read-only** QuickBooks tool surface so finance users can ask ad-hoc
+questions — "which invoices are overdue?", "what's this quarter's P&L?". Rather
+than the hosted MCP Bundle, it **reuses the stored-token REST client** (decision
+in §5.1) via `server/services/quickbooks-assistant.ts`:
+
+- Tools: `aging_summary(type)`, `profit_and_loss(start_date?, end_date?)`,
+  `list_overdue_invoices(onlyOverdue?)`, `list_open_bills()` — all wrap existing
+  `queryQbo` / `getQboReport`. No write tools are exposed.
+- The model requests data with the same JSON `needs` protocol the project agent
+  uses (here `qboNeeds`); the route runs a **bounded** fetch loop (≤2 rounds),
+  validates requests through `parseQboNeeds` (pure, unit-tested), executes the
+  tools, and feeds compact `TOOL_RESULTS` back for the final answer.
+- **Gating:** offered only when the tenant has a live, enabled connection *and*
+  the user holds a finance role (`admin` / `billing-admin` / `executive`);
+  otherwise the assistant behaves exactly as before.
+- The assistant is reachable from a persistent **"Ask Constellation"** control in
+  the header (in addition to the floating pill).
+
+**Deferred:** assistant **write** actions (draft a bill/invoice from chat,
+behind confirmation) — backlogged so an LLM never bypasses the deterministic,
+audited push paths. The hosted MCP Bundle path and inbound QBO webhooks also
+remain deferred.
 
 ---
 
@@ -400,9 +427,11 @@ and are independently shippable.
 
 ## 13. Open questions / decisions needed
 
-1. **MCP realm provisioning for server-side sync (§5.1):** per-tenant MCP
+1. ~~**MCP realm provisioning for server-side sync (§5.1):** per-tenant MCP
    connection vs. stored-token direct Intuit calls with MCP as the design
-   reference? Affects how Phase 0 OAuth is wired.
+   reference?~~ **Resolved 2026-06-05:** stored-token direct Intuit REST for
+   both the deterministic sync and the read-only in-app assistant; hosted MCP
+   Bundle not wired. See §5.1 / §7.5.
 2. **Class vs. sub-Customer for project-level P&L** in QBO — recommend Class;
    confirm tenant accounting conventions.
 3. **Tax handling:** map our batch-level `taxRate`/`taxAmount` to QBO automated

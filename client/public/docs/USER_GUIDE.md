@@ -1130,6 +1130,16 @@ The QuickBooks card on **Organization Settings** can pull live, read-only report
 
 Pick a report, set a date range if applicable, and click **Run report**.
 
+### Ask Constellation (Finance Q&A)
+
+If your organization is connected to QuickBooks and you are an Administrator, Billing Admin, or Executive, the built-in help assistant can answer live finance questions in plain language — for example:
+
+- "Which invoices are overdue?"
+- "What's our A/R aging look like?"
+- "Show me this quarter's profit and loss."
+
+Open it from the **Ask Constellation** button in the top header (or the floating Help button), and type your question. The assistant reads aging, profit & loss, open invoices, and open bills directly from QuickBooks. It is **read-only** — it never changes anything in QuickBooks; creating or editing invoices, bills, and payroll is always done through Constellation's own screens.
+
 ---
 
 ## Settings & Preferences

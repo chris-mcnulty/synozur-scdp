@@ -381,8 +381,10 @@ Approach: mirror the HubSpot integration pattern (per-tenant OAuth, `quickbooks_
 - [x] **Phase 2 — Contractor/Vendor A/P:** vendor match-or-create; push approved vendor & contractor invoices → QBO Bills; cancel/delete path. Activates dormant `glBillNumber` plumbing
 - [x] **Phase 3 — Payroll GL:** finalized payroll run → QBO Journal Entry built from the existing payroll GL export (`buildGlExport`; accounts resolved by `AcctNum`); idempotent push + cancel. `POST /api/payroll/runs/:id/push-qbo` + `.../qbo-cancel`
 - [x] **Phase 4 — In-app financial reports:** read-only A/R Aging, A/P Aging, and Profit & Loss surfaced on the QuickBooks settings card via `GET /api/accounting/quickbooks/reports/:name` + a pure `normalizeQboReport` flattener
+- [x] **Phase 4 — In-app finance assistant (read-only):** the global help assistant gains read-only QuickBooks tools (`aging_summary`, `profit_and_loss`, `list_overdue_invoices`, `list_open_bills`) via `quickbooks-assistant.ts`, folded into `POST /api/ai/help-chat` with a bounded `qboNeeds` tool loop; gated on finance role + live connection. Reuses the stored-token REST client (decision §5.1/§13.1 resolved — hosted MCP Bundle not used). Reachable from a persistent "Ask Constellation" header control
 - [x] Cross-cutting: idempotent create-or-update via mappings, 3100/403 sandbox-vs-prod error surfacing, sync log
-- [ ] **Phase 4 (deferred):** in-app agentic assistant over MCP query/report tools; inbound QBO webhooks
+- [ ] **QBO assistant — write actions (deferred):** let the assistant *draft* a bill/invoice/journal from chat behind an explicit confirmation, routing through the existing deterministic push paths (never a direct LLM write). Reuse the project agent's proposed-action/confirm pattern
+- [ ] **Phase 4 (deferred):** hosted MCP Bundle path (per-tenant outbound MCP connection); inbound QBO webhooks for near-real-time status
 - [ ] **Phase 3 (deferred):** 1099 contractor pay posted as Bills (vs. the current single summary Journal Entry)
 
 Note: AP-side `glBillNumber` export (previously tracked at line 141 as a v2.6.x follow-up) was folded into Phase 2.

@@ -36,7 +36,13 @@ Version 2.7 makes QuickBooks Online a true two-way book of record. Building on t
 - **Live QuickBooks reports** on the Organization Settings → QuickBooks card: **A/R Aging Summary**, **A/P Aging Summary**, and **Profit & Loss** (with a date range).
 - Read-only — pulled on demand from QuickBooks Online and rendered in-app, so finance leads get current aging and profitability without opening QuickBooks.
 
-> Deferred for a later release: an in-app agentic assistant over QuickBooks query tools, inbound QuickBooks webhooks, and posting 1099 contractor pay as Bills (currently a summary journal entry).
+#### Ask Constellation — Finance Q&A (Phase 4)
+
+- The built-in **help assistant** can now answer live finance questions for admins, billing admins, and executives whose organization is connected to QuickBooks — for example "which invoices are overdue?" or "what's this quarter's P&L?". It reads aging summaries, profit & loss, open invoices, and open bills directly from QuickBooks and answers in plain language.
+- **Read-only and safe** — the assistant can only read QuickBooks; creating or changing invoices, bills, and payroll still goes through Constellation's own screens.
+- Reachable from the new **"Ask Constellation"** button in the top header, in addition to the existing floating help button.
+
+> Deferred for a later release: assistant-drafted write actions (behind confirmation), inbound QuickBooks webhooks, and posting 1099 contractor pay as Bills (currently a summary journal entry).
 
 ---
 
