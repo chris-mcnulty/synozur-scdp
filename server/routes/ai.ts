@@ -232,7 +232,14 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       // bounded tool-fetch round before answering (mirrors the project agent's
       // "needs" protocol). Writes are never exposed here — backlog item.
       const financeRole = ["admin", "billing-admin", "executive"].includes(userRole);
-      const qboToolsAvailable = financeRole && !!helpTenantId && (await isQuickbooksConnected(helpTenantId).catch(() => false));
+      // Require BOTH a live connection (valid tokens) and the tenant's
+      // isEnabled flag — same bar as requireEnabled on the other QBO routes — so
+      // disabling QuickBooks fully closes the assistant surface too.
+      const qboConnection = helpTenantId
+        ? await storage.getQuickbooksConnection(helpTenantId).catch(() => null)
+        : null;
+      const qboToolsAvailable = financeRole && !!qboConnection?.isEnabled
+        && (await isQuickbooksConnected(helpTenantId).catch(() => false));
       const baseSystemPrompt = qboToolsAvailable ? systemPrompt + QBO_ASSISTANT_PROMPT : systemPrompt;
 
       let result: any;
@@ -271,8 +278,14 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       }
 
       if (!parsed.answer) {
-        parsed.answer = result.content;
+        // Guard the final round: if the model still asked for tools (or returned
+        // no answer at all), don't echo the raw qboNeeds/JSON back to the user.
+        parsed.answer = Array.isArray(parsed.qboNeeds)
+          ? "I couldn't pull that financial data just now. Please try rephrasing your question."
+          : result.content;
       }
+      // qboNeeds is an internal protocol field — never surface it to the client.
+      delete parsed.qboNeeds;
       if (!Array.isArray(parsed.suggestions)) {
         parsed.suggestions = [];
       }

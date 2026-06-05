@@ -459,6 +459,10 @@ const QBO_REPORT_OPTIONS = [
   { slug: "profit-and-loss", label: "Profit & Loss", dated: true },
 ] as const;
 
+// Static Tailwind classes (must be literal for the JIT) mapping report row
+// nesting depth → left padding. Deeper rows clamp to the last entry.
+const QBO_REPORT_DEPTH_PL = ["pl-2", "pl-6", "pl-10", "pl-14", "pl-16"] as const;
+
 function QuickBooksReports() {
   const { toast } = useToast();
   const [slug, setSlug] = useState<string>("aged-receivables");
@@ -522,7 +526,7 @@ function QuickBooksReports() {
               {report.rows.map((row, ri) => (
                 <tr key={ri} className={row.kind === "summary" || row.kind === "header" ? "font-medium border-t" : ""}>
                   {report.columns.map((_, ci) => (
-                    <td key={ci} className={`px-2 py-1 ${ci === 0 ? "text-left" : "text-right tabular-nums"}`} style={ci === 0 ? { paddingLeft: `${0.5 + row.depth * 0.75}rem` } : undefined}>
+                    <td key={ci} className={`py-1 ${ci === 0 ? `pr-2 text-left ${QBO_REPORT_DEPTH_PL[Math.min(row.depth, QBO_REPORT_DEPTH_PL.length - 1)]}` : "px-2 text-right tabular-nums"}`}>
                       {row.cells[ci] ?? ""}
                     </td>
                   ))}

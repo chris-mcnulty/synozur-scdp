@@ -365,7 +365,7 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
     }
   });
 
-  app.get("/api/accounting/quickbooks/mappings", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req: Request, res: Response) => {
+  app.get("/api/accounting/quickbooks/mappings", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
