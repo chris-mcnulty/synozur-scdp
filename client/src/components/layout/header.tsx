@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { SynozurTextLogo } from "@/components/icons/synozur-logo";
 import { SynozurAppSwitcher } from "@/components/synozur-app-switcher";
 import { getRoleDisplayName } from "@/lib/auth";
-import { Settings, LogOut } from "lucide-react";
+import { Settings, LogOut, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLocation } from "wouter";
@@ -142,6 +142,17 @@ export function Header() {
         {/* User Menu */}
         <div className="flex items-center space-x-4">
           <TenantSwitcher />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            title="Ask Constellation"
+            aria-label="Ask Constellation"
+            onClick={() => window.dispatchEvent(new Event("constellation:open-help-chat"))}
+            data-testid="button-open-help-chat"
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
           <NotificationBell />
           {user && (
             <>

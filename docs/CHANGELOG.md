@@ -17,6 +17,35 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 2.7 (June 5, 2026)
+
+**Release Date:** June 5, 2026
+**Status:** Production Release
+**Codename:** Realm
+
+Version 2.7 makes QuickBooks Online a true two-way book of record. Building on the A/R invoice sync and A/P bill sync from 2.6.x, this release adds **payroll GL posting** and **live in-app financial reports** — completing the phased QuickBooks integration. Constellation's in-house payroll engine still owns computation, taxes, and NACHA; QuickBooks now receives the accounting impact, and admins can read core financials without leaving the app.
+
+#### Payroll GL → QuickBooks Journal Entries (Phase 3)
+
+- **One-click GL posting** — a finalized payroll run posts to QuickBooks Online as a single balanced **Journal Entry** from the run detail page ("Post GL to QuickBooks").
+- **Reuses the existing payroll GL setup** — the journal is built from the same per-tenant payroll GL chart of accounts and category mappings that already drive the GL CSV export (wages, employer tax, taxes withheld, deductions, garnishments, net-pay clearing). Account numbers are matched to QuickBooks accounts by account number (`AcctNum`); if any are unmapped, the push reports exactly which numbers to align.
+- **Idempotent & reversible** — one journal entry per run; "Remove QBO Journal" deletes it in QuickBooks and unlocks the run for re-posting after a correction.
+
+#### In-App Financial Reports (Phase 4)
+
+- **Live QuickBooks reports** on the Organization Settings → QuickBooks card: **A/R Aging Summary**, **A/P Aging Summary**, and **Profit & Loss** (with a date range).
+- Read-only — pulled on demand from QuickBooks Online and rendered in-app, so finance leads get current aging and profitability without opening QuickBooks.
+
+#### Ask Constellation — Finance Q&A (Phase 4)
+
+- The built-in **help assistant** can now answer live finance questions for admins, billing admins, and executives whose organization is connected to QuickBooks — for example "which invoices are overdue?" or "what's this quarter's P&L?". It reads aging summaries, profit & loss, open invoices, and open bills directly from QuickBooks and answers in plain language.
+- **Read-only and safe** — the assistant can only read QuickBooks; creating or changing invoices, bills, and payroll still goes through Constellation's own screens.
+- Reachable from the new **"Ask Constellation"** button in the top header, in addition to the existing floating help button.
+
+> Deferred for a later release: assistant-drafted write actions (behind confirmation), inbound QuickBooks webhooks, and posting 1099 contractor pay as Bills (currently a summary journal entry).
+
+---
+
 ### Version 2.6 (May 25, 2026)
 
 **Release Date:** May 25, 2026

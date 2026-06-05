@@ -23,10 +23,18 @@ import {
   createQboBill,
   getQboBill,
   deleteQboBill,
+  getQboAccountIdsByNumber,
+  createQboJournalEntry,
+  getQboJournalEntry,
+  deleteQboJournalEntry,
+  getQboReport,
+  QBO_REPORT_SLUGS,
   type QboInvoiceLine,
   type QboBillLine,
+  type QboJournalLine,
 } from "../services/quickbooks-client.js";
 import { syncBatchPaymentStatus, syncTenantPayments } from "../services/quickbooks-payment-sync.js";
+import { payrollStorage } from "../storage/payroll.js";
 
 interface QuickbooksRouteDeps {
   requireAuth: any;
@@ -334,7 +342,30 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
     }
   });
 
-  app.get("/api/accounting/quickbooks/mappings", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req: Request, res: Response) => {
+  // Read-only financial reports surfaced in-app (Phase 4). Supported slugs:
+  // aged-receivables, aged-payables, profit-and-loss. Date params (start_date,
+  // end_date, date_macro) pass straight through to Intuit.
+  app.get("/api/accounting/quickbooks/reports/:name", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = await requireEnabled(req, res);
+      if (!tenantId) return;
+      const name = req.params.name;
+      if (!QBO_REPORT_SLUGS.includes(name)) {
+        return res.status(404).json({ message: `Unknown report '${name}'. Supported: ${QBO_REPORT_SLUGS.join(", ")}` });
+      }
+      const params: Record<string, string> = {};
+      for (const key of ["start_date", "end_date", "date_macro"]) {
+        const v = req.query[key];
+        if (typeof v === "string" && v) params[key] = v;
+      }
+      const report = await getQboReport(tenantId, name, params);
+      res.json(report);
+    } catch (error: any) {
+      res.status(502).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/accounting/quickbooks/mappings", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
@@ -884,6 +915,139 @@ export function registerQuickbooksRoutes(app: Express, deps: QuickbooksRouteDeps
       res.json({ success: true, message: "QuickBooks bill removed. You can correct and re-push this vendor invoice." });
     } catch (error: any) {
       console.error("[QBO] Vendor bill cancel failed:", error);
+      res.status(502).json({ message: error.message });
+    }
+  });
+
+  // ==========================================================================
+  // Payroll GL push (finalized run → QBO Journal Entry)  +  Cancel
+  // ==========================================================================
+  //
+  // Reuses the existing payroll GL builder (payrollStorage.buildGlExport), which
+  // already produces balanced debit/credit lines keyed by the tenant's payroll
+  // GL account numbers. Constellation owns payroll computation; QBO receives
+  // only the accounting impact as a JournalEntry. The payroll GL account
+  // numbers must match the QBO chart-of-accounts numbers (AcctNum).
+
+  app.post("/api/payroll/runs/:id/push-qbo", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req: Request, res: Response) => {
+    const tenantId = await requireEnabled(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+
+    try {
+      const run = await payrollStorage.getRun(tenantId, id);
+      if (!run) return res.status(404).json({ message: "Payroll run not found" });
+      if (run.status !== "finalized") {
+        return res.status(400).json({ message: "Only finalized payroll runs can be pushed to QuickBooks" });
+      }
+
+      // Idempotency: reuse the existing journal entry if one is already mapped.
+      const existing = await storage.getQuickbooksMappingByLocal(tenantId, "payroll_run", id);
+      if (existing && existing.status === "active") {
+        return res.status(409).json({
+          message: "This payroll run already has a QuickBooks journal entry. Cancel it first to re-push.",
+          journalEntryId: existing.qboObjectId,
+        });
+      }
+
+      const glRows = await payrollStorage.buildGlExport(tenantId, id);
+      if (glRows.length === 0) {
+        return res.status(400).json({ message: "No payroll GL lines to post. Configure payroll GL accounts and category mappings first." });
+      }
+
+      // Resolve each GL account number to a QBO account id.
+      const qboAccountByNumber = await getQboAccountIdsByNumber(tenantId);
+      const missing = Array.from(new Set(
+        glRows.filter((r) => !qboAccountByNumber.has(String(r.accountNumber))).map((r) => r.accountNumber),
+      ));
+      if (missing.length > 0) {
+        return res.status(400).json({
+          message: `These payroll GL account numbers have no matching active QuickBooks account (by number): ${missing.join(", ")}. Align the account numbers in QuickBooks, then retry.`,
+        });
+      }
+
+      const lines: QboJournalLine[] = glRows.map((r) => ({
+        debit: r.debitCents / 100,
+        credit: r.creditCents / 100,
+        accountRef: qboAccountByNumber.get(String(r.accountNumber))!,
+        description: r.memo,
+      }));
+
+      const journal = await createQboJournalEntry(tenantId, {
+        docNumber: `PR-${String(id).slice(0, 8)}`,
+        txnDate: run.payDate,
+        privateNote: `Payroll run ${id} — pay date ${run.payDate}`,
+        lines,
+      });
+
+      await storage.upsertQuickbooksMapping({
+        tenantId,
+        localObjectType: "payroll_run",
+        localObjectId: id,
+        qboObjectType: "JournalEntry",
+        qboObjectId: String(journal.Id),
+        qboSyncToken: String(journal.SyncToken ?? "0"),
+        status: "active",
+        metadata: { payDate: run.payDate, lineCount: lines.length },
+      });
+      await storage.createQuickbooksSyncLog({
+        tenantId,
+        action: "journal_pushed",
+        localObjectType: "payroll_run",
+        localObjectId: id,
+        qboObjectType: "JournalEntry",
+        qboObjectId: String(journal.Id),
+        status: "success",
+      });
+      await storage.updateQuickbooksSyncStatus(tenantId, "success", null);
+
+      res.json({ success: true, journalEntryId: String(journal.Id), lines: lines.length });
+    } catch (error: any) {
+      console.error("[QBO] Payroll journal push failed:", error);
+      await storage.createQuickbooksSyncLog({
+        tenantId,
+        action: "journal_pushed",
+        localObjectType: "payroll_run",
+        localObjectId: id,
+        status: "error",
+        errorMessage: error.message,
+      });
+      await storage.updateQuickbooksSyncStatus(tenantId, "error", error.message);
+      res.status(502).json({ message: error.message });
+    }
+  });
+
+  // Cancel: delete the QBO journal entry and release the mapping so the run
+  // can be re-pushed (e.g. after a GL mapping correction).
+  app.post("/api/payroll/runs/:id/qbo-cancel", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req: Request, res: Response) => {
+    const tenantId = await requireEnabled(req, res);
+    if (!tenantId) return;
+    const { id } = req.params;
+
+    try {
+      const mapping = await storage.getQuickbooksMappingByLocal(tenantId, "payroll_run", id);
+      if (!mapping || mapping.status !== "active") {
+        return res.status(400).json({ message: "This payroll run has no active QuickBooks journal entry" });
+      }
+
+      const current = await getQboJournalEntry(tenantId, mapping.qboObjectId);
+      const syncToken = String(current?.SyncToken ?? mapping.qboSyncToken ?? "0");
+      await deleteQboJournalEntry(tenantId, mapping.qboObjectId, syncToken);
+      await storage.updateQuickbooksMapping(mapping.id, { status: "voided" });
+      await storage.createQuickbooksSyncLog({
+        tenantId,
+        action: "journal_voided",
+        localObjectType: "payroll_run",
+        localObjectId: id,
+        qboObjectType: "JournalEntry",
+        qboObjectId: mapping.qboObjectId,
+        status: "success",
+      });
+      await storage.updateQuickbooksSyncStatus(tenantId, "success", null);
+
+      res.json({ success: true, message: "QuickBooks journal entry removed. You can re-push this payroll run." });
+    } catch (error: any) {
+      console.error("[QBO] Payroll journal cancel failed:", error);
       res.status(502).json({ message: error.message });
     }
   });

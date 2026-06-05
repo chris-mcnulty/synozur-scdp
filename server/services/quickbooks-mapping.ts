@@ -108,3 +108,113 @@ export function buildInvoicePayload(input: QboInvoiceInput): Record<string, any>
   if (input.billEmail) payload.BillEmail = { Address: input.billEmail };
   return payload;
 }
+
+export interface QboJournalLine {
+  // Exactly one of debit/credit is non-zero (in dollars).
+  debit: number;
+  credit: number;
+  accountRef: string; // QBO Account id
+  description?: string;
+}
+
+export interface QboJournalEntryInput {
+  docNumber?: string;
+  txnDate?: string; // YYYY-MM-DD
+  currencyCode?: string;
+  privateNote?: string;
+  lines: QboJournalLine[];
+}
+
+/**
+ * Build the Intuit JournalEntry create payload. Each line carries a
+ * PostingType of Debit or Credit; QBO requires total debits == total credits.
+ * Lines with both debit and credit zero are skipped.
+ */
+export function buildJournalEntryPayload(input: QboJournalEntryInput): Record<string, any> {
+  const payload: Record<string, any> = {
+    Line: input.lines
+      .filter((l) => Number(l.debit.toFixed(2)) !== 0 || Number(l.credit.toFixed(2)) !== 0)
+      .map((l) => {
+        const isDebit = Number(l.debit.toFixed(2)) !== 0;
+        return {
+          DetailType: "JournalEntryLineDetail",
+          Amount: Number((isDebit ? l.debit : l.credit).toFixed(2)),
+          Description: l.description,
+          JournalEntryLineDetail: {
+            PostingType: isDebit ? "Debit" : "Credit",
+            AccountRef: { value: l.accountRef },
+          },
+        };
+      }),
+  };
+  if (input.docNumber) payload.DocNumber = input.docNumber;
+  if (input.txnDate) payload.TxnDate = input.txnDate;
+  if (input.currencyCode) payload.CurrencyRef = { value: input.currencyCode };
+  if (input.privateNote) payload.PrivateNote = input.privateNote;
+  return payload;
+}
+
+// ============================================================================
+// Report normalization (Phase 4 — in-app financials)
+// ============================================================================
+//
+// QBO report responses are a recursively nested structure (Rows containing
+// Sections containing Rows, each with optional Header/Summary). The UI just
+// wants a flat list of rows with a depth for indentation. normalizeQboReport
+// flattens that tree into a render-ready shape so the React side stays dumb.
+
+export interface NormalizedReportRow {
+  cells: string[];
+  depth: number;
+  kind: "data" | "header" | "summary";
+}
+
+export interface NormalizedReport {
+  reportName: string;
+  startPeriod?: string;
+  endPeriod?: string;
+  currency?: string;
+  columns: string[];
+  rows: NormalizedReportRow[];
+}
+
+function colDataToCells(colData: any[]): string[] {
+  return (colData || []).map((c) => (c?.value ?? "").toString());
+}
+
+function walkReportRows(rowNode: any, depth: number, out: NormalizedReportRow[]): void {
+  const rows = rowNode?.Row;
+  if (!Array.isArray(rows)) return;
+  for (const row of rows) {
+    if (row?.Header?.ColData) {
+      out.push({ cells: colDataToCells(row.Header.ColData), depth, kind: "header" });
+    }
+    if (row?.ColData) {
+      out.push({ cells: colDataToCells(row.ColData), depth, kind: "data" });
+    }
+    if (row?.Rows) {
+      walkReportRows(row.Rows, depth + 1, out);
+    }
+    if (row?.Summary?.ColData) {
+      out.push({ cells: colDataToCells(row.Summary.ColData), depth, kind: "summary" });
+    }
+  }
+}
+
+/** Flatten a raw Intuit report payload into a render-ready table. */
+export function normalizeQboReport(report: any): NormalizedReport {
+  const header = report?.Header || {};
+  const columns = ((report?.Columns?.Column as any[]) || []).map(
+    (c) => (c?.ColTitle ?? "").toString(),
+  );
+  const rows: NormalizedReportRow[] = [];
+  walkReportRows(report?.Rows, 0, rows);
+  return {
+    reportName: (header.ReportName ?? "").toString(),
+    startPeriod: header.StartPeriod,
+    endPeriod: header.EndPeriod,
+    currency: header.Currency,
+    columns,
+    rows,
+  };
+}

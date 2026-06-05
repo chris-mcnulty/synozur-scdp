@@ -4,6 +4,8 @@ import { storage } from "../storage";
 import { aiService } from "../services/ai-service.js";
 import { invalidateProviderCache, ReplitAIProvider, AzureFoundryProvider, isContentFilterError } from "../services/ai-provider.js";
 import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO } from "@shared/schema";
+import { isQuickbooksConnected } from "../services/quickbooks-client.js";
+import { QBO_ASSISTANT_PROMPT, parseQboNeeds, runQboAssistantTool } from "../services/quickbooks-assistant.js";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 
@@ -224,22 +226,66 @@ SUPPORT TICKET SUGGESTION:
 IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.`;
 
       const helpTenantId = (req.user as any)?.tenantId;
-      const result = await aiService.customPrompt(
-        systemPrompt,
-        validated.message,
-        { temperature: 0.3, maxTokens: 2500, responseFormat: 'json', usageCtx: { tenantId: helpTenantId, userId: (req.user as any)?.id, feature: 'help_chat' as any } }
-      );
 
+      // Read-only QuickBooks finance tools are offered only to finance roles on
+      // a tenant with a live connection. When available, the assistant may run a
+      // bounded tool-fetch round before answering (mirrors the project agent's
+      // "needs" protocol). Writes are never exposed here — backlog item.
+      const financeRole = ["admin", "billing-admin", "executive"].includes(userRole);
+      // Require BOTH a live connection (valid tokens) and the tenant's
+      // isEnabled flag — same bar as requireEnabled on the other QBO routes — so
+      // disabling QuickBooks fully closes the assistant surface too.
+      const qboConnection = helpTenantId
+        ? await storage.getQuickbooksConnection(helpTenantId).catch(() => null)
+        : null;
+      const qboToolsAvailable = financeRole && !!qboConnection?.isEnabled
+        && (await isQuickbooksConnected(helpTenantId).catch(() => false));
+      const baseSystemPrompt = qboToolsAvailable ? systemPrompt + QBO_ASSISTANT_PROMPT : systemPrompt;
+
+      let result: any;
       let parsed: any;
-      try {
-        parsed = JSON.parse(result.content);
-      } catch {
-        parsed = { answer: result.content, suggestions: [] };
+      let toolContext = "";
+      const MAX_QBO_ROUNDS = 2;
+      for (let round = 0; round < MAX_QBO_ROUNDS; round++) {
+        result = await aiService.customPrompt(
+          baseSystemPrompt + toolContext,
+          validated.message,
+          { temperature: 0.3, maxTokens: 2500, responseFormat: 'json', usageCtx: { tenantId: helpTenantId, userId: (req.user as any)?.id, feature: 'help_chat' as any } }
+        );
+        try {
+          parsed = JSON.parse(result.content);
+        } catch {
+          parsed = { answer: result.content, suggestions: [] };
+        }
+
+        // If the model requested live finance data, fetch it (once) and re-ask.
+        if (qboToolsAvailable && round < MAX_QBO_ROUNDS - 1 && Array.isArray(parsed?.qboNeeds) && parsed.qboNeeds.length > 0) {
+          const { valid, rejected } = parseQboNeeds(parsed);
+          const outputs: any[] = [...rejected.map(r => ({ tool: r.tool, error: r.reason }))];
+          for (const need of valid) {
+            try {
+              const data = await runQboAssistantTool(helpTenantId, need.tool, need.args);
+              outputs.push({ tool: need.tool, args: need.args, result: data });
+            } catch (e: any) {
+              outputs.push({ tool: need.tool, args: need.args, error: e?.message || "tool failed" });
+            }
+          }
+          console.log(`[HELP-CHAT] QBO tools for user ${req.user!.id}: ${valid.map(v => v.tool).join(", ") || "none"}`);
+          toolContext = `\n\nTOOL_RESULTS (live QuickBooks data — base your answer only on this):\n${JSON.stringify(outputs).slice(0, 12000)}`;
+          continue;
+        }
+        break;
       }
 
       if (!parsed.answer) {
-        parsed.answer = result.content;
+        // Guard the final round: if the model still asked for tools (or returned
+        // no answer at all), don't echo the raw qboNeeds/JSON back to the user.
+        parsed.answer = Array.isArray(parsed.qboNeeds)
+          ? "I couldn't pull that financial data just now. Please try rephrasing your question."
+          : result.content;
       }
+      // qboNeeds is an internal protocol field — never surface it to the client.
+      delete parsed.qboNeeds;
       if (!Array.isArray(parsed.suggestions)) {
         parsed.suggestions = [];
       }

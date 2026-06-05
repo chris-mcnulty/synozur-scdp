@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 2.1 | Last Updated: May 25, 2026
+Version 2.2 | Last Updated: June 5, 2026
 
 ---
 
@@ -1089,6 +1089,59 @@ Link HubSpot deals to Constellation projects for end-to-end visibility from sale
 
 ---
 
+## QuickBooks Online Integration
+
+### Overview
+
+Constellation connects to QuickBooks Online (QBO) so your accounting stays in sync without manual re-keying. The integration is two-way and transaction-level: Constellation pushes invoices, contractor/vendor bills, and payroll accounting into QuickBooks, pulls payment status back, and surfaces core financial reports inside the app. Each tenant connects its own QuickBooks company; Synozur administrators do not see your books.
+
+Set up and most actions require **Administrator** or **Billing Admin** access; payroll posting and reports are also available to **Executives**.
+
+### Connecting QuickBooks
+
+1. Go to **Organization Settings → Integrations → QuickBooks Online**.
+2. Click **Connect to QuickBooks** and sign in to your QuickBooks company. (Toggle **Sandbox** first if you are connecting to a QuickBooks test company.)
+3. After connecting, turn on **Enable QuickBooks Sync**, then choose the default **Item** used for invoice lines and the default **expense account** used for vendor/contractor bill lines.
+4. Under **Customer Mappings**, link your Constellation clients to QuickBooks customers (or let Constellation create them on first push).
+
+### Invoicing (Accounts Receivable)
+
+Push a finalized invoice batch to QuickBooks as a real Invoice — taxes, currency, and any billed-amount adjustments carry over. Constellation records the QuickBooks invoice number and pulls **payment status** back automatically, so paid invoices update in Constellation without manual marking. Use **Cancel & Reissue** on a batch to void the QuickBooks invoice and unlock the batch for correction. The legacy CSV export remains available as a fallback.
+
+### Contractor & Vendor Bills (Accounts Payable)
+
+Approved vendor and contractor invoices push to QuickBooks as **Bills**, matching or creating the vendor automatically. If a bill needs correcting, cancel it to remove it from QuickBooks and re-push.
+
+### Payroll GL Posting
+
+When a payroll run is **finalized**, post its accounting impact to QuickBooks as a single balanced **Journal Entry** — open the run and click **Post GL to QuickBooks**. The journal uses your existing payroll GL accounts and category mappings (the same ones behind the GL CSV export): wages and employer taxes as debits; taxes withheld, deductions, garnishments, and net-pay clearing as credits.
+
+- **Account matching:** Constellation matches each payroll GL account to a QuickBooks account by **account number**. If any account isn't found, the push tells you exactly which numbers to align in QuickBooks, then retry.
+- **One per run:** each run posts a single journal entry. To correct one, click **Remove QBO Journal** — this deletes it in QuickBooks and unlocks the run so you can re-post.
+- Constellation's payroll engine still owns all computation, tax forms, and direct-deposit files; QuickBooks is the GL book of record only.
+
+### Financial Reports
+
+The QuickBooks card on **Organization Settings** can pull live, read-only reports straight from QuickBooks Online so you don't have to switch apps:
+
+- **A/R Aging Summary** — outstanding customer balances by age.
+- **A/P Aging Summary** — what you owe vendors by age.
+- **Profit & Loss** — choose a start and end date.
+
+Pick a report, set a date range if applicable, and click **Run report**.
+
+### Ask Constellation (Finance Q&A)
+
+If your organization is connected to QuickBooks and you are an Administrator, Billing Admin, or Executive, the built-in help assistant can answer live finance questions in plain language — for example:
+
+- "Which invoices are overdue?"
+- "What's our A/R aging look like?"
+- "Show me this quarter's profit and loss."
+
+Open it from the **Ask Constellation** button in the top header (or the floating Help button), and type your question. The assistant reads aging, profit & loss, open invoices, and open bills directly from QuickBooks. It is **read-only** — it never changes anything in QuickBooks; creating or editing invoices, bills, and payroll is always done through Constellation's own screens.
+
+---
+
 ## Settings & Preferences
 
 ### User Profile Settings
@@ -1440,7 +1493,7 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: May 25, 2026*  
-*Version: 2.1*  
+*Last Updated: June 5, 2026*  
+*Version: 2.2*  
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

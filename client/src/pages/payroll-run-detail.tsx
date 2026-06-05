@@ -49,6 +49,34 @@ export default function PayrollRunDetail() {
     onError: (e: any) => toast({ title: "Finalize failed", description: e.message, variant: "destructive" }),
   });
 
+  // QuickBooks GL push: post a finalized run's GL export as a QBO Journal Entry.
+  const { data: qboStatus } = useQuery<{ connected: boolean; isEnabled: boolean }>({
+    queryKey: ["/api/accounting/quickbooks/status"],
+  });
+  const qboReady = !!(qboStatus?.connected && qboStatus?.isEnabled);
+  const { data: qboMappings } = useQuery<any[]>({
+    queryKey: ["/api/accounting/quickbooks/mappings?type=payroll_run"],
+    enabled: qboReady,
+  });
+  const qboJournal = (qboMappings || []).find((m) => m.localObjectId === id && m.status === "active");
+
+  const pushJournal = useMutation({
+    mutationFn: () => apiRequest(`/api/payroll/runs/${id}/push-qbo`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/mappings?type=payroll_run"] });
+      toast({ title: "Posted to QuickBooks", description: "A journal entry was created in QuickBooks Online." });
+    },
+    onError: (e: any) => toast({ title: "QuickBooks push failed", description: e.message, variant: "destructive" }),
+  });
+  const cancelJournal = useMutation({
+    mutationFn: () => apiRequest(`/api/payroll/runs/${id}/qbo-cancel`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/quickbooks/mappings?type=payroll_run"] });
+      toast({ title: "QuickBooks journal entry removed", description: "You can re-push this run." });
+    },
+    onError: (e: any) => toast({ title: "Cancel failed", description: e.message, variant: "destructive" }),
+  });
+
   if (isLoading || !data) return <Layout><div className="p-6">Loading…</div></Layout>;
   const r = data.run;
   const items = data.items as any[];
@@ -97,6 +125,16 @@ export default function PayrollRunDetail() {
             {r.status === 'previewed' && <Button onClick={() => approve.mutate()} disabled={approve.isPending} data-testid="button-approve">Approve</Button>}
             {r.status === 'approved' && <Button onClick={() => finalize.mutate()} disabled={finalize.isPending} data-testid="button-finalize">Finalize</Button>}
             <a href={`/api/payroll/runs/${id}/gl-export?format=csv`}><Button variant="outline"><Download className="h-4 w-4 mr-2" />GL CSV</Button></a>
+            {qboReady && r.status === 'finalized' && !qboJournal && (
+              <Button variant="outline" onClick={() => pushJournal.mutate()} disabled={pushJournal.isPending} data-testid="button-push-qbo">
+                {pushJournal.isPending ? 'Posting…' : 'Post GL to QuickBooks'}
+              </Button>
+            )}
+            {qboReady && qboJournal && (
+              <Button variant="outline" className="text-orange-600" onClick={() => cancelJournal.mutate()} disabled={cancelJournal.isPending} data-testid="button-cancel-qbo">
+                {cancelJournal.isPending ? 'Removing…' : 'Remove QBO Journal'}
+              </Button>
+            )}
           </div>
         </div>
 

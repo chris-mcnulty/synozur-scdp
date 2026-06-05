@@ -450,6 +450,96 @@ function QuickBooksCustomerMappings() {
   );
 }
 
+interface NormalizedReportRow { cells: string[]; depth: number; kind: "data" | "header" | "summary"; }
+interface NormalizedReport { reportName: string; startPeriod?: string; endPeriod?: string; currency?: string; columns: string[]; rows: NormalizedReportRow[]; }
+
+const QBO_REPORT_OPTIONS = [
+  { slug: "aged-receivables", label: "A/R Aging Summary", dated: false },
+  { slug: "aged-payables", label: "A/P Aging Summary", dated: false },
+  { slug: "profit-and-loss", label: "Profit & Loss", dated: true },
+] as const;
+
+// Static Tailwind classes (must be literal for the JIT) mapping report row
+// nesting depth → left padding. Deeper rows clamp to the last entry.
+const QBO_REPORT_DEPTH_PL = ["pl-2", "pl-6", "pl-10", "pl-14", "pl-16"] as const;
+
+function QuickBooksReports() {
+  const { toast } = useToast();
+  const [slug, setSlug] = useState<string>("aged-receivables");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [report, setReport] = useState<NormalizedReport | null>(null);
+  const opt = QBO_REPORT_OPTIONS.find((o) => o.slug === slug);
+
+  const run = useMutation({
+    mutationFn: async () => {
+      const qs = new URLSearchParams();
+      if (opt?.dated) {
+        if (startDate) qs.set("start_date", startDate);
+        if (endDate) qs.set("end_date", endDate);
+      }
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return apiRequest(`/api/accounting/quickbooks/reports/${slug}${suffix}`) as Promise<NormalizedReport>;
+    },
+    onSuccess: (data) => setReport(data),
+    onError: (e: any) => toast({ title: "Report failed", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="border-t pt-3">
+      <p className="text-sm font-medium">Financial Reports</p>
+      <p className="text-xs text-muted-foreground mb-2">Live read-only reports pulled from QuickBooks Online</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <Select value={slug} onValueChange={(v) => { setSlug(v); setReport(null); }}>
+          <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {QBO_REPORT_OPTIONS.map((o) => <SelectItem key={o.slug} value={o.slug}>{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {opt?.dated && (
+          <>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Start</p>
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">End</p>
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+            </div>
+          </>
+        )}
+        <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending} data-testid="button-run-qbo-report">
+          {run.isPending ? "Loading…" : "Run report"}
+        </Button>
+      </div>
+
+      {report && (
+        <div className="mt-3 overflow-x-auto rounded border">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/50">
+              <tr>{report.columns.map((c, i) => <th key={i} className={`px-2 py-1 ${i === 0 ? "text-left" : "text-right"}`}>{c}</th>)}</tr>
+            </thead>
+            <tbody>
+              {report.rows.length === 0 && (
+                <tr><td colSpan={Math.max(report.columns.length, 1)} className="px-2 py-3 text-center text-muted-foreground">No data for this report.</td></tr>
+              )}
+              {report.rows.map((row, ri) => (
+                <tr key={ri} className={row.kind === "summary" || row.kind === "header" ? "font-medium border-t" : ""}>
+                  {report.columns.map((_, ci) => (
+                    <td key={ci} className={`py-1 ${ci === 0 ? `pr-2 text-left ${QBO_REPORT_DEPTH_PL[Math.min(row.depth, QBO_REPORT_DEPTH_PL.length - 1)]}` : "px-2 text-right tabular-nums"}`}>
+                      {row.cells[ci] ?? ""}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function QuickBooksIntegrationCard() {
   const { toast } = useToast();
 
@@ -667,6 +757,8 @@ function QuickBooksIntegrationCard() {
                   <p className="text-xs text-muted-foreground mb-2">Map Constellation clients to QuickBooks customers</p>
                   <QuickBooksCustomerMappings />
                 </div>
+
+                <QuickBooksReports />
               </div>
             )}
 
