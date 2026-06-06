@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db } from "../storage";
 import { invoiceBatches, invoiceLines, projects, clients, users, expenses, timeEntries, projectMilestones, expenseAttachments, updateInvoicePaymentSchema, insertInvoiceAdjustmentSchema, sows, estimates, estimateMilestones } from "@shared/schema";
-import { eq, sql, inArray, and, gte, lte, isNull } from "drizzle-orm";
+import { eq, sql, inArray, and, gte, lte, isNull, or } from "drizzle-orm";
 import { receiptStorage } from "../services/receipt-storage.js";
 import { invoicePDFStorage } from "../services/invoice-pdf-storage.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "../services/hubspot-client.js";
@@ -33,7 +33,7 @@ async function checkBatchTenantAccess(batchId: string, req: Request, res: Respon
   
   const [batch] = await db.select({ tenantId: invoiceBatches.tenantId })
     .from(invoiceBatches)
-    .where(eq(invoiceBatches.batchId, batchId));
+    .where(or(eq(invoiceBatches.batchId, batchId), eq(invoiceBatches.id, batchId)));
   
   if (!batch) return true;
   if (batch.tenantId !== tenantId) {

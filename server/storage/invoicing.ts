@@ -219,7 +219,7 @@ export const invoicingMethods: ThisType<IStorage & {
     .leftJoin(sql`users as finalizer_user`, sql`finalizer_user.id = ${invoiceBatches.finalizedBy}`)
     .leftJoin(sql`project_milestones as milestone`, sql`milestone.id = ${invoiceBatches.projectMilestoneId}`)
     .leftJoin(sql`projects as milestone_project`, sql`milestone_project.id = milestone.project_id`)
-    .where(eq(invoiceBatches.batchId, batchId));
+    .where(or(eq(invoiceBatches.batchId, batchId), eq(invoiceBatches.id, batchId)));
     
     if (!result) {
       return undefined;
