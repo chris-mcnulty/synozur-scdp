@@ -3385,6 +3385,9 @@ export default function ProjectDetail() {
     { name: "Remaining", value: Math.max(0, 100 - burnRate.burnRatePercentage), fill: "#e5e7eb" }
   ];
 
+  // Label shown on metric cards when no hours budget is available
+  const noBudgetReason = hasApprovedEstimate ? "no hrs budget" : "no estimate";
+
   return (
     <ProjectDetailErrorBoundary>
     <Layout>
