@@ -40,27 +40,70 @@ class ProjectDetailErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoun
     this.setState({ errorInfo });
   }
 
+  resetError = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
+
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-8 bg-red-50 dark:bg-red-900/20 rounded-lg m-4">
-          <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4">
-            Something went wrong loading project details
-          </h2>
-          <details className="mb-4">
-            <summary className="cursor-pointer text-sm font-medium">Error Details (click to expand)</summary>
-            <pre className="mt-2 p-4 bg-white dark:bg-gray-800 rounded text-xs overflow-auto max-h-64">
-              {this.state.error?.message}
-              {'\n\n'}
-              {this.state.error?.stack}
-            </pre>
-          </details>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Reload Page
-          </button>
+        <div className="min-h-screen bg-background">
+          <div className="border-b px-4 py-3 flex items-center gap-4 bg-card">
+            <a href="/projects" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              ← Back to Projects
+            </a>
+            <span className="text-muted-foreground text-sm">|</span>
+            <span className="text-sm font-medium text-red-600">Project Error</span>
+          </div>
+          <div className="p-8">
+            <div className="max-w-2xl">
+              <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-2">
+                Something went wrong loading this project
+              </h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                The error message below has been logged. Please report it to your administrator.
+              </p>
+              <div className="p-4 bg-red-50 dark:bg-red-900/30 rounded-lg border border-red-200 dark:border-red-800 mb-4">
+                <p className="text-sm font-mono font-semibold text-red-700 dark:text-red-300 mb-1">
+                  {this.state.error?.message || 'Unknown error'}
+                </p>
+                <details>
+                  <summary className="cursor-pointer text-xs text-red-500 dark:text-red-400 mt-2">Full stack trace</summary>
+                  <pre className="mt-2 text-xs overflow-auto max-h-48 text-red-800 dark:text-red-200 whitespace-pre-wrap break-words">
+                    {this.state.error?.stack}
+                    {'\n'}
+                    {this.state.errorInfo?.componentStack}
+                  </pre>
+                </details>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={this.resetError}
+                  className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => window.history.back()}
+                  className="px-4 py-2 border rounded text-sm hover:bg-muted"
+                >
+                  Go Back
+                </button>
+                <a
+                  href="/projects"
+                  className="px-4 py-2 border rounded text-sm hover:bg-muted inline-block"
+                >
+                  All Projects
+                </a>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                >
+                  Reload Page
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       );
     }
@@ -9051,6 +9094,7 @@ export default function ProjectDetail() {
                     pm: pmValue === 'none' ? null : pmValue,
                     hasSow: hasSowValue === 'true',
                     retainerTotal: getFormValue('retainerTotal', projectToEdit.retainerTotal) || undefined,
+                    baselineBudget: getFormValue('baselineBudget', projectToEdit.baselineBudget) || undefined,
                     epicTermId: epicTermIdValue && epicTermIdValue !== '__default__' ? epicTermIdValue : null,
                     stageTermId: stageTermIdValue && stageTermIdValue !== '__default__' ? stageTermIdValue : null,
                     activityTermId: activityTermIdValue && activityTermIdValue !== '__default__' ? activityTermIdValue : null,
@@ -9238,6 +9282,19 @@ export default function ProjectDetail() {
                           />
                         </div>
                       )}
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-baselineBudget">Baseline Budget ($)</Label>
+                        <Input
+                          id="edit-baselineBudget"
+                          name="baselineBudget"
+                          type="number"
+                          step="0.01"
+                          defaultValue={projectToEdit.baselineBudget || ""}
+                          placeholder="e.g. 58000"
+                          data-testid="input-edit-baseline-budget"
+                        />
+                      </div>
 
                       <div className="flex items-center space-x-2 p-3 bg-muted/50 rounded-lg">
                         <input
