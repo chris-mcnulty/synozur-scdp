@@ -94,7 +94,8 @@ export default function Billing() {
   const [batchType, setBatchType] = useState<'services' | 'expenses' | 'mixed' | 'milestone'>('mixed');
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
-  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
+  const [selectedMilestones, setSelectedMilestones] = useState<string[]>([]);
+  const [milestoneClientFilter, setMilestoneClientFilter] = useState<string | null>(null);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState('');
   const [taxRate, setTaxRate] = useState('9.3'); // Default tax rate of 9.3%
@@ -122,7 +123,7 @@ export default function Billing() {
     const milestoneId = params.get('milestoneId');
     if (milestoneId) {
       setBatchType('milestone');
-      setSelectedMilestone(milestoneId);
+      setSelectedMilestones([milestoneId]);
       setNewBatchOpen(true);
     }
   }, [search]);
@@ -226,16 +227,17 @@ export default function Billing() {
       endDate: string; 
       invoicingMode: 'client' | 'project';
       batchType: 'services' | 'expenses' | 'mixed' | 'milestone';
-      milestoneId?: string;
+      milestoneIds?: string[];
       discountPercent?: string; 
       discountAmount?: string;
       taxRate?: string;
     }) => {
-      // Handle milestone invoice generation differently
-      if (data.batchType === 'milestone' && data.milestoneId) {
-        const response = await apiRequest(`/api/payment-milestones/${data.milestoneId}/generate-invoice`, {
+      // Handle milestone invoice generation via combined endpoint (1 or more milestones)
+      if (data.batchType === 'milestone' && data.milestoneIds && data.milestoneIds.length > 0) {
+        const response = await apiRequest(`/api/payment-milestones/generate-combined-invoice`, {
           method: 'POST',
           body: JSON.stringify({
+            milestoneIds: data.milestoneIds,
             startDate: data.startDate,
             endDate: data.endDate
           })
@@ -272,14 +274,21 @@ export default function Billing() {
       queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
       queryClient.invalidateQueries({ queryKey: ['/api/payment-milestones/all'] });
       
-      // Also invalidate project-specific payment milestones if we generated from a milestone
-      if (data.milestone?.projectId) {
-        console.log(`[CACHE] Invalidating payment milestones cache for project ${data.milestone.projectId}, updated status: ${data.milestone.invoiceStatus}`);
+      // Invalidate project-specific payment milestones for all milestones in the batch
+      if (data.milestones?.length > 0) {
+        for (const m of data.milestones) {
+          if (m.projectId) {
+            queryClient.invalidateQueries({ queryKey: [`/api/projects/${m.projectId}/payment-milestones`] });
+          }
+        }
+      } else if (data.milestone?.projectId) {
         queryClient.invalidateQueries({ queryKey: [`/api/projects/${data.milestone.projectId}/payment-milestones`] });
       }
       
       const message = data.invoicesCreated 
         ? `Generated ${data.invoicesCreated} invoices. Billed ${data.timeEntriesBilled} time entries and ${data.expensesBilled} expenses for a total of $${Math.round(data.totalAmount).toLocaleString()}.`
+        : data.milestonesCount
+        ? `Invoice created for ${data.milestonesCount} payment milestone${data.milestonesCount !== 1 ? 's' : ''}.`
         : data.batch 
         ? `Invoice created for payment milestone: ${data.milestone?.name || 'Unknown'}`
         : "Invoice batch created successfully.";
@@ -291,7 +300,8 @@ export default function Billing() {
       setNewBatchOpen(false);
       setSelectedClients([]);
       setSelectedProjects([]);
-      setSelectedMilestone(null);
+      setSelectedMilestones([]);
+      setMilestoneClientFilter(null);
       setDiscountValue('');
     },
     onError: (error: any) => {
@@ -407,10 +417,10 @@ export default function Billing() {
     
     // Validate selections
     if (batchType === 'milestone') {
-      if (!selectedMilestone) {
+      if (selectedMilestones.length === 0) {
         toast({
           title: "No milestone selected",
-          description: "Please select a payment milestone to invoice.",
+          description: "Please select at least one payment milestone to invoice.",
           variant: "destructive",
         });
         return;
@@ -437,7 +447,7 @@ export default function Billing() {
       endDate,
       invoicingMode,
       batchType,
-      milestoneId: selectedMilestone || undefined,
+      milestoneIds: selectedMilestones.length > 0 ? selectedMilestones : undefined,
       discountPercent: discountType === 'percent' ? discountValue : undefined,
       discountAmount: discountType === 'amount' ? discountValue : undefined,
       taxRate: taxRate || '9.3' // Default to 9.3% if not provided
@@ -575,29 +585,119 @@ export default function Billing() {
                     </RadioGroup>
                   </div>
 
-                  {/* Payment Milestone Selection - only shown when milestone type is selected */}
-                  {batchType === 'milestone' && (
-                    <div className="space-y-2">
-                      <Label>Select Payment Milestone</Label>
-                      <Select value={selectedMilestone || undefined} onValueChange={setSelectedMilestone}>
-                        <SelectTrigger data-testid="select-payment-milestone">
-                          <SelectValue placeholder="Choose a payment milestone..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {allPaymentMilestones
-                            .filter((pm: any) => !pm.invoiceStatus || pm.invoiceStatus === 'planned')
-                            .map((pm: any) => (
-                              <SelectItem key={pm.id} value={pm.id}>
-                                {pm.projectName} - {pm.name} (${Number(pm.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                              </SelectItem>
-                            ))}
-                          {allPaymentMilestones.filter((pm: any) => !pm.invoiceStatus || pm.invoiceStatus === 'planned').length === 0 && (
-                            <SelectItem value="none" disabled>No planned payment milestones available</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                  {/* Payment Milestone Selection - client first, then checkboxes */}
+                  {batchType === 'milestone' && (() => {
+                    const availableMilestones = allPaymentMilestones.filter(
+                      (pm: any) => !pm.invoiceStatus || pm.invoiceStatus === 'planned'
+                    );
+                    // Unique clients derived from available milestones, joined with clients list
+                    const clientsWithMilestones = (clients as any[]).filter((c: any) =>
+                      availableMilestones.some((pm: any) => pm.clientId === c.id)
+                    );
+                    const filteredMilestones = milestoneClientFilter
+                      ? availableMilestones.filter((pm: any) => pm.clientId === milestoneClientFilter)
+                      : [];
+                    const selectedTotal = filteredMilestones
+                      .filter((pm: any) => selectedMilestones.includes(pm.id))
+                      .reduce((sum: number, pm: any) => sum + parseFloat(pm.amount || '0'), 0);
+
+                    return (
+                      <div className="space-y-3">
+                        {/* Step 1 — Client */}
+                        <div className="space-y-1.5">
+                          <Label>Client</Label>
+                          <Select
+                            value={milestoneClientFilter || ''}
+                            onValueChange={(v) => {
+                              setMilestoneClientFilter(v || null);
+                              setSelectedMilestones([]);
+                            }}
+                          >
+                            <SelectTrigger data-testid="select-milestone-client">
+                              <SelectValue placeholder="Select a client first..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {clientsWithMilestones.map((c: any) => {
+                                const count = availableMilestones.filter((pm: any) => pm.clientId === c.id).length;
+                                return (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    {c.name}
+                                    <span className="ml-1 text-muted-foreground">({count})</span>
+                                  </SelectItem>
+                                );
+                              })}
+                              {clientsWithMilestones.length === 0 && (
+                                <SelectItem value="__none__" disabled>No clients with available milestones</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Step 2 — Milestones for chosen client */}
+                        {milestoneClientFilter && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <Label>Payment Milestones</Label>
+                              {filteredMilestones.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="text-xs text-primary underline-offset-2 hover:underline"
+                                  onClick={() => {
+                                    if (selectedMilestones.length === filteredMilestones.length) {
+                                      setSelectedMilestones([]);
+                                    } else {
+                                      setSelectedMilestones(filteredMilestones.map((pm: any) => pm.id));
+                                    }
+                                  }}
+                                >
+                                  {selectedMilestones.length === filteredMilestones.length ? 'Deselect all' : 'Select all'}
+                                </button>
+                              )}
+                            </div>
+                            <div className="border border-border rounded-lg divide-y max-h-56 overflow-y-auto">
+                              {filteredMilestones.map((pm: any) => (
+                                <label
+                                  key={pm.id}
+                                  className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
+                                >
+                                  <Checkbox
+                                    checked={selectedMilestones.includes(pm.id)}
+                                    onCheckedChange={(checked) => {
+                                      setSelectedMilestones(prev =>
+                                        checked ? [...prev, pm.id] : prev.filter(id => id !== pm.id)
+                                      );
+                                    }}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium leading-none">{pm.name}</div>
+                                    <div className="text-xs text-muted-foreground mt-0.5 truncate">{pm.projectName}</div>
+                                  </div>
+                                  <div className="text-sm font-semibold shrink-0">
+                                    ${Number(pm.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </div>
+                                </label>
+                              ))}
+                              {filteredMilestones.length === 0 && (
+                                <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                                  No available payment milestones for this client
+                                </div>
+                              )}
+                            </div>
+                            {selectedMilestones.length > 0 && (
+                              <div className="flex items-center justify-between text-sm pt-1">
+                                <span className="text-muted-foreground">
+                                  {selectedMilestones.length} milestone{selectedMilestones.length !== 1 ? 's' : ''} selected
+                                </span>
+                                <span className="font-semibold">
+                                  Total: ${selectedTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Batch ID */}
                   <div className="space-y-2">

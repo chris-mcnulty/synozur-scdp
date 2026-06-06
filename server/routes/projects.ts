@@ -4174,12 +4174,13 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const milestones = milestonesMap.get(project.id) || [];
         const paymentMilestones = milestones.filter((m: any) => m.isPaymentMilestone === true);
         
-        // Add project name to each milestone for display
+        // Add project name and clientId to each milestone for display
         for (const milestone of paymentMilestones) {
           allPaymentMilestones.push({
             ...milestone,
             projectName: project.name,
-            projectId: project.id
+            projectId: project.id,
+            clientId: project.clientId
           });
         }
       }
@@ -4191,6 +4192,131 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
   
+  // Generate a single invoice batch from multiple payment milestones (same client)
+  app.post("/api/payment-milestones/generate-combined-invoice", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const bodySchema = z.object({
+        milestoneIds: z.array(z.string()).min(1, "At least one milestone is required"),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be YYYY-MM-DD"),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be YYYY-MM-DD"),
+      }).refine(d => d.startDate <= d.endDate, { message: "Start date must be before or equal to end date" });
+
+      const { milestoneIds, startDate, endDate } = bodySchema.parse(req.body);
+      const userId = req.user?.id;
+      const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
+
+      if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+      // Load all requested milestones
+      const milestoneRows = await db.select()
+        .from(projectMilestones)
+        .where(and(
+          inArray(projectMilestones.id, milestoneIds),
+          eq(projectMilestones.isPaymentMilestone, true)
+        ));
+
+      if (milestoneRows.length !== milestoneIds.length) {
+        return res.status(404).json({ message: "One or more payment milestones not found" });
+      }
+
+      // Reject any already invoiced milestones
+      const alreadyInvoiced = milestoneRows.filter(m => m.invoiceStatus && m.invoiceStatus !== 'planned');
+      if (alreadyInvoiced.length > 0) {
+        return res.status(400).json({ message: `These milestones are already invoiced: ${alreadyInvoiced.map(m => m.name).join(', ')}` });
+      }
+
+      // Load all related projects
+      const projectIds = [...new Set(milestoneRows.map(m => m.projectId))];
+      const projectRows = await db.select({
+        id: projects.id,
+        clientId: projects.clientId,
+        quoteCurrency: projects.quoteCurrency,
+        costCurrency: projects.costCurrency,
+        exchangeRate: projects.exchangeRate,
+      }).from(projects).where(inArray(projects.id, projectIds));
+
+      // Enforce single-client constraint
+      const clientIds = [...new Set(projectRows.map(p => p.clientId).filter(Boolean))];
+      if (clientIds.length > 1) {
+        return res.status(400).json({ message: "All milestones must belong to the same client" });
+      }
+      const clientId = clientIds[0];
+      const projectMap = new Map(projectRows.map(p => [p.id, p]));
+
+      // Generate unique batch ID
+      const date = new Date(startDate);
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const timestamp = Date.now().toString().slice(-4);
+      let batchId = `INV-${dateStr}-${timestamp}`;
+      const existingIds = await db.select({ batchId: invoiceBatches.batchId })
+        .from(invoiceBatches)
+        .where(eq(invoiceBatches.batchId, batchId));
+      if (existingIds.length > 0) {
+        batchId = `${batchId}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      }
+
+      const normalizedMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+
+      let glInvoiceNumber: string | null = null;
+      if (tenantId) {
+        try { glInvoiceNumber = await storage.getAndIncrementGlInvoiceNumber(tenantId); } catch {}
+      }
+
+      const totalAmount = milestoneRows.reduce((sum, m) => sum + parseFloat(m.amount || '0'), 0);
+      const firstProject = projectMap.get(milestoneRows[0].projectId);
+
+      const batch = await storage.createInvoiceBatch({
+        batchId,
+        startDate,
+        endDate,
+        month: normalizedMonth,
+        pricingSnapshotDate: new Date().toISOString().split('T')[0],
+        discountPercent: null,
+        discountAmount: null,
+        totalAmount: totalAmount.toFixed(2),
+        invoicingMode: "project",
+        batchType: "mixed",
+        projectMilestoneId: milestoneIds.length === 1 ? milestoneIds[0] : null,
+        exportedToQBO: false,
+        createdBy: userId,
+        tenantId: tenantId || null,
+        glInvoiceNumber,
+        quoteCurrency: firstProject?.quoteCurrency || "USD",
+        costCurrency: firstProject?.costCurrency || "USD",
+        exchangeRate: firstProject?.exchangeRate ?? null,
+      });
+
+      // One invoice line per milestone
+      for (const m of milestoneRows) {
+        const proj = projectMap.get(m.projectId);
+        await db.insert(invoiceLines).values({
+          batchId,
+          projectId: m.projectId,
+          clientId: proj?.clientId || clientId,
+          description: `${m.name} - Payment Milestone`,
+          amount: m.amount || "0",
+          quantity: "1",
+          rate: m.amount || "0",
+          type: "milestone",
+          projectMilestoneId: m.id,
+          originalAmount: m.amount || "0",
+          billedAmount: m.amount || "0",
+          varianceAmount: "0",
+          originalRate: m.amount || "0",
+          originalQuantity: "1",
+        });
+      }
+
+      await storage.recalculateBatchTax(batchId);
+
+      res.json({ batch, milestones: milestoneRows, milestonesCount: milestoneRows.length });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Invalid request", errors: error.errors });
+      console.error("[ERROR] Failed to generate combined invoice:", error);
+      res.status(500).json({ message: "Failed to generate combined invoice" });
+    }
+  });
+
   // Generate invoice batch from payment milestone
   app.post("/api/payment-milestones/:milestoneId/generate-invoice", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
@@ -4224,7 +4350,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(404).json({ message: "Payment milestone not found" });
       }
       
-      if (milestone.invoiceStatus !== 'planned') {
+      if (milestone.invoiceStatus && milestone.invoiceStatus !== 'planned') {
         return res.status(400).json({ message: `Cannot generate invoice for milestone with invoice status: ${milestone.invoiceStatus}` });
       }
       
