@@ -693,8 +693,8 @@ export const invoicingMethods: ThisType<IStorage & {
           throw new Error('Linked payment milestone not found');
         }
         
-        // Validate milestone is in 'planned' state (use invoiceStatus, not status)
-        if (milestone.invoiceStatus !== 'planned') {
+        // Validate milestone is in 'planned' state or null (uninvoiced) — null means never explicitly set, treat as eligible
+        if (milestone.invoiceStatus && milestone.invoiceStatus !== 'planned') {
           throw new Error(`Payment milestone must be in 'planned' state to invoice (current: ${milestone.invoiceStatus})`);
         }
         

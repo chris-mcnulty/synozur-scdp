@@ -4473,7 +4473,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(404).json({ message: "Payment milestone not found" });
       }
       
-      if (milestone.invoiceStatus !== 'planned') {
+      if (milestone.invoiceStatus && milestone.invoiceStatus !== 'planned') {
         return res.status(400).json({ message: `Cannot generate invoice for milestone with invoice status: ${milestone.invoiceStatus}` });
       }
       
