@@ -611,6 +611,7 @@ export interface IStorage {
   createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic>;
   updateProjectEpic(id: string, update: Partial<InsertProjectEpic>): Promise<ProjectEpic>;
   deleteProjectEpic(id: string): Promise<void>;
+  deleteProjectStage(id: string): Promise<void>;
   getProjectMilestones(projectId: string): Promise<ProjectMilestone[]>;
   getProjectMilestone(id: string): Promise<ProjectMilestone | undefined>;
   getProjectMilestonesByProjectIds(projectIds: string[]): Promise<Map<string, ProjectMilestone[]>>;

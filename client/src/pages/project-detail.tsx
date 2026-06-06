@@ -1371,6 +1371,7 @@ export default function ProjectDetail() {
   const [showEpicDialog, setShowEpicDialog] = useState(false);
   const [editingEpic, setEditingEpic] = useState<any>(null);
   const [deletingEpicId, setDeletingEpicId] = useState<string | null>(null);
+  const [deletingStageId, setDeletingStageId] = useState<string | null>(null);
   
   // Assignment state
   const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
@@ -2557,7 +2558,7 @@ export default function ProjectDetail() {
 
   const deleteEpicMutation = useMutation({
     mutationFn: async (epicId: string) => {
-      return apiRequest(`/api/epics/${epicId}`, {
+      return apiRequest(`/api/projects/${id}/epics/${epicId}`, {
         method: "DELETE"
       });
     },
@@ -2573,6 +2574,29 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete epic",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const deleteStageMutation = useMutation({
+    mutationFn: async (stageId: string) => {
+      return apiRequest(`/api/projects/${id}/stages/${stageId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Stage deleted",
+        description: "The stage has been deleted successfully."
+      });
+      setDeletingStageId(null);
+      refetchEpics();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete stage",
         variant: "destructive"
       });
     }
@@ -4380,6 +4404,16 @@ export default function ProjectDetail() {
                                         <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                                         <span className="text-sm font-medium">{stage.name}</span>
                                       </div>
+                                      {!embedReadonly && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                          onClick={() => setDeletingStageId(stage.id)}
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -8483,6 +8517,30 @@ export default function ProjectDetail() {
                 data-testid="button-confirm-delete-epic"
               >
                 Delete Epic
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Stage Confirmation Dialog */}
+        <Dialog open={!!deletingStageId} onOpenChange={() => setDeletingStageId(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Stage</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this stage? This action cannot be undone and will also remove any milestones linked to this stage.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeletingStageId(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => { if (deletingStageId) deleteStageMutation.mutate(deletingStageId); }}
+                disabled={deleteStageMutation.isPending}
+              >
+                Delete Stage
               </Button>
             </DialogFooter>
           </DialogContent>

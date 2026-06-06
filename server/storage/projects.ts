@@ -482,6 +482,10 @@ export const projectsMethods: ThisType<IStorage> = {
     await db.delete(projectEpics).where(eq(projectEpics.id, id));
   },
 
+  async deleteProjectStage(id: string): Promise<void> {
+    await db.delete(projectStages).where(eq(projectStages.id, id));
+  },
+
   async getProjectMilestones(projectId: string): Promise<ProjectMilestone[]> {
     return await db.select()
       .from(projectMilestones)

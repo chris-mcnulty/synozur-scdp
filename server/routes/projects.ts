@@ -678,6 +678,16 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     }
   });
 
+  app.delete("/api/projects/:projectId/stages/:stageId", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      await storage.deleteProjectStage(req.params.stageId);
+      res.json({ message: "Stage deleted successfully" });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to delete project stage:", error);
+      res.status(500).json({ message: "Failed to delete project stage" });
+    }
+  });
+
   // Project Stages endpoints
   app.get("/api/projects/:projectId/stages/:epicId", requireAuth, async (req, res) => {
     try {
