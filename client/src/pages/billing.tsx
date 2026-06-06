@@ -585,13 +585,13 @@ export default function Billing() {
                         </SelectTrigger>
                         <SelectContent>
                           {allPaymentMilestones
-                            .filter((pm: any) => pm.invoiceStatus === 'planned')
+                            .filter((pm: any) => !pm.invoiceStatus || pm.invoiceStatus === 'planned')
                             .map((pm: any) => (
                               <SelectItem key={pm.id} value={pm.id}>
                                 {pm.projectName} - {pm.name} (${Number(pm.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                               </SelectItem>
                             ))}
-                          {allPaymentMilestones.filter((pm: any) => pm.invoiceStatus === 'planned').length === 0 && (
+                          {allPaymentMilestones.filter((pm: any) => !pm.invoiceStatus || pm.invoiceStatus === 'planned').length === 0 && (
                             <SelectItem value="none" disabled>No planned payment milestones available</SelectItem>
                           )}
                         </SelectContent>
