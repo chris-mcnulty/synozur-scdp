@@ -1484,7 +1484,7 @@ function GridTable(props: {
                         editable={editable && row.submissionStatus !== "locked"}
                         editing={!!isEditing}
                         setEditing={(e) => setEditing(e ? { row: ri, col: ci } : null)}
-                        updateCell={updateCell}
+                        updateCell={updateCellSorted}
                         personId={personId}
                       />
                       {err && (
