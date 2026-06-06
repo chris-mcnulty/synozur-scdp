@@ -474,8 +474,8 @@ export default function BatchDetail() {
 
   // Helper function for exporting to QuickBooks
   const handleExportToQBO = async () => {
-    if (!batchDetails?.id) return;
-    exportToQBOMutation.mutate(batchDetails.id);
+    if (!batchDetails?.batchId) return;
+    exportToQBOMutation.mutate(batchDetails.batchId);
   };
 
   // QuickBooks Online (live API) connection status — gates the push/cancel actions.
