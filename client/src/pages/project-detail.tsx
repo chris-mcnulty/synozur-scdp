@@ -21,7 +21,7 @@ interface ErrorBoundaryState {
   errorInfo: ErrorInfo | null;
 }
 
-class ProjectDetailErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ProjectDetailErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null, errorInfo: null };

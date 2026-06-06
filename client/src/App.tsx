@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import Dashboard from "@/pages/dashboard";
 import Projects from "@/pages/projects";
-import ProjectDetail from "@/pages/project-detail";
+import ProjectDetail, { ProjectDetailErrorBoundary } from "@/pages/project-detail";
 import Clients from "@/pages/clients";
 import ClientDetail from "@/pages/client-detail";
 import Estimates from "@/pages/estimates";
@@ -248,7 +248,7 @@ function Router() {
         {user ? <Projects /> : <Redirect to="/login" />}
       </Route>
       <Route path="/projects/:id">
-        {user ? <ProjectDetail /> : <Redirect to="/login" />}
+        {user ? <ProjectDetailErrorBoundary><ProjectDetail /></ProjectDetailErrorBoundary> : <Redirect to="/login" />}
       </Route>
       <Route path="/clients">
         {user ? <Clients /> : <Redirect to="/login" />}
