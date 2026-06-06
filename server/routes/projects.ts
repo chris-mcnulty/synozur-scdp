@@ -4174,13 +4174,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const milestones = milestonesMap.get(project.id) || [];
         const paymentMilestones = milestones.filter((m: any) => m.isPaymentMilestone === true);
         
-        // Add project name and clientId to each milestone for display
+        // Add project name, clientId, and clientName to each milestone for display
         for (const milestone of paymentMilestones) {
           allPaymentMilestones.push({
             ...milestone,
             projectName: project.name,
             projectId: project.id,
-            clientId: project.clientId
+            clientId: project.clientId || null,
+            clientName: (project as any).client?.name || null,
           });
         }
       }

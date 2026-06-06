@@ -151,7 +151,7 @@ export default function Billing() {
   });
 
   // Fetch all payment milestones from all projects
-  const { data: allPaymentMilestones = [] } = useQuery<any[]>({
+  const { data: allPaymentMilestones = [], isLoading: milestonesLoading } = useQuery<any[]>({
     queryKey: ["/api/payment-milestones/all"],
     enabled: batchType === 'milestone',
   });
@@ -587,16 +587,42 @@ export default function Billing() {
 
                   {/* Payment Milestone Selection - client first, then checkboxes */}
                   {batchType === 'milestone' && (() => {
-                    const availableMilestones = allPaymentMilestones.filter(
-                      (pm: any) => !pm.invoiceStatus || pm.invoiceStatus === 'planned'
-                    );
-                    // Unique clients derived from available milestones, joined with clients list
-                    const clientsWithMilestones = (clients as any[]).filter((c: any) =>
-                      availableMilestones.some((pm: any) => pm.clientId === c.id)
-                    );
+                    if (milestonesLoading) {
+                      return (
+                        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          Loading payment milestones...
+                        </div>
+                      );
+                    }
+
+                    // Build client list DIRECTLY from milestone data — no cross-API join needed.
+                    // clientId/clientName come from the backend via the project's joined client row.
+                    const clientMap = new Map<string, { id: string; name: string }>();
+                    for (const pm of allPaymentMilestones) {
+                      const key = pm.clientId || '__no_client__';
+                      if (!clientMap.has(key)) {
+                        clientMap.set(key, {
+                          id: key,
+                          name: pm.clientName || (pm.clientId ? pm.clientId : 'No client assigned'),
+                        });
+                      }
+                    }
+                    const clientList = [...clientMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+                    // Show ALL milestones — non-invoiceable ones are visually disabled.
+                    // The backend validates status; we just inform the user here.
                     const filteredMilestones = milestoneClientFilter
-                      ? availableMilestones.filter((pm: any) => pm.clientId === milestoneClientFilter)
+                      ? allPaymentMilestones.filter((pm: any) =>
+                          (pm.clientId || '__no_client__') === milestoneClientFilter
+                        )
                       : [];
+
+                    const isInvoiceable = (pm: any) =>
+                      !pm.invoiceStatus || pm.invoiceStatus === 'planned';
+
+                    const selectableMilestones = filteredMilestones.filter(isInvoiceable);
+
                     const selectedTotal = filteredMilestones
                       .filter((pm: any) => selectedMilestones.includes(pm.id))
                       .reduce((sum: number, pm: any) => sum + parseFloat(pm.amount || '0'), 0);
@@ -617,8 +643,10 @@ export default function Billing() {
                               <SelectValue placeholder="Select a client first..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {clientsWithMilestones.map((c: any) => {
-                                const count = availableMilestones.filter((pm: any) => pm.clientId === c.id).length;
+                              {clientList.map((c) => {
+                                const count = allPaymentMilestones.filter(
+                                  (pm: any) => (pm.clientId || '__no_client__') === c.id
+                                ).length;
                                 return (
                                   <SelectItem key={c.id} value={c.id}>
                                     {c.name}
@@ -626,8 +654,8 @@ export default function Billing() {
                                   </SelectItem>
                                 );
                               })}
-                              {clientsWithMilestones.length === 0 && (
-                                <SelectItem value="__none__" disabled>No clients with available milestones</SelectItem>
+                              {clientList.length === 0 && (
+                                <SelectItem value="__none__" disabled>No payment milestones found</SelectItem>
                               )}
                             </SelectContent>
                           </Select>
@@ -638,48 +666,70 @@ export default function Billing() {
                           <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
                               <Label>Payment Milestones</Label>
-                              {filteredMilestones.length > 1 && (
+                              {selectableMilestones.length > 1 && (
                                 <button
                                   type="button"
                                   className="text-xs text-primary underline-offset-2 hover:underline"
                                   onClick={() => {
-                                    if (selectedMilestones.length === filteredMilestones.length) {
+                                    const selectableIds = selectableMilestones.map((pm: any) => pm.id);
+                                    if (selectableIds.every((id: string) => selectedMilestones.includes(id))) {
                                       setSelectedMilestones([]);
                                     } else {
-                                      setSelectedMilestones(filteredMilestones.map((pm: any) => pm.id));
+                                      setSelectedMilestones(selectableIds);
                                     }
                                   }}
                                 >
-                                  {selectedMilestones.length === filteredMilestones.length ? 'Deselect all' : 'Select all'}
+                                  {selectableMilestones.every((pm: any) => selectedMilestones.includes(pm.id))
+                                    ? 'Deselect all' : 'Select all'}
                                 </button>
                               )}
                             </div>
                             <div className="border border-border rounded-lg divide-y max-h-56 overflow-y-auto">
-                              {filteredMilestones.map((pm: any) => (
-                                <label
-                                  key={pm.id}
-                                  className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
-                                >
-                                  <Checkbox
-                                    checked={selectedMilestones.includes(pm.id)}
-                                    onCheckedChange={(checked) => {
-                                      setSelectedMilestones(prev =>
-                                        checked ? [...prev, pm.id] : prev.filter(id => id !== pm.id)
-                                      );
-                                    }}
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium leading-none">{pm.name}</div>
-                                    <div className="text-xs text-muted-foreground mt-0.5 truncate">{pm.projectName}</div>
-                                  </div>
-                                  <div className="text-sm font-semibold shrink-0">
-                                    ${Number(pm.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </div>
-                                </label>
-                              ))}
+                              {filteredMilestones.map((pm: any) => {
+                                const invoiceable = isInvoiceable(pm);
+                                const statusLabel = pm.invoiceStatus === 'invoiced' ? 'Invoiced'
+                                  : pm.invoiceStatus === 'paid' ? 'Paid'
+                                  : pm.invoiceStatus === 'draft' ? 'Draft'
+                                  : null;
+                                return (
+                                  <label
+                                    key={pm.id}
+                                    className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${
+                                      invoiceable
+                                        ? 'cursor-pointer hover:bg-muted/40'
+                                        : 'cursor-not-allowed opacity-60 bg-muted/20'
+                                    }`}
+                                  >
+                                    <Checkbox
+                                      checked={selectedMilestones.includes(pm.id)}
+                                      disabled={!invoiceable}
+                                      onCheckedChange={(checked) => {
+                                        if (!invoiceable) return;
+                                        setSelectedMilestones(prev =>
+                                          checked ? [...prev, pm.id] : prev.filter(id => id !== pm.id)
+                                        );
+                                      }}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-sm font-medium leading-none">{pm.name}</span>
+                                        {statusLabel && (
+                                          <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                                            {statusLabel}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{pm.projectName}</div>
+                                    </div>
+                                    <div className="text-sm font-semibold shrink-0">
+                                      ${Number(pm.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                  </label>
+                                );
+                              })}
                               {filteredMilestones.length === 0 && (
                                 <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                                  No available payment milestones for this client
+                                  No payment milestones for this client
                                 </div>
                               )}
                             </div>
