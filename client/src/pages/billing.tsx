@@ -239,7 +239,10 @@ export default function Billing() {
           body: JSON.stringify({
             milestoneIds: data.milestoneIds,
             startDate: data.startDate,
-            endDate: data.endDate
+            endDate: data.endDate,
+            taxRate: data.taxRate,
+            discountPercent: data.discountPercent,
+            discountAmount: data.discountAmount,
           })
         });
         return response;

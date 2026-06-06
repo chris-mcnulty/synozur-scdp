@@ -4200,9 +4200,12 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         milestoneIds: z.array(z.string()).min(1, "At least one milestone is required"),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be YYYY-MM-DD"),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be YYYY-MM-DD"),
+        taxRate: z.string().optional(),
+        discountPercent: z.string().optional(),
+        discountAmount: z.string().optional(),
       }).refine(d => d.startDate <= d.endDate, { message: "Start date must be before or equal to end date" });
 
-      const { milestoneIds, startDate, endDate } = bodySchema.parse(req.body);
+      const { milestoneIds, startDate, endDate, taxRate, discountPercent, discountAmount } = bodySchema.parse(req.body);
       const userId = req.user?.id;
       const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
 
@@ -4272,8 +4275,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         endDate,
         month: normalizedMonth,
         pricingSnapshotDate: new Date().toISOString().split('T')[0],
-        discountPercent: null,
-        discountAmount: null,
+        discountPercent: discountPercent || null,
+        discountAmount: discountAmount || null,
+        taxRate: taxRate ?? '9.3',
         totalAmount: totalAmount.toFixed(2),
         invoicingMode: "project",
         batchType: "mixed",
