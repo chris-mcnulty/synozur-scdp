@@ -892,7 +892,7 @@ export const projectsMethods: ThisType<IStorage> = {
     const history = await db.select()
       .from(projectBudgetHistory)
       .leftJoin(sows, eq(projectBudgetHistory.sowId, sows.id))
-      .innerJoin(users, eq(projectBudgetHistory.changedBy, users.id))
+      .leftJoin(users, eq(projectBudgetHistory.changedBy, users.id))
       .where(eq(projectBudgetHistory.projectId, projectId))
       .orderBy(desc(projectBudgetHistory.createdAt));
 
