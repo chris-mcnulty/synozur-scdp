@@ -5481,13 +5481,13 @@ export default function ProjectDetail() {
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">{sow.name}</TableCell>
-                          <TableCell>${parseFloat(sow.value).toLocaleString()}</TableCell>
+                          <TableCell>${parseFloat(sow.value || '0').toLocaleString()}</TableCell>
                           <TableCell>
                             <Badge variant={getStatusBadgeVariant(sow.status)}>
                               {sow.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{format(new Date(sow.effectiveDate), "MMM d, yyyy")}</TableCell>
+                          <TableCell>{sow.effectiveDate ? format(new Date(sow.effectiveDate), "MMM d, yyyy") : "—"}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               {sow.documentUrl ? (
@@ -5676,7 +5676,7 @@ export default function ProjectDetail() {
                               <div>
                                 <h4 className="font-semibold text-sm">{changeTypeLabel}</h4>
                                 <p className="text-xs text-muted-foreground">
-                                  {format(new Date(entry.createdAt), "PPp")}
+                                  {entry.createdAt ? format(new Date(entry.createdAt), "PPp") : "—"}
                                 </p>
                               </div>
                             </div>
@@ -6306,9 +6306,9 @@ export default function ProjectDetail() {
                             )}
                           </div>
                           <div className="text-sm text-muted-foreground mt-1">
-                            {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')} • 
+                            {batch.startDate ? format(new Date(batch.startDate), 'MMM d') : '?'} - {batch.endDate ? format(new Date(batch.endDate), 'MMM d, yyyy') : '?'} • 
                             {batch.discountAmount && ` Discount: $${Number(batch.discountAmount).toLocaleString()} • `}
-                            Created {format(new Date(batch.createdAt), 'MMM d, yyyy')}
+                            Created {batch.createdAt ? format(new Date(batch.createdAt), 'MMM d, yyyy') : '—'}
                             {batch.paymentDate && ` • Payment: ${format(new Date(batch.paymentDate), 'MMM d, yyyy')}`}
                           </div>
                         </div>
