@@ -17,7 +17,7 @@ import { normalizeReceiptBatch, type NormalizedReceipt } from "../services/recei
 
 const __pdfGenFilename = fileURLToPath(import.meta.url);
 const __pdfGenDirname = path.dirname(__pdfGenFilename);
-const _pdfGenProjectRoot = path.resolve(__pdfGenDirname, '..');
+const _pdfGenProjectRoot = path.resolve(__pdfGenDirname, '..', '..');
 let _synozurLogoDataUri: string | undefined;
 try {
   const _logoPath = path.join(_pdfGenProjectRoot, 'client', 'src', 'assets', 'logos', 'SA-Logo-Horizontal-color.png');
