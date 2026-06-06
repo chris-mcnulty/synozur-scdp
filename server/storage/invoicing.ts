@@ -319,7 +319,9 @@ export const invoicingMethods: ThisType<IStorage & {
       'discountAmount',
       'discountPercent',
       'glInvoiceNumber',
-      'notes'
+      'notes',
+      'exportedToQBO',
+      'exportedAt',
     ];
 
     // Check if batch is finalized
