@@ -1521,7 +1521,10 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
       const activeMilestones = milestones
         .filter(m => m.status !== "completed")
-        .map(m => `- [${m.isPaymentMilestone ? 'Payment Milestone' : 'Delivery Gate'}] ${m.name} (${m.status})${m.invoiceStatus ? ` — Invoice: ${m.invoiceStatus}` : ''}${m.targetDate ? ` — Due: ${m.targetDate}` : ""}`)
+        .map(m => {
+          const effectiveDate = m.targetDate || m.endDate || m.startDate;
+          return `- [${m.isPaymentMilestone ? 'Payment Milestone' : 'Delivery Gate'}] ${m.name} (${m.status})${m.invoiceStatus ? ` — Invoice: ${m.invoiceStatus}` : ''}${effectiveDate ? ` — Due: ${effectiveDate}` : ""}`;
+        })
         .join("\n") || "No active milestones.";
 
       const completedMilestones = milestones
@@ -5916,7 +5919,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         milestonePosture,
         milestones: milestones.map((m: any) => ({
           name: m.name,
-          targetDate: m.targetDate || '',
+          targetDate: m.targetDate || m.endDate || m.startDate || '',
           status: m.status || '',
           startDate: m.startDate || '',
           endDate: m.endDate || '',
@@ -5975,7 +5978,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           for (const m of milestones) {
             const ms = {
               name: (m as any).name,
-              targetDate: (m as any).targetDate || '',
+              targetDate: (m as any).targetDate || (m as any).endDate || (m as any).startDate || '',
               startDate: (m as any).startDate || '',
               endDate: (m as any).endDate || '',
               status: (m as any).status || '',

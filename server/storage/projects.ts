@@ -3325,21 +3325,24 @@ export const projectsMethods: ThisType<IStorage> = {
     const totalMilestones = milestoneData.length;
     const today = new Date();
     const staleStatuses = ["planned", "in_progress", "at_risk"];
-    const overdueMilestonesList = milestoneData.filter(m =>
-      staleStatuses.includes(m.status) &&
-      m.targetDate &&
-      new Date(m.targetDate) < today
-    );
-    const noDateMilestonesList = milestoneData.filter(m => !m.targetDate);
+    const getMilestoneEffectiveDate = (m: any): string | null => m.targetDate || m.endDate || m.startDate || null;
+    const overdueMilestonesList = milestoneData.filter(m => {
+      const eff = getMilestoneEffectiveDate(m);
+      return staleStatuses.includes(m.status) && eff && new Date(eff) < today;
+    });
+    const noDateMilestonesList = milestoneData.filter(m => !getMilestoneEffectiveDate(m));
     const overdueMilestones = overdueMilestonesList.length;
     const noDateMilestones = noDateMilestonesList.length;
     const completedMilestones = milestoneData.filter(m => m.status === "completed").length;
-    const overdueMilestoneAffected = overdueMilestonesList.slice(0, MAX_AFFECTED).map(m => ({
-      id: m.id,
-      name: `${m.name}${m.targetDate ? ` (due ${formatDate(m.targetDate)})` : ""}`,
-      navTab: "milestones",
-      navParam: { key: "milestoneId", value: m.id },
-    }));
+    const overdueMilestoneAffected = overdueMilestonesList.slice(0, MAX_AFFECTED).map(m => {
+      const eff = getMilestoneEffectiveDate(m);
+      return {
+        id: m.id,
+        name: `${m.name}${eff ? ` (due ${formatDate(eff)})` : ""}`,
+        navTab: "milestones",
+        navParam: { key: "milestoneId", value: m.id },
+      };
+    });
     const noDateMilestoneAffected = noDateMilestonesList.slice(0, MAX_AFFECTED).map(m => ({
       id: m.id,
       name: m.name,
