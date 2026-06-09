@@ -71,7 +71,8 @@ import {
   Wrench,
   Upload,
   Archive,
-  RefreshCw
+  RefreshCw,
+  Unlock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -202,11 +203,12 @@ export default function BatchDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, isPlatformAdmin } = useAuth();
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
   const [showUnfinalizeDialog, setShowUnfinalizeDialog] = useState(false);
+  const [showForceUnfinalizeDialog, setShowForceUnfinalizeDialog] = useState(false);
   const [showDeleteBatchDialog, setShowDeleteBatchDialog] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
   const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
@@ -1026,7 +1028,32 @@ export default function BatchDetail() {
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to unfinalize batch",
+        description: error.message || "Failed to revert batch",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const forceUnfinalizeMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/invoice-batches/${batchId}/force-unfinalize`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches"] });
+      toast({
+        title: "Batch force-unfinalized",
+        description: "The QuickBooks export lock has been cleared and the batch reverted to draft.",
+      });
+      setShowForceUnfinalizeDialog(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to force-unfinalize batch",
         variant: "destructive",
       });
     },
@@ -1439,6 +1466,14 @@ export default function BatchDetail() {
                     {qboReady && (
                       <DropdownMenuItem onClick={handleCancelQBO} disabled={cancelQBOMutation.isPending} className="text-orange-600">
                         <Undo className="mr-2 h-4 w-4" /> {cancelQBOMutation.isPending ? 'Voiding…' : 'Cancel & Reissue'}
+                      </DropdownMenuItem>
+                    )}
+                    {isPlatformAdmin && (
+                      <DropdownMenuItem
+                        onClick={() => setShowForceUnfinalizeDialog(true)}
+                        className="text-red-600"
+                      >
+                        <Unlock className="mr-2 h-4 w-4" /> Force Unfinalize
                       </DropdownMenuItem>
                     )}
                   </>
@@ -2623,6 +2658,31 @@ export default function BatchDetail() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Revert to Draft
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Force Unfinalize Confirmation Dialog (platform admin only) */}
+      <AlertDialog open={showForceUnfinalizeDialog} onOpenChange={setShowForceUnfinalizeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Force Unfinalize QBO-Exported Batch?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This batch is marked as exported to QuickBooks. Force unfinalizing will revert it to
+              draft and clear the export lock. <strong>You are responsible for correcting or voiding
+              the corresponding invoice in QuickBooks manually.</strong> This action is only available
+              to platform administrators.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => forceUnfinalizeMutation.mutate()}
+              disabled={forceUnfinalizeMutation.isPending}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {forceUnfinalizeMutation.isPending ? "Processing…" : "Force Unfinalize"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

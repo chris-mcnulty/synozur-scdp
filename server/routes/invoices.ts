@@ -895,6 +895,33 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
     }
   });
 
+  app.post("/api/invoice-batches/:batchId/force-unfinalize", deps.requireAuth, async (req, res) => {
+    try {
+      const platformRole = (req as any).user?.platformRole;
+      if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
+        return res.status(403).json({ message: "Only platform administrators can force-unfinalize a QBO-exported batch" });
+      }
+
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
+      const { batchId } = req.params;
+
+      console.log(`[API] Force-unfinalizing QBO-exported batch ${batchId} by platform admin ${(req as any).user?.id}`);
+
+      const updatedBatch = await storage.unfinalizeBatch(batchId, true);
+
+      res.json({
+        message: "Batch force-unfinalized successfully",
+        batch: updatedBatch
+      });
+    } catch (error: any) {
+      console.error("Failed to force-unfinalize batch:", error);
+      res.status(400).json({
+        message: error.message || "Failed to force-unfinalize batch"
+      });
+    }
+  });
+
   app.patch("/api/invoice-batches/:batchId/as-of-date", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
       if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;

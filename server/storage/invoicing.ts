@@ -837,7 +837,7 @@ export const invoicingMethods: ThisType<IStorage & {
     return updatedBatch;
   },
 
-  async unfinalizeBatch(batchId: string): Promise<InvoiceBatch> {
+  async unfinalizeBatch(batchId: string, force = false): Promise<InvoiceBatch> {
     return await db.transaction(async (tx) => {
       const [batch] = await tx.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
       
@@ -849,9 +849,16 @@ export const invoicingMethods: ThisType<IStorage & {
         throw new Error('Only finalized batches can be unfinalized');
       }
       
-      // Check if batch has been exported
-      if (batch.exportedToQBO) {
+      // Check if batch has been exported (unless force flag is set by platform admin)
+      if (batch.exportedToQBO && !force) {
         throw new Error('Cannot unfinalize a batch that has been exported to QuickBooks');
+      }
+      
+      // If forcing past the QBO lock, clear the export flags first
+      if (force && batch.exportedToQBO) {
+        await tx.update(invoiceBatches)
+          .set({ exportedToQBO: false, exportedAt: null })
+          .where(eq(invoiceBatches.batchId, batchId));
       }
       
       // If batch is linked to a payment milestone, revert the updates
