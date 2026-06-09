@@ -1,6 +1,7 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { getPlannerGraphClient, getPlannerAccessToken, isPlannerConfigured, PlannerCredentials } from './planner-graph-client';
 import { getUncachableOutlookClient } from './outlook-client';
+import { sanitizeGraphErrorMessage } from '@shared/planner-conflict.js';
 
 // Types for Microsoft Planner API responses
 export interface PlannerGroup {
@@ -908,8 +909,9 @@ class PlannerService {
         title: title
       });
     } catch (error: any) {
-      console.error('[PLANNER] Error creating plan:', error.message);
-      throw new Error(`Failed to create plan: ${error.message}`);
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error creating plan:', safeMsg);
+      throw Object.assign(new Error(`Failed to create plan: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -921,8 +923,9 @@ class PlannerService {
       const response = await client.api(`/planner/plans/${planId}/buckets`).get();
       return response.value || [];
     } catch (error: any) {
-      console.error('[PLANNER] Error listing buckets:', error.message);
-      throw new Error(`Failed to list buckets: ${error.message}`);
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error listing buckets:', safeMsg);
+      throw Object.assign(new Error(`Failed to list buckets: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -937,8 +940,9 @@ class PlannerService {
           orderHint: ' !'
         });
     } catch (error: any) {
-      console.error('[PLANNER] Error creating bucket:', error.message);
-      throw new Error(`Failed to create bucket: ${error.message}`);
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error creating bucket:', safeMsg);
+      throw Object.assign(new Error(`Failed to create bucket: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -957,8 +961,9 @@ class PlannerService {
       const response = await client.api(`/planner/plans/${planId}/tasks`).get();
       return response.value || [];
     } catch (error: any) {
-      console.error('[PLANNER] Error listing tasks:', error.message);
-      throw Object.assign(new Error(`Failed to list tasks: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error listing tasks:', safeMsg);
+      throw Object.assign(new Error(`Failed to list tasks: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -978,8 +983,9 @@ class PlannerService {
           message.includes('does not exist') || message.includes('not found')) {
         return null;
       }
-      console.error('[PLANNER] Error getting task:', error.message);
-      throw Object.assign(new Error(`Failed to get task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error getting task:', safeMsg);
+      throw Object.assign(new Error(`Failed to get task: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -992,8 +998,9 @@ class PlannerService {
       ]);
       return { ...task, details };
     } catch (error: any) {
-      console.error('[PLANNER] Error getting task with details:', error.message);
-      throw Object.assign(new Error(`Failed to get task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error getting task with details:', safeMsg);
+      throw Object.assign(new Error(`Failed to get task: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -1043,8 +1050,9 @@ class PlannerService {
         .header('Prefer', 'ExchangeNotifications.Suppress')
         .post(taskBody);
     } catch (error: any) {
-      console.error('[PLANNER] Error creating task:', error.message);
-      throw Object.assign(new Error(`Failed to create task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error creating task:', safeMsg);
+      throw Object.assign(new Error(`Failed to create task: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -1089,8 +1097,9 @@ class PlannerService {
         .header('Prefer', 'ExchangeNotifications.Suppress')
         .patch(updateBody);
     } catch (error: any) {
-      console.error('[PLANNER] Error updating task:', error.message);
-      throw Object.assign(new Error(`Failed to update task: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error updating task:', safeMsg);
+      throw Object.assign(new Error(`Failed to update task: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -1102,8 +1111,9 @@ class PlannerService {
         .header('Prefer', 'ExchangeNotifications.Suppress')
         .patch({ description });
     } catch (error: any) {
-      console.error('[PLANNER] Error updating task details:', error.message);
-      throw Object.assign(new Error(`Failed to update task details: ${error.message}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error updating task details:', safeMsg);
+      throw Object.assign(new Error(`Failed to update task details: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 
@@ -1115,8 +1125,9 @@ class PlannerService {
         .header('Prefer', 'ExchangeNotifications.Suppress')
         .delete();
     } catch (error: any) {
-      console.error('[PLANNER] Error deleting task:', error.message);
-      throw new Error(`Failed to delete task: ${error.message}`);
+      const safeMsg = sanitizeGraphErrorMessage(error.message);
+      console.error('[PLANNER] Error deleting task:', safeMsg);
+      throw Object.assign(new Error(`Failed to delete task: ${safeMsg}`), { statusCode: error.statusCode ?? error.status, status: error.statusCode ?? error.status, code: error.code, headers: error.headers, body: error.body, cause: error });
     }
   }
 

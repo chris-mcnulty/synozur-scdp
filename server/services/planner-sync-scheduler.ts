@@ -1,6 +1,6 @@
 import * as cron from 'node-cron';
 import { storage } from '../storage.js';
-import { resolveTaskConflict, classifyGraphError, mapStatusToPercent, mapPercentToStatus } from '@shared/planner-conflict.js';
+import { resolveTaskConflict, classifyGraphError, sanitizeGraphErrorMessage, mapStatusToPercent, mapPercentToStatus } from '@shared/planner-conflict.js';
 import { recordPlannerAudit } from './planner-sync-audit.js';
 import { maybeSendSyncFailureAlert, suspendConnection, FATAL_ERROR_CODE_SET } from './planner-sync-alerts.js';
 import { withGraphRetry, withEtagRetry } from './planner-graph-retry.js';
@@ -457,15 +457,21 @@ export async function syncProjectToPlanner(
         result.errors.push(friendlyError);
         console.error(`[PLANNER-SYNC] ${friendlyError} (Allocation ID: ${allocation.id})`);
 
-        // Task #126 — Track per-task errors for resilience
+        // Track per-task errors for resilience
         try {
           const cls = classifyGraphError(allocErr);
+          const safeErrMsg = sanitizeGraphErrorMessage(allocErr.message ?? '');
           const existing = await storage.getPlannerTaskSyncByAllocation(allocation.id).catch(() => null);
           if (existing?.id) {
             await storage.updatePlannerTaskSync(existing.id, {
               syncStatus: 'error',
-              syncError: allocErr.message?.slice(0, 500),
-              consecutiveErrors: (existing.consecutiveErrors || 0) + 1,
+              syncError: safeErrMsg.slice(0, 500),
+              // Only increment the consecutive-error counter for non-retryable failures
+              // (e.g. auth, forbidden, not-found). Transient 502/503/rate-limit errors
+              // must not drive the suspension threshold.
+              consecutiveErrors: cls.retryable
+                ? (existing.consecutiveErrors || 0)
+                : (existing.consecutiveErrors || 0) + 1,
               lastErrorAt: new Date(),
               lastErrorCode: cls.code,
             } as any);
@@ -480,7 +486,7 @@ export async function syncProjectToPlanner(
             outcome: 'error',
             trigger: 'scheduled',
             errorCode: cls.code,
-            errorMessage: allocErr.message?.slice(0, 500) || null,
+            errorMessage: safeErrMsg.slice(0, 500) || null,
           });
         } catch (auditErr: any) {
           console.warn('[PLANNER-SYNC] Audit on alloc error failed:', auditErr.message);
@@ -503,7 +509,6 @@ export async function syncProjectToPlanner(
     } else {
       // Determine the most-severe per-task error code by sampling the first
       // failing allocation's classification (best-effort).
-      const newConsecutive = ((connection as any).consecutiveErrors || 0) + 1;
       // Heuristic: if any error message looks fatal, treat as fatal.
       const errBlob = result.errors.join(' | ');
       const fakeErr: any = new Error(errBlob);
@@ -513,10 +518,17 @@ export async function syncProjectToPlanner(
       const partialCls = classifyGraphError(fakeErr);
       const isFatal = FATAL_ERROR_CODE_SET.has(partialCls.code);
 
+      // Only increment consecutive-error counter for non-retryable failures.
+      // Transient gateway/rate-limit errors must not accumulate toward suspension.
+      const currentConsecutive = (connection as any).consecutiveErrors || 0;
+      const newConsecutive = partialCls.retryable ? currentConsecutive : currentConsecutive + 1;
+
+      const safeLastSyncError = result.errors.slice(0, 5).map(e => sanitizeGraphErrorMessage(e)).join('; ');
+
       await storage.updateProjectPlannerConnection(connection.id, {
         lastSyncAt: new Date(),
         lastSyncStatus: 'partial',
-        lastSyncError: result.errors.slice(0, 5).join('; '),
+        lastSyncError: safeLastSyncError,
         consecutiveErrors: newConsecutive,
         lastErrorCode: partialCls.code,
       } as any);
@@ -549,16 +561,20 @@ export async function syncProjectToPlanner(
     }
 
   } catch (err: any) {
-    // Task #126 — Connection-level failure: increment counter, audit, alert, maybe suspend.
-    result.errors.push(err.message);
+    // Connection-level failure: increment counter (non-retryable only), audit, alert, maybe suspend.
     const cls = classifyGraphError(err);
-    const newConsecutive = ((connection as any).consecutiveErrors || 0) + 1;
+    const safeErrMsg = sanitizeGraphErrorMessage(err.message ?? '');
+    result.errors.push(safeErrMsg);
+    const currentConsecutive = (connection as any).consecutiveErrors || 0;
+    // Only increment for non-retryable failures so transient gateway errors
+    // (502/503/rate-limit) don't accumulate toward the suspension threshold.
+    const newConsecutive = cls.retryable ? currentConsecutive : currentConsecutive + 1;
     const isFatal = FATAL_ERROR_CODE_SET.has(cls.code);
 
     await storage.updateProjectPlannerConnection(connection.id, {
       lastSyncAt: new Date(),
       lastSyncStatus: 'error',
-      lastSyncError: err.message,
+      lastSyncError: safeErrMsg,
       consecutiveErrors: newConsecutive,
       lastErrorCode: cls.code,
     } as any);
@@ -570,7 +586,7 @@ export async function syncProjectToPlanner(
       outcome: 'error',
       trigger: 'scheduled',
       errorCode: cls.code,
-      errorMessage: err.message?.slice(0, 500) || null,
+      errorMessage: safeErrMsg.slice(0, 500) || null,
       details: { consecutiveErrors: newConsecutive },
     });
 

@@ -128,6 +128,27 @@ export function resolveTaskConflict(
 }
 
 /**
+ * Replace raw HTML error bodies (e.g. 502 gateway pages from Microsoft Graph)
+ * with a clean, human-readable message so HTML markup never surfaces in the UI
+ * or gets written to the database.
+ *
+ * The Graph SDK turns the HTML response body into `error.message`. This helper
+ * is applied in every planner catch block before the message is re-thrown or stored.
+ */
+export function sanitizeGraphErrorMessage(msg: string): string {
+  if (!msg) return msg;
+  const lower = msg.toLowerCase();
+  const htmlIndex = lower.indexOf('<!doctype');
+  const htmlTagIndex = lower.indexOf('<html');
+  const idx = htmlIndex >= 0 ? htmlIndex : htmlTagIndex;
+  if (idx < 0) return msg;
+  const prefix = msg.slice(0, idx).trim();
+  return prefix
+    ? `${prefix} — Microsoft Graph gateway error — transient, will retry`
+    : 'Microsoft Graph gateway error — transient, will retry';
+}
+
+/**
  * Classify a Microsoft Graph error into a stable error code used for
  * alerting + audit. Strings only — no Error throwing here.
  */
@@ -140,6 +161,10 @@ export function classifyGraphError(err: unknown): {
   const status = e?.statusCode ?? e?.status ?? e?.response?.status;
   const code = e?.code ?? e?.body?.error?.code ?? e?.response?.data?.error?.code;
   const msg: string = (e?.message || '').toLowerCase();
+
+  if (msg.includes('<!doctype') || msg.includes('<html') || msg.includes('microsoft graph gateway error')) {
+    return { code: 'server', retryable: true };
+  }
 
   if (status === 401 || code === 'InvalidAuthenticationToken' || msg.includes('expired') || msg.includes('unauthorized')) {
     return { code: 'auth_expired', retryable: false };
