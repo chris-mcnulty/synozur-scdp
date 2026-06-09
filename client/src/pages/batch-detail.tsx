@@ -346,6 +346,25 @@ export default function BatchDetail() {
     }
   });
 
+  const removeLineMutation = useMutation({
+    mutationFn: async (lineId: string) => {
+      return await apiRequest(`/api/invoice-lines/${lineId}`, { method: 'DELETE' });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({
+        title: "Line removed",
+        description: data?.milestoneReset
+          ? "Line removed and milestone reset to Planned — it can now be included in the next invoice."
+          : "Invoice line removed successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to remove line", variant: "destructive" });
+    }
+  });
+
   // Payment Terms Update Mutation
   const updatePaymentTermsMutation = useMutation({
     mutationFn: async (paymentTerms: string | null) => {
@@ -2487,6 +2506,20 @@ export default function BatchDetail() {
                                                           Reset to Original
                                                         </DropdownMenuItem>
                                                       )}
+                                                      <DropdownMenuItem
+                                                        className="text-red-600 dark:text-red-400"
+                                                        onClick={() => {
+                                                          const label = line.type === 'milestone'
+                                                            ? `Remove this milestone line? The milestone will be reset to Planned and can be included in the next invoice.`
+                                                            : `Remove this line from the invoice?`;
+                                                          if (window.confirm(label)) {
+                                                            removeLineMutation.mutate(line.id);
+                                                          }
+                                                        }}
+                                                      >
+                                                        <Trash2 className="mr-2 h-4 w-4" />
+                                                        Remove Line
+                                                      </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                   </DropdownMenu>
                                                 </TableCell>

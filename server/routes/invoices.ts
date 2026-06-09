@@ -1560,6 +1560,59 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
     }
   });
 
+  app.delete("/api/invoice-lines/:lineId", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+    try {
+      const { lineId } = req.params;
+      const tenantId = getUserTenantId(req);
+
+      // Fetch the line
+      const [line] = await db.select().from(invoiceLines).where(eq(invoiceLines.id, lineId));
+      if (!line) return res.status(404).json({ message: "Invoice line not found" });
+
+      // Fetch the batch — verify it belongs to this tenant and is in draft
+      const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, line.batchId));
+      if (!batch) return res.status(404).json({ message: "Invoice batch not found" });
+      if (batch.tenantId && tenantId && batch.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (batch.status !== 'draft') {
+        return res.status(400).json({ message: `Cannot remove lines from a ${batch.status} invoice. Only draft invoices can be modified.` });
+      }
+
+      // Delete the line
+      await db.delete(invoiceLines).where(eq(invoiceLines.id, lineId));
+
+      // If this was a milestone line, reset the milestone's invoiceStatus back to 'planned'
+      if (line.type === 'milestone' && line.projectMilestoneId) {
+        await db.update(projectMilestones)
+          .set({ invoiceStatus: 'planned' })
+          .where(eq(projectMilestones.id, line.projectMilestoneId));
+      }
+
+      // If this was a time-entry line, un-mark billedFlag
+      if (line.sourceTimeEntryId) {
+        await db.update(timeEntries)
+          .set({ billedFlag: false })
+          .where(eq(timeEntries.id, line.sourceTimeEntryId));
+      }
+
+      // If this was an expense line, un-mark billedFlag
+      if (line.sourceExpenseId) {
+        await db.update(expenses)
+          .set({ billedFlag: false })
+          .where(eq(expenses.id, line.sourceExpenseId));
+      }
+
+      // Recalculate batch totals
+      await storage.recalculateBatchTax(line.batchId);
+
+      res.json({ success: true, milestoneReset: line.type === 'milestone' && !!line.projectMilestoneId });
+    } catch (error: any) {
+      console.error("Failed to delete invoice line:", error);
+      res.status(500).json({ message: error.message || "Failed to delete invoice line" });
+    }
+  });
+
   app.post("/api/invoice-batches/:batchId/bulk-update", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
