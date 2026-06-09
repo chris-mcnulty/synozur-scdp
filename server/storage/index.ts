@@ -481,7 +481,7 @@ export interface IStorage {
   // Batch Finalization Workflow
   finalizeBatch(batchId: string, userId: string): Promise<InvoiceBatch>;
   reviewBatch(batchId: string, notes?: string): Promise<InvoiceBatch>;
-  unfinalizeBatch(batchId: string): Promise<InvoiceBatch>;
+  unfinalizeBatch(batchId: string, force?: boolean, actorUserId?: string): Promise<InvoiceBatch>;
   getBatchStatus(batchId: string): Promise<{
     status: string;
     finalizedAt?: string | null;

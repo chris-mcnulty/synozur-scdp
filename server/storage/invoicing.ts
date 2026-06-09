@@ -837,7 +837,7 @@ export const invoicingMethods: ThisType<IStorage & {
     return updatedBatch;
   },
 
-  async unfinalizeBatch(batchId: string, force = false): Promise<InvoiceBatch> {
+  async unfinalizeBatch(batchId: string, force = false, actorUserId?: string): Promise<InvoiceBatch> {
     return await db.transaction(async (tx) => {
       const [batch] = await tx.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
       
@@ -859,6 +859,22 @@ export const invoicingMethods: ThisType<IStorage & {
         await tx.update(invoiceBatches)
           .set({ exportedToQBO: false, exportedAt: null })
           .where(eq(invoiceBatches.batchId, batchId));
+
+        // Write audit trail entry so finance teams can trace who cleared the QBO lock and when
+        if (actorUserId) {
+          await tx.insert(invoiceAdjustments).values({
+            batchId,
+            scope: 'force_unfinalize',
+            method: 'manual',
+            reason: 'Platform admin force-unfinalized a QBO-exported batch, clearing the QuickBooks export lock.',
+            createdBy: actorUserId,
+            metadata: {
+              action: 'force_unfinalize',
+              exportedToQBOCleared: true,
+              previousExportedAt: batch.exportedAt,
+            },
+          });
+        }
       }
       
       // If batch is linked to a payment milestone, revert the updates

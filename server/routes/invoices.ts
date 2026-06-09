@@ -908,7 +908,7 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
       console.log(`[API] Force-unfinalizing QBO-exported batch ${batchId} by platform admin ${(req as any).user?.id}`);
 
-      const updatedBatch = await storage.unfinalizeBatch(batchId, true);
+      const updatedBatch = await storage.unfinalizeBatch(batchId, true, (req as any).user?.id);
 
       res.json({
         message: "Batch force-unfinalized successfully",

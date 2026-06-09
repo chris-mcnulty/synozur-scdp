@@ -42,12 +42,13 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Undo,
+  ShieldAlert,
 } from "lucide-react";
 
 interface AdjustmentRecord {
   id: string;
   batchId: string;
-  type: "line_item" | "aggregate" | "reversal";
+  type: "line_item" | "aggregate" | "reversal" | "force_unfinalize";
   targetAmount?: number;
   originalAmount: number;
   adjustedAmount: number;
@@ -144,6 +145,8 @@ export function AdjustmentHistory({
         return <Edit className="h-4 w-4" />;
       case "reversal":
         return <Undo className="h-4 w-4" />;
+      case "force_unfinalize":
+        return <ShieldAlert className="h-4 w-4" />;
       default:
         return <FileText className="h-4 w-4" />;
     }
@@ -163,8 +166,20 @@ export function AdjustmentHistory({
         return "secondary";
       case "reversal":
         return "destructive";
+      case "force_unfinalize":
+        return "destructive";
       default:
         return "outline";
+    }
+  };
+
+  const getAdjustmentLabel = (type: string) => {
+    switch (type) {
+      case "aggregate": return "Contract Adjustment";
+      case "line_item": return "Line Edit";
+      case "reversal": return "Reversal";
+      case "force_unfinalize": return "Force Unfinalize (QBO)";
+      default: return type;
     }
   };
 
@@ -304,9 +319,7 @@ export function AdjustmentHistory({
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <Badge variant={getAdjustmentBadgeVariant(adjustment.type)}>
-                                {adjustment.type === "aggregate" ? "Contract Adjustment" :
-                                 adjustment.type === "line_item" ? "Line Edit" :
-                                 "Reversal"}
+                                {getAdjustmentLabel(adjustment.type)}
                               </Badge>
                               {isReversed && (
                                 <Badge variant="outline" className="text-xs">
@@ -439,9 +452,7 @@ export function AdjustmentHistory({
                   <div className="flex items-center gap-2 mt-1">
                     {getAdjustmentIcon(selectedAdjustment.type)}
                     <Badge variant={getAdjustmentBadgeVariant(selectedAdjustment.type)}>
-                      {selectedAdjustment.type === "aggregate" ? "Contract Adjustment" :
-                       selectedAdjustment.type === "line_item" ? "Line Edit" :
-                       "Reversal"}
+                      {getAdjustmentLabel(selectedAdjustment.type)}
                     </Badge>
                   </div>
                 </div>
