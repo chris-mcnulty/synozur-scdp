@@ -72,7 +72,8 @@ import {
   Upload,
   Archive,
   RefreshCw,
-  Unlock
+  Unlock,
+  X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -230,6 +231,7 @@ export default function BatchDetail() {
   const [glInvoiceNumber, setGlInvoiceNumber] = useState("");
   const [isEditingTaxOverride, setIsEditingTaxOverride] = useState(false);
   const [taxOverrideValue, setTaxOverrideValue] = useState("");
+  const [qboBannerDismissed, setQboBannerDismissed] = useState(false);
   const [showRepairDialog, setShowRepairDialog] = useState(false);
   const [repairPreview, setRepairPreview] = useState<any>(null);
   const [isRepairing, setIsRepairing] = useState(false);
@@ -1489,6 +1491,37 @@ export default function BatchDetail() {
             </DropdownMenu>
           </div>
         </div>
+
+        {batchDetails?.exportedToQBO && !qboBannerDismissed && (
+          <div className="flex items-start gap-3 rounded-lg border border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950/40 px-4 py-3 mb-4">
+            <Info className="h-4 w-4 text-purple-600 dark:text-purple-400 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-purple-900 dark:text-purple-100">
+                This batch has been exported to QuickBooks. Changes cannot be made without unlocking it.
+              </p>
+              {isPlatformAdmin && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 mt-1 text-xs text-purple-700 dark:text-purple-300 underline-offset-2"
+                  onClick={() => setShowForceUnfinalizeDialog(true)}
+                >
+                  <Unlock className="mr-1 h-3 w-3" />
+                  Force Unfinalize
+                </Button>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-purple-500 hover:text-purple-700 dark:hover:text-purple-300 shrink-0"
+              onClick={() => setQboBannerDismissed(true)}
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Dismiss</span>
+            </Button>
+          </div>
+        )}
 
         <Card className="border-none shadow-none bg-accent/5 mb-6">
           <CardContent className="p-4">
