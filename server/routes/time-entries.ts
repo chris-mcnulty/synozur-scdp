@@ -207,6 +207,11 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         updateData.personId = req.body.personId;
       }
 
+      // Admins and billing-admins can clear milestone coverage
+      if (isAdmin && 'coveredByMilestoneId' in req.body && req.body.coveredByMilestoneId === null) {
+        updateData.coveredByMilestoneId = null;
+      }
+
       for (const field of allowedFields) {
         if (field in req.body) {
           if (field === 'hours' && req.body[field] !== undefined) {

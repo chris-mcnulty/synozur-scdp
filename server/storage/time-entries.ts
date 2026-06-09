@@ -511,6 +511,34 @@ export const timeEntriesMethods: ThisType<IStorage> = {
   },
 
   /**
+   * Clears coveredByMilestoneId on a single time entry, restoring it to the
+   * unbilled pool. Only operates within the given tenant for safety.
+   */
+  async clearTimeEntryCoverage(entryId: string, tenantId: string): Promise<boolean> {
+    const result = await db.update(timeEntries)
+      .set({ coveredByMilestoneId: null })
+      .where(and(
+        eq(timeEntries.id, entryId),
+        eq(timeEntries.tenantId, tenantId),
+      ));
+    return ((result as any).rowCount ?? 0) > 0;
+  },
+
+  /**
+   * Bulk-clears coveredByMilestoneId for all time entries currently covered
+   * by the given milestone. Used by the "clear all coverage" bulk action.
+   */
+  async clearMilestoneCoverage(milestoneId: string, tenantId: string): Promise<number> {
+    const result = await db.update(timeEntries)
+      .set({ coveredByMilestoneId: null })
+      .where(and(
+        eq(timeEntries.coveredByMilestoneId, milestoneId),
+        eq(timeEntries.tenantId, tenantId),
+      ));
+    return (result as any).rowCount ?? 0;
+  },
+
+  /**
    * Returns the set of Outlook calendar event IDs that have already been
    * imported as time entries for a given user on a specific date.
    * Used to prevent duplicate entries when navigating back in the calendar

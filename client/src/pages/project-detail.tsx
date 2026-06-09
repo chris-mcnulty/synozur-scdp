@@ -153,7 +153,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock, Hash
+  Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock, Hash, ShieldOff
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -6679,6 +6679,11 @@ export default function ProjectDetail() {
                                       {entry.isLocked && (
                                         <Lock className="w-4 h-4 text-muted-foreground" />
                                       )}
+                                      {entry.coveredByMilestoneId && (
+                                        <Badge variant="outline" className="text-xs border-amber-400 text-amber-700 dark:text-amber-400">
+                                          Milestone covered
+                                        </Badge>
+                                      )}
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-right">
@@ -6694,6 +6699,35 @@ export default function ProjectDetail() {
                                     <TableCell className="text-right">
                                       {!entry.isLocked && (
                                         <div className="flex justify-end gap-1">
+                                          {entry.coveredByMilestoneId && ['admin', 'billing-admin'].includes(user?.role || '') && (
+                                            <UITooltipProvider>
+                                              <UITooltip>
+                                                <UITooltipTrigger asChild>
+                                                  <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="h-8 w-8 text-amber-600 hover:text-amber-700"
+                                                    onClick={async () => {
+                                                      try {
+                                                        await apiRequest(`/api/time-entries/${entry.id}`, {
+                                                          method: 'PATCH',
+                                                          body: JSON.stringify({ coveredByMilestoneId: null }),
+                                                        });
+                                                        toast({ title: "Coverage cleared", description: "Entry restored to unbilled items." });
+                                                        queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${id}`] });
+                                                      } catch (err: any) {
+                                                        toast({ title: "Error", description: err.message || "Failed to clear coverage", variant: "destructive" });
+                                                      }
+                                                    }}
+                                                    data-testid={`button-clear-coverage-${entry.id}`}
+                                                  >
+                                                    <ShieldOff className="h-4 w-4" />
+                                                  </Button>
+                                                </UITooltipTrigger>
+                                                <UITooltipContent>Clear milestone coverage</UITooltipContent>
+                                              </UITooltip>
+                                            </UITooltipProvider>
+                                          )}
                                           <Button
                                             size="icon"
                                             variant="ghost"
@@ -8207,7 +8241,32 @@ export default function ProjectDetail() {
                 </Select>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              {editingPaymentMilestone && ['admin', 'billing-admin'].includes(user?.role || '') && (
+                <Button
+                  variant="outline"
+                  className="border-amber-400 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950 sm:mr-auto"
+                  onClick={async () => {
+                    if (!confirm(`Clear milestone coverage for all time entries linked to "${editingPaymentMilestone.name}"? This will restore those entries to the unbilled items view.`)) return;
+                    try {
+                      const result = await apiRequest(`/api/payment-milestones/${editingPaymentMilestone.id}/clear-coverage`, {
+                        method: 'POST',
+                      });
+                      toast({
+                        title: "Coverage cleared",
+                        description: `${result.cleared} time ${result.cleared === 1 ? 'entry' : 'entries'} restored to unbilled items.`,
+                      });
+                      queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${id}`] });
+                    } catch (err: any) {
+                      toast({ title: "Error", description: err.message || "Failed to clear coverage", variant: "destructive" });
+                    }
+                  }}
+                  data-testid="button-clear-milestone-coverage"
+                >
+                  <ShieldOff className="w-4 h-4 mr-2" />
+                  Clear all coverage
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => {

@@ -4599,6 +4599,20 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
+  app.post("/api/payment-milestones/:milestoneId/clear-coverage", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required" });
+      }
+      const count = await storage.clearMilestoneCoverage(req.params.milestoneId, tenantId);
+      res.json({ cleared: count });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to clear milestone coverage:", error);
+      res.status(500).json({ message: "Failed to clear milestone coverage" });
+    }
+  });
+
   // Project Workstreams endpoints
   app.get("/api/projects/:projectId/workstreams", requireAuth, async (req, res) => {
     try {

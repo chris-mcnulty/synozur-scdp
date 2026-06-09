@@ -525,6 +525,12 @@ export interface IStorage {
   // Mark time entries as covered by a fixed-bid payment milestone
   markTimeEntriesCoveredByMilestone(milestoneId: string, projectId: string, startDate: string, endDate: string, tenantId: string): Promise<number>;
 
+  // Clear milestone coverage from a single time entry
+  clearTimeEntryCoverage(entryId: string, tenantId: string): Promise<boolean>;
+
+  // Bulk-clear milestone coverage for all entries under a milestone
+  clearMilestoneCoverage(milestoneId: string, tenantId: string): Promise<number>;
+
   // Project Billing Summaries
   getProjectBillingSummaries(tenantId?: string | null): Promise<{
     projectId: string;
