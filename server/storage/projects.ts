@@ -2561,7 +2561,7 @@ export const projectsMethods: ThisType<IStorage> = {
         CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      unbilledRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+      unbilledRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} AND ${projects.commercialScheme} NOT IN ('milestone', 'fixed-price') AND ${timeEntries.coveredByMilestoneId} IS NULL THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`
@@ -2630,7 +2630,7 @@ export const projectsMethods: ThisType<IStorage> = {
         CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} AND ${projects.commercialScheme} NOT IN ('milestone', 'fixed-price') AND ${timeEntries.coveredByMilestoneId} IS NULL THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`
@@ -2712,7 +2712,7 @@ export const projectsMethods: ThisType<IStorage> = {
       clientName: clients.name,
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`,
       billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`,
-      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`,
+      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} AND ${projects.commercialScheme} NOT IN ('milestone', 'fixed-price') AND ${timeEntries.coveredByMilestoneId} IS NULL THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`,
       projectCount: sql<number>`COUNT(DISTINCT ${projects.id})::int`
     })
     .from(clients)

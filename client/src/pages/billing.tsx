@@ -96,6 +96,8 @@ export default function Billing() {
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedMilestones, setSelectedMilestones] = useState<string[]>([]);
   const [milestoneClientFilter, setMilestoneClientFilter] = useState<string | null>(null);
+  const [milestoneIncludeTime, setMilestoneIncludeTime] = useState(false);
+  const [milestoneMarkCovered, setMilestoneMarkCovered] = useState(false);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState('');
   const [taxRate, setTaxRate] = useState('9.3'); // Default tax rate of 9.3%
@@ -231,6 +233,8 @@ export default function Billing() {
       discountPercent?: string; 
       discountAmount?: string;
       taxRate?: string;
+      includeTimeEntries?: boolean;
+      markTimeEntriesCovered?: boolean;
     }) => {
       // Handle milestone invoice generation via combined endpoint (1 or more milestones)
       if (data.batchType === 'milestone' && data.milestoneIds && data.milestoneIds.length > 0) {
@@ -243,6 +247,8 @@ export default function Billing() {
             taxRate: data.taxRate,
             discountPercent: data.discountPercent,
             discountAmount: data.discountAmount,
+            includeTimeEntries: data.includeTimeEntries,
+            markTimeEntriesCovered: data.markTimeEntriesCovered,
           })
         });
         return response;
@@ -305,6 +311,8 @@ export default function Billing() {
       setSelectedProjects([]);
       setSelectedMilestones([]);
       setMilestoneClientFilter(null);
+      setMilestoneIncludeTime(false);
+      setMilestoneMarkCovered(false);
       setDiscountValue('');
     },
     onError: (error: any) => {
@@ -453,7 +461,9 @@ export default function Billing() {
       milestoneIds: selectedMilestones.length > 0 ? selectedMilestones : undefined,
       discountPercent: discountType === 'percent' ? discountValue : undefined,
       discountAmount: discountType === 'amount' ? discountValue : undefined,
-      taxRate: taxRate || '9.3' // Default to 9.3% if not provided
+      taxRate: taxRate || '9.3', // Default to 9.3% if not provided
+      includeTimeEntries: milestoneIncludeTime,
+      markTimeEntriesCovered: milestoneMarkCovered,
     });
   };
 
@@ -748,6 +758,42 @@ export default function Billing() {
                             )}
                           </div>
                         )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Fixed-bid time entry options — shown when batchType is milestone and all selected milestones are from fixed-bid projects */}
+                  {batchType === 'milestone' && selectedMilestones.length > 0 && (() => {
+                    const selectedPms = allPaymentMilestones.filter((pm: any) => selectedMilestones.includes(pm.id));
+                    const allFixedBid = selectedPms.length > 0 && selectedPms.every(
+                      (pm: any) => pm.commercialScheme === 'milestone' || pm.commercialScheme === 'fixed-price'
+                    );
+                    if (!allFixedBid) return null;
+                    return (
+                      <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/30">
+                        <p className="text-sm font-medium text-muted-foreground">Fixed-bid time entry options</p>
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={milestoneIncludeTime}
+                            onCheckedChange={(v) => setMilestoneIncludeTime(!!v)}
+                            className="mt-0.5"
+                          />
+                          <div>
+                            <div className="text-sm font-medium">Include time entries on invoice (no line cost)</div>
+                            <div className="text-xs text-muted-foreground">Adds informational $0 time lines for client transparency</div>
+                          </div>
+                        </label>
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <Checkbox
+                            checked={milestoneMarkCovered}
+                            onCheckedChange={(v) => setMilestoneMarkCovered(!!v)}
+                            className="mt-0.5"
+                          />
+                          <div>
+                            <div className="text-sm font-medium">Mark time entries in this period as covered</div>
+                            <div className="text-xs text-muted-foreground">Flags all billable time in the date range as accounted for by this milestone — removes them from unbilled views</div>
+                          </div>
+                        </label>
                       </div>
                     );
                   })()}

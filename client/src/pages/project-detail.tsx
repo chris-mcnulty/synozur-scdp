@@ -1534,6 +1534,8 @@ export default function ProjectDetail() {
   const [showMilestoneInvoiceDialog, setShowMilestoneInvoiceDialog] = useState(false);
   const [milestoneInvoiceDates, setMilestoneInvoiceDates] = useState({ startDate: '', endDate: '' });
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [milestoneInvoiceIncludeTime, setMilestoneInvoiceIncludeTime] = useState(false);
+  const [milestoneInvoiceMarkCovered, setMilestoneInvoiceMarkCovered] = useState(false);
   
   // Status report dialog state
   const [showStatusReport, setShowStatusReport] = useState(false);
@@ -8323,6 +8325,33 @@ export default function ProjectDetail() {
                   This will automatically create an invoice batch with a single line item for the milestone amount (${Number(generatingInvoiceForMilestone?.amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). No time entries are required.
                 </AlertDescription>
               </Alert>
+              {(analytics?.project?.commercialScheme === 'milestone' || analytics?.project?.commercialScheme === 'fixed-price') && (
+                <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/30">
+                  <p className="text-sm font-medium text-muted-foreground">Fixed-bid time entry options</p>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <Checkbox
+                      checked={milestoneInvoiceIncludeTime}
+                      onCheckedChange={(v) => setMilestoneInvoiceIncludeTime(!!v)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="text-sm font-medium">Include time entries on invoice (no line cost)</div>
+                      <div className="text-xs text-muted-foreground">Adds informational $0 time lines for client transparency</div>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <Checkbox
+                      checked={milestoneInvoiceMarkCovered}
+                      onCheckedChange={(v) => setMilestoneInvoiceMarkCovered(!!v)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="text-sm font-medium">Mark time entries in this period as covered</div>
+                      <div className="text-xs text-muted-foreground">Flags all billable time in the date range as accounted for by this milestone — removes them from unbilled views</div>
+                    </div>
+                  </label>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button 
@@ -8352,7 +8381,12 @@ export default function ProjectDetail() {
                       `/api/payment-milestones/${generatingInvoiceForMilestone.id}/generate-invoice`,
                       {
                         method: "POST",
-                        body: JSON.stringify({ startDate, endDate })
+                        body: JSON.stringify({
+                          startDate,
+                          endDate,
+                          includeTimeEntries: milestoneInvoiceIncludeTime,
+                          markTimeEntriesCovered: milestoneInvoiceMarkCovered,
+                        })
                       }
                     );
                     

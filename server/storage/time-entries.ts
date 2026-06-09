@@ -11,7 +11,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import type { IStorage } from "./index";
-import { eq, desc, and, or, gte, lte, sql, inArray, isNotNull } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, sql, inArray, isNotNull, isNull } from "drizzle-orm";
 import { placeholderUser } from "./helpers";
 
 export const timeEntriesMethods: ThisType<IStorage> = {
@@ -482,6 +482,32 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         }
       };
     });
+  },
+
+  /**
+   * Bulk-sets coveredByMilestoneId on all billable, unbilled, uncovered time entries
+   * for a project within a date range. Used when generating a fixed-bid milestone invoice
+   * with the "mark covered" option enabled.
+   */
+  async markTimeEntriesCoveredByMilestone(
+    milestoneId: string,
+    projectId: string,
+    startDate: string,
+    endDate: string,
+    tenantId: string
+  ): Promise<number> {
+    const result = await db.update(timeEntries)
+      .set({ coveredByMilestoneId: milestoneId })
+      .where(and(
+        eq(timeEntries.projectId, projectId),
+        eq(timeEntries.tenantId, tenantId),
+        eq(timeEntries.billable, true),
+        eq(timeEntries.billedFlag, false),
+        isNull(timeEntries.coveredByMilestoneId),
+        gte(timeEntries.date, startDate),
+        lte(timeEntries.date, endDate),
+      ));
+    return (result as any).rowCount ?? 0;
   },
 
   /**

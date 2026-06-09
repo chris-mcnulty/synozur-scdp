@@ -1216,6 +1216,7 @@ export const timeEntries = pgTable("time_entries", {
   vendorInvoiceLineId: varchar("vendor_invoice_line_id").references(() => vendorInvoiceLines.id),
   actualCostAmount: decimal("actual_cost_amount", { precision: 12, scale: 2 }),
   milestoneId: varchar("milestone_id").references(() => projectMilestones.id), // Optional milestone reference
+  coveredByMilestoneId: varchar("covered_by_milestone_id").references(() => projectMilestones.id), // Set when a fixed-bid milestone invoice "covers" this time entry
   workstreamId: varchar("workstream_id").references(() => projectWorkstreams.id), // Optional workstream reference
   projectStageId: varchar("project_stage_id").references(() => projectStages.id),
   allocationId: varchar("allocation_id").references(() => projectAllocations.id), // Optional link to project allocation/assignment

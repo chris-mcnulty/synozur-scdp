@@ -522,6 +522,9 @@ export interface IStorage {
     };
   }>;
 
+  // Mark time entries as covered by a fixed-bid payment milestone
+  markTimeEntriesCoveredByMilestone(milestoneId: string, projectId: string, startDate: string, endDate: string, tenantId: string): Promise<number>;
+
   // Project Billing Summaries
   getProjectBillingSummaries(tenantId?: string | null): Promise<{
     projectId: string;

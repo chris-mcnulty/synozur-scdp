@@ -119,6 +119,13 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
       </CardHeader>
       
       <CardContent className="space-y-6">
+        {/* Fixed-bid exclusion note */}
+        <Alert data-testid="fixed-bid-exclusion-note">
+          <AlertDescription className="text-sm text-muted-foreground">
+            Time entries for fixed-bid projects (milestone or fixed-price billing) are excluded from this list — those projects are invoiced by payment milestone, not by time. Entries marked as covered by a milestone are also excluded.
+          </AlertDescription>
+        </Alert>
+
         {/* Filters Section */}
         {showFilters && (
           <div className="bg-muted/30 p-4 rounded-lg space-y-4">

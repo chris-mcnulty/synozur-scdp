@@ -4174,7 +4174,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const milestones = milestonesMap.get(project.id) || [];
         const paymentMilestones = milestones.filter((m: any) => m.isPaymentMilestone === true);
         
-        // Add project name, clientId, and clientName to each milestone for display
+        // Add project name, clientId, clientName, and commercialScheme to each milestone for display
         for (const milestone of paymentMilestones) {
           allPaymentMilestones.push({
             ...milestone,
@@ -4182,6 +4182,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             projectId: project.id,
             clientId: project.clientId || null,
             clientName: (project as any).client?.name || null,
+            commercialScheme: project.commercialScheme || null,
           });
         }
       }
@@ -4203,9 +4204,11 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         taxRate: z.string().optional(),
         discountPercent: z.string().optional(),
         discountAmount: z.string().optional(),
+        includeTimeEntries: z.boolean().optional(),
+        markTimeEntriesCovered: z.boolean().optional(),
       }).refine(d => d.startDate <= d.endDate, { message: "Start date must be before or equal to end date" });
 
-      const { milestoneIds, startDate, endDate, taxRate, discountPercent, discountAmount } = bodySchema.parse(req.body);
+      const { milestoneIds, startDate, endDate, taxRate, discountPercent, discountAmount, includeTimeEntries, markTimeEntriesCovered } = bodySchema.parse(req.body);
       const userId = req.user?.id;
       const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
 
@@ -4237,6 +4240,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         quoteCurrency: projects.quoteCurrency,
         costCurrency: projects.costCurrency,
         exchangeRate: projects.exchangeRate,
+        commercialScheme: projects.commercialScheme,
       }).from(projects).where(inArray(projects.id, projectIds));
 
       // Enforce single-client constraint
@@ -4312,6 +4316,50 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         });
       }
 
+      // Apply fixed-bid time-entry options when all projects are fixed-bid
+      const allFixedBid = projectRows.every(p =>
+        p.commercialScheme === 'milestone' || p.commercialScheme === 'fixed-price'
+      );
+
+      if (allFixedBid && tenantId && (markTimeEntriesCovered || includeTimeEntries)) {
+        for (const m of milestoneRows) {
+          const proj = projectMap.get(m.projectId);
+          if (!proj || (proj.commercialScheme !== 'milestone' && proj.commercialScheme !== 'fixed-price')) continue;
+
+          if (includeTimeEntries) {
+            const entries = await storage.getTimeEntries({
+              projectId: m.projectId,
+              startDate,
+              endDate,
+              tenantId,
+            });
+            const unbilledEntries = entries.filter(e => e.billable && !e.billedFlag && !(e as any).coveredByMilestoneId);
+            for (const entry of unbilledEntries) {
+              await db.insert(invoiceLines).values({
+                batchId,
+                projectId: m.projectId,
+                clientId: proj?.clientId || clientId,
+                description: `Time: ${(entry.person as any)?.name || 'Unknown'} — ${entry.hours}h${entry.description ? ' — ' + entry.description : ''}`,
+                amount: "0",
+                quantity: String(entry.hours),
+                rate: "0",
+                type: "time",
+                sourceTimeEntryId: entry.id,
+                originalAmount: "0",
+                billedAmount: "0",
+                varianceAmount: "0",
+                originalRate: "0",
+                originalQuantity: String(entry.hours),
+              });
+            }
+          }
+
+          if (markTimeEntriesCovered) {
+            await storage.markTimeEntriesCoveredByMilestone(m.id, m.projectId, startDate, endDate, tenantId);
+          }
+        }
+      }
+
       await storage.recalculateBatchTax(batchId);
 
       res.json({ batch, milestones: milestoneRows, milestonesCount: milestoneRows.length });
@@ -4331,12 +4379,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const bodySchema = z.object({
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be in YYYY-MM-DD format"),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be in YYYY-MM-DD format"),
+        includeTimeEntries: z.boolean().optional(),
+        markTimeEntriesCovered: z.boolean().optional(),
       }).refine(data => data.startDate <= data.endDate, {
         message: "Start date must be before or equal to end date"
       });
       
       const validatedData = bodySchema.parse(req.body);
-      const { startDate, endDate } = validatedData;
+      const { startDate, endDate, includeTimeEntries, markTimeEntriesCovered } = validatedData;
       const userId = req.user?.id;
       
       if (!userId) {
@@ -4400,12 +4450,13 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         }
       }
 
-      // Fetch project for currency snapshot and clientId
+      // Fetch project for currency snapshot, clientId, and commercialScheme
       const [project] = await db.select({
         clientId: projects.clientId,
         quoteCurrency: projects.quoteCurrency,
         costCurrency: projects.costCurrency,
         exchangeRate: projects.exchangeRate,
+        commercialScheme: projects.commercialScheme,
       }).from(projects).where(eq(projects.id, milestone.projectId));
 
       // Create invoice batch linked to milestone (snapshot currency from project)
@@ -4451,6 +4502,42 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         originalQuantity: "1"
       });
       
+      // For fixed-bid projects, optionally include $0 time-entry lines or mark entries as covered
+      const isFixedBid = project?.commercialScheme === 'milestone' || project?.commercialScheme === 'fixed-price';
+      if (isFixedBid && tenantId && (includeTimeEntries || markTimeEntriesCovered)) {
+        if (includeTimeEntries) {
+          const entries = await storage.getTimeEntries({
+            projectId: milestone.projectId,
+            startDate,
+            endDate,
+            tenantId,
+          });
+          const unbilledEntries = entries.filter(e => e.billable && !e.billedFlag && !(e as any).coveredByMilestoneId);
+          for (const entry of unbilledEntries) {
+            await db.insert(invoiceLines).values({
+              batchId,
+              projectId: milestone.projectId,
+              clientId: project.clientId,
+              description: `Time: ${(entry.person as any)?.name || 'Unknown'} — ${entry.hours}h${entry.description ? ' — ' + entry.description : ''}`,
+              amount: "0",
+              quantity: String(entry.hours),
+              rate: "0",
+              type: "time",
+              sourceTimeEntryId: entry.id,
+              originalAmount: "0",
+              billedAmount: "0",
+              varianceAmount: "0",
+              originalRate: "0",
+              originalQuantity: String(entry.hours),
+            });
+          }
+        }
+
+        if (markTimeEntriesCovered) {
+          await storage.markTimeEntriesCoveredByMilestone(milestoneId, milestone.projectId, startDate, endDate, tenantId);
+        }
+      }
+
       // Recalculate tax after line insertion (taxRate defaults to 9.3% from schema)
       await storage.recalculateBatchTax(batchId);
 

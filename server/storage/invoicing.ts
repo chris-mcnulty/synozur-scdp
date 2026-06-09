@@ -2144,6 +2144,12 @@ export const invoicingMethods: ThisType<IStorage & {
       .filter(entry => {
         if (!entry.billable || entry.billedFlag || entry.locked || invoicedTimeEntryIds.has(entry.id)) return false;
         if (requireApproval && entry.submissionStatus !== 'approved') return false;
+        // Fixed-bid projects (milestone/fixed-price) are invoiced by payment milestone, not by time.
+        // Their time entries are cost-tracking only and should never appear as unbilled receivable.
+        const scheme = entry.project?.commercialScheme;
+        if (scheme === 'milestone' || scheme === 'fixed-price') return false;
+        // Entries already accounted for by a fixed-bid milestone are excluded too.
+        if ((entry as any).coveredByMilestoneId) return false;
         return true;
       });
 
