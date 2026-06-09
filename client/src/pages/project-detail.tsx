@@ -6672,7 +6672,7 @@ export default function ProjectDetail() {
                                     <TableCell>{entry.stage || "-"}</TableCell>
                                   )}
                                   <TableCell>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <Badge variant={entry.isBillable ? "default" : "secondary"}>
                                         {entry.isBillable ? "Billable" : "Non-Billable"}
                                       </Badge>
@@ -6680,9 +6680,22 @@ export default function ProjectDetail() {
                                         <Lock className="w-4 h-4 text-muted-foreground" />
                                       )}
                                       {entry.coveredByMilestoneId && (
-                                        <Badge variant="outline" className="text-xs border-amber-400 text-amber-700 dark:text-amber-400">
-                                          Milestone covered
-                                        </Badge>
+                                        <UITooltipProvider>
+                                          <UITooltip>
+                                            <UITooltipTrigger asChild>
+                                              <Badge
+                                                variant="outline"
+                                                className="text-xs cursor-default text-purple-700 border-purple-300 bg-purple-50 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800"
+                                                data-testid={`badge-covered-${entry.id}`}
+                                              >
+                                                Covered
+                                              </Badge>
+                                            </UITooltipTrigger>
+                                            <UITooltipContent side="top">
+                                              <p>{entry.coveredByMilestoneName ? `Covered by: ${entry.coveredByMilestoneName}` : "Covered by a milestone"}</p>
+                                            </UITooltipContent>
+                                          </UITooltip>
+                                        </UITooltipProvider>
                                       )}
                                     </div>
                                   </TableCell>

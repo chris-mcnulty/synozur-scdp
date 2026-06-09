@@ -123,6 +123,11 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
         <Alert data-testid="fixed-bid-exclusion-note">
           <AlertDescription className="text-sm text-muted-foreground">
             Time entries for fixed-bid projects (milestone or fixed-price billing) are excluded from this list — those projects are invoiced by payment milestone, not by time. Entries marked as covered by a milestone are also excluded.
+            {filters.projectId && unbilledData?.coveredEntriesCount !== undefined && (
+              <span className="block mt-1 font-medium text-foreground" data-testid="covered-entries-count-note">
+                {unbilledData.coveredEntriesCount} {unbilledData.coveredEntriesCount === 1 ? 'time entry is' : 'time entries are'} covered by a milestone for this project and excluded from billing.
+              </span>
+            )}
           </AlertDescription>
         </Alert>
 

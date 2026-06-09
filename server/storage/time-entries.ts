@@ -2,6 +2,7 @@ import {
   users,
   clients,
   projects,
+  projectMilestones,
   timeEntries,
   type User,
   type Client,
@@ -19,7 +20,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     const baseQuery = db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
-      .leftJoin(clients, eq(projects.clientId, clients.id));
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(projectMilestones, eq(timeEntries.coveredByMilestoneId, projectMilestones.id));
 
     const conditions = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
@@ -41,6 +43,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
 
       return {
         ...row.time_entries,
+        coveredByMilestoneName: row.project_milestones?.name || null,
         person,
         // Add personName directly on the entry for backward compatibility
         personName: person.name,

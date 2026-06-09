@@ -3209,6 +3209,7 @@ export interface UnbilledItemsResponse {
     entriesWithNullRates: number;
     issues: string[];
   };
+  coveredEntriesCount?: number;
 }
 
 // Container Management Types

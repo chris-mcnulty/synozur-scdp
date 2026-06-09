@@ -2140,7 +2140,10 @@ export const invoicingMethods: ThisType<IStorage & {
     } catch (tenantErr) {
       console.warn('[STORAGE] Failed to check requireTimeApproval tenant setting:', tenantErr);
     }
-    const unbilledTimeEntries = (await this.getTimeEntries(timeEntryFilters))
+    const allTimeEntries = await this.getTimeEntries(timeEntryFilters);
+    // Count entries that are covered by a milestone (for informational display in the UI)
+    const coveredEntriesCount = allTimeEntries.filter(e => (e as any).coveredByMilestoneId).length;
+    const unbilledTimeEntries = allTimeEntries
       .filter(entry => {
         if (!entry.billable || entry.billedFlag || entry.locked || invoicedTimeEntryIds.has(entry.id)) return false;
         if (requireApproval && entry.submissionStatus !== 'approved') return false;
@@ -2222,7 +2225,8 @@ export const invoicingMethods: ThisType<IStorage & {
         entriesWithMissingRates,
         entriesWithNullRates,
         issues: rateIssues
-      }
+      },
+      coveredEntriesCount: coveredEntriesCount > 0 ? coveredEntriesCount : undefined
     };
   }
 };
