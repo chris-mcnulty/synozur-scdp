@@ -238,7 +238,10 @@ export async function generateInvoicePDF(params: {
     return lines.find(l => l.client.id === clientId)!.client;
   });
 
-  const hasAdjustments = adjustments.length > 0 || lines.some(l => l.billedAmount && l.billedAmount !== l.amount);
+  // Strip internal-only audit records — they must never appear on a client-facing PDF
+  const clientFacingAdjustments = adjustments.filter(adj => adj.scope !== 'force_unfinalize');
+
+  const hasAdjustments = clientFacingAdjustments.length > 0 || lines.some(l => l.billedAmount && l.billedAmount !== l.amount);
   
   // Check if any lines have currency conversions
   const hasCurrencyConversions = lines.some(l => l.originalCurrency && l.originalCurrencyAmount);
@@ -544,8 +547,8 @@ export async function generateInvoicePDF(params: {
     hasAdjustments,
     columnCount: hasAdjustments ? 7 : 6,
     
-    // Adjustments
-    adjustments: adjustments.map(adj => ({
+    // Adjustments (system-only audit scopes already stripped above)
+    adjustments: clientFacingAdjustments.map(adj => ({
       reason: adj.reason,
       targetAmount: adj.targetAmount ? parseFloat(adj.targetAmount).toFixed(2) : '0',
       method: adj.method,
