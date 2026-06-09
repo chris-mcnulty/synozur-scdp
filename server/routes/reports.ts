@@ -869,7 +869,11 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
       }
 
       if (status) {
-        conditions.push(eq(projectAllocations.status, status as string));
+        if (status === 'pending') {
+          conditions.push(inArray(projectAllocations.status, ['open', 'in_progress']));
+        } else {
+          conditions.push(eq(projectAllocations.status, status as string));
+        }
       }
 
       const allocations = conditions.length > 0
