@@ -372,20 +372,29 @@ export async function syncProjectToPlanner(
           } else {
             console.warn(`[PLANNER-SYNC] Task ${syncRecord.taskId} not found in Planner, recreating...`);
             
-            const newTask = await plannerService.createTask({
-              planId: connection.planId,
-              title: taskTitle,
-              bucketId: bucket.id,
-              startDateTime: updateStartDateTime || undefined,
-              dueDateTime: updateDueDateTime || undefined,
-              percentComplete,
-              assigneeIds
-            });
+            const newTask = await withGraphRetry(
+              () => plannerService.createTask({
+                planId: connection.planId,
+                title: taskTitle,
+                bucketId: bucket.id,
+                startDateTime: updateStartDateTime || undefined,
+                dueDateTime: updateDueDateTime || undefined,
+                percentComplete,
+                assigneeIds
+              }),
+              { label: 'createTask-recreate' }
+            );
 
             try {
-              const taskDetails = await plannerService.getTaskDetails(newTask.id);
+              const taskDetails = await withGraphRetry(
+                () => plannerService.getTaskDetails(newTask.id),
+                { label: 'getTaskDetails-recreate' }
+              );
               if (taskDetails) {
-                await plannerService.updateTaskDetails(newTask.id, taskDetails['@odata.etag'] || '', taskNotes);
+                await withGraphRetry(
+                  () => plannerService.updateTaskDetails(newTask.id, taskDetails['@odata.etag'] || '', taskNotes),
+                  { label: 'updateTaskDetails-recreate' }
+                );
               }
             } catch (notesErr: any) {
               console.warn('[PLANNER-SYNC] Failed to set task notes:', notesErr.message);
@@ -415,20 +424,29 @@ export async function syncProjectToPlanner(
             }
           }
 
-          const newTask = await plannerService.createTask({
-            planId: connection.planId,
-            title: taskTitle,
-            bucketId: bucket.id,
-            startDateTime: startDateTime || undefined,
-            dueDateTime: dueDateTime || undefined,
-            percentComplete,
-            assigneeIds
-          });
+          const newTask = await withGraphRetry(
+            () => plannerService.createTask({
+              planId: connection.planId,
+              title: taskTitle,
+              bucketId: bucket.id,
+              startDateTime: startDateTime || undefined,
+              dueDateTime: dueDateTime || undefined,
+              percentComplete,
+              assigneeIds
+            }),
+            { label: 'createTask-new' }
+          );
 
           try {
-            const taskDetails = await plannerService.getTaskDetails(newTask.id);
+            const taskDetails = await withGraphRetry(
+              () => plannerService.getTaskDetails(newTask.id),
+              { label: 'getTaskDetails-new' }
+            );
             if (taskDetails) {
-              await plannerService.updateTaskDetails(newTask.id, taskDetails['@odata.etag'] || '', taskNotes);
+              await withGraphRetry(
+                () => plannerService.updateTaskDetails(newTask.id, taskDetails['@odata.etag'] || '', taskNotes),
+                { label: 'updateTaskDetails-new' }
+              );
             }
           } catch (notesErr: any) {
             console.warn('[PLANNER-SYNC] Failed to set task notes:', notesErr.message);
