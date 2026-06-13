@@ -607,16 +607,18 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
     'image/png',
     'image/heic',
     'image/heif',
+    'image/webp',
     'application/pdf',
     'text/plain'
   ];
 
-  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.pdf', '.txt'];
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.pdf', '.txt'];
   const maxFileSize = 10 * 1024 * 1024;
 
   const allowedFileSignatures: Record<string, number[][]> = {
     'image/jpeg': [[0xFF, 0xD8, 0xFF]],
     'image/png': [[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]],
+    'image/webp': [[0x52, 0x49, 0x46, 0x46]], // RIFF header (validated further by file-type)
     'application/pdf': [[0x25, 0x50, 0x44, 0x46]],
   };
 

@@ -529,6 +529,11 @@ export default function Expenses() {
     // Prevent concurrent submissions
     if (isSubmitting) return;
 
+    // Snapshot receipt file immediately — onSuccess clears the state before
+    // mutateAsync resolves, so reading `receiptFile` later in this function
+    // would see null. Capturing it here guarantees we use the correct file.
+    const pendingReceiptFile = receiptFile;
+
     console.log('=== CREATE EXPENSE SUBMIT ===');
     console.log('Form data received:', data);
 
@@ -676,9 +681,9 @@ export default function Expenses() {
             createdExpenses.push(expense);
             
             // Upload receipt to each itemized expense if provided
-            if (receiptFile && expense.id) {
+            if (pendingReceiptFile && expense.id) {
               const formData = new FormData();
-              formData.append('file', receiptFile);
+              formData.append('file', pendingReceiptFile);
 
               try {
                 const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
@@ -782,9 +787,9 @@ export default function Expenses() {
         console.log('Expense created:', expense);
 
         // If there's a receipt file, upload it
-        if (receiptFile && expense.id) {
+        if (pendingReceiptFile && expense.id) {
           const formData = new FormData();
-          formData.append('file', receiptFile);
+          formData.append('file', pendingReceiptFile);
 
           try {
             const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
@@ -2035,7 +2040,7 @@ export default function Expenses() {
                       <Input
                         ref={receiptInputRef}
                         type="file"
-                        accept=".jpg,.jpeg,.png,.pdf,.heic,.heif"
+                        accept=".jpg,.jpeg,.png,.pdf,.heic,.heif,.webp"
                         onChange={handleFileChange}
                         className="flex-1"
                         data-testid="input-receipt-file"
