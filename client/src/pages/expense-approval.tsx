@@ -193,15 +193,34 @@ function ExpenseRowDetail({ item }: { item: ExpenseReport["items"][0] }) {
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                   <Receipt className="h-3 w-3" /> Receipt
                 </p>
-                <a
-                  href={exp.receiptUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
                   className="text-sm text-primary hover:underline mt-0.5 inline-flex items-center gap-1"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      const sessionId = localStorage.getItem('sessionId');
+                      const response = await fetch(exp.receiptUrl!, {
+                        credentials: 'include',
+                        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                      });
+                      if (!response.ok) throw new Error('Failed to fetch receipt');
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      const cd = response.headers.get('Content-Disposition');
+                      a.download = cd?.match(/filename="(.+)"/)?.[1] || 'receipt';
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                    } catch {
+                      toast({ title: "Download failed", description: "Could not download receipt. Please try again.", variant: "destructive" });
+                    }
+                  }}
                 >
                   View Receipt <ExternalLink className="h-3 w-3" />
-                </a>
+                </button>
               </div>
             )}
           </div>

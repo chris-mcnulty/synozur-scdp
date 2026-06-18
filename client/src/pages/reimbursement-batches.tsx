@@ -661,14 +661,63 @@ export default function ReimbursementBatches() {
                                 {hasReceipt ? (
                                   <div className="space-y-1">
                                     {lineItem.expense.receiptUrl && (
-                                      <a href={lineItem.expense.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                                      <button
+                                        className="text-sm text-primary hover:underline flex items-center gap-1"
+                                        onClick={async () => {
+                                          try {
+                                            const sessionId = localStorage.getItem('sessionId');
+                                            const response = await fetch(lineItem.expense.receiptUrl!, {
+                                              credentials: 'include',
+                                              headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                                            });
+                                            if (!response.ok) throw new Error('Failed');
+                                            const blob = await response.blob();
+                                            const url = window.URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            const cd = response.headers.get('Content-Disposition');
+                                            a.download = cd?.match(/filename="(.+)"/)?.[1] || 'receipt';
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            window.URL.revokeObjectURL(url);
+                                            document.body.removeChild(a);
+                                          } catch {
+                                            toast({ title: "Download failed", description: "Could not download receipt.", variant: "destructive" });
+                                          }
+                                        }}
+                                      >
                                         <ExternalLink className="h-3 w-3" /> Receipt
-                                      </a>
+                                      </button>
                                     )}
                                     {attachments.map((att) => (
-                                      <a key={att.id} href={att.webUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                                      <button
+                                        key={att.id}
+                                        className="text-sm text-primary hover:underline flex items-center gap-1"
+                                        onClick={async () => {
+                                          try {
+                                            const sessionId = localStorage.getItem('sessionId');
+                                            const response = await fetch(att.webUrl, {
+                                              credentials: 'include',
+                                              headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                                            });
+                                            if (!response.ok) throw new Error('Failed');
+                                            const blob = await response.blob();
+                                            const url = window.URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            const cd = response.headers.get('Content-Disposition');
+                                            a.download = cd?.match(/filename="(.+)"/)?.[1] || att.fileName;
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            window.URL.revokeObjectURL(url);
+                                            document.body.removeChild(a);
+                                          } catch {
+                                            toast({ title: "Download failed", description: "Could not download receipt.", variant: "destructive" });
+                                          }
+                                        }}
+                                      >
                                         <ExternalLink className="h-3 w-3" /> {att.fileName}
-                                      </a>
+                                      </button>
                                     ))}
                                   </div>
                                 ) : (

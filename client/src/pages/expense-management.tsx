@@ -1386,6 +1386,7 @@ export default function ExpenseManagement() {
                                 try {
                                   const sessionId = localStorage.getItem('sessionId');
                                   const response = await fetch(expense.receiptUrl!, {
+                                    credentials: 'include',
                                     headers: sessionId ? { 'X-Session-Id': sessionId } : {},
                                   });
                                   if (!response.ok) {
