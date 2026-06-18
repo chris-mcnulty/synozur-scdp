@@ -121,8 +121,10 @@ export async function generateInvoicePDF(params: {
     showConstellationFooter?: boolean;
   };
   timezone?: string;
+  tenantId?: string;
+  downloadFileDirect?: (fileId: string, tenantId?: string) => Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null>;
 }): Promise<Buffer> {
-  const { batch, lines, adjustments, companySettings, timezone = 'America/New_York' } = params;
+  const { batch, lines, adjustments, companySettings, timezone = 'America/New_York', tenantId, downloadFileDirect } = params;
   const tz = timezone;
 
   // Group lines by client and project
@@ -307,9 +309,13 @@ export async function generateInvoicePDF(params: {
           .where(inArray(expenseAttachments.expenseId, expenseIds));
         
         // Also collect expenses with direct receiptUrl (legacy/simple upload method)
-        const expensesWithReceiptUrl = invoiceExpenses.filter(e => e.receiptUrl);
+        // Exclude expenses that already have an attachment record — they are handled above.
+        const expenseIdsWithAttachments = new Set(attachments.map(a => a.expenseId));
+        const expensesWithReceiptUrl = invoiceExpenses.filter(
+          e => e.receiptUrl && !expenseIdsWithAttachments.has(e.id)
+        );
         
-        console.log(`[PDF] Found ${attachments.length} attachment(s) and ${expensesWithReceiptUrl.length} direct receiptUrl(s)`);
+        console.log(`[PDF] Found ${attachments.length} attachment(s) and ${expensesWithReceiptUrl.length} legacy receiptUrl(s)`);
         totalReceiptsFound = attachments.length + expensesWithReceiptUrl.length;
         
         // Apply limit to prevent oversized PDFs
@@ -327,8 +333,16 @@ export async function generateInvoicePDF(params: {
           const receiptsToProcess = await Promise.all(
             attachmentsToInclude.map(async (attachment) => {
               try {
-                // Download receipt from storage
-                const receiptBuffer = await receiptStorage.getReceipt(attachment.itemId);
+                // Use downloadFileDirect waterfall (receipt storage → local → SharePoint)
+                // to match the same routing used by the browser download endpoint.
+                let receiptBuffer: Buffer;
+                if (downloadFileDirect) {
+                  const result = await downloadFileDirect(attachment.itemId, tenantId);
+                  if (!result) throw new Error(`Receipt not found: ${attachment.fileName}`);
+                  receiptBuffer = result.buffer;
+                } else {
+                  receiptBuffer = await receiptStorage.getReceipt(attachment.itemId);
+                }
                 return {
                   buffer: receiptBuffer,
                   contentType: attachment.contentType,
@@ -391,20 +405,26 @@ export async function generateInvoicePDF(params: {
           }
         }
         
-        // Download and process receipts from direct receiptUrl field
+        // Download and process receipts from direct receiptUrl field (legacy expenses only —
+        // those without an expenseAttachments record). Skip internal relative URLs (/api/...)
+        // which cannot be fetched server-side without a host.
         if (receiptUrlsToInclude.length > 0) {
-          console.log(`[PDF] Fetching ${receiptUrlsToInclude.length} direct receiptUrl receipt(s)...`);
+          console.log(`[PDF] Fetching ${receiptUrlsToInclude.length} legacy receiptUrl receipt(s)...`);
           const directReceipts = await Promise.all(
             receiptUrlsToInclude.map(async (expense) => {
+              const url = expense.receiptUrl!;
+              // Skip relative/internal URLs — they require auth headers and a host
+              if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                console.warn(`[PDF] Skipping non-absolute receiptUrl for expense ${expense.id}: ${url}`);
+                return null;
+              }
               try {
-                // Fetch receipt from URL
-                const response = await fetch(expense.receiptUrl!);
+                const response = await fetch(url);
                 if (!response.ok) {
                   throw new Error(`HTTP ${response.status}`);
                 }
                 const buffer = Buffer.from(await response.arrayBuffer());
                 const contentType = response.headers.get('content-type') || 'image/jpeg';
-                // Create a filename from the expense description or ID
                 const originalName = `receipt-${expense.description || expense.id}.${contentType.includes('pdf') ? 'pdf' : contentType.includes('png') ? 'png' : 'jpg'}`;
                 return {
                   buffer,

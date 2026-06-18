@@ -2000,8 +2000,11 @@ export const invoicingMethods: ThisType<IStorage & {
       companyEmail?: string | undefined;
       companyWebsite?: string | undefined;
       paymentTerms?: string | undefined;
+      showConstellationFooter?: boolean;
     };
     timezone?: string;
+    tenantId?: string;
+    downloadFileDirect?: (fileId: string, tenantId?: string) => Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null>;
   }): Promise<Buffer> {
     return generateInvoicePDF(params);
   },

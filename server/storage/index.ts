@@ -948,6 +948,8 @@ export interface IStorage {
       showConstellationFooter?: boolean;
     };
     timezone?: string;
+    tenantId?: string;
+    downloadFileDirect?: (fileId: string, tenantId?: string) => Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null>;
   }): Promise<Buffer>;
   getDefaultBillingRate(tenantId?: string): Promise<number>;
   getDefaultCostRate(tenantId?: string): Promise<number>;

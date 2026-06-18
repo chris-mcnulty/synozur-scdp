@@ -1194,7 +1194,9 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
           paymentTerms,
           showConstellationFooter
         },
-        timezone: invoiceTimezone
+        timezone: invoiceTimezone,
+        tenantId: tenantId || undefined,
+        downloadFileDirect: deps.downloadFileDirect,
       });
 
       let oldPdfFileId: string | null = null;
