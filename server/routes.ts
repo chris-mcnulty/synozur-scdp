@@ -51,6 +51,7 @@ import { registerCopilotStudioRoutes } from "./routes/copilot-studio.js";
 import { registerCalendarSuggestionsRoutes } from "./routes/calendar-suggestions.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { registerSearchRoutes } from "./routes/search.js";
@@ -579,6 +580,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });
     registerJobRoutes(app, { requireAuth, requireRole });
     registerNotificationRoutes(app, { requireAuth });
+    registerAdminRoutes(app, { requireAuth, requireRole, requirePlatformAdmin, upload, isEntraConfigured, getSharePointConfig, readChangelogContent });
     registerWebhookRoutes(app);
     registerEmbedRoutes(app, { requireAuth, requireRole });
     registerSearchRoutes(app, { requireAuth });
