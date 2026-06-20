@@ -1252,6 +1252,7 @@ export const expenses = pgTable("expenses", {
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   quantity: decimal("quantity", { precision: 10, scale: 2 }), // Nullable, for tracking quantity (e.g., miles for mileage, days for per diem)
   unit: text("unit"), // Nullable, for tracking unit of measurement (e.g., "mile" for mileage, "day" for per diem)
+  rateApplied: decimal("rate_applied", { precision: 10, scale: 4 }), // Snapshot of the mileage rate at time of expense creation; never updated for billed+client-paid expenses
   currency: text("currency").notNull().default("USD"),
   billable: boolean("billable").notNull().default(true),
   reimbursable: boolean("reimbursable").notNull().default(true),
@@ -1299,6 +1300,29 @@ export const expenses = pgTable("expenses", {
 }, (table) => ({
   tenantIdx: index("idx_expenses_tenant").on(table.tenantId),
 }));
+
+// Mileage Rates — IRS/GSA historical rates (tenantId IS NULL) plus per-tenant custom overrides.
+// Rate resolution for a given expense date: tenant custom → IRS system → legacy tenants.mileage_rate.
+export const mileageRates = pgTable("mileage_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }), // NULL = IRS system default (shared)
+  rateType: text("rate_type").notNull().default('irs_business'), // irs_business | irs_medical | irs_charitable | custom
+  ratePerMile: decimal("rate_per_mile", { precision: 10, scale: 4 }).notNull(),
+  effectiveDate: date("effective_date").notNull(),
+  endDate: date("end_date"), // NULL = still in effect
+  sourceName: text("source_name"), // e.g. "IRS Notice 2025-05" or "GSA Bulletin FTR 26-02"
+  sourceUrl: text("source_url"),
+  federalRegisterDocNumber: text("federal_register_doc_number"), // e.g. "2025-24148"
+  needsReview: boolean("needs_review").notNull().default(false), // Set true by Federal Register sync when a new rate is detected but not yet confirmed
+  lastVerifiedAt: timestamp("last_verified_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  effectiveDateIdx: index("idx_mileage_rates_effective_date").on(table.tenantId, table.effectiveDate),
+}));
+
+export const insertMileageRateSchema = createInsertSchema(mileageRates).omit({ id: true, createdAt: true });
+export type InsertMileageRate = z.infer<typeof insertMileageRateSchema>;
+export type MileageRate = typeof mileageRates.$inferSelect;
 
 // Expense Attachments (for SharePoint file integration)
 export const expenseAttachments = pgTable("expense_attachments", {

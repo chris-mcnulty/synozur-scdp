@@ -101,6 +101,7 @@ import {
   type DistributionPolicy, type InsertDistributionPolicy,
   type DistributionRun, type InsertDistributionRun,
   type DistributionLine, type InsertDistributionLine,
+  mileageRates, type MileageRate, type InsertMileageRate,
 } from "@shared/schema";
 import type { PayrollEngineInputs } from "../services/payroll-engine";
 import { db } from "../db";
@@ -129,6 +130,7 @@ import { a2aTasksMethods } from "./a2a";
 import { signoffsMethods } from "./signoffs";
 import { galaxyMethods } from "./galaxy";
 import { agentMethods } from "./agent";
+import { mileageRatesMethods } from "./mileage-rates";
 import { payrollStorage } from "./payroll";
 import { distributionStorage } from "./distribution";
 
@@ -954,6 +956,13 @@ export interface IStorage {
   getDefaultBillingRate(tenantId?: string): Promise<number>;
   getDefaultCostRate(tenantId?: string): Promise<number>;
   getMileageRate(tenantId?: string): Promise<number>;
+  getMileageRateForDate(tenantId: string | undefined, date: string): Promise<{ rate: number; rateId: string | null; sourceLabel: string }>;
+  listMileageRates(tenantId?: string): Promise<MileageRate[]>;
+  createMileageRate(data: InsertMileageRate): Promise<MileageRate>;
+  deleteMileageRate(id: string, tenantId: string): Promise<void>;
+  updateMileageRate(id: string, updates: Partial<InsertMileageRate>): Promise<MileageRate>;
+  seedIrsRatesIfNeeded(): Promise<void>;
+  backfillRateApplied(tenantId?: string): Promise<{ updated: number }>;
   getDefaultTaxRate(tenantId?: string): Promise<number>;
   
   // Planner Integration Methods
@@ -1339,6 +1348,7 @@ Object.assign(
   signoffsMethods,
   galaxyMethods,
   agentMethods,
+  mileageRatesMethods,
   vendorInvoicesMethods,
   payrollStorage,
   distributionStorage,

@@ -65,8 +65,16 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
     try {
       const user = (req as any).user;
       const tenantId = user?.tenantId;
-      const rate = await storage.getMileageRate(tenantId);
-      res.json({ rate });
+      const date = req.query.date as string | undefined;
+
+      if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        const { rate, sourceLabel } = await storage.getMileageRateForDate(tenantId, date);
+        res.json({ rate, sourceLabel, date });
+      } else {
+        const today = new Date().toISOString().split('T')[0];
+        const { rate, sourceLabel } = await storage.getMileageRateForDate(tenantId, today);
+        res.json({ rate, sourceLabel });
+      }
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch mileage rate" });
     }
@@ -388,6 +396,22 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
           });
         }
         validatedData.unit = "mile";
+
+        // Snapshot the effective mileage rate for the expense date.
+        // This is stored immutably on the expense so future rate changes don't
+        // alter historical records.
+        if (validatedData.date && !(validatedData as any).rateApplied) {
+          try {
+            const { rate } = await storage.getMileageRateForDate(
+              req.user?.tenantId,
+              validatedData.date as string,
+            );
+            (validatedData as any).rateApplied = rate.toFixed(4);
+            console.log(`[EXPENSE_CREATE] Mileage rate snapshot: ${rate} for date ${validatedData.date}`);
+          } catch (rateErr) {
+            console.warn('[EXPENSE_CREATE] Could not snapshot mileage rate:', rateErr);
+          }
+        }
       } else {
         validatedData.quantity = undefined;
         validatedData.unit = undefined;

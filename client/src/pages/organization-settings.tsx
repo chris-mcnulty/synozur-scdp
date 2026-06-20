@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog, Search, Clock } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, ArrowUp, ArrowDown, Languages, Sparkles, Hash, RotateCcw, HardDrive, Shield, Loader2, RefreshCw, AlertTriangle, Database, FolderOpen, Plus, X, GripVertical, FolderCog, Search, Clock, Car, Trash2 } from "lucide-react";
 import { MicrosoftPlannerIcon, MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 import { TeamsLinksTab } from "@/components/admin/TeamsLinksTab";
@@ -3141,6 +3141,12 @@ export default function OrganizationSettings() {
   const [editingGlNumber, setEditingGlNumber] = useState(false);
   const [newGlNumber, setNewGlNumber] = useState<string>('');
 
+  // Mileage Rate History state
+  const [addingMileageRate, setAddingMileageRate] = useState(false);
+  const [newMileageRateDate, setNewMileageRateDate] = useState('');
+  const [newMileageRateValue, setNewMileageRateValue] = useState('');
+  const [newMileageRateSource, setNewMileageRateSource] = useState('');
+
   const { data: tenantsData } = useQuery<TenantsResponse>({
     queryKey: ["/api/auth/tenants"],
   });
@@ -3177,6 +3183,81 @@ export default function OrganizationSettings() {
       return;
     }
     glNumberMutation.mutate(num);
+  };
+
+  // ─── Mileage Rate History ────────────────────────────────────────────────
+  type MileageRateRow = {
+    id: string;
+    tenantId: string | null;
+    rateType: string;
+    ratePerMile: string;
+    effectiveDate: string;
+    endDate: string | null;
+    sourceName: string | null;
+    needsReview: boolean;
+    lastVerifiedAt: string | null;
+    createdAt: string | null;
+  };
+
+  const { data: mileageRates, isLoading: isLoadingMileageRates } = useQuery<MileageRateRow[]>({
+    queryKey: ["/api/admin/mileage-rates"],
+  });
+
+  const createMileageRateMutation = useMutation({
+    mutationFn: (data: { ratePerMile: string; effectiveDate: string; sourceName?: string }) =>
+      apiRequest("/api/admin/mileage-rates", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/mileage-rates"] });
+      setAddingMileageRate(false);
+      setNewMileageRateDate('');
+      setNewMileageRateValue('');
+      setNewMileageRateSource('');
+      toast({ title: "Custom rate added" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to add rate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMileageRateMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest(`/api/admin/mileage-rates/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/mileage-rates"] });
+      toast({ title: "Custom rate deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to delete rate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const syncMileageRatesMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/admin/mileage-rates/sync", { method: "POST" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/mileage-rates"] });
+      toast({ title: "Federal Register sync complete", description: data?.message || "Rate table updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleAddMileageRate = () => {
+    if (!newMileageRateDate || !newMileageRateValue) {
+      toast({ title: "Date and rate are required", variant: "destructive" });
+      return;
+    }
+    const rate = parseFloat(newMileageRateValue);
+    if (isNaN(rate) || rate <= 0) {
+      toast({ title: "Rate must be a positive number", variant: "destructive" });
+      return;
+    }
+    createMileageRateMutation.mutate({
+      ratePerMile: rate.toFixed(4),
+      effectiveDate: newMileageRateDate,
+      sourceName: newMileageRateSource || undefined,
+    });
   };
 
   interface FinancialAlertRecipient {
@@ -4034,6 +4115,164 @@ export default function OrganizationSettings() {
                   </div>
                 </form>
               </Form>
+
+              {/* ── Mileage Rate History ─────────────────────────────────── */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Car className="h-5 w-5" />
+                        Mileage Rate History
+                      </CardTitle>
+                      <CardDescription className="mt-1">
+                        IRS standard business mileage rates by effective date. New mileage expenses automatically use the rate in effect on the date of travel. Add tenant-specific overrides below, or sync the latest rates from the Federal Register.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => syncMileageRatesMutation.mutate()}
+                      disabled={syncMileageRatesMutation.isPending}
+                    >
+                      {syncMileageRatesMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                      )}
+                      Sync Federal Register
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {isLoadingMileageRates ? (
+                    <div className="space-y-2">
+                      {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="text-left px-4 py-2 font-medium">Effective Date</th>
+                            <th className="text-left px-4 py-2 font-medium">End Date</th>
+                            <th className="text-right px-4 py-2 font-medium">$/mile</th>
+                            <th className="text-left px-4 py-2 font-medium">Source</th>
+                            <th className="text-left px-4 py-2 font-medium">Scope</th>
+                            <th className="px-4 py-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(mileageRates || [])
+                            .slice()
+                            .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))
+                            .map((r) => (
+                              <tr key={r.id} className="border-t hover:bg-muted/30 transition-colors">
+                                <td className="px-4 py-2 font-mono">{r.effectiveDate}</td>
+                                <td className="px-4 py-2 font-mono text-muted-foreground">{r.endDate || '—'}</td>
+                                <td className="px-4 py-2 font-mono text-right font-medium">
+                                  ${parseFloat(r.ratePerMile).toFixed(3)}
+                                  {r.needsReview && (
+                                    <Badge variant="outline" className="ml-2 text-xs text-amber-600 border-amber-400">Review</Badge>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-muted-foreground text-xs">{r.sourceName || (r.rateType === 'irs_business' ? 'IRS Business' : r.rateType)}</td>
+                                <td className="px-4 py-2">
+                                  {r.tenantId ? (
+                                    <Badge variant="secondary" className="text-xs">Custom</Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="text-xs">IRS System</Badge>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-right">
+                                  {r.tenantId && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-destructive hover:text-destructive"
+                                      onClick={() => deleteMileageRateMutation.mutate(r.id)}
+                                      disabled={deleteMileageRateMutation.isPending}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          {(mileageRates || []).length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground text-sm">
+                                No rates found. Click "Sync Federal Register" to load IRS rates.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Add custom override */}
+                  {addingMileageRate ? (
+                    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-dashed p-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-muted-foreground">Effective Date</label>
+                        <Input
+                          type="date"
+                          value={newMileageRateDate}
+                          onChange={(e) => setNewMileageRateDate(e.target.value)}
+                          className="w-44"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-muted-foreground">Rate ($/mile)</label>
+                        <Input
+                          type="number"
+                          step="0.001"
+                          min="0"
+                          placeholder="0.700"
+                          value={newMileageRateValue}
+                          onChange={(e) => setNewMileageRateValue(e.target.value)}
+                          className="w-32"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+                        <label className="text-xs font-medium text-muted-foreground">Label (optional)</label>
+                        <Input
+                          placeholder="e.g. Approved exception rate"
+                          value={newMileageRateSource}
+                          onChange={(e) => setNewMileageRateSource(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleAddMileageRate}
+                          disabled={createMileageRateMutation.isPending}
+                        >
+                          {createMileageRateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                          Save Rate
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => { setAddingMileageRate(false); setNewMileageRateDate(''); setNewMileageRateValue(''); setNewMileageRateSource(''); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAddingMileageRate(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Custom Rate Override
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader>

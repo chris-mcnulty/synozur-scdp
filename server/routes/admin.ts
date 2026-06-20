@@ -2395,4 +2395,103 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
       res.status(500).json({ message: "Failed to fetch cache stats" });
     }
   });
+
+  // ─── Mileage Rate Management ──────────────────────────────────────────────
+  // Lists IRS system rates (tenantId IS NULL) + tenant custom rates
+  app.get("/api/admin/mileage-rates", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      const rates = await storage.listMileageRates(tenantId);
+      res.json(rates);
+    } catch (error) {
+      console.error("Error fetching mileage rates:", error);
+      res.status(500).json({ message: "Failed to fetch mileage rates" });
+    }
+  });
+
+  // Create a tenant-scoped custom rate override
+  app.post("/api/admin/mileage-rates", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(400).json({ message: "No tenant context" });
+
+      const schema = z.object({
+        ratePerMile: z.string().refine((v) => parseFloat(v) > 0, { message: "Rate must be greater than 0" }),
+        effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: "Date must be YYYY-MM-DD" }),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+        sourceName: z.string().max(200).optional(),
+      });
+
+      const data = schema.parse(req.body);
+      const rate = await storage.createMileageRate({
+        tenantId,
+        rateType: 'custom',
+        ratePerMile: parseFloat(data.ratePerMile).toFixed(4),
+        effectiveDate: data.effectiveDate,
+        endDate: data.endDate ?? undefined,
+        sourceName: data.sourceName,
+        needsReview: false,
+        lastVerifiedAt: new Date(),
+      } as any);
+      res.status(201).json(rate);
+    } catch (error: any) {
+      console.error("Error creating mileage rate:", error);
+      if (error?.name === 'ZodError') {
+        return res.status(400).json({ message: error.errors?.[0]?.message || 'Invalid data' });
+      }
+      res.status(500).json({ message: "Failed to create mileage rate" });
+    }
+  });
+
+  // Confirm a needs_review rate (set ratePerMile and mark needsReview = false)
+  app.patch("/api/admin/mileage-rates/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const schema = z.object({
+        ratePerMile: z.string().optional(),
+        endDate: z.string().nullable().optional(),
+        needsReview: z.boolean().optional(),
+        sourceName: z.string().max(200).optional(),
+      });
+      const data = schema.parse(req.body);
+      const updated = await storage.updateMileageRate(req.params.id, {
+        ...(data.ratePerMile ? { ratePerMile: parseFloat(data.ratePerMile).toFixed(4) } : {}),
+        ...(data.endDate !== undefined ? { endDate: data.endDate ?? undefined } : {}),
+        ...(data.needsReview !== undefined ? { needsReview: data.needsReview } : {}),
+        ...(data.sourceName ? { sourceName: data.sourceName } : {}),
+        lastVerifiedAt: new Date(),
+      } as any);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating mileage rate:", error);
+      res.status(500).json({ message: "Failed to update mileage rate" });
+    }
+  });
+
+  // Delete a tenant-scoped custom rate (IRS system rows are protected server-side)
+  app.delete("/api/admin/mileage-rates/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.tenantId || user?.primaryTenantId;
+      if (!tenantId) return res.status(400).json({ message: "No tenant context" });
+      await storage.deleteMileageRate(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting mileage rate:", error);
+      res.status(500).json({ message: "Failed to delete mileage rate" });
+    }
+  });
+
+  // Trigger Federal Register sync — detects new IRS/GSA rate announcements
+  app.post("/api/admin/mileage-rates/sync", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { syncFederalRegisterRates } = await import('../services/mileage-rate-service.js');
+      const result = await syncFederalRegisterRates();
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error syncing Federal Register mileage rates:", error);
+      res.status(500).json({ message: error?.message || "Failed to sync rates from Federal Register" });
+    }
+  });
 }

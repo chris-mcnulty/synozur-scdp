@@ -234,22 +234,31 @@ export default function Expenses() {
     },
   });
 
-  // Fetch MILEAGE_RATE from the dedicated endpoint
-  const { data: mileageRateData } = useQuery<{ rate: number }>({
-    queryKey: ["/api/expenses/mileage-rate"],
+  // Watch for category, miles, and date changes — date drives the correct IRS rate
+  const watchedCategory = form.watch("category");
+  const watchedMiles = form.watch("miles");
+  const watchedDate = form.watch("date");
+
+  // Fetch the mileage rate effective for the current expense date.
+  // The IRS rate changes annually (sometimes mid-year), so we always look up
+  // the rate that was in effect on the actual date of travel.
+  const { data: mileageRateData } = useQuery<{ rate: number; sourceLabel?: string }>({
+    queryKey: ["/api/expenses/mileage-rate", watchedDate || "today"],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (watchedDate) params.set("date", watchedDate);
+      return apiRequest(`/api/expenses/mileage-rate?${params}`);
+    },
     retry: false,
+    staleTime: 300000,
   });
 
-  // Update mileage rate when data is loaded
+  // Sync mileage rate state when the date-specific rate loads
   useEffect(() => {
     if (mileageRateData && mileageRateData.rate > 0) {
       setMileageRate(mileageRateData.rate);
     }
   }, [mileageRateData]);
-
-  // Watch for category changes to handle mileage
-  const watchedCategory = form.watch("category");
-  const watchedMiles = form.watch("miles");
   
   // Airport code validation
   const watchedDepartureAirport = form.watch("departureAirport");

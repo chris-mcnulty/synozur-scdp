@@ -588,6 +588,10 @@ export async function registerRoutes(app: Express): Promise<void> {
     const { startGalaxyWebhookWorker } = await import("./services/galaxy-webhook-delivery.js");
     startGalaxyWebhookWorker();
 
+    // Seed IRS mileage rate history and back-fill rate_applied on historical expenses
+    const { initMileageRateService } = await import("./services/mileage-rate-service.js");
+    initMileageRateService().catch((err: Error) => console.error("[MILEAGE-RATES] Init error:", err));
+
 
 
   // Agent card health check (admin only)
