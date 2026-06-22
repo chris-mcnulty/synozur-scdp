@@ -1043,8 +1043,8 @@ export const invoicingMethods: ThisType<IStorage & {
       throw new Error(`Invoice batch ${batchId} not found`);
     }
     
-    if (batch.status !== 'finalized') {
-      throw new Error('Can only update as-of date for finalized batches');
+    if (batch.status === 'finalized') {
+      throw new Error('Cannot update as-of date on a finalized batch');
     }
     
     const [updatedBatch] = await db.update(invoiceBatches)

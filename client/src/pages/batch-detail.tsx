@@ -1670,7 +1670,7 @@ export default function BatchDetail() {
               <div>
                 <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex items-center">
                   As-Of Date
-                  {user?.role === 'admin' && !isEditingAsOfDate && (
+                  {batchDetails?.status !== 'finalized' && !isEditingAsOfDate && (
                     <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={handleStartAsOfDateEdit} data-testid="button-edit-as-of-date">
                       <Edit className="h-3 w-3" />
                     </Button>

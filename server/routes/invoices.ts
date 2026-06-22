@@ -933,7 +933,7 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
     }
   });
 
-  app.patch("/api/invoice-batches/:batchId/as-of-date", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+  app.patch("/api/invoice-batches/:batchId/as-of-date", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
 
