@@ -1479,7 +1479,7 @@ export default function BatchDetail() {
             
             <Separator orientation="vertical" className="h-6" />
 
-            {batchDetails?.status === 'draft' && (
+            {(batchDetails?.status === 'draft' || batchDetails?.status === 'reviewed') && (
               <>
                 <Button
                   variant="outline"
@@ -1494,16 +1494,18 @@ export default function BatchDetail() {
                     : <RefreshCw className="mr-1 h-3 w-3" />}
                   Refresh Items
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="h-8 text-xs"
-                  onClick={handleReviewBatch}
-                  disabled={reviewMutation.isPending}
-                >
-                  <CheckSquare className="mr-1 h-3 w-3" />
-                  Mark Reviewed
-                </Button>
+                {batchDetails?.status === 'draft' && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-8 text-xs"
+                    onClick={handleReviewBatch}
+                    disabled={reviewMutation.isPending}
+                  >
+                    <CheckSquare className="mr-1 h-3 w-3" />
+                    Mark Reviewed
+                  </Button>
+                )}
               </>
             )}
 
