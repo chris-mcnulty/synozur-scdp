@@ -16,7 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
 import { format, addDays, differenceInDays } from "date-fns";
 import { getTodayBusinessDate, formatBusinessDate, parseBusinessDate, parseBusinessDateOrToday } from "@/lib/date-utils";
-import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText, Trash2, AlertTriangle } from "lucide-react";
+import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText, Trash2, AlertTriangle, Loader2, FolderOpen } from "lucide-react";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -149,8 +149,12 @@ export default function Expenses() {
   const [perDiemEndDateOpen, setPerDiemEndDateOpen] = useState<boolean>(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { hasAnyRole } = useAuth();
+  const { hasAnyRole, user } = useAuth();
   const [, navigate] = useLocation();
+
+  const [showGroupDialog, setShowGroupDialog] = useState(false);
+  const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
+  const [creatingReportFor, setCreatingReportFor] = useState<string | null>(null);
 
   // Check if current user can assign expenses to other people (create on behalf of others)
   const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin', 'executive', 'global_admin', 'constellation_admin']);
@@ -220,6 +224,49 @@ export default function Expenses() {
       }))
       .sort((a, b) => a.displayLabel.localeCompare(b.displayLabel));
   }, [projects]);
+
+  // Expenses that are not in any expense report yet
+  const unreportedExpenses = useMemo(() => {
+    return expenses.filter(e => !e.expenseReport);
+  }, [expenses]);
+
+  // Group unreported expenses by project, with a pre-filled default report title
+  type ExpenseRow = (typeof expenses)[0];
+  const unreportedByProject = useMemo(() => {
+    const groups: Record<string, {
+      project: ExpenseRow['project'];
+      expenses: ExpenseRow[];
+      total: number;
+      defaultTitle: string;
+    }> = {};
+
+    unreportedExpenses.forEach(expense => {
+      const pid = expense.projectId || '__none__';
+      if (!groups[pid]) {
+        const projectExpenses = unreportedExpenses.filter(e => (e.projectId || '__none__') === pid);
+        const latestDateStr = projectExpenses
+          .map(e => e.date as string)
+          .filter(Boolean)
+          .sort()
+          .reverse()[0];
+        const monthStr = latestDateStr
+          ? format(new Date(latestDateStr + 'T12:00:00'), 'yyyy - MM')
+          : format(new Date(), 'yyyy - MM');
+        const clientShort = (expense.project?.client as any)?.shortName || expense.project?.client?.name || '';
+        const projectName = expense.project?.name || '';
+        const userName = user
+          ? [user.firstName, user.lastName].filter(Boolean).join(' ')
+          : '';
+        const title = [monthStr, clientShort ? `${clientShort}/${projectName}` : projectName, userName]
+          .filter(Boolean).join(' ');
+        groups[pid] = { project: expense.project, expenses: [], total: 0, defaultTitle: title };
+      }
+      groups[pid].expenses.push(expense);
+      groups[pid].total += parseFloat(expense.amount || '0');
+    });
+
+    return groups;
+  }, [unreportedExpenses, user]);
 
   // Fetch users for person assignment (only for admin/PM roles)
   const { data: users = [], error: usersError } = useQuery<User[]>({
@@ -390,6 +437,37 @@ export default function Expenses() {
       setIsCalculatingPerDiem(false);
     }
   };
+
+  const createReportMutation = useMutation({
+    mutationFn: async ({ title, expenseIds }: { projectId: string; title: string; expenseIds: string[] }) => {
+      return apiRequest('/api/expense-reports', {
+        method: 'POST',
+        body: JSON.stringify({ title, expenseIds }),
+      });
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/expense-reports'] });
+      setCustomTitles(prev => {
+        const next = { ...prev };
+        delete next[variables.projectId];
+        return next;
+      });
+      setCreatingReportFor(null);
+      toast({
+        title: 'Expense report created',
+        description: `"${variables.title}" is ready to review and submit.`,
+      });
+    },
+    onError: (error: any) => {
+      setCreatingReportFor(null);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create expense report',
+        variant: 'destructive',
+      });
+    },
+  });
 
   const createExpenseMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -1484,6 +1562,31 @@ export default function Expenses() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Unreported expenses callout */}
+        {unreportedExpenses.length > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 p-4 flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium text-amber-900 dark:text-amber-200">
+                  {unreportedExpenses.length} expense{unreportedExpenses.length !== 1 ? 's' : ''} not in any expense report
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">
+                  These expenses can't be submitted for approval or reimbursement until they're in a report. Click below to group them by project.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => setShowGroupDialog(true)}
+              className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-700 dark:hover:bg-amber-600"
+              size="sm"
+            >
+              <FolderOpen className="h-4 w-4 mr-2" />
+              Group into Reports
+            </Button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Expense Entry Form */}
@@ -2811,6 +2914,100 @@ export default function Expenses() {
                 {importProgress ? "Processing..." : "Import Expenses"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Group Unreported Expenses into Reports Dialog */}
+      <Dialog open={showGroupDialog} onOpenChange={setShowGroupDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Group Expenses into Reports</DialogTitle>
+            <DialogDescription>
+              Your unreported expenses are grouped by project below. Edit the report title if needed, then click "Create Report" for each group.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            {Object.keys(unreportedByProject).length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <Receipt className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                <p className="font-medium">All caught up!</p>
+                <p className="text-sm mt-1">All your expenses are already in a report.</p>
+              </div>
+            ) : (
+              Object.entries(unreportedByProject).map(([projectId, group]) => {
+                const title = customTitles[projectId] ?? group.defaultTitle;
+                const isCreating = creatingReportFor === projectId;
+                return (
+                  <div key={projectId} className="rounded-lg border p-4 space-y-3">
+                    {/* Project label + editable title + create button */}
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 space-y-1.5 min-w-0">
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide flex items-center gap-1.5">
+                          <FolderOpen className="h-3.5 w-3.5" />
+                          {group.project?.client?.name} / {group.project?.name}
+                        </p>
+                        <input
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          value={title}
+                          onChange={e => setCustomTitles(prev => ({ ...prev, [projectId]: e.target.value }))}
+                          placeholder="Report title"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        className="shrink-0 mt-6"
+                        disabled={isCreating || !title.trim() || createReportMutation.isPending}
+                        onClick={() => {
+                          setCreatingReportFor(projectId);
+                          createReportMutation.mutate({
+                            projectId,
+                            title: title.trim(),
+                            expenseIds: group.expenses.map(e => e.id),
+                          });
+                        }}
+                      >
+                        {isCreating
+                          ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</>
+                          : <><FileText className="h-4 w-4 mr-2" />Create Report</>}
+                      </Button>
+                    </div>
+
+                    {/* Expense list */}
+                    <div className="rounded-md border text-sm divide-y">
+                      {group.expenses.map(expense => (
+                        <div key={expense.id} className="flex items-center justify-between px-3 py-2 gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="text-muted-foreground shrink-0 tabular-nums text-xs w-14">
+                              {formatBusinessDate(expense.date as string, 'MMM d')}
+                            </span>
+                            <Badge variant="outline" className="shrink-0 text-xs capitalize">
+                              {expense.category}
+                            </Badge>
+                            <span className="truncate text-muted-foreground">{expense.description}</span>
+                          </div>
+                          <span className="font-medium shrink-0">
+                            ${parseFloat(expense.amount).toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-end text-sm text-muted-foreground">
+                      <span>{group.expenses.length} item{group.expenses.length !== 1 ? 's' : ''} · </span>
+                      <span className="font-semibold text-foreground ml-1">${group.total.toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter className="mt-2 pt-2 border-t">
+            <Button variant="outline" onClick={() => setShowGroupDialog(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
