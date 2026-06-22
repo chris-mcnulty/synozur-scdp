@@ -16,7 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
 import { format, addDays, differenceInDays } from "date-fns";
 import { getTodayBusinessDate, formatBusinessDate, parseBusinessDate, parseBusinessDateOrToday } from "@/lib/date-utils";
-import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText, Trash2, AlertTriangle, Loader2, FolderOpen } from "lucide-react";
+import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText, Trash2, AlertTriangle, Loader2, FolderOpen, Send, CheckCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -155,6 +155,8 @@ export default function Expenses() {
   const [showGroupDialog, setShowGroupDialog] = useState(false);
   const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
   const [creatingReportFor, setCreatingReportFor] = useState<string | null>(null);
+  const [createdReports, setCreatedReports] = useState<Record<string, { id: string; title: string; submitted: boolean }>>({});
+  const [submittingReportFor, setSubmittingReportFor] = useState<string | null>(null);
 
   // Check if current user can assign expenses to other people (create on behalf of others)
   const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin', 'executive', 'global_admin', 'constellation_admin']);
@@ -438,6 +440,12 @@ export default function Expenses() {
     }
   };
 
+  const { data: draftReports = [] } = useQuery<any[]>({
+    queryKey: ['/api/expense-reports', { status: 'draft' }],
+    queryFn: () => apiRequest('/api/expense-reports?status=draft'),
+    staleTime: 30000,
+  });
+
   const createReportMutation = useMutation({
     mutationFn: async ({ title, expenseIds }: { projectId: string; title: string; expenseIds: string[] }) => {
       return apiRequest('/api/expense-reports', {
@@ -445,7 +453,11 @@ export default function Expenses() {
         body: JSON.stringify({ title, expenseIds }),
       });
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data: any, variables) => {
+      setCreatedReports(prev => ({
+        ...prev,
+        [variables.projectId]: { id: data.id, title: variables.title, submitted: false },
+      }));
       queryClient.invalidateQueries({ queryKey: ['/api/expenses'] });
       queryClient.invalidateQueries({ queryKey: ['/api/expense-reports'] });
       setCustomTitles(prev => {
@@ -454,10 +466,6 @@ export default function Expenses() {
         return next;
       });
       setCreatingReportFor(null);
-      toast({
-        title: 'Expense report created',
-        description: `"${variables.title}" is ready to review and submit.`,
-      });
     },
     onError: (error: any) => {
       setCreatingReportFor(null);
@@ -466,6 +474,26 @@ export default function Expenses() {
         description: error.message || 'Failed to create expense report',
         variant: 'destructive',
       });
+    },
+  });
+
+  const submitFromDialogMutation = useMutation({
+    mutationFn: async ({ projectId, reportId }: { projectId: string; reportId: string }) => {
+      setSubmittingReportFor(projectId);
+      return apiRequest(`/api/expense-reports/${reportId}/submit`, { method: 'POST' });
+    },
+    onSuccess: (_data, variables) => {
+      setCreatedReports(prev => ({
+        ...prev,
+        [variables.projectId]: { ...prev[variables.projectId], submitted: true },
+      }));
+      queryClient.invalidateQueries({ queryKey: ['/api/expense-reports'] });
+      setSubmittingReportFor(null);
+      toast({ title: 'Report submitted', description: 'Your expense report has been submitted for approval.' });
+    },
+    onError: (error: any) => {
+      setSubmittingReportFor(null);
+      toast({ title: 'Error', description: error.message || 'Failed to submit report', variant: 'destructive' });
     },
   });
 
@@ -1562,6 +1590,31 @@ export default function Expenses() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Draft reports not yet submitted */}
+        {draftReports.filter((r: any) => !createdReports[r.id]?.submitted).length > 0 && (
+          <div className="rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-700 p-4 flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Send className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium text-blue-900 dark:text-blue-200">
+                  {draftReports.length} expense report{draftReports.length !== 1 ? 's' : ''} waiting to be submitted
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-0.5">
+                  Draft reports can't be approved or reimbursed until you submit them.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => navigate('/expense-reports')}
+              className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-700 dark:hover:bg-blue-600"
+              size="sm"
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Submit Now
+            </Button>
+          </div>
+        )}
 
         {/* Unreported expenses callout */}
         {unreportedExpenses.length > 0 && (
@@ -2930,18 +2983,105 @@ export default function Expenses() {
 
           <div className="space-y-4 mt-2">
             {Object.keys(unreportedByProject).length === 0 ? (
-              <div className="text-center py-10 text-muted-foreground">
-                <Receipt className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                <p className="font-medium">All caught up!</p>
-                <p className="text-sm mt-1">All your expenses are already in a report.</p>
-              </div>
+              /* ── All groups created or no unreported expenses ── */
+              (() => {
+                const pendingSubmit = Object.values(createdReports).filter(r => !r.submitted);
+                const totalDraft = draftReports.length;
+                const anyUnsubmitted = pendingSubmit.length > 0 || totalDraft > 0;
+                return anyUnsubmitted ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950/20 p-4 flex items-start gap-3">
+                      <Send className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-medium text-blue-900 dark:text-blue-200">Don't forget to submit!</p>
+                        <p className="text-sm text-blue-700 dark:text-blue-300 mt-0.5">
+                          {pendingSubmit.length > 0
+                            ? `${pendingSubmit.length} report${pendingSubmit.length !== 1 ? 's' : ''} just created — submit ${pendingSubmit.length !== 1 ? 'them' : 'it'} to kick off approval.`
+                            : `You have ${totalDraft} draft report${totalDraft !== 1 ? 's' : ''} waiting for submission.`}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Cards for just-created reports with inline Submit button */}
+                    {Object.entries(createdReports).map(([pid, report]) => (
+                      <div key={pid} className={`rounded-lg border p-3 flex items-center justify-between gap-3 ${report.submitted ? 'border-green-300 bg-green-50 dark:bg-green-950/20' : 'border-border'}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {report.submitted
+                            ? <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                            : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />}
+                          <span className="truncate text-sm font-medium">{report.title}</span>
+                        </div>
+                        {report.submitted ? (
+                          <Badge className="shrink-0 bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 border-0">
+                            Submitted ✓
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0"
+                            disabled={submittingReportFor === pid}
+                            onClick={() => submitFromDialogMutation.mutate({ projectId: pid, reportId: report.id })}
+                          >
+                            {submittingReportFor === pid
+                              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Submitting…</>
+                              : <><Send className="h-4 w-4 mr-2" />Submit for Approval</>}
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-muted-foreground">
+                    <CheckCircle className="h-10 w-10 mx-auto mb-3 text-green-500 opacity-70" />
+                    <p className="font-medium">All done!</p>
+                    <p className="text-sm mt-1">All your expenses are in reports and submitted.</p>
+                  </div>
+                );
+              })()
             ) : (
               Object.entries(unreportedByProject).map(([projectId, group]) => {
+                const created = createdReports[projectId];
+
+                /* ── Success card: report just created ── */
+                if (created) {
+                  return (
+                    <div key={projectId} className="rounded-lg border border-green-300 bg-green-50 dark:bg-green-950/20 p-4 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{created.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {group.expenses.length} expense{group.expenses.length !== 1 ? 's' : ''} · ${group.total.toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                        {created.submitted ? (
+                          <Badge className="shrink-0 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 border-0">
+                            Submitted ✓
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="shrink-0"
+                            disabled={submittingReportFor === projectId}
+                            onClick={() => submitFromDialogMutation.mutate({ projectId, reportId: created.id })}
+                          >
+                            {submittingReportFor === projectId
+                              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Submitting…</>
+                              : <><Send className="h-4 w-4 mr-2" />Submit for Approval</>}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                /* ── Pending card: report not yet created ── */
                 const title = customTitles[projectId] ?? group.defaultTitle;
                 const isCreating = creatingReportFor === projectId;
                 return (
                   <div key={projectId} className="rounded-lg border p-4 space-y-3">
-                    {/* Project label + editable title + create button */}
                     <div className="flex items-start gap-3">
                       <div className="flex-1 space-y-1.5 min-w-0">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide flex items-center gap-1.5">
@@ -2973,8 +3113,6 @@ export default function Expenses() {
                           : <><FileText className="h-4 w-4 mr-2" />Create Report</>}
                       </Button>
                     </div>
-
-                    {/* Expense list */}
                     <div className="rounded-md border text-sm divide-y">
                       {group.expenses.map(expense => (
                         <div key={expense.id} className="flex items-center justify-between px-3 py-2 gap-3">
@@ -2993,7 +3131,6 @@ export default function Expenses() {
                         </div>
                       ))}
                     </div>
-
                     <div className="flex justify-end text-sm text-muted-foreground">
                       <span>{group.expenses.length} item{group.expenses.length !== 1 ? 's' : ''} · </span>
                       <span className="font-semibold text-foreground ml-1">${group.total.toFixed(2)}</span>
@@ -3008,6 +3145,11 @@ export default function Expenses() {
             <Button variant="outline" onClick={() => setShowGroupDialog(false)}>
               Close
             </Button>
+            {Object.values(createdReports).some(r => !r.submitted) && (
+              <Button onClick={() => { setShowGroupDialog(false); navigate('/expense-reports'); }}>
+                Go to My Reports
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
