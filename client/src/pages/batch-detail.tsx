@@ -1542,6 +1542,18 @@ export default function BatchDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {(batchDetails?.status === 'draft' || batchDetails?.status === 'reviewed') && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => refreshItemsMutation.mutate()}
+                      disabled={refreshItemsMutation.isPending}
+                    >
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      {refreshItemsMutation.isPending ? 'Refreshing…' : 'Refresh Items'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={() => setShowAdjustmentHistory(!showAdjustmentHistory)}>
                   <History className="mr-2 h-4 w-4" /> {showAdjustmentHistory ? "Hide" : "View"} History
                 </DropdownMenuItem>
