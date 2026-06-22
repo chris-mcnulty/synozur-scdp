@@ -115,6 +115,36 @@ async function handlePdfInvoiceGenerate(job: BackgroundJob): Promise<Record<stri
 
   const { storage } = await import('../storage.js');
   const { invoicePDFStorage } = await import('./invoice-pdf-storage.js');
+  const { receiptStorage } = await import('./receipt-storage.js');
+  const { LocalFileStorage } = await import('./local-file-storage.js');
+  const { SharePointFileStorage } = await import('./sharepoint-file-storage.js');
+
+  const localFileStorageInstance = new LocalFileStorage();
+  const sharePointFileStorage = new SharePointFileStorage();
+
+  async function downloadFileDirect(fileId: string, tid?: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
+    try {
+      const buffer = await receiptStorage.getReceipt(fileId);
+      return { buffer, fileName: fileId, mimeType: 'application/octet-stream' };
+    } catch { /* not in receipt storage */ }
+    try {
+      const local = await localFileStorageInstance.getFileContent(fileId);
+      if (local?.buffer) {
+        const meta = (local.metadata || {}) as any;
+        return { buffer: local.buffer, fileName: meta.originalName || meta.fileName || fileId, mimeType: meta.contentType || 'application/octet-stream' };
+      }
+    } catch { /* not in local storage */ }
+    try {
+      const { containerId, azureTenantId } = await sharePointFileStorage.getContainerForTenant(tid);
+      if (!containerId) return null;
+      const client = sharePointFileStorage.resolveGraphClient(azureTenantId);
+      const result = await client.downloadFile(containerId, fileId);
+      return { buffer: result.buffer, fileName: result.fileName, mimeType: result.mimeType };
+    } catch (error) {
+      console.error(`[JOB-WORKER] downloadFileDirect failed for ${fileId}:`, error instanceof Error ? error.message : error);
+      return null;
+    }
+  }
 
   const batch = await storage.getInvoiceBatchDetails(batchId);
   if (!batch) throw new Error(`Invoice batch ${batchId} not found`);
@@ -128,6 +158,8 @@ async function handlePdfInvoiceGenerate(job: BackgroundJob): Promise<Record<stri
     adjustments,
     companySettings,
     timezone: timezone || 'America/New_York',
+    tenantId: tenantId || undefined,
+    downloadFileDirect,
   });
 
   // Delete old PDF if it exists
