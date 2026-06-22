@@ -1673,21 +1673,25 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         return res.status(400).json({ message: "Expense report has no items" });
       }
 
-      // Gather receipt attachment image URLs for embedding in PDF (image attachments only; PDF attachments are not embedded)
+      // Gather receipt attachments: images embedded in HTML, PDF receipts collected for post-generation merge
+      const pdfReceiptBuffers: { buffer: Buffer; originalName: string }[] = [];
       const formattedExpenses = await Promise.all(items.map(async (item: any) => {
         const attachments = item.expense.attachments || [];
         const receiptImages: string[] = [];
         for (const att of attachments) {
           try {
-            const fileData = await deps.smartFileStorage.downloadFileDirect(att.filePath, req.user!.tenantId);
-            if (fileData && (fileData.mimeType.startsWith('image/') || fileData.mimeType === 'application/pdf')) {
+            // att.itemId is the correct storage reference (expenseAttachments schema uses itemId, not filePath)
+            const fileData = await deps.smartFileStorage.downloadFileDirect(att.itemId, req.user!.tenantId);
+            if (fileData) {
               if (fileData.mimeType.startsWith('image/')) {
                 const base64 = fileData.buffer.toString('base64');
                 receiptImages.push(`data:${fileData.mimeType};base64,${base64}`);
+              } else if (fileData.mimeType === 'application/pdf' || att.fileName?.toLowerCase().endsWith('.pdf')) {
+                pdfReceiptBuffers.push({ buffer: fileData.buffer, originalName: att.fileName || 'receipt.pdf' });
               }
             }
           } catch (e) {
-            console.warn('[CONTRACTOR_INVOICE] Could not embed receipt attachment:', att.filePath, e);
+            console.warn('[CONTRACTOR_INVOICE] Could not embed receipt attachment:', att.itemId, e);
           }
         }
         return {
@@ -1791,8 +1795,31 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
       await browser.close();
 
-      // Save the PDF to object storage — fail hard if storage fails
-      const pdfBuf = Buffer.from(pdfBuffer);
+      // Merge any PDF receipt attachments onto the end of the invoice
+      let pdfBuf = Buffer.from(pdfBuffer);
+      if (pdfReceiptBuffers.length > 0) {
+        console.log(`[CONTRACTOR_INVOICE] Merging ${pdfReceiptBuffers.length} PDF receipt(s) into invoice...`);
+        try {
+          const { PDFDocument } = await import('pdf-lib');
+          const invoicePdf = await PDFDocument.load(pdfBuf);
+          for (const receipt of pdfReceiptBuffers) {
+            try {
+              const receiptPdf = await PDFDocument.load(receipt.buffer, { ignoreEncryption: true });
+              const pageCount = Math.min(receiptPdf.getPageCount(), 10); // max 10 pages per receipt
+              const copiedPages = await invoicePdf.copyPages(receiptPdf, Array.from({ length: pageCount }, (_, i) => i));
+              copiedPages.forEach(p => invoicePdf.addPage(p));
+              console.log(`[CONTRACTOR_INVOICE] Appended ${pageCount} page(s) from ${receipt.originalName}`);
+            } catch (receiptErr) {
+              console.error(`[CONTRACTOR_INVOICE] Could not merge PDF receipt ${receipt.originalName}:`, receiptErr);
+            }
+          }
+          pdfBuf = Buffer.from(await invoicePdf.save());
+          console.log(`[CONTRACTOR_INVOICE] Final merged PDF size: ${Math.round(pdfBuf.length / 1024)}KB`);
+        } catch (mergeErr) {
+          console.error('[CONTRACTOR_INVOICE] PDF merge failed, returning invoice without attachments:', mergeErr);
+        }
+      }
+
       const fileName = `Expense_Invoice_${effectiveInvoiceNumber}.pdf`;
 
       const stored = await receiptStorage.storeReceipt(pdfBuf, fileName, 'application/pdf', {
