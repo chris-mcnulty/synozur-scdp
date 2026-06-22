@@ -873,6 +873,17 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
     }
   });
 
+  app.post("/api/invoice-batches/:batchId/unreview", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+      const updatedBatch = await storage.unreviewBatch(req.params.batchId);
+      res.json({ message: "Batch reverted to draft", batch: updatedBatch });
+    } catch (error: any) {
+      console.error("Failed to unreview batch:", error);
+      res.status(400).json({ message: error.message || "Failed to revert batch to draft" });
+    }
+  });
+
   app.post("/api/invoice-batches/:batchId/unfinalize", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
       if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;

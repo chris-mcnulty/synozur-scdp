@@ -73,7 +73,11 @@ import {
   Archive,
   RefreshCw,
   Unlock,
-  X
+  X,
+  RotateCcw,
+  Receipt,
+  Loader2,
+  PlusCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1030,6 +1034,65 @@ export default function BatchDetail() {
     },
   });
 
+  const unreviewMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/invoice-batches/${batchId}/unreview`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches"] });
+      toast({
+        title: "Batch reverted to draft",
+        description: "The batch has been moved back to draft status.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to revert batch to draft",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const refreshItemsMutation = useMutation({
+    mutationFn: async () => {
+      const projectIds = groupedLines
+        ? Object.values(groupedLines as any).flatMap((clientData: any) =>
+            Object.keys(clientData.projects)
+          )
+        : [];
+      if (projectIds.length === 0) {
+        throw new Error("No projects found in this batch to refresh");
+      }
+      return apiRequest(`/api/invoice-batches/${batchId}/generate`, {
+        method: "POST",
+        body: JSON.stringify({ projectIds, invoicingMode: "project" }),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches"] });
+      const added = (data.expensesBilled ?? 0) + (data.timeEntriesBilled ?? 0);
+      toast({
+        title: added > 0 ? `Added ${added} new item(s)` : "Already up to date",
+        description: added > 0
+          ? `${data.expensesBilled ?? 0} expense(s) and ${data.timeEntriesBilled ?? 0} time entr${(data.timeEntriesBilled ?? 0) === 1 ? "y" : "ies"} added.`
+          : "No new approved items found within this batch's date range.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to refresh batch items",
+        variant: "destructive",
+      });
+    },
+  });
+
   const unfinalizeMutation = useMutation({
     mutationFn: async () => {
       return apiRequest(`/api/invoice-batches/${batchId}/unfinalize`, {
@@ -1242,6 +1305,13 @@ export default function BatchDetail() {
     return batchDetails.status === 'draft' && !batchDetails.exportedToQBO;
   };
 
+  const canUnreview = () => {
+    if (!batchDetails || !user) return false;
+    return batchDetails.status === 'reviewed' &&
+           !batchDetails.exportedToQBO &&
+           (user.role === 'admin' || user.role === 'billing-admin');
+  };
+
   const canUnfinalize = () => {
     if (!batchDetails || !user) return false;
     return batchDetails.status === 'finalized' && 
@@ -1410,15 +1480,45 @@ export default function BatchDetail() {
             <Separator orientation="vertical" className="h-6" />
 
             {batchDetails?.status === 'draft' && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8 text-xs"
-                onClick={handleReviewBatch}
-                disabled={reviewMutation.isPending}
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => refreshItemsMutation.mutate()}
+                  disabled={refreshItemsMutation.isPending}
+                  title="Re-run generation to pick up any newly approved expenses or time entries"
+                >
+                  {refreshItemsMutation.isPending
+                    ? <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    : <RefreshCw className="mr-1 h-3 w-3" />}
+                  Refresh Items
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 text-xs"
+                  onClick={handleReviewBatch}
+                  disabled={reviewMutation.isPending}
+                >
+                  <CheckSquare className="mr-1 h-3 w-3" />
+                  Mark Reviewed
+                </Button>
+              </>
+            )}
+
+            {canUnreview() && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs text-orange-600 border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950"
+                onClick={() => unreviewMutation.mutate()}
+                disabled={unreviewMutation.isPending}
               >
-                <CheckSquare className="mr-1 h-3 w-3" />
-                Review
+                {unreviewMutation.isPending
+                  ? <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  : <RotateCcw className="mr-1 h-3 w-3" />}
+                Revert to Draft
               </Button>
             )}
 
@@ -2202,8 +2302,30 @@ export default function BatchDetail() {
                   </Badge>
                 )}
               </CardTitle>
-              {canEditLines() && (
-                <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                {(batchDetails?.status === 'draft' || batchDetails?.status === 'reviewed') && !batchDetails?.exportedToQBO && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => refreshItemsMutation.mutate()}
+                          disabled={refreshItemsMutation.isPending}
+                        >
+                          {refreshItemsMutation.isPending
+                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            : <PlusCircle className="mr-2 h-4 w-4" />}
+                          Add New Items
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs">
+                        <p className="text-sm">Re-runs generation for this batch's projects — picks up any newly approved expenses or time entries without duplicating existing lines.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                {canEditLines() && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -2216,8 +2338,8 @@ export default function BatchDetail() {
                       <><CheckSquare className="mr-2 h-4 w-4" /> Select All</>
                     )}
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -2367,8 +2489,48 @@ export default function BatchDetail() {
                                                 </div>
                                               </TableCell>
                                               <TableCell className="max-w-md">
-                                                <div className="truncate">
-                                                  {line.description || "-"}
+                                                <div className="flex items-center gap-1">
+                                                  <div className="truncate flex-1">
+                                                    {line.description || "-"}
+                                                  </div>
+                                                  {line.type === 'expense' && (line as any).sourceExpenseId && (
+                                                    <TooltipProvider>
+                                                      <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                          <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                                                            onClick={async () => {
+                                                              const expenseId = (line as any).sourceExpenseId;
+                                                              try {
+                                                                const attachments: any[] = await apiRequest(`/api/expenses/${expenseId}/attachments`);
+                                                                if (!attachments || attachments.length === 0) {
+                                                                  toast({ title: "No receipt", description: "No receipt is attached to this expense." });
+                                                                  return;
+                                                                }
+                                                                const att = attachments[0];
+                                                                const sessionId = localStorage.getItem('sessionId');
+                                                                const resp = await fetch(`/api/expenses/${expenseId}/attachments/${att.id}/content`, {
+                                                                  credentials: 'include',
+                                                                  headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                                                                });
+                                                                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                                                                const blob = await resp.blob();
+                                                                const url = URL.createObjectURL(blob);
+                                                                window.open(url, '_blank');
+                                                              } catch {
+                                                                toast({ title: "Error", description: "Could not open receipt.", variant: "destructive" });
+                                                              }
+                                                            }}
+                                                          >
+                                                            <Receipt className="h-3 w-3" />
+                                                          </Button>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>View receipt</TooltipContent>
+                                                      </Tooltip>
+                                                    </TooltipProvider>
+                                                  )}
                                                 </div>
                                               </TableCell>
                                               <TableCell>

@@ -837,6 +837,27 @@ export const invoicingMethods: ThisType<IStorage & {
     return updatedBatch;
   },
 
+  async unreviewBatch(batchId: string): Promise<InvoiceBatch> {
+    const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+
+    if (!batch) {
+      throw new Error(`Invoice batch ${batchId} not found`);
+    }
+
+    if (batch.status !== 'reviewed') {
+      throw new Error('Only reviewed batches can be reverted to draft');
+    }
+
+    const [updatedBatch] = await db.update(invoiceBatches)
+      .set({ status: 'draft' })
+      .where(eq(invoiceBatches.batchId, batchId))
+      .returning();
+
+    console.log(`[STORAGE] Batch ${batchId} reverted from reviewed → draft`);
+
+    return updatedBatch;
+  },
+
   async unfinalizeBatch(batchId: string, force = false, actorUserId?: string): Promise<InvoiceBatch> {
     return await db.transaction(async (tx) => {
       const [batch] = await tx.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
