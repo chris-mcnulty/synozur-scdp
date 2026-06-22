@@ -38,7 +38,10 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  Loader2
+  Loader2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -113,6 +116,25 @@ export default function Billing() {
   const [batchClientFilter, setBatchClientFilter] = useState<string>('all');
   const [batchPage, setBatchPage] = useState(1);
   const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+  const [batchSortField, setBatchSortField] = useState<'gl' | 'asOfDate' | 'amount' | null>(null);
+  const [batchSortDir, setBatchSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const handleBatchSort = (field: 'gl' | 'asOfDate' | 'amount') => {
+    if (batchSortField === field) {
+      setBatchSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setBatchSortField(field);
+      setBatchSortDir(field === 'amount' ? 'desc' : 'asc');
+    }
+    setBatchPage(1);
+  };
+
+  const SortIcon = ({ field }: { field: 'gl' | 'asOfDate' | 'amount' }) => {
+    if (batchSortField !== field) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-40 inline" />;
+    return batchSortDir === 'asc'
+      ? <ArrowUp className="ml-1 h-3 w-3 inline" />
+      : <ArrowDown className="ml-1 h-3 w-3 inline" />;
+  };
   const BATCHES_PER_PAGE = 25;
   
   const { canViewPricing, user } = useAuth();
@@ -1136,6 +1158,21 @@ export default function Billing() {
                     }
                     return true;
                   }).sort((a, b) => {
+                    if (batchSortField === 'gl') {
+                      const glA = parseInt(a.glInvoiceNumber || '0', 10);
+                      const glB = parseInt(b.glInvoiceNumber || '0', 10);
+                      const cmp = glA - glB;
+                      return batchSortDir === 'asc' ? cmp : -cmp;
+                    }
+                    if (batchSortField === 'asOfDate') {
+                      const cmp = (a.asOfDate || '').localeCompare(b.asOfDate || '');
+                      return batchSortDir === 'asc' ? cmp : -cmp;
+                    }
+                    if (batchSortField === 'amount') {
+                      const cmp = (a.totalAmount || 0) - (b.totalAmount || 0);
+                      return batchSortDir === 'asc' ? cmp : -cmp;
+                    }
+                    // Default: newest as-of date first
                     const dateA = a.asOfDate || a.createdAt || '';
                     const dateB = b.asOfDate || b.createdAt || '';
                     return dateB.localeCompare(dateA);
@@ -1162,13 +1199,34 @@ export default function Billing() {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b text-left text-muted-foreground">
-                              <th className="pb-2 pr-3 font-medium">Batch / GL#</th>
+                              <th className="pb-2 pr-3 font-medium">
+                                <button
+                                  className="flex items-center hover:text-foreground transition-colors"
+                                  onClick={() => handleBatchSort('gl')}
+                                >
+                                  Batch / GL#<SortIcon field="gl" />
+                                </button>
+                              </th>
                               <th className="pb-2 pr-3 font-medium">Client / Project</th>
                               <th className="pb-2 pr-3 font-medium">Period</th>
-                              <th className="pb-2 pr-3 font-medium">As-Of Date</th>
+                              <th className="pb-2 pr-3 font-medium">
+                                <button
+                                  className="flex items-center hover:text-foreground transition-colors"
+                                  onClick={() => handleBatchSort('asOfDate')}
+                                >
+                                  As-Of Date<SortIcon field="asOfDate" />
+                                </button>
+                              </th>
                               <th className="pb-2 pr-3 font-medium">Status</th>
                               <th className="pb-2 pr-3 font-medium">Payment</th>
-                              <th className="pb-2 pr-3 font-medium text-right">Net / Tax</th>
+                              <th className="pb-2 pr-3 font-medium text-right">
+                                <button
+                                  className="flex items-center ml-auto hover:text-foreground transition-colors"
+                                  onClick={() => handleBatchSort('amount')}
+                                >
+                                  Net / Tax<SortIcon field="amount" />
+                                </button>
+                              </th>
                               <th className="pb-2 font-medium"></th>
                             </tr>
                           </thead>
