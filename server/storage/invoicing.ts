@@ -622,9 +622,13 @@ export const invoicingMethods: ThisType<IStorage & {
         }
       }
 
-      // Get all invoice lines to calculate taxable subtotal
+      // Get ALL invoice lines (existing + newly added) to calculate the true batch total
       const allLines = await tx.select().from(invoiceLines).where(eq(invoiceLines.batchId, batchId));
-      
+
+      const batchTotal = allLines.reduce((sum, line) => {
+        return sum + normalizeAmount(line.billedAmount || line.amount);
+      }, 0);
+
       // Calculate taxable subtotal (only lines marked as taxable)
       const taxableSubtotal = allLines.reduce((sum, line) => {
         if (line.taxable === false) return sum;
@@ -636,15 +640,15 @@ export const invoicingMethods: ThisType<IStorage & {
       const taxRate = normalizeAmount(batch.taxRate);
       const taxAmountOverride = batch.taxAmountOverride ? normalizeAmount(batch.taxAmountOverride) : null;
       
-      // Apply discount proportionally to taxable items
-      const discountRatio = totalAmount > 0 ? discountAmount / totalAmount : 0;
+      // Apply discount proportionally to taxable items (use full batch total for ratio)
+      const discountRatio = batchTotal > 0 ? discountAmount / batchTotal : 0;
       const taxableAfterDiscount = taxableSubtotal - (taxableSubtotal * discountRatio);
       const taxAmount = calculateEffectiveTaxAmount(taxableAfterDiscount, taxRate, taxAmountOverride);
       
-      // Update batch total amount and tax amount
+      // Update batch total amount and tax amount using the full batch total (all lines)
       await tx.update(invoiceBatches)
         .set({ 
-          totalAmount: totalAmount.toString(),
+          totalAmount: round2(batchTotal).toString(),
           taxAmount: taxAmount.toString()
         })
         .where(eq(invoiceBatches.batchId, batchId));
