@@ -51,6 +51,15 @@ const requireMcpTenant = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+/** Hard cap on list responses to keep token counts within Copilot Studio's context window. */
+const MCP_MAX_ITEMS = 100;
+/** Max chars for any free-text description field in an MCP response. */
+const MCP_DESC_MAX = 200;
+function trunc(s: string | null | undefined, max = MCP_DESC_MAX): string | null {
+  if (!s) return s ?? null;
+  return s.length <= max ? s : s.slice(0, max) + '…';
+}
+
 const PROJECT_ROLES = ["admin", "pm", "portfolio-manager", "executive"];
 const PORTFOLIO_ROLES = ["admin", "portfolio-manager", "executive"];
 const FINANCIAL_ROLES = ["admin", "billing-admin", "executive"];
@@ -175,7 +184,22 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       if (status) {
         filtered = filtered.filter((e: any) => e.status === status);
       }
-      res.json({ data: filtered });
+      const page = filtered.slice(0, MCP_MAX_ITEMS);
+      res.json({
+        data: page.map((e: any) => ({
+          id: e.id,
+          date: e.date,
+          hours: Number(e.hours),
+          billable: e.billable,
+          status: e.status,
+          description: trunc(e.description),
+          projectId: e.projectId,
+          projectName: (e.project?.name) ?? null,
+          personName: (e.person?.name) ?? null,
+        })),
+        total: filtered.length,
+        truncated: filtered.length > MCP_MAX_ITEMS,
+      });
     } catch (error: any) {
       console.error("[MCP] /mcp/time-entries error:", error);
       res.status(500).json({ error: "Failed to retrieve time entries" });
@@ -197,7 +221,21 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
         tenantId,
       });
       const filtered = reports.filter((r: any) => r.tenantId === tenantId);
-      res.json({ data: filtered });
+      const page = filtered.slice(0, MCP_MAX_ITEMS);
+      res.json({
+        data: page.map((r: any) => ({
+          id: r.id,
+          title: trunc(r.title, 120),
+          status: r.status,
+          totalAmount: r.totalAmount ? Number(r.totalAmount) : null,
+          currency: r.currency,
+          submittedAt: r.submittedAt,
+          approvedAt: r.approvedAt,
+          expenseCount: Array.isArray(r.expenses) ? r.expenses.length : null,
+        })),
+        total: filtered.length,
+        truncated: filtered.length > MCP_MAX_ITEMS,
+      });
     } catch (error: any) {
       console.error("[MCP] /mcp/expenses/reports error:", error);
       res.status(500).json({ error: "Failed to retrieve expense reports" });
@@ -233,7 +271,23 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
           return true;
         });
       }
-      res.json({ data: allProjects });
+      const page = allProjects.slice(0, MCP_MAX_ITEMS);
+      res.json({
+        data: page.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          code: p.code,
+          status: p.status,
+          clientId: p.clientId,
+          clientName: p.client?.name ?? null,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          commercialScheme: p.commercialScheme,
+          totalBudget: p.totalBudget ? Number(p.totalBudget) : null,
+        })),
+        total: allProjects.length,
+        truncated: allProjects.length > MCP_MAX_ITEMS,
+      });
     } catch (error: any) {
       console.error("[MCP] /mcp/projects error:", error);
       res.status(500).json({ error: "Failed to retrieve projects" });
@@ -248,7 +302,21 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       if (!project || !verifyProjectTenant(project, tenantId)) {
         return res.status(404).json({ error: "Project not found" });
       }
-      res.json({ data: project });
+      res.json({ data: {
+        id: project.id,
+        name: project.name,
+        code: (project as any).code,
+        status: project.status,
+        description: trunc((project as any).description, 500),
+        clientId: project.clientId,
+        clientName: (project as any).client?.name ?? null,
+        startDate: project.startDate,
+        endDate: project.endDate,
+        commercialScheme: (project as any).commercialScheme,
+        totalBudget: (project as any).totalBudget ? Number((project as any).totalBudget) : null,
+        burnedAmount: (project as any).burnedAmount ? Number((project as any).burnedAmount) : null,
+        projectManager: (project as any).projectManager?.name ?? null,
+      }});
     } catch (error: any) {
       console.error("[MCP] /mcp/projects/:projectId error:", error);
       res.status(500).json({ error: "Failed to retrieve project" });
@@ -576,7 +644,21 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
         result = result.filter((b) => validBatchIds.has(b.batchId));
       }
 
-      res.json({ data: result });
+      const page = result.slice(0, MCP_MAX_ITEMS);
+      res.json({
+        data: page.map((b: any) => ({
+          batchId: b.batchId,
+          batchNumber: b.batchNumber,
+          status: b.status,
+          startDate: b.startDate,
+          endDate: b.endDate,
+          totalAmount: b.totalAmount ? Number(b.totalAmount) : null,
+          finalizedAt: b.finalizedAt,
+          createdAt: b.createdAt,
+        })),
+        total: result.length,
+        truncated: result.length > MCP_MAX_ITEMS,
+      });
     } catch (error: any) {
       console.error("[MCP] /mcp/financial/invoices error:", error);
       res.status(500).json({ error: "Failed to retrieve invoices" });
@@ -909,14 +991,15 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       const epicMap = new Map(epics.map((e: any) => [e.id, e.name]));
       const stageMap = new Map(stages.map((s: any) => [s.id, s.name]));
 
+      const pageLI = filtered.slice(0, MCP_MAX_ITEMS);
       res.json({
-        data: filtered.map((li: any) => ({
+        data: pageLI.map((li: any) => ({
           id: li.id,
           epicId: li.epicId,
           epicName: epicMap.get(li.epicId) || null,
           stageId: li.stageId,
           stageName: stageMap.get(li.stageId) || null,
-          description: li.description,
+          description: trunc(li.description),
           roleName: li.role?.name,
           assignedUserName: li.assignedUser?.name,
           baseHours: li.baseHours ? Number(li.baseHours) : null,
