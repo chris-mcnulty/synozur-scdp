@@ -6185,6 +6185,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           endDate: m.endDate || '',
         })),
         raidd: raiddData,
+        raiddOpenOnly,
         deliverables: pptxDeliverables.map((d: any) => ({
           name: d.name,
           status: d.status || 'not-started',

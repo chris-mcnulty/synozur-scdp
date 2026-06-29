@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.enum.shapes import MSO_SHAPE
 
 FONT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'client', 'public', 'fonts')
@@ -593,10 +593,23 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
     active_issues = [e for e in issues if e.get('status') in open_statuses]
     active_actions = [e for e in actions if e.get('status') in open_statuses]
     active_deps = [e for e in dependencies if e.get('status') in open_statuses]
-    total_active = len(active_risks) + len(active_issues) + len(active_actions) + len(active_deps)
 
-    critical_count = sum(1 for e in (active_risks + active_issues + active_actions + active_deps) if e.get('priority') == 'critical')
-    high_count = sum(1 for e in (active_risks + active_issues + active_actions + active_deps) if e.get('priority') == 'high')
+    # Counts and the critical summary follow the report's "active items only" runtime
+    # setting: when limiting to active, show active items; otherwise show all items.
+    # Parse defensively in case the flag ever arrives as a string ("false") rather than a bool.
+    _open_only_raw = data.get('raiddOpenOnly', True)
+    raidd_open_only = (
+        _open_only_raw if isinstance(_open_only_raw, bool)
+        else str(_open_only_raw).strip().lower() not in ('false', '0', 'no', 'off', '')
+    )
+    display_risks = active_risks if raidd_open_only else risks
+    display_issues = active_issues if raidd_open_only else issues
+    display_actions = active_actions if raidd_open_only else actions
+    display_deps = active_deps if raidd_open_only else dependencies
+    display_all = display_risks + display_issues + display_actions + display_deps
+
+    critical_count = sum(1 for e in display_all if e.get('priority') == 'critical')
+    high_count = sum(1 for e in display_all if e.get('priority') == 'high')
 
     overdue_actions = [e for e in active_actions if e.get('dueDate') and e['dueDate'] < datetime.now().strftime('%Y-%m-%d')]
 
@@ -611,12 +624,19 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
     run.text = "RAIDD Log Overview"
     set_font(run, size=22, bold=True, color=primary_color)
 
+    def _secondary(active_n, total_n):
+        if raidd_open_only or active_n == total_n:
+            return None
+        return f"{active_n} active"
+
     categories_summary = [
-        ('Risks', len(active_risks), len(risks), '#DC2626'),
-        ('Action Items', len(active_actions), len(actions), '#EA580C'),
-        ('Issues', len(active_issues), len(issues), '#CA8A04'),
-        ('Decisions', len(decisions), len(decisions), '#3B82F6'),
-        ('Dependencies', len(active_deps), len(dependencies), '#8B5CF6'),
+        ('Risks', len(display_risks), _secondary(len(active_risks), len(risks)), '#DC2626'),
+        ('Action Items', len(display_actions), _secondary(len(active_actions), len(actions)), '#EA580C'),
+        ('Issues', len(display_issues), _secondary(len(active_issues), len(issues)), '#CA8A04'),
+        # Decisions have no open/closed lifecycle (statuses are proposed/approved, never
+        # open/in_progress), so they are always shown in full regardless of the active-only setting.
+        ('Decisions', len(decisions), None, '#3B82F6'),
+        ('Dependencies', len(display_deps), _secondary(len(active_deps), len(dependencies)), '#8B5CF6'),
     ]
 
     card_y = Inches(0.95)
@@ -625,7 +645,7 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
     card_gap = Inches(0.25)
     start_x = Inches(0.5)
 
-    for idx, (cat_name, active_count, total_count, accent) in enumerate(categories_summary):
+    for idx, (cat_name, active_count, secondary, accent) in enumerate(categories_summary):
         x = start_x + idx * (card_w + card_gap)
         card_bg = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, card_y, card_w, card_h)
         card_bg.fill.solid()
@@ -653,9 +673,9 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         lrun = lp.add_run()
         lrun.text = f"{cat_name}"
         set_font(lrun, size=10, bold=True, color='#333333')
-        if total_count != active_count:
+        if secondary:
             lrun2 = lp.add_run()
-            lrun2.text = f"  ({total_count} total)"
+            lrun2.text = f"  ({secondary})"
             set_font(lrun2, size=8, color='#888888')
 
     alert_y = card_y + card_h + Inches(0.3)
@@ -680,18 +700,73 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
             set_font(arun, size=10, bold=True, color=color)
         alert_y += Inches(0.15) * len(alerts) + Inches(0.3)
 
-    raidd_section_text = ''
-    for key in sections:
-        if 'raidd' in key.lower() or 'risk' in key.lower():
-            raidd_section_text = sections[key]
-            break
+    # Summary page lists CRITICAL items only — the per-category detail slides that
+    # follow contain every open item regardless of criticality.
+    type_labels = {
+        'risk': 'Risk', 'issue': 'Issue', 'action_item': 'Action Item', 'dependency': 'Dependency',
+    }
+    critical_groups = [
+        ('risk', display_risks),
+        ('issue', display_issues),
+        ('action_item', display_actions),
+        ('dependency', display_deps),
+    ]
+    critical_items = [
+        (type_key, e)
+        for type_key, group in critical_groups
+        for e in group
+        if e.get('priority') == 'critical'
+    ]
 
-    if raidd_section_text:
-        narrative_y = alert_y if alerts else card_y + card_h + Inches(0.3)
-        narrative_box = slide.shapes.add_textbox(Inches(0.5), narrative_y, Inches(12.3), Inches(7.0 - narrative_y / Inches(1)))
-        ntf = narrative_box.text_frame
-        ntf.word_wrap = True
-        render_markdown_text(ntf, raidd_section_text, primary_color, size=9)
+    crit_y = alert_y if alerts else card_y + card_h + Inches(0.3)
+    crit_box = slide.shapes.add_textbox(Inches(0.5), crit_y, Inches(12.3), Inches(7.0 - crit_y / Inches(1)))
+    ctf = crit_box.text_frame
+    ctf.word_wrap = True
+    ctf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+
+    header_p = ctf.paragraphs[0]
+    header_run = header_p.add_run()
+    header_run.text = "Critical Items Requiring Attention"
+    set_font(header_run, size=13, bold=True, color=primary_color)
+
+    if critical_items:
+        for type_key, e in critical_items:
+            ref = (e.get('refNumber', '') or '').strip()
+            title = (e.get('title', '') or '').strip()
+            label = type_labels.get(type_key, type_key.replace('_', ' ').title())
+
+            ip = ctf.add_paragraph()
+            ip.space_before = Pt(4)
+            ref_run = ip.add_run()
+            ref_run.text = f"{ref + ' ' if ref else ''}{title}  "
+            set_font(ref_run, size=10, bold=True, color='#222222')
+            tag_run = ip.add_run()
+            tag_run.text = f"[{label}]"
+            set_font(tag_run, size=9, bold=True, color=PRIORITY_COLORS.get('critical', '#DC2626'))
+
+            detail = _truncate((e.get('mitigationPlan', '') or '').strip(), 160)
+            meta_parts = []
+            owner = (e.get('ownerName', '') or '').strip()
+            due = (e.get('dueDate', '') or '').strip()
+            if owner:
+                meta_parts.append(f"Owner: {owner}")
+            if due:
+                meta_parts.append(f"Due: {due}")
+            sub_text = detail
+            if meta_parts:
+                sub_text = (sub_text + '  ' if sub_text else '') + ' | '.join(meta_parts)
+            if sub_text:
+                sp = ctf.add_paragraph()
+                sp.space_before = Pt(1)
+                sub_run = sp.add_run()
+                sub_run.text = sub_text
+                set_font(sub_run, size=9, color='#555555')
+    else:
+        np = ctf.add_paragraph()
+        np.space_before = Pt(4)
+        nrun = np.add_run()
+        nrun.text = "No critical items at this time. See the following slides for all open RAIDD items."
+        set_font(nrun, size=10, color='#555555')
 
     # --- Per-category detail slides ---
     max_rows_per_page = 14
