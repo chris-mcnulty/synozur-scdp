@@ -1472,7 +1472,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     try {
       const { projectId } = req.params;
       const user = req.user as any;
-      const { startDate, endDate, style } = req.body;
+      const { startDate, endDate, style, ragStatus = "green", pmNarrative = "" } = req.body;
 
       if (!startDate || !endDate) {
         return res.status(400).json({ message: "startDate and endDate are required" });
@@ -1689,7 +1689,15 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         client_facing: "Write a professional, polished status update suitable for sharing directly with the client. Focus on deliverables, progress, and value delivered. Avoid internal metrics like cost rates or margins. You MUST include a 'Risks, Issues & Key Decisions' section that covers all active Risks, Issues, and recent Decisions from the RAIDD log data provided. List each item with its title, priority, and status. Also include open Action Items and Dependencies that affect the client. Keep the tone positive and confident but do not omit RAIDD entries. Include sections for Progress Summary, Key Accomplishments, Risks Issues & Key Decisions, and Upcoming Activities. Target 500-700 words.",
       };
 
+      const srRagToneInstructions: Record<string, string> = {
+        green: "PROJECT HEALTH: Nominal (Green). Use a confident, positive tone that highlights momentum, achievements, and value delivered.",
+        amber: "PROJECT HEALTH: At Risk (Amber). Use a measured, balanced tone. Acknowledge headwinds and challenges directly. Do NOT use phrases like 'exceptional progress', 'strong momentum', or 'the team is well-positioned'. Be candid about risks and pressures, and make clear what mitigations are in place.",
+        red:   "PROJECT HEALTH: Urgent (Red). Use a frank, direct tone — this project is facing significant challenges. Clearly communicate schedule impacts, escalating risks, and required decisions. Do NOT use phrases like 'exceptional progress', 'the project continues to progress well', 'strong momentum', or any similar optimistic framing. Prioritize transparency about issues, pending decisions (including any pending change orders), and what needs to happen to get back on track.",
+      };
+
       const systemPrompt = `You are a professional consulting project manager writing a status report. ${styleInstructions[reportStyle]}
+
+${srRagToneInstructions[ragStatus] || srRagToneInstructions.green}
 
 Format the output as clean markdown with headers (##), bullet points, and bold text for emphasis. Do not include a title header — the system will add the project name and period.
 
@@ -1752,7 +1760,7 @@ RAIDD LOG — Active Dependencies (${activeDependencies.length}):
 ${dependencySummary}
 
 RAIDD LOG — Decisions This Period (${recentDecisions.length}):
-${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}`;
+${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}${pmNarrative ? `\n\nPM CONTEXT FOR THIS PERIOD (written by the project manager — incorporate and expand this in the narrative):\n${pmNarrative}` : ""}`;
 
       const { aiService, buildGroundingContext } = await import("../services/ai-service.js");
       const srTenantId = (req.user as any)?.tenantId;
@@ -5667,7 +5675,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots, raiddOpenOnly = true } = req.body;
+      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots, raiddOpenOnly = true, ragStatus = "green", pmNarrative = "" } = req.body;
       // templateSlots: per-slot opt-in from the dialog { title?: boolean, section?: boolean, closing?: boolean }
       // Fallback to legacy useBrandedSlides boolean for backward compatibility
       const resolvedSlots = templateSlots ?? (useBrandedSlides === false ? { title: false, section: false, closing: false } : { title: true, section: true, closing: true });
@@ -5953,7 +5961,15 @@ Be thorough and detailed. Target 800-1200 words.`,
 Keep the tone positive, professional, and value-focused. Target 600-900 words.`,
       };
 
+      const ragToneInstructions: Record<string, string> = {
+        green: "PROJECT HEALTH: Nominal (Green). Use a confident, positive tone that highlights momentum, achievements, and value delivered.",
+        amber: "PROJECT HEALTH: At Risk (Amber). Use a measured, balanced tone. Acknowledge headwinds and challenges directly. Do NOT use phrases like 'exceptional progress', 'strong momentum', or 'the team is well-positioned'. Be candid about risks and pressures, and make clear what mitigations are in place.",
+        red:   "PROJECT HEALTH: Urgent (Red). Use a frank, direct tone — this project is facing significant challenges. Clearly communicate schedule impacts, escalating risks, and required decisions. Do NOT use phrases like 'exceptional progress', 'the project continues to progress well', 'strong momentum', or any similar optimistic framing. Prioritize transparency about issues, pending decisions (including any pending change orders), and what needs to happen to get back on track.",
+      };
+
       const systemPrompt = `You are a professional consulting project manager writing a status report that will be exported as a branded PowerPoint presentation. ${pptxStyleInstructions[reportStyle]}
+
+${ragToneInstructions[ragStatus] || ragToneInstructions.green}
 
 Format the output as clean markdown with headers (##), bullet points (- ), and **bold text** for emphasis. Each bullet point under Key Accomplishments and Upcoming Activities MUST have a **bold title** followed by a description.
 
@@ -6052,7 +6068,7 @@ RAIDD LOG — Active Dependencies (${activeDependencies.length}):
 ${dependencySummary}
 
 RAIDD LOG — Decisions This Period (${recentDecisions.length}):
-${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}`;
+${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}${pmNarrative ? `\n\nPM CONTEXT FOR THIS PERIOD (written by the project manager — incorporate and expand this in the narrative):\n${pmNarrative}` : ""}`;
 
       let aiReport = "";
       try {

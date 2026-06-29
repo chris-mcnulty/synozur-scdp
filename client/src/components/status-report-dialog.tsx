@@ -83,6 +83,8 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
   const [templateSlots, setTemplateSlots] = useState({ title: true, section: true, closing: true });
   const [raiddOpenOnly, setRaiddOpenOnly] = useState(true);
+  const [ragStatus, setRagStatus] = useState<"green" | "amber" | "red">("green");
+  const [pmNarrative, setPmNarrative] = useState("");
 
   const { data: tenantSettings } = useQuery<any>({
     queryKey: ['/api/tenant/settings'],
@@ -213,7 +215,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
       const { start, end } = getDateRange();
       const res = await apiRequest(`/api/projects/${projectId}/status-report`, {
         method: "POST",
-        body: JSON.stringify({ startDate: start, endDate: end, style }),
+        body: JSON.stringify({ startDate: start, endDate: end, style, ragStatus, pmNarrative }),
       });
       return res;
     },
@@ -311,6 +313,8 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
           projectPlanFilter,
           templateSlots,
           raiddOpenOnly,
+          ragStatus,
+          pmNarrative,
         }),
         signal: pptxController.signal,
       });
@@ -331,7 +335,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     } finally {
       setIsDownloadingPptx(false);
     }
-  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, raiddOpenOnly, getDateRange, toast]);
+  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, raiddOpenOnly, ragStatus, pmNarrative, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${safeFormat(displayStart, "MMM d")} - ${safeFormat(displayEnd, "MMM d, yyyy")}`;
@@ -402,6 +406,43 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Project Health</Label>
+                <div className="flex gap-2">
+                  {([
+                    { value: "green", label: "Nominal", sublabel: "On track", dot: "bg-green-500", border: "border-green-500 bg-green-50 dark:bg-green-950/30", inactive: "border-border hover:border-green-400" },
+                    { value: "amber", label: "At Risk", sublabel: "Headwinds", dot: "bg-amber-400", border: "border-amber-400 bg-amber-50 dark:bg-amber-950/30", inactive: "border-border hover:border-amber-400" },
+                    { value: "red",   label: "Urgent",  sublabel: "Escalating", dot: "bg-red-500",  border: "border-red-500 bg-red-50 dark:bg-red-950/30",   inactive: "border-border hover:border-red-400" },
+                  ] as const).map(({ value, label, sublabel, dot, border, inactive }) => (
+                    <button
+                      key={value}
+                      onClick={() => setRagStatus(value)}
+                      className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${ragStatus === value ? border : inactive}`}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
+                      <div>
+                        <div className="text-sm font-medium leading-tight">{label}</div>
+                        <div className="text-xs text-muted-foreground leading-tight">{sublabel}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Sets the AI tone — "Urgent" avoids optimistic language like "exceptional progress" when risks are escalating.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">PM Context for this Period</Label>
+                <Textarea
+                  placeholder="Optional context the AI should incorporate — e.g. 'We experienced a 2-week schedule slip due to a scope change. A change order is pending client approval. Avoid overly optimistic language.'"
+                  value={pmNarrative}
+                  onChange={(e) => setPmNarrative(e.target.value)}
+                  className="min-h-[80px] text-sm resize-none"
+                />
+                <p className="text-xs text-muted-foreground">Appears as PM-provided context in the AI prompt. Use it to steer framing, flag sensitivities, or add detail the data doesn't capture.</p>
               </div>
 
               <Separator />
