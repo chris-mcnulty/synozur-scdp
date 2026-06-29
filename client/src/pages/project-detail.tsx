@@ -1289,6 +1289,57 @@ function SortableFillSlotRow({ slot, idx, sel, activeRoleName, assignableUsers, 
   );
 }
 
+// Parse a YYYY-MM-DD string into a UTC date-only value (timezone-safe).
+function toDateOnly(s?: string | null): Date | null {
+  if (!s) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function addDaysISO(iso: string, days: number): string {
+  const base = toDateOnly(iso);
+  if (!base) return iso;
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().split("T")[0];
+}
+
+function daysBetweenISO(startIso: string, endIso: string): number {
+  const a = toDateOnly(startIso);
+  const b = toDateOnly(endIso);
+  if (!a || !b) return 0;
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+// Inclusive duration in weeks (1 decimal). start..end same day = ~0.1wk, 7 days = 1wk.
+function durationWeeks(startIso?: string | null, endIso?: string | null): number | null {
+  if (!startIso || !endIso) return null;
+  const days = daysBetweenISO(startIso, endIso);
+  if (days < 0) return null;
+  return Math.round(((days + 1) / 7) * 10) / 10;
+}
+
+function getMondayOfWeekLocal(d: Date): Date {
+  const x = new Date(d);
+  const day = x.getUTCDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  x.setUTCDate(x.getUTCDate() + diff);
+  x.setUTCHours(0, 0, 0, 0);
+  return x;
+}
+
+// Project-relative week number (Week 1 = kickoff week). Mirrors server/utils/week-date-calculator.ts
+function projectWeekNumber(projectStartIso?: string | null, targetIso?: string | null): number | null {
+  const k = toDateOnly(projectStartIso);
+  const t = toDateOnly(targetIso);
+  if (!k || !t) return null;
+  const km = getMondayOfWeekLocal(k);
+  const tm = getMondayOfWeekLocal(t);
+  const diffWeeks = Math.round((tm.getTime() - km.getTime()) / (86400000 * 7));
+  return diffWeeks + 1;
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
@@ -1376,6 +1427,43 @@ export default function ProjectDetail() {
   // Assignment state
   const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
+  const [assignStart, setAssignStart] = useState<string>("");
+  const [assignEnd, setAssignEnd] = useState<string>("");
+
+  useEffect(() => {
+    if (showAssignmentDialog) {
+      setAssignStart(editingAssignment?.plannedStartDate || "");
+      setAssignEnd(editingAssignment?.plannedEndDate || "");
+    }
+  }, [showAssignmentDialog, editingAssignment]);
+
+  // Changing the start date shifts the end date by the same delta so the
+  // assignment's duration is preserved and the end never lands before the start.
+  const handleAssignStartChange = (newStart: string) => {
+    if (newStart && assignStart && assignEnd) {
+      const delta = daysBetweenISO(assignStart, newStart);
+      if (delta !== 0) setAssignEnd(addDaysISO(assignEnd, delta));
+    } else if (newStart && assignEnd && daysBetweenISO(newStart, assignEnd) < 0) {
+      setAssignEnd(newStart);
+    }
+    setAssignStart(newStart);
+  };
+
+  const handleAssignEndChange = (newEnd: string) => {
+    if (newEnd && assignStart && daysBetweenISO(assignStart, newEnd) < 0) {
+      setAssignEnd(assignStart);
+      return;
+    }
+    setAssignEnd(newEnd);
+  };
+
+  // Editing the duration (in weeks) recomputes the end date from the start.
+  const handleAssignWeeksChange = (val: string) => {
+    const w = parseFloat(val);
+    if (!assignStart || isNaN(w) || w <= 0) return;
+    const days = Math.max(0, Math.round(w * 7) - 1);
+    setAssignEnd(addDaysISO(assignStart, days));
+  };
   const [showBulkReassignDialog, setShowBulkReassignDialog] = useState(false);
   const [pendingReassign, setPendingReassign] = useState<{
     allocationId: string;
@@ -5138,9 +5226,11 @@ export default function ProjectDetail() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {allocation.weekNumber ? 
-                              `Week ${allocation.weekNumber}` : 
-                              '—'
+                            {allocation.plannedStartDate && project?.startDate ?
+                              `Week ${projectWeekNumber(project.startDate, allocation.plannedStartDate)}` :
+                              allocation.weekNumber ?
+                                `Week ${allocation.weekNumber}` :
+                                '—'
                             }
                           </TableCell>
                           <TableCell>
@@ -8779,8 +8869,8 @@ export default function ProjectDetail() {
                 projectStageId: stageIdValue === 'none' ? undefined : stageIdValue || undefined,
                 hours: formData.get('hours') as string,
                 pricingMode,
-                startDate: formData.get('startDate') as string || undefined,
-                endDate: formData.get('endDate') as string || undefined,
+                startDate: assignStart || undefined,
+                endDate: assignEnd || undefined,
                 taskDescription: formData.get('taskDescription') as string || undefined,
                 notes: formData.get('notes') as string || undefined
               };
@@ -8937,7 +9027,8 @@ export default function ProjectDetail() {
                   <Input 
                     name="startDate" 
                     type="date"
-                    defaultValue={editingAssignment?.plannedStartDate}
+                    value={assignStart}
+                    onChange={(e) => handleAssignStartChange(e.target.value)}
                     data-testid="input-start-date"
                   />
                 </div>
@@ -8947,9 +9038,31 @@ export default function ProjectDetail() {
                   <Input 
                     name="endDate" 
                     type="date"
-                    defaultValue={editingAssignment?.plannedEndDate}
+                    value={assignEnd}
+                    min={assignStart || undefined}
+                    onChange={(e) => handleAssignEndChange(e.target.value)}
                     data-testid="input-end-date"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="durationWeeks">Duration (weeks)</Label>
+                  <Input
+                    id="durationWeeks"
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    value={durationWeeks(assignStart, assignEnd) ?? ""}
+                    onChange={(e) => handleAssignWeeksChange(e.target.value)}
+                    disabled={!assignStart}
+                    placeholder={assignStart ? "e.g., 2" : "Set a start date first"}
+                    data-testid="input-duration-weeks"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {assignStart && project?.startDate
+                      ? `Starts in Week ${projectWeekNumber(project.startDate, assignStart)} of the project`
+                      : "Editing weeks adjusts the end date"}
+                  </p>
                 </div>
               </div>
 

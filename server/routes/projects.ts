@@ -4,7 +4,7 @@ import * as osNode from "os";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, type InvoiceBatch } from "@shared/schema";
+import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, projectDeliverables, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, type InvoiceBatch } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, desc, or } from "drizzle-orm";
 import { projectFiltersSchema } from "@shared/pagination";
 import { emailService } from "../services/email-notification.js";
@@ -7678,6 +7678,57 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to delete deliverable" });
+    }
+  });
+
+  // Bulk shift deliverable target dates by a fixed number of days (push a set out together).
+  app.post("/api/projects/:projectId/deliverables/bulk-shift-dates", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { deliverableIds, deltaDays } = req.body as { deliverableIds?: string[]; deltaDays?: number };
+
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!Array.isArray(deliverableIds) || deliverableIds.length === 0) {
+        return res.status(400).json({ message: "deliverableIds is required" });
+      }
+      if (typeof deltaDays !== "number" || !Number.isFinite(deltaDays) || deltaDays === 0) {
+        return res.status(400).json({ message: "A non-zero deltaDays is required" });
+      }
+
+      const all = await storage.getProjectDeliverables(projectId);
+      const targets = all.filter(d => deliverableIds.includes(d.id) && d.targetDate);
+
+      // Timezone-safe date-only shift (parse as UTC midnight, add days in UTC).
+      const shiftDate = (iso: string) => {
+        const d = new Date(new Date(iso).getTime() + deltaDays * 86400000);
+        return d.toISOString().split("T")[0];
+      };
+
+      const updates = targets.map(d => ({
+        id: d.id,
+        oldTargetDate: d.targetDate as string,
+        newTargetDate: shiftDate(d.targetDate as string),
+      }));
+
+      await db.transaction(async (tx) => {
+        for (const u of updates) {
+          await tx.update(projectDeliverables)
+            .set({ targetDate: u.newTargetDate, updatedAt: sql`now()` })
+            .where(and(eq(projectDeliverables.id, u.id), eq(projectDeliverables.projectId, projectId)));
+        }
+      });
+
+      console.log(`[TELEMETRY] deliverables bulk-shift projectId=${projectId} deltaDays=${deltaDays} affected=${updates.length} by=${req.user?.id}`);
+      res.json({ affectedCount: updates.length, deltaDays, updates });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to shift deliverable dates:", error);
+      res.status(500).json({ message: error.message || "Failed to shift deliverable dates" });
     }
   });
 

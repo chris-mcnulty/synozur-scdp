@@ -14,8 +14,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Sparkles, MoreHorizontal, Pencil, Trash2, History, Clock, CheckCircle2, CircleDot, Eye, XCircle, Loader2 } from "lucide-react";
+import { Plus, Sparkles, MoreHorizontal, Pencil, Trash2, History, Clock, CheckCircle2, CircleDot, Eye, XCircle, Loader2, CalendarClock, AlertTriangle, ArrowRight } from "lucide-react";
 import type { ProjectDeliverable } from "@shared/schema";
+
+// Parse a YYYY-MM-DD string into a UTC date-only value (timezone-safe).
+function toDateOnly(iso: string): Date | null {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function addDaysISO(iso: string, days: number): string {
+  const base = toDateOnly(iso);
+  if (!base) return iso;
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().split("T")[0];
+}
+
+function daysBetweenISO(a: string, b: string): number {
+  const da = toDateOnly(a);
+  const db = toDateOnly(b);
+  if (!da || !db) return 0;
+  return Math.round((db.getTime() - da.getTime()) / 86400000);
+}
+
+function fmtDate(iso?: string | null): string {
+  return iso ? new Date(iso + "T00:00:00").toLocaleDateString() : "—";
+}
 
 interface DeliverablesTabProps {
   projectId: string;
@@ -62,6 +88,12 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
   const [formTargetDate, setFormTargetDate] = useState("");
   const [formDeliveredDate, setFormDeliveredDate] = useState("");
   const [formAcceptanceNotes, setFormAcceptanceNotes] = useState("");
+  const [formEpicId, setFormEpicId] = useState<string>("none");
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showPushDialog, setShowPushDialog] = useState(false);
+  const [pushAnchorId, setPushAnchorId] = useState<string>("");
+  const [pushNewDate, setPushNewDate] = useState<string>("");
 
   const [narrativeText, setNarrativeText] = useState("");
   const [candidates, setCandidates] = useState<any[]>([]);
@@ -78,6 +110,20 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
 
   const { data: allUsers = [] } = useQuery<{ id: string; name: string }[]>({
     queryKey: ['/api/users'],
+  });
+
+  const { data: epics = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['/api/projects', projectId, 'epics'],
+    queryFn: () => fetch(`/api/projects/${projectId}/epics`, {
+      headers: { "X-Session-Id": localStorage.getItem("sessionId") || "" },
+    }).then(r => r.json()),
+  });
+
+  const { data: milestones = [] } = useQuery<any[]>({
+    queryKey: ['/api/projects', projectId, 'milestones'],
+    queryFn: () => fetch(`/api/projects/${projectId}/milestones`, {
+      headers: { "X-Session-Id": localStorage.getItem("sessionId") || "" },
+    }).then(r => r.json()),
   });
 
   const teamMembers = projectTeamMembers.length > 0 ? projectTeamMembers : allUsers;
@@ -125,6 +171,18 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
     onError: (err: any) => toast({ title: "Failed to create deliverables", description: err.message, variant: "destructive" }),
   });
 
+  const bulkShiftMutation = useMutation({
+    mutationFn: (data: { deliverableIds: string[]; deltaDays: number }) =>
+      apiRequest(`/api/projects/${projectId}/deliverables/bulk-shift-dates`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'deliverables'] });
+      toast({ title: `${res.affectedCount} deliverable(s) pushed out` });
+      closePushDialog();
+      setSelectedIds(new Set());
+    },
+    onError: (err: any) => toast({ title: "Failed to push dates", description: err.message, variant: "destructive" }),
+  });
+
   function closeDialog() {
     setShowAddDialog(false);
     setEditingDeliverable(null);
@@ -135,6 +193,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
     setFormTargetDate("");
     setFormDeliveredDate("");
     setFormAcceptanceNotes("");
+    setFormEpicId("none");
   }
 
   function openEdit(d: ProjectDeliverable & { ownerName?: string }) {
@@ -146,7 +205,47 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
     setFormTargetDate(d.targetDate || "");
     setFormDeliveredDate(d.deliveredDate || "");
     setFormAcceptanceNotes(d.acceptanceNotes || "");
+    setFormEpicId(d.epicId || "none");
     setShowAddDialog(true);
+  }
+
+  const epicName = (epicId?: string | null) => epics.find(e => e.id === epicId)?.name || null;
+
+  // A non-payment (delivery) milestone tied to an epic is that phase's deadline.
+  // If several exist, the latest target date is the phase's final deadline.
+  const phaseMilestoneForEpic = (epicId?: string | null) => {
+    if (!epicId) return null;
+    const matches = milestones
+      .filter((m: any) => m.projectEpicId === epicId && !m.isPaymentMilestone && m.targetDate)
+      .sort((a: any, b: any) => daysBetweenISO(a.targetDate, b.targetDate));
+    return matches.length ? matches[matches.length - 1] : null;
+  };
+
+  function openPushDialog(ids: Set<string>) {
+    if (ids.size === 0) return;
+    setSelectedIds(ids);
+    const dated = deliverables
+      .filter(d => ids.has(d.id) && d.targetDate)
+      .sort((a, b) => (a.targetDate! < b.targetDate! ? -1 : 1));
+    const anchor = dated[0];
+    setPushAnchorId(anchor?.id || "");
+    setPushNewDate(anchor?.targetDate || "");
+    setShowPushDialog(true);
+  }
+
+  function closePushDialog() {
+    setShowPushDialog(false);
+    setPushAnchorId("");
+    setPushNewDate("");
+  }
+
+  function pushEntirePhase(epicId: string) {
+    const ids = new Set(deliverables.filter(d => d.epicId === epicId).map(d => d.id));
+    if (ids.size === 0) {
+      toast({ title: "No deliverables in that phase yet", variant: "destructive" });
+      return;
+    }
+    openPushDialog(ids);
   }
 
   function handleSave() {
@@ -166,6 +265,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
       targetDate: formTargetDate || null,
       deliveredDate: formDeliveredDate || null,
       acceptanceNotes: formAcceptanceNotes.trim() || null,
+      epicId: formEpicId === "none" ? null : formEpicId,
     };
     if (editingDeliverable) {
       updateMutation.mutate({ id: editingDeliverable.id, data: payload });
@@ -229,6 +329,23 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
     overdue: deliverables.filter(d => d.targetDate && d.status !== "accepted" && d.status !== "rejected" && new Date(d.targetDate) < new Date()).length,
   };
 
+  const epicsWithDeliverables = epics.filter(e => deliverables.some(d => d.epicId === e.id));
+
+  const pushAnchor = deliverables.find(d => d.id === pushAnchorId);
+  const pushDelta = pushAnchor?.targetDate && pushNewDate
+    ? daysBetweenISO(pushAnchor.targetDate, pushNewDate)
+    : 0;
+  const pushPreview = deliverables
+    .filter(d => selectedIds.has(d.id))
+    .map(d => {
+      const newDate = d.targetDate ? addDaysISO(d.targetDate, pushDelta) : null;
+      const ms = phaseMilestoneForEpic(d.epicId);
+      const breachesMilestone = !!(newDate && ms?.targetDate && newDate > ms.targetDate);
+      return { d, newDate, ms, breachesMilestone };
+    });
+  const pushWarnings = pushPreview.filter(p => p.breachesMilestone);
+  const pushNoDateCount = pushPreview.filter(p => !p.d.targetDate).length;
+
   return (
     <div className="space-y-6">
       <Card>
@@ -273,6 +390,32 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                 ))}
               </SelectContent>
             </Select>
+
+            {!embedReadonly && (
+              <div className="ml-auto flex items-center gap-2">
+                {selectedIds.size > 0 && (
+                  <Button size="sm" variant="default" onClick={() => openPushDialog(selectedIds)} data-testid="button-push-selected">
+                    <CalendarClock className="h-4 w-4 mr-1" /> Push {selectedIds.size} selected
+                  </Button>
+                )}
+                {epicsWithDeliverables.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" data-testid="button-push-phase">
+                        <CalendarClock className="h-4 w-4 mr-1" /> Push entire phase
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {epicsWithDeliverables.map(e => (
+                        <DropdownMenuItem key={e.id} onClick={() => pushEntirePhase(e.id)}>
+                          {e.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            )}
           </div>
 
           {isLoading ? (
@@ -286,8 +429,23 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
               <Table>
                 <TableHeader>
                   <TableRow className="dark:border-gray-700">
+                    {!embedReadonly && (
+                      <TableHead className="w-8">
+                        <Checkbox
+                          checked={filtered.length > 0 && filtered.every(d => selectedIds.has(d.id))}
+                          onCheckedChange={(c) => {
+                            const next = new Set(selectedIds);
+                            if (c) filtered.forEach(d => next.add(d.id));
+                            else filtered.forEach(d => next.delete(d.id));
+                            setSelectedIds(next);
+                          }}
+                          data-testid="checkbox-select-all-deliverables"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead className="w-8"></TableHead>
                     <TableHead>Deliverable</TableHead>
+                    <TableHead>Phase</TableHead>
                     <TableHead>Owner</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Target Date</TableHead>
@@ -300,10 +458,26 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                     const isOverdue = d.targetDate && d.status !== "accepted" && d.status !== "rejected" && new Date(d.targetDate) < new Date();
                     return (
                       <TableRow key={d.id} className={`dark:border-gray-700 ${isOverdue ? 'bg-red-50 dark:bg-red-950/20' : ''}`}>
+                        {!embedReadonly && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedIds.has(d.id)}
+                              onCheckedChange={(c) => {
+                                const next = new Set(selectedIds);
+                                if (c) next.add(d.id); else next.delete(d.id);
+                                setSelectedIds(next);
+                              }}
+                              data-testid={`checkbox-deliverable-${d.id}`}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell><StatusIcon status={d.status} /></TableCell>
                         <TableCell>
                           <div className="font-medium">{d.name}</div>
                           {d.description && <div className="text-xs text-muted-foreground line-clamp-1">{d.description}</div>}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {epicName(d.epicId) ? <Badge variant="outline">{epicName(d.epicId)}</Badge> : <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="text-sm">{d.ownerName || "—"}</TableCell>
                         <TableCell><StatusBadge status={d.status} /></TableCell>
@@ -375,6 +549,22 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                 </SelectContent>
               </Select>
             </div>
+            {epics.length > 0 && (
+              <div>
+                <Label>Phase</Label>
+                <Select value={formEpicId} onValueChange={setFormEpicId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="No phase" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No phase</SelectItem>
+                    {epics.map(e => (
+                      <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Status</Label>
@@ -487,6 +677,114 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPushDialog} onOpenChange={(open) => { if (!open) closePushDialog(); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5" /> Push Deliverable Dates</DialogTitle>
+            <DialogDescription>
+              Pick a new target date for one deliverable. The same shift is applied to all selected deliverables so they move together.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Anchor deliverable</Label>
+                <Select value={pushAnchorId} onValueChange={(val) => {
+                  setPushAnchorId(val);
+                  const a = deliverables.find(d => d.id === val);
+                  setPushNewDate(a?.targetDate || "");
+                }}>
+                  <SelectTrigger data-testid="select-push-anchor">
+                    <SelectValue placeholder="Select a deliverable..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pushPreview.filter(p => p.d.targetDate).map(p => (
+                      <SelectItem key={p.d.id} value={p.d.id}>{p.d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>New target date</Label>
+                <Input
+                  type="date"
+                  value={pushNewDate}
+                  onChange={e => setPushNewDate(e.target.value)}
+                  disabled={!pushAnchorId}
+                  data-testid="input-push-new-date"
+                />
+              </div>
+            </div>
+
+            <div className="text-sm text-muted-foreground">
+              {pushDelta === 0
+                ? "Choose a new date to see the shift."
+                : `Shifting ${pushPreview.filter(p => p.d.targetDate).length} deliverable(s) by ${pushDelta > 0 ? "+" : ""}${pushDelta} day(s) (${(Math.abs(pushDelta) / 7).toFixed(1)} weeks ${pushDelta > 0 ? "later" : "earlier"}).`}
+              {pushNoDateCount > 0 && ` ${pushNoDateCount} selected deliverable(s) have no target date and will be skipped.`}
+            </div>
+
+            {pushWarnings.length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-medium text-sm">
+                  <AlertTriangle className="h-4 w-4" /> {pushWarnings.length} deliverable(s) will land after their phase deadline
+                </div>
+                <ul className="text-xs text-amber-800 dark:text-amber-200 space-y-1 list-disc pl-5">
+                  {pushWarnings.map(w => (
+                    <li key={w.d.id}>
+                      <span className="font-medium">{w.d.name}</span> → {fmtDate(w.newDate)} is past “{w.ms?.name}” (phase deadline {fmtDate(w.ms?.targetDate)})
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-xs text-amber-700 dark:text-amber-300">
+                  You can still proceed — consider also moving the phase milestone date to match.
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-md border dark:border-gray-700 max-h-[300px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="dark:border-gray-700">
+                    <TableHead>Deliverable</TableHead>
+                    <TableHead>Phase</TableHead>
+                    <TableHead>Current</TableHead>
+                    <TableHead></TableHead>
+                    <TableHead>New</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pushPreview.map(p => (
+                    <TableRow key={p.d.id} className={`dark:border-gray-700 ${p.breachesMilestone ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
+                      <TableCell className="text-sm font-medium">{p.d.name}</TableCell>
+                      <TableCell className="text-sm">{epicName(p.d.epicId) || "—"}</TableCell>
+                      <TableCell className="text-sm">{fmtDate(p.d.targetDate)}</TableCell>
+                      <TableCell className="text-muted-foreground">{p.d.targetDate ? <ArrowRight className="h-4 w-4" /> : null}</TableCell>
+                      <TableCell className={`text-sm ${p.breachesMilestone ? 'text-amber-700 dark:text-amber-300 font-medium' : ''}`}>
+                        {p.d.targetDate ? fmtDate(p.newDate) : <span className="text-muted-foreground">no date</span>}
+                        {p.breachesMilestone && <AlertTriangle className="inline h-3.5 w-3.5 ml-1" />}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closePushDialog}>Cancel</Button>
+            <Button
+              onClick={() => bulkShiftMutation.mutate({ deliverableIds: Array.from(selectedIds), deltaDays: pushDelta })}
+              disabled={pushDelta === 0 || bulkShiftMutation.isPending}
+              data-testid="button-confirm-push"
+            >
+              {bulkShiftMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              Push {pushPreview.filter(p => p.d.targetDate).length} deliverable(s)
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
