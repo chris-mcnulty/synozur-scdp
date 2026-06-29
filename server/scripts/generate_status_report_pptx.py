@@ -1611,17 +1611,6 @@ def create_deliverables_slide(prs, data, primary_color, secondary_color):
     cols = 5
     col_widths = [Inches(4.0), Inches(2.0), Inches(1.8), Inches(2.5), Inches(2.5)]
     table_top = Inches(1.4)
-    max_rows = min(len(deliverables), 15)
-    rows = max_rows + 1
-
-    table_shape = slide.shapes.add_table(rows, cols, Inches(0.3), table_top, sum(col_widths), Inches(0.35 * rows))
-    table = table_shape.table
-    for i, w in enumerate(col_widths):
-        table.columns[i].width = w
-
-    headers = ['Deliverable', 'Owner', 'Status', 'Target Date', 'Delivered Date']
-    for i, h in enumerate(headers):
-        set_cell_text(table.cell(0, i), h, size=9, bold=True, color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
 
     status_colors = {
         'accepted': '#22C55E',
@@ -1631,12 +1620,73 @@ def create_deliverables_slide(prs, data, primary_color, secondary_color):
         'rejected': '#EF4444',
     }
 
-    for row_idx, d in enumerate(deliverables[:max_rows]):
-        r = row_idx + 1
-        bg = '#FFFFFF' if r % 2 == 1 else '#F8F8FC'
+    # Group deliverables by phase (epic), preserving first-seen order; unassigned last.
+    phase_order = []
+    phase_groups = {}
+    for d in deliverables:
+        key = d.get('epicId') or '__none__'
+        if key not in phase_groups:
+            phase_groups[key] = {
+                'name': d.get('epicName') or 'Unassigned',
+                'items': [],
+            }
+            phase_order.append(key)
+    for d in deliverables:
+        phase_groups[d.get('epicId') or '__none__']['items'].append(d)
+    # Push the unassigned group to the end so real phases lead.
+    if '__none__' in phase_order:
+        phase_order = [k for k in phase_order if k != '__none__'] + ['__none__']
+
+    # Build the flat list of body rows (group headers + item rows), capped to fit the slide.
+    MAX_BODY_ROWS = 17
+    body = []  # each item: ('phase', name) or ('item', deliverable)
+    shown_items = 0
+    truncated = False
+    for key in phase_order:
+        group = phase_groups[key]
+        if len(body) + 1 >= MAX_BODY_ROWS:
+            truncated = True
+            break
+        body.append(('phase', group['name']))
+        for d in group['items']:
+            if len(body) >= MAX_BODY_ROWS:
+                truncated = True
+                break
+            body.append(('item', d))
+            shown_items += 1
+        if truncated:
+            break
+
+    rows = len(body) + 1  # +1 for column headers
+    table_shape = slide.shapes.add_table(rows, cols, Inches(0.3), table_top, sum(col_widths), Inches(0.32 * rows))
+    table = table_shape.table
+    for i, w in enumerate(col_widths):
+        table.columns[i].width = w
+
+    headers = ['Deliverable', 'Owner', 'Status', 'Target Date', 'Delivered Date']
+    for i, h in enumerate(headers):
+        set_cell_text(table.cell(0, i), h, size=9, bold=True, color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
+
+    alt = 0
+    for idx, (kind, payload) in enumerate(body):
+        r = idx + 1
+        if kind == 'phase':
+            # Full-width phase header row.
+            merged = table.cell(r, 0)
+            merged.merge(table.cell(r, cols - 1))
+            phase_name = payload
+            if len(phase_name) > 70:
+                phase_name = phase_name[:67] + '...'
+            set_cell_text(merged, phase_name, size=9, bold=True, color=primary_color, bg_color='#ECE6F8', alignment=PP_ALIGN.LEFT)
+            alt = 0
+            continue
+
+        d = payload
+        alt += 1
+        bg = '#FFFFFF' if alt % 2 == 1 else '#F8F8FC'
         name = d.get('name', '')
-        if len(name) > 50:
-            name = name[:47] + '...'
+        if len(name) > 48:
+            name = name[:45] + '...'
         set_cell_text(table.cell(r, 0), name, size=8, bg_color=bg)
         set_cell_text(table.cell(r, 1), d.get('ownerName', ''), size=8, bg_color=bg)
 
@@ -1648,12 +1698,12 @@ def create_deliverables_slide(prs, data, primary_color, secondary_color):
         set_cell_text(table.cell(r, 3), d.get('targetDate', ''), size=8, bg_color=bg)
         set_cell_text(table.cell(r, 4), d.get('deliveredDate', ''), size=8, bg_color=bg)
 
-    if len(deliverables) > max_rows:
+    if truncated or shown_items < len(deliverables):
         note_box = slide.shapes.add_textbox(Inches(0.5), Inches(7.0), Inches(12), Inches(0.3))
         ntf = note_box.text_frame
         np = ntf.paragraphs[0]
         nrun = np.add_run()
-        nrun.text = f"Showing {max_rows} of {len(deliverables)} deliverables."
+        nrun.text = f"Showing {shown_items} of {len(deliverables)} deliverables."
         set_font(nrun, size=8, italic=True, color='#999999')
 
     return slide

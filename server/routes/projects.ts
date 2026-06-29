@@ -6186,14 +6186,21 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         })),
         raidd: raiddData,
         raiddOpenOnly,
-        deliverables: pptxDeliverables.map((d: any) => ({
-          name: d.name,
-          status: d.status || 'not-started',
-          ownerName: d.ownerName || '',
-          targetDate: d.targetDate || '',
-          deliveredDate: d.deliveredDate || '',
-          description: d.description || '',
-        })),
+        deliverables: pptxDeliverables.map((d: any) => {
+          const epic = epics.find((e: any) => e.id === d.epicId);
+          const stage = allStages.find((s: any) => s.id === d.stageId);
+          return {
+            name: d.name,
+            status: d.status || 'not-started',
+            ownerName: d.ownerName || '',
+            targetDate: d.targetDate || '',
+            deliveredDate: d.deliveredDate || '',
+            description: d.description || '',
+            epicId: d.epicId || '',
+            epicName: epic?.name || '',
+            stageName: stage?.name || '',
+          };
+        }),
         metrics: {
           totalHours: totalHours.toFixed(1),
           billableHours: totalBillableHours.toFixed(1),
