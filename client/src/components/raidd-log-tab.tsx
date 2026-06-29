@@ -150,7 +150,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
   const { toast } = useToast();
   const { isReadonly: embedReadonly } = useEmbed();
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingEntry, setEditingEntry] = useState<RaiddEntry | null>(null);
@@ -187,10 +187,9 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
     if (typeFilter !== "all") params.set("type", typeFilter);
-    if (statusFilter !== "all") params.set("status", statusFilter);
     if (priorityFilter !== "all") params.set("priority", priorityFilter);
     return params.toString();
-  }, [typeFilter, statusFilter, priorityFilter]);
+  }, [typeFilter, priorityFilter]);
 
   const listQueryKey = [`/api/projects/${projectId}/raidd${queryParams ? `?${queryParams}` : ""}`];
 
@@ -213,6 +212,9 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
     queryKey: ["/api/raidd", expandedEntryId],
     enabled: !!expandedEntryId,
   });
+
+  const toggleStatus = (s: string) =>
+    setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
 
   const sortedEntries = useMemo(() => {
     const sorted = [...entries];
@@ -237,6 +239,11 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
     });
     return sorted;
   }, [entries, sortField, sortDir]);
+
+  const filteredEntries = useMemo(() => {
+    if (statusFilter.length === 0) return sortedEntries;
+    return sortedEntries.filter(e => statusFilter.includes(e.status));
+  }, [sortedEntries, statusFilter]);
 
   const summaryCounts = useMemo(() => {
     const openEntries = allEntries.filter(e => e.status === "open" || e.status === "in_progress");
@@ -627,17 +634,55 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
               </Button>
             ))}
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px] h-7 text-xs">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1 min-w-[140px] justify-between">
+                <span className="truncate">
+                  {statusFilter.length === 0
+                    ? "All Statuses"
+                    : statusFilter.length === 1
+                    ? formatLabel(statusFilter[0])
+                    : `${statusFilter.length} statuses`}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem
+                className="text-xs cursor-pointer"
+                onSelect={e => { e.preventDefault(); setStatusFilter([]); }}
+              >
+                <span className={`mr-2 h-3 w-3 rounded-sm border flex items-center justify-center ${statusFilter.length === 0 ? "bg-primary border-primary" : "border-input"}`}>
+                  {statusFilter.length === 0 && <span className="text-primary-foreground text-[8px] font-bold">✓</span>}
+                </span>
+                All Statuses
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-xs cursor-pointer font-medium"
+                onSelect={e => { e.preventDefault(); setStatusFilter(["open", "in_progress"]); }}
+              >
+                <span className={`mr-2 h-3 w-3 rounded-sm border flex items-center justify-center ${statusFilter.length === 2 && statusFilter.includes("open") && statusFilter.includes("in_progress") ? "bg-primary border-primary" : "border-input"}`}>
+                  {statusFilter.length === 2 && statusFilter.includes("open") && statusFilter.includes("in_progress") && <span className="text-primary-foreground text-[8px] font-bold">✓</span>}
+                </span>
+                Active Items
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               {RAIDD_STATUSES.map(s => (
-                <SelectItem key={s} value={s}>{formatLabel(s)}</SelectItem>
+                <DropdownMenuItem
+                  key={s}
+                  className="text-xs cursor-pointer"
+                  onSelect={e => { e.preventDefault(); toggleStatus(s); }}
+                >
+                  <Checkbox
+                    checked={statusFilter.includes(s)}
+                    className="mr-2 h-3 w-3"
+                    onCheckedChange={() => toggleStatus(s)}
+                  />
+                  {formatLabel(s)}
+                </DropdownMenuItem>
               ))}
-            </SelectContent>
-          </Select>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
             <SelectTrigger className="w-[130px] h-7 text-xs">
               <SelectValue placeholder="Priority" />
@@ -664,7 +709,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
           <div className="space-y-2">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
           </div>
-        ) : sortedEntries.length === 0 ? (
+        ) : filteredEntries.length === 0 ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">
             <Shield className="h-10 w-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium">No RAIDD entries found</p>
@@ -698,7 +743,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedEntries.map(entry => {
+                {filteredEntries.map(entry => {
                   const isExpanded = expandedEntryId === entry.id;
                   return (
                     <Fragment key={entry.id}>
