@@ -6296,6 +6296,13 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
               milestones: e.milestones,
             }));
 
+          paymentMilestones.sort((a, b) => {
+            if (!a.targetDate && !b.targetDate) return 0;
+            if (!a.targetDate) return 1;
+            if (!b.targetDate) return -1;
+            return a.targetDate < b.targetDate ? -1 : a.targetDate > b.targetDate ? 1 : 0;
+          });
+
           return { epicGroups, unlinkedMilestones, paymentMilestones };
         })(),
       };
