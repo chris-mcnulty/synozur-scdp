@@ -1857,6 +1857,79 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
 
+  // --- Bulk reschedule (push out) multiple assignments together ---
+  const [selectedAllocIds, setSelectedAllocIds] = useState<Set<string>>(new Set());
+  const [showAllocPushDialog, setShowAllocPushDialog] = useState(false);
+  const [allocPushAnchorId, setAllocPushAnchorId] = useState<string>("");
+  const [allocPushNewDate, setAllocPushNewDate] = useState<string>("");
+
+  const toggleAllocSelected = (allocId: string) => {
+    setSelectedAllocIds((prev) => {
+      const next = new Set(prev);
+      next.has(allocId) ? next.delete(allocId) : next.add(allocId);
+      return next;
+    });
+  };
+
+  const openAllocPushDialog = () => {
+    const first = allocations.find(
+      (a: any) => selectedAllocIds.has(a.id) && a.plannedStartDate
+    ) || allocations.find((a: any) => selectedAllocIds.has(a.id));
+    setAllocPushAnchorId(first?.id || "");
+    setAllocPushNewDate("");
+    setShowAllocPushDialog(true);
+  };
+
+  const allocPushAnchor = allocations.find((a: any) => a.id === allocPushAnchorId);
+  const allocAnchorRef = allocPushAnchor?.plannedStartDate || allocPushAnchor?.plannedEndDate || null;
+  const allocAnchorUsesEndDate = !allocPushAnchor?.plannedStartDate && !!allocPushAnchor?.plannedEndDate;
+  const allocPushDelta = allocAnchorRef && allocPushNewDate
+    ? daysBetweenISO(allocAnchorRef.split("T")[0], allocPushNewDate)
+    : 0;
+
+  // Clear any pending selection/dialog state when switching projects
+  useEffect(() => {
+    setSelectedAllocIds(new Set());
+    setShowAllocPushDialog(false);
+    setAllocPushAnchorId("");
+    setAllocPushNewDate("");
+  }, [id]);
+
+  const bulkShiftAllocationsMutation = useMutation({
+    mutationFn: (data: { allocationIds: string[]; deltaDays: number }) =>
+      apiRequest(`/api/projects/${id}/allocations/bulk-shift-dates`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      toast({ title: `${res.affectedCount} assignment(s) pushed out` });
+      setShowAllocPushDialog(false);
+      setSelectedAllocIds(new Set());
+    },
+    onError: (err: any) => toast({ title: "Failed to push assignments", description: err.message, variant: "destructive" }),
+  });
+
+  const visibleAllocations = allocations.filter((allocation: any) => {
+    if (allocationStatusFilter !== 'all' && allocation.status !== allocationStatusFilter) return false;
+    if (allocationResourceFilter !== 'all') {
+      const resourceId = allocation.person?.id || allocation.resourceName;
+      if (resourceId !== allocationResourceFilter) return false;
+    }
+    if (allocationStageFilter !== 'all' && allocation.stage?.id !== allocationStageFilter) return false;
+    if (allocationRoleFilter !== 'all' && allocation.roleId !== allocationRoleFilter) return false;
+    if (allocationAssignedFilter === 'assigned' && !allocation.personId) return false;
+    if (allocationAssignedFilter === 'unassigned' && allocation.personId) return false;
+    if (allocationSearchQuery) {
+      const q = allocationSearchQuery.toLowerCase();
+      const personName = (allocation.person?.name || allocation.resourceName || '').toLowerCase();
+      const roleName = (allocation.role?.name || '').toLowerCase();
+      const roleInstance = (allocation.roleInstanceLabel || '').toLowerCase();
+      const epicName = (allocation.epic?.name || '').toLowerCase();
+      const stageName = (allocation.stage?.name || '').toLowerCase();
+      const taskDesc = (allocation.taskDescription || '').toLowerCase();
+      if (!personName.includes(q) && !roleName.includes(q) && !roleInstance.includes(q) && !epicName.includes(q) && !stageName.includes(q) && !taskDesc.includes(q)) return false;
+    }
+    return true;
+  });
+
   // Project engagements query - fetch team member engagement status
   const { data: engagements = [], isLoading: engagementsLoading } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/engagements`],
@@ -5085,6 +5158,27 @@ export default function ProjectDetail() {
                     Save as default view
                   </Button>
                 </div>
+                {!embedReadonly && selectedAllocIds.size > 0 && (
+                  <div className="flex items-center gap-3 mb-3 p-2 rounded-md bg-primary/5 border border-primary/20">
+                    <span className="text-sm font-medium">{selectedAllocIds.size} selected</span>
+                    <Button
+                      size="sm"
+                      onClick={openAllocPushDialog}
+                      data-testid="button-push-selected-allocations"
+                    >
+                      <CalendarClock className="w-3 h-3 mr-1" />
+                      Push selected out
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setSelectedAllocIds(new Set())}
+                      data-testid="button-clear-allocation-selection"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
                 {allocationsLoading ? (
                   <div className="space-y-4">
                     {[1, 2, 3].map((i) => (
@@ -5103,6 +5197,25 @@ export default function ProjectDetail() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {!embedReadonly && (
+                          <TableHead className="w-10">
+                            <Checkbox
+                              checked={visibleAllocations.length > 0 && visibleAllocations.every((a: any) => selectedAllocIds.has(a.id))}
+                              onCheckedChange={(checked) => {
+                                setSelectedAllocIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (checked) {
+                                    visibleAllocations.forEach((a: any) => next.add(a.id));
+                                  } else {
+                                    visibleAllocations.forEach((a: any) => next.delete(a.id));
+                                  }
+                                  return next;
+                                });
+                              }}
+                              data-testid="checkbox-select-all-allocations"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead>Resource</TableHead>
                         <TableHead>Task/Activity</TableHead>
                         <TableHead>Role</TableHead>
@@ -5118,29 +5231,7 @@ export default function ProjectDetail() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allocations
-                        .filter((allocation: any) => {
-                          if (allocationStatusFilter !== 'all' && allocation.status !== allocationStatusFilter) return false;
-                          if (allocationResourceFilter !== 'all') {
-                            const resourceId = allocation.person?.id || allocation.resourceName;
-                            if (resourceId !== allocationResourceFilter) return false;
-                          }
-                          if (allocationStageFilter !== 'all' && allocation.stage?.id !== allocationStageFilter) return false;
-                          if (allocationRoleFilter !== 'all' && allocation.roleId !== allocationRoleFilter) return false;
-                          if (allocationAssignedFilter === 'assigned' && !allocation.personId) return false;
-                          if (allocationAssignedFilter === 'unassigned' && allocation.personId) return false;
-                          if (allocationSearchQuery) {
-                            const q = allocationSearchQuery.toLowerCase();
-                            const personName = (allocation.person?.name || allocation.resourceName || '').toLowerCase();
-                            const roleName = (allocation.role?.name || '').toLowerCase();
-                            const roleInstance = (allocation.roleInstanceLabel || '').toLowerCase();
-                            const epicName = (allocation.epic?.name || '').toLowerCase();
-                            const stageName = (allocation.stage?.name || '').toLowerCase();
-                            const taskDesc = (allocation.taskDescription || '').toLowerCase();
-                            if (!personName.includes(q) && !roleName.includes(q) && !roleInstance.includes(q) && !epicName.includes(q) && !stageName.includes(q) && !taskDesc.includes(q)) return false;
-                          }
-                          return true;
-                        })
+                      {visibleAllocations
                         .map((allocation: any) => (
                         <TableRow 
                           key={allocation.id} 
@@ -5156,6 +5247,15 @@ export default function ProjectDetail() {
                             'ring-2 ring-primary ring-offset-2 bg-primary/5 animate-pulse' : ''
                           }
                         >
+                          {!embedReadonly && (
+                            <TableCell className="w-10">
+                              <Checkbox
+                                checked={selectedAllocIds.has(allocation.id)}
+                                onCheckedChange={() => toggleAllocSelected(allocation.id)}
+                                data-testid={`checkbox-allocation-${allocation.id}`}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             {allocation.person ? (
                               <div className="flex items-center gap-2">
@@ -5355,6 +5455,75 @@ export default function ProjectDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Bulk reschedule (push out) dialog for selected assignments */}
+            <Dialog open={showAllocPushDialog} onOpenChange={setShowAllocPushDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Push out {selectedAllocIds.size} assignment(s)</DialogTitle>
+                  <DialogDescription>
+                    Pick one assignment as the anchor and choose its new start date. Every selected assignment shifts by the same number of days, keeping its duration.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Anchor assignment</Label>
+                    <Select value={allocPushAnchorId} onValueChange={setAllocPushAnchorId}>
+                      <SelectTrigger data-testid="select-alloc-push-anchor">
+                        <SelectValue placeholder="Choose an assignment" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allocations
+                          .filter((a: any) => selectedAllocIds.has(a.id) && (a.plannedStartDate || a.plannedEndDate))
+                          .map((a: any) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {(a.person?.name || a.resourceName || 'Unassigned')}
+                              {a.plannedStartDate ? ` — starts ${a.plannedStartDate.split('T')[0]}` : ''}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="alloc-push-new-date">{allocAnchorUsesEndDate ? "New end date for the anchor" : "New start date for the anchor"}</Label>
+                    <Input
+                      id="alloc-push-new-date"
+                      type="date"
+                      value={allocPushNewDate}
+                      onChange={(e) => setAllocPushNewDate(e.target.value)}
+                      disabled={!allocAnchorRef}
+                      data-testid="input-alloc-push-new-date"
+                    />
+                    {allocAnchorRef && (
+                      <p className="text-xs text-muted-foreground">
+                        Current anchor date: {allocAnchorRef.split('T')[0]}
+                      </p>
+                    )}
+                  </div>
+                  {allocPushNewDate && allocPushDelta !== 0 && (
+                    <p className="text-sm">
+                      Shift of <span className="font-medium">{allocPushDelta > 0 ? '+' : ''}{allocPushDelta} day(s)</span> will be applied to all {selectedAllocIds.size} selected assignment(s).
+                    </p>
+                  )}
+                  {allocPushNewDate && allocPushDelta === 0 && (
+                    <p className="text-sm text-muted-foreground">Pick a different date to shift the assignments.</p>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowAllocPushDialog(false)}>Cancel</Button>
+                  <Button
+                    onClick={() => bulkShiftAllocationsMutation.mutate({
+                      allocationIds: Array.from(selectedAllocIds),
+                      deltaDays: allocPushDelta,
+                    })}
+                    disabled={allocPushDelta === 0 || !allocAnchorRef || bulkShiftAllocationsMutation.isPending}
+                    data-testid="button-confirm-push-allocations"
+                  >
+                    {bulkShiftAllocationsMutation.isPending ? "Pushing…" : "Push assignments out"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Team Membership Card - Shows team member status */}
             <Card>

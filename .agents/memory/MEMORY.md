@@ -1,1 +1,2 @@
 - [Payroll module integration pattern](payroll-integration.md) — routes import storage modules directly, not via the storage singleton; IStorage interface still needs explicit declarations
+- [Bulk date-shift (push out) pattern](bulk-date-shift-pattern.md) — deliverables/assignments reschedule via anchor + day-delta ({ids[], deltaDays}), never per-row absolute dates

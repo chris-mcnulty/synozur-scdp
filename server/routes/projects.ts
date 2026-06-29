@@ -7759,6 +7759,62 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
+  // Bulk shift resource assignment (allocation) planned dates by a fixed number of days
+  // (push a hand-picked set of assignments out together). Baseline snapshots are skipped.
+  app.post("/api/projects/:projectId/allocations/bulk-shift-dates", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { allocationIds, deltaDays } = req.body as { allocationIds?: string[]; deltaDays?: number };
+
+      const project = await storage.getProject(projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!Array.isArray(allocationIds) || allocationIds.length === 0) {
+        return res.status(400).json({ message: "allocationIds is required" });
+      }
+      if (typeof deltaDays !== "number" || !Number.isFinite(deltaDays) || deltaDays === 0) {
+        return res.status(400).json({ message: "A non-zero deltaDays is required" });
+      }
+      if (!Number.isInteger(deltaDays) || Math.abs(deltaDays) > 3650) {
+        return res.status(400).json({ message: "deltaDays must be a whole number of days within +/- 10 years" });
+      }
+
+      const all = await storage.getProjectAllocations(projectId);
+      const idSet = new Set(allocationIds);
+      const targets = all.filter((a: any) =>
+        idSet.has(a.id) && !a.isBaseline && (a.plannedStartDate || a.plannedEndDate)
+      );
+
+      // Timezone-safe date-only shift (parse as UTC midnight, add days in UTC).
+      const shiftDate = (iso: string) =>
+        new Date(new Date(iso).getTime() + deltaDays * 86400000).toISOString().split("T")[0];
+
+      const updates = targets.map((a: any) => ({
+        id: a.id,
+        newPlannedStartDate: a.plannedStartDate ? shiftDate(a.plannedStartDate) : null,
+        newPlannedEndDate: a.plannedEndDate ? shiftDate(a.plannedEndDate) : null,
+      }));
+
+      await db.transaction(async (tx) => {
+        for (const u of updates) {
+          await tx.update(projectAllocations)
+            .set({ plannedStartDate: u.newPlannedStartDate, plannedEndDate: u.newPlannedEndDate })
+            .where(and(eq(projectAllocations.id, u.id), eq(projectAllocations.projectId, projectId)));
+        }
+      });
+
+      console.log(`[TELEMETRY] allocations bulk-shift projectId=${projectId} deltaDays=${deltaDays} affected=${updates.length} by=${req.user?.id}`);
+      res.json({ affectedCount: updates.length, deltaDays, updates });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to shift allocation dates:", error);
+      res.status(500).json({ message: error.message || "Failed to shift allocation dates" });
+    }
+  });
+
   app.get("/api/projects/:projectId/deliverables/:deliverableId/history", requireAuth, async (req, res) => {
     try {
       const project = await storage.getProject(req.params.projectId);
