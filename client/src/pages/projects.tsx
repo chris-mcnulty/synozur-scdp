@@ -755,7 +755,11 @@ export default function Projects() {
                         </Link>
                         <p className="text-sm text-muted-foreground">{project.code}</p>
                       </div>
-                      <div className="col-span-2 text-sm">{project.client.name}</div>
+                      <div className="col-span-2 text-sm">
+                        <Link href={`/clients/${project.client.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline text-foreground">
+                          {project.client.name}
+                        </Link>
+                      </div>
                       <div className="col-span-1 flex items-center gap-1 flex-wrap">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                           project.status === 'active' 
@@ -870,9 +874,9 @@ export default function Projects() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-muted-foreground">Client</p>
-                        <p className="font-medium" data-testid={`project-client-${project.id}`}>
+                        <Link href={`/clients/${project.client.id}`} onClick={(e) => e.stopPropagation()} className="font-medium hover:underline" data-testid={`project-client-${project.id}`}>
                           {project.client.name}
-                        </p>
+                        </Link>
                       </div>
                       {project.startDate && (
                         <div>

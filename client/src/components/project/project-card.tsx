@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Eye, Edit, Briefcase, Cog, TrendingUp } from "lucide-react";
+import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { SlippageBadge } from "@/components/dashboard/slippage-badge";
 import type { ProjectWithClient, ProjectSlippageMetrics } from "@/lib/types";
@@ -81,7 +82,9 @@ export function ProjectCard({ project, slippage, hours, onView, onEdit }: Projec
         </div>
       </td>
       <td className="px-6 py-4 text-sm" data-testid={`project-client-${project.id}`}>
-        {project.client.name}
+        <Link href={`/clients/${project.client.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+          {project.client.name}
+        </Link>
       </td>
       <td className="px-6 py-4 text-sm" data-testid={`project-pm-${project.id}`}>
         {project.pm}

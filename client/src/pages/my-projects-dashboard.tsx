@@ -288,7 +288,15 @@ export default function MyProjectsDashboard() {
                         <div className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 cursor-pointer">
                           <div>
                             <p className="font-medium">{project.displayLabel}</p>
-                            <p className="text-sm text-muted-foreground">{project.client?.name}</p>
+                            {project.client?.name && (
+                              <Link
+                                href={`/clients/${project.client.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-sm text-muted-foreground hover:underline"
+                              >
+                                {project.client.name}
+                              </Link>
+                            )}
                           </div>
                           <ChevronRight className="h-4 w-4" />
                         </div>
