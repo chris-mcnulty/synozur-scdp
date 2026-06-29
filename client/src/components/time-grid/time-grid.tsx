@@ -535,6 +535,26 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   };
 
   // ─── Column sort (client-side, per tab) ─────────────────────────────────
+  const resolveAllocationLabel = useCallback(
+    (allocationId: string, projectId: string): string => {
+      if (!allocationId) return "";
+      const data = queryClient.getQueryData<Allocation[]>(["/api/projects", projectId, "allocations", currentUser.id]);
+      const a = data?.find((x) => x.id === allocationId);
+      return (a?.taskDescription || a?.role?.name || allocationId).toLowerCase();
+    },
+    [queryClient, currentUser.id],
+  );
+
+  const resolveMilestoneLabel = useCallback(
+    (milestoneId: string, projectId: string): string => {
+      if (!milestoneId) return "";
+      const data = queryClient.getQueryData<Milestone[]>(["/api/projects", projectId, "milestones"]);
+      const m = data?.find((x) => x.id === milestoneId);
+      return (m?.name || milestoneId).toLowerCase();
+    },
+    [queryClient],
+  );
+
   const compareRows = useCallback(
     (a: DraftRow, b: DraftRow, col: ColKey, dir: "asc" | "desc"): number => {
       const sign = dir === "asc" ? 1 : -1;
@@ -553,8 +573,8 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
           break;
         }
         case "allocationId":
-          av = (a.allocationId || "").toLowerCase();
-          bv = (b.allocationId || "").toLowerCase();
+          av = resolveAllocationLabel(a.allocationId, a.projectId);
+          bv = resolveAllocationLabel(b.allocationId, b.projectId);
           break;
         case "description":
           av = (a.description || "").toLowerCase();
@@ -572,8 +592,8 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
           bv = b.billable ? 1 : 0;
           break;
         case "milestoneId":
-          av = (a.milestoneId || "").toLowerCase();
-          bv = (b.milestoneId || "").toLowerCase();
+          av = resolveMilestoneLabel(a.milestoneId, a.projectId);
+          bv = resolveMilestoneLabel(b.milestoneId, b.projectId);
           break;
       }
       if (typeof av === "string" && typeof bv === "string") {
@@ -588,7 +608,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       if (av > bv) return 1 * sign;
       return 0;
     },
-    [projects],
+    [projects, resolveAllocationLabel, resolveMilestoneLabel],
   );
 
   const applySort = useCallback(
