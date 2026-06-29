@@ -1620,19 +1620,26 @@ def create_deliverables_slide(prs, data, primary_color, secondary_color):
         'rejected': '#EF4444',
     }
 
-    # Group deliverables by phase (epic), preserving first-seen order; unassigned last.
+    # Group deliverables by stage, preserving first-seen order; unassigned last.
+    # Stage headers carry the parent epic as context when available.
     phase_order = []
     phase_groups = {}
     for d in deliverables:
-        key = d.get('epicId') or '__none__'
+        key = d.get('stageId') or '__none__'
         if key not in phase_groups:
+            stage_name = d.get('stageName') or 'Unassigned'
+            epic_name = d.get('epicName') or ''
+            if epic_name and key != '__none__':
+                header = f"{epic_name} — {stage_name}"
+            else:
+                header = stage_name
             phase_groups[key] = {
-                'name': d.get('epicName') or 'Unassigned',
+                'name': header,
                 'items': [],
             }
             phase_order.append(key)
     for d in deliverables:
-        phase_groups[d.get('epicId') or '__none__']['items'].append(d)
+        phase_groups[d.get('stageId') or '__none__']['items'].append(d)
     # Push the unassigned group to the end so real phases lead.
     if '__none__' in phase_order:
         phase_order = [k for k in phase_order if k != '__none__'] + ['__none__']

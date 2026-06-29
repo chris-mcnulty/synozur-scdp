@@ -6198,6 +6198,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             description: d.description || '',
             epicId: d.epicId || '',
             epicName: epic?.name || '',
+            stageId: d.stageId || '',
             stageName: stage?.name || '',
           };
         }),
