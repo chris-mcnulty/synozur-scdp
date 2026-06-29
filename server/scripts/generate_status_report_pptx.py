@@ -300,24 +300,8 @@ def create_progress_summary_slide(prs, data, sections, primary_color, secondary_
     if summary_text:
         render_markdown_text(tf, summary_text, primary_color, size=11, start_fresh=True)
 
-    milestones = data.get('milestonePosture', {})
-    if milestones and any(milestones.values()):
-        p = tf.add_paragraph()
-        p.space_before = Pt(14)
-        run = p.add_run()
-        run.text = "Milestone Posture"
-        set_font(run, size=12, bold=True, color=primary_color)
-
-        for status_label, items in milestones.items():
-            if items:
-                p = tf.add_paragraph()
-                p.space_before = Pt(2)
-                run = p.add_run()
-                run.text = f"• {status_label}: "
-                set_font(run, size=10, bold=True)
-                run2 = p.add_run()
-                run2.text = ', '.join(items)
-                set_font(run2, size=10)
+    # Milestone Posture intentionally omitted here — those details live on the
+    # Timeline & Milestones slide, so showing them again would duplicate content.
 
     return slide
 
