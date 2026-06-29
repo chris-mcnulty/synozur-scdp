@@ -89,6 +89,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
   const [formDeliveredDate, setFormDeliveredDate] = useState("");
   const [formAcceptanceNotes, setFormAcceptanceNotes] = useState("");
   const [formEpicId, setFormEpicId] = useState<string>("none");
+  const [formStageId, setFormStageId] = useState<string>("none");
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showPushDialog, setShowPushDialog] = useState(false);
@@ -115,6 +116,13 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
   const { data: epics = [] } = useQuery<{ id: string; name: string }[]>({
     queryKey: ['/api/projects', projectId, 'epics'],
     queryFn: () => fetch(`/api/projects/${projectId}/epics`, {
+      headers: { "X-Session-Id": localStorage.getItem("sessionId") || "" },
+    }).then(r => r.json()),
+  });
+
+  const { data: stages = [] } = useQuery<{ id: string; name: string; epicId: string }[]>({
+    queryKey: ['/api/projects', projectId, 'stages'],
+    queryFn: () => fetch(`/api/projects/${projectId}/stages`, {
       headers: { "X-Session-Id": localStorage.getItem("sessionId") || "" },
     }).then(r => r.json()),
   });
@@ -194,6 +202,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
     setFormDeliveredDate("");
     setFormAcceptanceNotes("");
     setFormEpicId("none");
+    setFormStageId("none");
   }
 
   function openEdit(d: ProjectDeliverable & { ownerName?: string }) {
@@ -206,6 +215,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
     setFormDeliveredDate(d.deliveredDate || "");
     setFormAcceptanceNotes(d.acceptanceNotes || "");
     setFormEpicId(d.epicId || "none");
+    setFormStageId(d.stageId || "none");
     setShowAddDialog(true);
   }
 
@@ -266,6 +276,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
       deliveredDate: formDeliveredDate || null,
       acceptanceNotes: formAcceptanceNotes.trim() || null,
       epicId: formEpicId === "none" ? null : formEpicId,
+      stageId: formStageId === "none" ? null : formStageId,
     };
     if (editingDeliverable) {
       updateMutation.mutate({ id: editingDeliverable.id, data: payload });
@@ -550,19 +561,42 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
               </Select>
             </div>
             {epics.length > 0 && (
-              <div>
-                <Label>Phase</Label>
-                <Select value={formEpicId} onValueChange={setFormEpicId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="No phase" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No phase</SelectItem>
-                    {epics.map(e => (
-                      <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Phase</Label>
+                  <Select
+                    value={formEpicId}
+                    onValueChange={(v) => { setFormEpicId(v); setFormStageId("none"); }}
+                  >
+                    <SelectTrigger data-testid="select-deliverable-epic">
+                      <SelectValue placeholder="No phase" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No phase</SelectItem>
+                      {epics.map(e => (
+                        <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Stage</Label>
+                  <Select
+                    value={formStageId}
+                    onValueChange={setFormStageId}
+                    disabled={formEpicId === "none"}
+                  >
+                    <SelectTrigger data-testid="select-deliverable-stage">
+                      <SelectValue placeholder={formEpicId === "none" ? "Pick a phase first" : "No stage"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No stage</SelectItem>
+                      {stages.filter(s => s.epicId === formEpicId).map(s => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">

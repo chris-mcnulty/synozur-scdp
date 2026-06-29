@@ -615,6 +615,12 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   // Project Epics endpoints
   app.get("/api/projects/:projectId/epics", requireAuth, async (req, res) => {
     try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const epics = await storage.getProjectEpics(req.params.projectId);
       res.json(epics);
     } catch (error: any) {
@@ -691,6 +697,12 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   // Project Stages endpoints
   app.get("/api/projects/:projectId/stages/:epicId", requireAuth, async (req, res) => {
     try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const stages = await storage.getProjectStages(req.params.epicId);
       res.json(stages);
     } catch (error: any) {
@@ -702,6 +714,12 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   // Get all stages for a project
   app.get("/api/projects/:projectId/stages", requireAuth, async (req, res) => {
     try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       // First get all epics for the project
       const epics = await storage.getProjectEpics(req.params.projectId);
       // Then get all stages for each epic

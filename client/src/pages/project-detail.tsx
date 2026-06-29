@@ -1312,12 +1312,46 @@ function daysBetweenISO(startIso: string, endIso: string): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
-// Inclusive duration in weeks (1 decimal). start..end same day = ~0.1wk, 7 days = 1wk.
+// Count working days (Mon–Fri) from start to end, inclusive of both ends.
+function businessDaysInclusive(startIso?: string | null, endIso?: string | null): number {
+  const a = toDateOnly(startIso || "");
+  const b = toDateOnly(endIso || "");
+  if (!a || !b || b.getTime() < a.getTime()) return 0;
+  let count = 0;
+  const cur = new Date(a);
+  while (cur.getTime() <= b.getTime()) {
+    const dow = cur.getUTCDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return count;
+}
+
+// Given a start date and a number of working days, return the end date that
+// covers exactly that many working days (start counts as the first working day).
+function endFromBusinessDays(startIso: string, businessDays: number): string {
+  const a = toDateOnly(startIso);
+  if (!a || businessDays < 1) return startIso;
+  let remaining = businessDays;
+  const cur = new Date(a);
+  while (true) {
+    const dow = cur.getUTCDay();
+    if (dow !== 0 && dow !== 6) {
+      remaining--;
+      if (remaining === 0) break;
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return cur.toISOString().split("T")[0];
+}
+
+// Duration in working weeks (1 decimal): 5 working days = 1 week.
+// Mon–Fri = 1.0, Mon to following Friday = 2.0, etc.
 function durationWeeks(startIso?: string | null, endIso?: string | null): number | null {
   if (!startIso || !endIso) return null;
-  const days = daysBetweenISO(startIso, endIso);
-  if (days < 0) return null;
-  return Math.round(((days + 1) / 7) * 10) / 10;
+  const bizDays = businessDaysInclusive(startIso, endIso);
+  if (bizDays < 1) return null;
+  return Math.round((bizDays / 5) * 10) / 10;
 }
 
 function getMondayOfWeekLocal(d: Date): Date {
@@ -1457,12 +1491,12 @@ export default function ProjectDetail() {
     setAssignEnd(newEnd);
   };
 
-  // Editing the duration (in weeks) recomputes the end date from the start.
+  // Editing the duration (in working weeks) recomputes the end date from the start.
   const handleAssignWeeksChange = (val: string) => {
     const w = parseFloat(val);
     if (!assignStart || isNaN(w) || w <= 0) return;
-    const days = Math.max(0, Math.round(w * 7) - 1);
-    setAssignEnd(addDaysISO(assignStart, days));
+    const businessDays = Math.max(1, Math.round(w * 5));
+    setAssignEnd(endFromBusinessDays(assignStart, businessDays));
   };
   const [showBulkReassignDialog, setShowBulkReassignDialog] = useState(false);
   const [pendingReassign, setPendingReassign] = useState<{
@@ -9050,8 +9084,8 @@ export default function ProjectDetail() {
                   <Input
                     id="durationWeeks"
                     type="number"
-                    step="0.5"
-                    min="0.5"
+                    step="0.2"
+                    min="0.2"
                     value={durationWeeks(assignStart, assignEnd) ?? ""}
                     onChange={(e) => handleAssignWeeksChange(e.target.value)}
                     disabled={!assignStart}
