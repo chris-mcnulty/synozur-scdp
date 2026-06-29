@@ -82,6 +82,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [includeProjectPlan, setIncludeProjectPlan] = useState(false);
   const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
   const [templateSlots, setTemplateSlots] = useState({ title: true, section: true, closing: true });
+  const [raiddOpenOnly, setRaiddOpenOnly] = useState(true);
 
   const { data: tenantSettings } = useQuery<any>({
     queryKey: ['/api/tenant/settings'],
@@ -309,6 +310,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
           includeProjectPlan,
           projectPlanFilter,
           templateSlots,
+          raiddOpenOnly,
         }),
         signal: pptxController.signal,
       });
@@ -329,7 +331,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     } finally {
       setIsDownloadingPptx(false);
     }
-  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, getDateRange, toast]);
+  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, raiddOpenOnly, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${safeFormat(displayStart, "MMM d")} - ${safeFormat(displayEnd, "MMM d, yyyy")}`;
@@ -440,6 +442,17 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                     </p>
                   </div>
                 )}
+
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="raiddOpenOnly"
+                    checked={raiddOpenOnly}
+                    onCheckedChange={(checked) => setRaiddOpenOnly(checked === true)}
+                  />
+                  <label htmlFor="raiddOpenOnly" className="text-sm cursor-pointer">
+                    RAIDD log: active items only (open &amp; in progress)
+                  </label>
+                </div>
 
                 <div className="flex items-center gap-2">
                   <Checkbox

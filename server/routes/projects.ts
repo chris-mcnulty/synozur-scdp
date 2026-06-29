@@ -5667,7 +5667,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots } = req.body;
+      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots, raiddOpenOnly = true } = req.body;
       // templateSlots: per-slot opt-in from the dialog { title?: boolean, section?: boolean, closing?: boolean }
       // Fallback to legacy useBrandedSlides boolean for backward compatibility
       const resolvedSlots = templateSlots ?? (useBrandedSlides === false ? { title: false, section: false, closing: false } : { title: true, section: true, closing: true });
@@ -5829,14 +5829,19 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const context = epicName && taskDesc ? ` — ${epicName}${stageName ? ' > ' + stageName : ''}` : '';
         const label = `${taskLabel}${who}${context}${dateInfo}`;
 
-        if (allocStatus === 'completed' || (completedDate && completedDate <= periodEnd)) {
+        // Only treat as "prior/completed" if the task ended within or after the report period start.
+        // Tasks that ended entirely before the period start are historical — skip them so
+        // accomplishments don't fill up with work from earlier phases of the project.
+        const isCompletedInPeriod =
+          (allocStatus === 'completed' && (!allocEnd || allocEnd >= periodStart)) ||
+          (completedDate && completedDate >= periodStart && completedDate <= periodEnd);
+
+        if (isCompletedInPeriod) {
           priorActivities.push(label);
         } else if (allocStatus === 'in_progress' || (allocStart && allocStart <= periodEnd && allocEnd >= periodStart)) {
           currentActivities.push(label);
         } else if (allocStart && allocStart > periodEnd) {
           upcomingActivities.push(label);
-        } else if (allocStart && allocEnd < periodStart) {
-          priorActivities.push(label);
         }
       }
 
@@ -5983,8 +5988,12 @@ CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to
         ).join('\n');
       };
 
+      // Only show as "completed" tasks that actually ended within the report period.
+      // Exclude tasks that finished entirely before the period start — those are historical and
+      // would otherwise make accomplishments look like old work from earlier in the project.
       const compactCompleted = buildCompactTaskList(allocations, (a) =>
-        a.allocStatus === 'completed' || (a.completedDate && a.completedDate <= a.periodEnd) || (a.allocStart && a.allocEnd < a.periodStart)
+        (a.allocStatus === 'completed' && (!a.allocEnd || a.allocEnd >= a.periodStart)) ||
+        (a.completedDate && a.completedDate >= a.periodStart && a.completedDate <= a.periodEnd)
       );
       const compactInProgress = buildCompactTaskList(allocations, (a) =>
         a.allocStatus !== 'completed' && !(a.completedDate && a.completedDate <= a.periodEnd) &&
@@ -6084,18 +6093,21 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         'Not Yet Started': notStarted.map((m: any) => m.name),
       };
 
+      // When raiddOpenOnly is true (default), only include open/in_progress items for non-decision types.
+      // Decisions are always included (filtered to those within the report period or all if none match).
+      const raiddStatusFilter = (r: any) => !raiddOpenOnly || openStatuses.includes(r.status);
       const raiddData = {
-        risks: raiddEntries.filter((r: any) => r.type === 'risk').map((r: any) => ({
+        risks: raiddEntries.filter((r: any) => r.type === 'risk' && raiddStatusFilter(r)).map((r: any) => ({
           refNumber: r.refNumber || '', title: r.title, priority: r.priority,
           status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
           dueDate: r.dueDate || '', impact: r.impact || '', likelihood: r.likelihood || '',
         })),
-        issues: raiddEntries.filter((r: any) => r.type === 'issue').map((r: any) => ({
+        issues: raiddEntries.filter((r: any) => r.type === 'issue' && raiddStatusFilter(r)).map((r: any) => ({
           refNumber: r.refNumber || '', title: r.title, priority: r.priority,
           status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
           dueDate: r.dueDate || '',
         })),
-        actionItems: raiddEntries.filter((r: any) => r.type === 'action_item').map((r: any) => ({
+        actionItems: raiddEntries.filter((r: any) => r.type === 'action_item' && raiddStatusFilter(r)).map((r: any) => ({
           refNumber: r.refNumber || '', title: r.title, priority: r.priority,
           status: r.status, ownerName: r.ownerName || r.assigneeName || '',
           mitigationPlan: r.description || '', dueDate: r.dueDate || '',
@@ -6105,7 +6117,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.description || '',
           dueDate: r.dueDate || '',
         })),
-        dependencies: raiddEntries.filter((r: any) => r.type === 'dependency').map((r: any) => ({
+        dependencies: raiddEntries.filter((r: any) => r.type === 'dependency' && raiddStatusFilter(r)).map((r: any) => ({
           refNumber: r.refNumber || '', title: r.title, priority: r.priority,
           status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
           dueDate: r.dueDate || '',
