@@ -151,3 +151,21 @@ export function useRewriteTimeEntryDescription() {
     },
   });
 }
+
+export interface RaiddRewriteParams {
+  draft: string;
+  type?: string;
+  title?: string;
+  mode?: "resolution" | "decision";
+}
+
+export function useRewriteRaiddResolution() {
+  return useMutation({
+    mutationFn: async (params: RaiddRewriteParams): Promise<{ text: string }> => {
+      return apiRequest("/api/raidd/ai/rewrite-resolution", {
+        method: "POST",
+        body: JSON.stringify(params),
+      });
+    },
+  });
+}

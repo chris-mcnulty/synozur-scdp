@@ -6,6 +6,7 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useEmbed } from "@/hooks/use-embed";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAIStatus, useRewriteRaiddResolution } from "@/lib/ai";
 import { formatBusinessDate } from "@/lib/date-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,7 +26,7 @@ import {
   Shield, AlertTriangle, Scale, Link2, CheckSquare, Plus, MoreHorizontal,
   Edit, Trash2, ArrowRightLeft, Replace, ChevronDown, ChevronUp, X,
   ArrowUpDown, Calendar, User, Tag, Sparkles, Brain, FileText, Loader2,
-  Download, Upload
+  Download, Upload, CheckCircle2
 } from "lucide-react";
 
 interface RaiddEntry {
@@ -47,6 +48,8 @@ interface RaiddEntry {
   category: string | null;
   mitigationPlan: string | null;
   resolutionNotes: string | null;
+  decisionDate: string | null;
+  stakeholderIds: string[] | null;
   parentEntryId: string | null;
   convertedFromId: string | null;
   supersededById: string | null;
@@ -165,6 +168,8 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
   const [createWithType, setCreateWithType] = useState<string | null>(null);
   const [createWithParent, setCreateWithParent] = useState<string | null>(null);
   const [supersedeEntryId, setSupersedeEntryId] = useState<string | null>(null);
+  const [resolvingEntry, setResolvingEntry] = useState<RaiddEntry | null>(null);
+  const [resolveInitialStatus, setResolveInitialStatus] = useState<string>("resolved");
 
   const [showIngestTextDialog, setShowIngestTextDialog] = useState(false);
   const [showExtractDecisionsDialog, setShowExtractDecisionsDialog] = useState(false);
@@ -334,6 +339,26 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
       toast({ title: "Superseded", description: "Decision superseded with new entry" });
       setSupersedeEntryId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return apiRequest(`/api/raidd/${id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(`/api/projects/${projectId}/raidd`) });
+      if (expandedEntryId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/raidd", expandedEntryId] });
+      }
+      toast({ title: "Resolved", description: "Entry resolved and recorded" });
+      setResolvingEntry(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -793,6 +818,12 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
                               <DropdownMenuItem onClick={() => handleAddActionItem(entry.id)}>
                                 <CheckSquare className="h-4 w-4 mr-2" /> Add Action Item
                               </DropdownMenuItem>
+                              {(entry.type === "risk" || entry.type === "issue") &&
+                                !["closed", "resolved", "mitigated", "superseded"].includes(entry.status) && (
+                                <DropdownMenuItem onClick={() => { setResolveInitialStatus(entry.type === "issue" ? "resolved" : "mitigated"); setResolvingEntry(entry); }}>
+                                  <CheckCircle2 className="h-4 w-4 mr-2" /> Resolve
+                                </DropdownMenuItem>
+                              )}
                               {entry.type === "risk" && (
                                 <DropdownMenuItem onClick={() => convertToIssueMutation.mutate(entry.id)}>
                                   <ArrowRightLeft className="h-4 w-4 mr-2" /> Convert to Issue
@@ -889,13 +920,38 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
       <RaiddFormDialog
         open={!!editingEntry}
         onOpenChange={(open) => { if (!open) setEditingEntry(null); }}
-        onSubmit={(data) => editingEntry && updateMutation.mutate({ id: editingEntry.id, data })}
+        onSubmit={(data) => {
+          if (!editingEntry) return;
+          const movingToResolving =
+            (editingEntry.type === "risk" || editingEntry.type === "issue") &&
+            ["closed", "resolved", "mitigated"].includes(data.status) &&
+            !["closed", "resolved", "mitigated"].includes(editingEntry.status);
+          if (movingToResolving) {
+            setResolveInitialStatus(data.status);
+            setResolvingEntry(editingEntry);
+            setEditingEntry(null);
+            return;
+          }
+          updateMutation.mutate({ id: editingEntry.id, data });
+        }}
         isPending={updateMutation.isPending}
         entry={editingEntry}
         projectEntries={allEntries}
         teamMembers={projectTeamMembers}
         clientStakeholders={clientStakeholders}
         isEdit
+      />
+
+      <ResolveDialog
+        open={!!resolvingEntry}
+        onOpenChange={(open) => { if (!open) setResolvingEntry(null); }}
+        entry={resolvingEntry}
+        initialStatus={resolveInitialStatus}
+        childActions={resolvingEntry ? allEntries.filter(e => e.parentEntryId === resolvingEntry.id && e.type === "action_item") : []}
+        teamMembers={projectTeamMembers}
+        clientStakeholders={clientStakeholders}
+        isPending={resolveMutation.isPending}
+        onSubmit={(data) => resolvingEntry && resolveMutation.mutate({ id: resolvingEntry.id, data })}
       />
 
       <SupersedeDialog
@@ -1055,6 +1111,274 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], focusEntryId }
   );
 }
 
+function ResolveDialog({
+  open,
+  onOpenChange,
+  entry,
+  initialStatus,
+  childActions = [],
+  teamMembers = [],
+  clientStakeholders = [],
+  isPending,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  entry: RaiddEntry | null;
+  initialStatus: string;
+  childActions?: RaiddEntry[];
+  teamMembers?: { id: string; name: string }[];
+  clientStakeholders?: { id: string; name: string; stakeholderTitle?: string | null }[];
+  isPending: boolean;
+  onSubmit: (data: any) => void;
+}) {
+  const { toast } = useToast();
+  const { data: aiStatus } = useAIStatus();
+  const rewrite = useRewriteRaiddResolution();
+
+  const [path, setPath] = useState<"decision" | "action">("decision");
+  const [resolveStatus, setResolveStatus] = useState<string>(initialStatus);
+  const [resolutionNotes, setResolutionNotes] = useState<string>("");
+  const [decisionTitle, setDecisionTitle] = useState<string>("");
+  const [decisionDescription, setDecisionDescription] = useState<string>("");
+  const [decisionDate, setDecisionDate] = useState<string>("");
+  const [decisionOwnerId, setDecisionOwnerId] = useState<string>("");
+  const [stakeholderIds, setStakeholderIds] = useState<string[]>([]);
+  const [actionItemId, setActionItemId] = useState<string>("");
+  const [rewriting, setRewriting] = useState<null | "notes" | "decision">(null);
+
+  const completedActions = useMemo(
+    () => childActions.filter(a => ["closed", "resolved", "accepted", "mitigated"].includes(a.status)),
+    [childActions],
+  );
+
+  useEffect(() => {
+    if (open && entry) {
+      setPath(completedActions.length > 0 ? "action" : "decision");
+      setResolveStatus(initialStatus);
+      setResolutionNotes(entry.resolutionNotes || "");
+      setDecisionTitle(`Decision: ${entry.title}`);
+      setDecisionDescription("");
+      setDecisionDate(new Date().toISOString().slice(0, 10));
+      setDecisionOwnerId(entry.ownerId || "");
+      setStakeholderIds([]);
+      setActionItemId(completedActions[0]?.id || "");
+    }
+  }, [open, entry?.id]);
+
+  const stakeholderOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; name: string }[] = [];
+    for (const m of teamMembers) {
+      if (!seen.has(m.id)) { seen.add(m.id); out.push({ id: m.id, name: m.name }); }
+    }
+    for (const s of clientStakeholders) {
+      if (!seen.has(s.id)) { seen.add(s.id); out.push({ id: s.id, name: s.name }); }
+    }
+    return out;
+  }, [teamMembers, clientStakeholders]);
+
+  const handleRewrite = async (which: "notes" | "decision") => {
+    if (!entry) return;
+    const draft = which === "notes" ? resolutionNotes : decisionDescription;
+    if (!draft.trim()) {
+      toast({ title: "Nothing to rewrite", description: "Type a rough draft first.", variant: "destructive" });
+      return;
+    }
+    setRewriting(which);
+    try {
+      const result = await rewrite.mutateAsync({
+        draft,
+        type: entry.type,
+        title: entry.title,
+        mode: which === "decision" ? "decision" : "resolution",
+      });
+      if (which === "notes") setResolutionNotes(result.text);
+      else setDecisionDescription(result.text);
+    } catch (err: any) {
+      toast({ title: "AI rewrite failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRewriting(null);
+    }
+  };
+
+  const toggleStakeholder = (id: string) =>
+    setStakeholderIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const handleSubmit = () => {
+    if (!entry) return;
+    if (path === "decision" && !decisionTitle.trim()) {
+      toast({ title: "Decision title required", description: "Give the decision a short title.", variant: "destructive" });
+      return;
+    }
+    if (path === "action" && !actionItemId) {
+      toast({ title: "Select an action item", description: "Choose a completed action that closed this item.", variant: "destructive" });
+      return;
+    }
+    const payload: any = {
+      path,
+      resolveStatus,
+      resolutionNotes: resolutionNotes.trim() || undefined,
+    };
+    if (path === "decision") {
+      payload.decision = {
+        title: decisionTitle.trim(),
+        description: decisionDescription.trim() || undefined,
+        decisionDate: decisionDate || undefined,
+        ownerId: decisionOwnerId || undefined,
+        stakeholderIds: stakeholderIds.length > 0 ? stakeholderIds : undefined,
+      };
+    } else {
+      payload.actionItemId = actionItemId;
+    }
+    onSubmit(payload);
+  };
+
+  if (!entry) return null;
+  const typeLabel = entry.type === "issue" ? "issue" : "risk";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Resolve {getTypeLabel(entry.type)}</DialogTitle>
+          <DialogDescription>
+            To close this {typeLabel}, capture a decision in the decision log, or close it with a completed action item.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <span className="text-sm font-medium mb-1.5 block">How was it resolved?</span>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={path === "decision" ? "default" : "outline"}
+                className="justify-start"
+                onClick={() => setPath("decision")}
+                data-testid="button-resolve-path-decision"
+              >
+                <Scale className="h-4 w-4 mr-2" /> Capture a decision
+              </Button>
+              <Button
+                type="button"
+                variant={path === "action" ? "default" : "outline"}
+                className="justify-start"
+                disabled={completedActions.length === 0}
+                onClick={() => setPath("action")}
+                data-testid="button-resolve-path-action"
+              >
+                <CheckSquare className="h-4 w-4 mr-2" /> Closed by action
+              </Button>
+            </div>
+            {completedActions.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">No completed action items are linked to this entry yet.</p>
+            )}
+          </div>
+
+          <div>
+            <span className="text-sm font-medium mb-1.5 block">Resolution status</span>
+            <Select value={resolveStatus} onValueChange={setResolveStatus}>
+              <SelectTrigger data-testid="select-resolve-status"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(entry.type === "risk" ? ["mitigated", "resolved", "closed"] : ["resolved", "closed"]).map(s => (
+                  <SelectItem key={s} value={s}>{formatLabel(s)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {path === "decision" && (
+            <div className="space-y-3 rounded-md border p-3">
+              <div>
+                <span className="text-sm font-medium mb-1.5 block">Decision title</span>
+                <Input value={decisionTitle} onChange={e => setDecisionTitle(e.target.value)} data-testid="input-decision-title" />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-sm font-medium">What was decided</span>
+                  {aiStatus?.configured && (
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={rewriting === "decision"} onClick={() => handleRewrite("decision")} data-testid="button-ai-rewrite-decision">
+                      {rewriting === "decision" ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
+                      Rewrite with AI
+                    </Button>
+                  )}
+                </div>
+                <Textarea value={decisionDescription} onChange={e => setDecisionDescription(e.target.value)} rows={3} placeholder="Type a rough draft, then let AI clean it up." data-testid="input-decision-description" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-sm font-medium mb-1.5 block">Decision date</span>
+                  <Input type="date" value={decisionDate} onChange={e => setDecisionDate(e.target.value)} data-testid="input-decision-date" />
+                </div>
+                <div>
+                  <span className="text-sm font-medium mb-1.5 block">Decision owner</span>
+                  <Select value={decisionOwnerId || "none"} onValueChange={(v) => setDecisionOwnerId(v === "none" ? "" : v)}>
+                    <SelectTrigger data-testid="select-decision-owner"><SelectValue placeholder="Select owner" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {stakeholderOptions.map(o => (
+                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {stakeholderOptions.length > 0 && (
+                <div>
+                  <span className="text-sm font-medium mb-1.5 block">Stakeholders</span>
+                  <div className="max-h-32 overflow-y-auto space-y-1.5 rounded-md border p-2">
+                    {stakeholderOptions.map(o => (
+                      <label key={o.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <Checkbox checked={stakeholderIds.includes(o.id)} onCheckedChange={() => toggleStakeholder(o.id)} data-testid={`checkbox-stakeholder-${o.id}`} />
+                        <span>{o.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {path === "action" && (
+            <div className="rounded-md border p-3">
+              <span className="text-sm font-medium mb-1.5 block">Completed action item</span>
+              <Select value={actionItemId} onValueChange={setActionItemId}>
+                <SelectTrigger data-testid="select-resolve-action"><SelectValue placeholder="Select action item" /></SelectTrigger>
+                <SelectContent>
+                  {completedActions.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.refNumber ? `${a.refNumber} — ` : ""}{a.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-medium">Resolution notes</span>
+              {aiStatus?.configured && (
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={rewriting === "notes"} onClick={() => handleRewrite("notes")} data-testid="button-ai-rewrite-notes">
+                  {rewriting === "notes" ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
+                  Rewrite with AI
+                </Button>
+              )}
+            </div>
+            <Textarea value={resolutionNotes} onChange={e => setResolutionNotes(e.target.value)} rows={3} placeholder="How was this resolved? A rough draft is fine — AI can tidy it up." data-testid="input-resolution-notes" />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={isPending} data-testid="button-submit-resolve">
+            {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Resolving...</> : <><CheckCircle2 className="h-4 w-4 mr-2" /> Resolve</>}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DetailPanel({
   entry,
   onClose,
@@ -1173,22 +1497,59 @@ function DetailPanel({
         </div>
       )}
 
-      {entry.children && entry.children.length > 0 && (
-        <div className="mb-3">
-          <span className="text-gray-500 dark:text-gray-400 text-xs block mb-2">Action Items ({entry.children.length})</span>
-          <div className="space-y-1">
-            {entry.children.map(child => (
-              <div key={child.id} className="flex items-center gap-2 text-sm p-1.5 bg-muted rounded border border-border">
-                <CheckSquare className="h-3.5 w-3.5 text-gray-400" />
-                <span className="font-mono text-xs text-gray-400">{child.refNumber}</span>
-                <span className="text-gray-700 dark:text-gray-300 flex-1 truncate">{child.title}</span>
-                <Badge className={`text-xs ${statusColors[child.status] || ""}`}>{formatLabel(child.status)}</Badge>
-                <Badge className={`text-xs ${priorityColors[child.priority] || ""}`}>{formatLabel(child.priority)}</Badge>
+      {(() => {
+        const children = entry.children || [];
+        const decisions = children.filter(c => c.type === "decision");
+        const actions = children.filter(c => c.type !== "decision");
+        return (
+          <>
+            {decisions.length > 0 && (
+              <div className="mb-3">
+                <span className="text-gray-500 dark:text-gray-400 text-xs block mb-2">Decision Record ({decisions.length})</span>
+                <div className="space-y-1.5">
+                  {decisions.map(d => (
+                    <div key={d.id} className="text-sm p-2 bg-muted rounded border border-border">
+                      <div className="flex items-center gap-2">
+                        <Scale className="h-3.5 w-3.5 text-gray-400" />
+                        <span className="font-mono text-xs text-gray-400">{d.refNumber}</span>
+                        <span className="text-gray-700 dark:text-gray-300 flex-1 truncate">{d.title}</span>
+                        <Badge className={`text-xs ${statusColors[d.status] || ""}`}>{formatLabel(d.status)}</Badge>
+                      </div>
+                      {d.description && (
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 whitespace-pre-wrap">{d.description}</p>
+                      )}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {d.decisionDate && <span>Decided {formatBusinessDate(d.decisionDate)}</span>}
+                        {d.ownerName && <span>Owner: {d.ownerName}</span>}
+                        {d.stakeholderIds && d.stakeholderIds.length > 0 && (
+                          <span>{d.stakeholderIds.length} stakeholder{d.stakeholderIds.length !== 1 ? "s" : ""}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
+
+            {actions.length > 0 && (
+              <div className="mb-3">
+                <span className="text-gray-500 dark:text-gray-400 text-xs block mb-2">Action Items ({actions.length})</span>
+                <div className="space-y-1">
+                  {actions.map(child => (
+                    <div key={child.id} className="flex items-center gap-2 text-sm p-1.5 bg-muted rounded border border-border">
+                      <CheckSquare className="h-3.5 w-3.5 text-gray-400" />
+                      <span className="font-mono text-xs text-gray-400">{child.refNumber}</span>
+                      <span className="text-gray-700 dark:text-gray-300 flex-1 truncate">{child.title}</span>
+                      <Badge className={`text-xs ${statusColors[child.status] || ""}`}>{formatLabel(child.status)}</Badge>
+                      <Badge className={`text-xs ${priorityColors[child.priority] || ""}`}>{formatLabel(child.priority)}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       <Button variant="outline" size="sm" className="text-xs" onClick={onAddAction}>
         <Plus className="h-3 w-3 mr-1" /> Add Action Item

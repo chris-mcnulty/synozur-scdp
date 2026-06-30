@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { z } from "zod";
 import { storage } from "../storage";
 import { insertRaiddEntrySchema, insertGroundingDocumentSchema, GROUNDING_DOC_CATEGORY_LABELS, type RaiddEntry } from "@shared/schema";
 import { notify } from "../services/notification-service.js";
@@ -196,6 +197,59 @@ export function registerRaiddRoutes(app: Express, deps: RaiddRouteDeps) {
     } catch (error: any) {
       console.error("Error superseding decision:", error);
       res.status(400).json({ message: error.message || "Failed to supersede decision" });
+    }
+  });
+
+  app.post("/api/raidd/:id/resolve", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+    try {
+      const entry = await storage.getRaiddEntry(req.params.id);
+      if (!entry) return res.status(404).json({ message: "RAIDD entry not found" });
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) return res.status(403).json({ message: "No tenant context" });
+      if (entry.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (entry.type !== 'risk' && entry.type !== 'issue') {
+        return res.status(400).json({ message: "Only risks and issues can be resolved this way" });
+      }
+
+      const resolveSchema = z.object({
+        path: z.enum(["decision", "action"]),
+        resolveStatus: z.enum(["closed", "resolved", "mitigated"]),
+        resolutionNotes: z.string().optional(),
+        decision: z.object({
+          title: z.string().min(1, "Decision title is required"),
+          description: z.string().optional(),
+          decisionDate: z.string().optional().nullable(),
+          ownerId: z.string().optional().nullable(),
+          stakeholderIds: z.array(z.string()).optional().nullable(),
+        }).optional(),
+        actionItemId: z.string().optional(),
+      });
+      const parsed = resolveSchema.parse(req.body);
+
+      if (parsed.path === "decision" && !parsed.decision) {
+        return res.status(400).json({ message: "Decision details are required to capture a decision" });
+      }
+      if (parsed.path === "action" && !parsed.actionItemId) {
+        return res.status(400).json({ message: "Select an action item to close this entry" });
+      }
+
+      const result = await storage.resolveRaiddEntry(req.params.id, {
+        userId: req.user!.id,
+        resolveStatus: parsed.resolveStatus,
+        resolutionNotes: parsed.resolutionNotes,
+        path: parsed.path,
+        decision: parsed.decision,
+        actionItemId: parsed.actionItemId,
+      });
+      res.json(result);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation failed", errors: error.errors });
+      }
+      console.error("Error resolving RAIDD entry:", error);
+      res.status(400).json({ message: error.message || "Failed to resolve RAIDD entry" });
     }
   });
 
@@ -774,6 +828,51 @@ ${trimmedNarrative}${existingNote}`;
     } catch (error: any) {
       console.error("Error deleting grounding document:", error);
       res.status(500).json({ message: error.message || "Failed to delete grounding document" });
+    }
+  });
+
+  app.post("/api/raidd/ai/rewrite-resolution", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+    try {
+      const { draft, type, title, mode } = req.body;
+      if (!draft || typeof draft !== 'string' || !draft.trim()) {
+        return res.status(400).json({ message: "Draft text is required" });
+      }
+
+      const { aiService, buildGroundingContext } = await import("../services/ai-service.js");
+      if (!aiService.isConfigured()) {
+        return res.status(503).json({ message: "AI service not configured" });
+      }
+
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) return res.status(403).json({ message: "No tenant context" });
+      const groundingDocs = await storage.getActiveGroundingDocumentsForTenant(tenantId);
+      const groundingCtx = buildGroundingContext(groundingDocs, 'general');
+
+      const isDecision = mode === 'decision';
+      const systemPrompt = isDecision
+        ? `You are a consulting project management expert. Rewrite the user's rough notes into a clear, professional decision-log entry. Be concise and factual. Capture what was decided and the rationale. Do not invent facts that are not implied by the notes. Return only the rewritten text with no preamble or quotes.`
+        : `You are a consulting project management expert. Rewrite the user's rough notes into clear, professional resolution notes for a RAIDD ${type === 'issue' ? 'issue' : 'risk'}. Be concise and factual, describing how it was resolved. Do not invent facts that are not implied by the notes. Return only the rewritten text with no preamble or quotes.`;
+
+      const userMessage = `${title ? `Item: ${title}\n\n` : ''}Rough notes:\n${draft.trim()}`;
+
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        temperature: 0.5,
+        maxTokens: 2048,
+        groundingContext: groundingCtx,
+        usageCtx: { tenantId, userId: (req.user as any)?.id, feature: 'raidd_analysis' as any },
+      });
+
+      if (!result.content || result.content.trim().length === 0) {
+        return res.status(422).json({ message: "AI returned an empty response. Try again." });
+      }
+
+      res.json({ text: result.content.trim() });
+    } catch (error: any) {
+      console.error("[AI] Rewrite resolution failed:", error);
+      if (error.message?.includes('finish_reason') || error.message?.includes('length')) {
+        return res.status(422).json({ message: "The input was too long for AI to process. Try with less text." });
+      }
+      res.status(500).json({ message: error.message || "Failed to rewrite text" });
     }
   });
 

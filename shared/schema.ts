@@ -3765,6 +3765,11 @@ export const raiddEntries = pgTable("raidd_entries", {
   category: varchar("category", { length: 100 }),
   mitigationPlan: text("mitigation_plan"),
   resolutionNotes: text("resolution_notes"),
+  // For decisions: the date the decision was made, and the people involved.
+  // Populated by the governed resolution flow when a risk/issue is resolved
+  // by capturing a decision.
+  decisionDate: date("decision_date"),
+  stakeholderIds: jsonb("stakeholder_ids").$type<string[]>(),
   parentEntryId: varchar("parent_entry_id"),
   convertedFromId: varchar("converted_from_id"),
   supersededById: varchar("superseded_by_id"),

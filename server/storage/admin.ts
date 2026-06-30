@@ -685,7 +685,8 @@ export const adminMethods: ThisType<IStorage & {
     // infers `tags` as unknown; narrow it back to the Drizzle column type
     // rather than disabling type checking on the whole payload.
     const tags = entry.tags as string[] | null | undefined;
-    const [created] = await db.insert(raiddEntries).values({ ...entry, refNumber, tags }).returning();
+    const stakeholderIds = entry.stakeholderIds as string[] | null | undefined;
+    const [created] = await db.insert(raiddEntries).values({ ...entry, refNumber, tags, stakeholderIds }).returning();
     return created;
   },
 
@@ -700,6 +701,24 @@ export const adminMethods: ThisType<IStorage & {
       }
     }
 
+    // Governed resolution: a risk or issue cannot be moved into a resolving
+    // status unless it is backed by a captured decision or a completed action
+    // item. The Resolve flow creates that linkage before transitioning the
+    // parent, so it passes this check; ad-hoc status edits do not.
+    const riskIssueResolvingStatuses = ['closed', 'resolved', 'mitigated'];
+    if (
+      (existing.type === 'risk' || existing.type === 'issue') &&
+      updates.status &&
+      riskIssueResolvingStatuses.includes(updates.status) &&
+      !riskIssueResolvingStatuses.includes(existing.status)
+    ) {
+      if (!(await this.raiddEntryHasResolutionBacking(id))) {
+        throw new Error(
+          'To resolve a risk or issue, first capture a decision to the decision log or close it with a completed action item. Use the Resolve action.',
+        );
+      }
+    }
+
     const closingStatuses = ['closed', 'resolved', 'mitigated', 'accepted'];
     const closedAt = updates.status && closingStatuses.includes(updates.status) && !existing.closedAt
       ? new Date()
@@ -707,8 +726,9 @@ export const adminMethods: ThisType<IStorage & {
 
     // Same drizzle-zod tags-typing workaround as createRaiddEntry above.
     const tags = updates.tags as string[] | null | undefined;
+    const stakeholderIds = updates.stakeholderIds as string[] | null | undefined;
     const [updated] = await db.update(raiddEntries)
-      .set({ ...updates, tags, updatedAt: new Date(), ...(closedAt ? { closedAt } : {}) })
+      .set({ ...updates, tags, stakeholderIds, updatedAt: new Date(), ...(closedAt ? { closedAt } : {}) })
       .where(eq(raiddEntries.id, id))
       .returning();
     return updated;
@@ -765,9 +785,11 @@ export const adminMethods: ThisType<IStorage & {
     const refNumber = await this.getNextRaiddRefNumber(decision.projectId, 'decision');
     // Same drizzle-zod tags-typing workaround as createRaiddEntry above.
     const tags = newEntry.tags as string[] | null | undefined;
+    const stakeholderIds = newEntry.stakeholderIds as string[] | null | undefined;
     const [newDecision] = await db.insert(raiddEntries).values({
       ...newEntry,
       tags,
+      stakeholderIds,
       type: 'decision',
       refNumber,
       convertedFromId: decisionId,
@@ -778,6 +800,132 @@ export const adminMethods: ThisType<IStorage & {
       .where(eq(raiddEntries.id, decisionId));
 
     return newDecision;
+  },
+
+  // True when a risk/issue is backed by a captured decision (a child decision
+  // entry) or a completed action item — the two ways a resolution can be
+  // justified under the governed-resolution rule.
+  async raiddEntryHasResolutionBacking(entryId: string): Promise<boolean> {
+    const children = await db.select({ type: raiddEntries.type, status: raiddEntries.status })
+      .from(raiddEntries)
+      .where(eq(raiddEntries.parentEntryId, entryId));
+    const completedActionStatuses = ['closed', 'resolved', 'accepted', 'mitigated'];
+    const hasDecision = children.some(c => c.type === 'decision');
+    const hasCompletedAction = children.some(
+      c => c.type === 'action_item' && completedActionStatuses.includes(c.status),
+    );
+    return hasDecision || hasCompletedAction;
+  },
+
+  // Governed resolution for a risk or issue. Either captures a linked decision
+  // (decision path) or marks a linked action item complete (action path), then
+  // transitions the risk/issue into the chosen resolving status. The backing
+  // record is created BEFORE the parent transition so the resolution guard in
+  // updateRaiddEntry is satisfied.
+  async resolveRaiddEntry(
+    entryId: string,
+    options: {
+      userId: string;
+      resolveStatus: string;
+      resolutionNotes?: string;
+      path: 'decision' | 'action';
+      decision?: {
+        title: string;
+        description?: string;
+        decisionDate?: string | null;
+        ownerId?: string | null;
+        stakeholderIds?: string[] | null;
+      };
+      actionItemId?: string;
+    },
+  ): Promise<{ entry: RaiddEntry; decision?: RaiddEntry }> {
+    const entry = await this.getRaiddEntry(entryId);
+    if (!entry) throw new Error('RAIDD entry not found');
+    if (entry.type !== 'risk' && entry.type !== 'issue') {
+      throw new Error('Only risks and issues can be resolved this way');
+    }
+    const allowedResolveStatuses = ['closed', 'resolved', 'mitigated'];
+    if (!allowedResolveStatuses.includes(options.resolveStatus)) {
+      throw new Error('Invalid resolving status');
+    }
+
+    // Validate inputs and resolve the linked action (if any) before opening the
+    // transaction so we fail fast on bad requests.
+    let actionToClose: RaiddEntry | undefined;
+    if (options.path === 'decision') {
+      const decision = options.decision;
+      if (!decision || !decision.title?.trim()) {
+        throw new Error('A decision title is required to capture a decision');
+      }
+    } else {
+      const actionItemId = options.actionItemId;
+      if (!actionItemId) {
+        throw new Error('Select an action item to close this entry');
+      }
+      const action = await this.getRaiddEntry(actionItemId);
+      if (!action || action.type !== 'action_item' || action.parentEntryId !== entryId) {
+        throw new Error('The selected action item is not linked to this entry');
+      }
+      actionToClose = action;
+    }
+
+    // Wrap backing creation/closure and the parent transition in a single
+    // transaction so the governed resolution is atomic (both commit or neither).
+    return await db.transaction(async (tx) => {
+      let createdDecision: RaiddEntry | undefined;
+
+      if (options.path === 'decision') {
+        const decision = options.decision!;
+        const refNumber = await this.getNextRaiddRefNumber(entry.projectId, 'decision');
+        const stakeholderIds = (decision.stakeholderIds && decision.stakeholderIds.length > 0)
+          ? decision.stakeholderIds
+          : null;
+        [createdDecision] = await tx.insert(raiddEntries).values({
+          tenantId: entry.tenantId,
+          projectId: entry.projectId,
+          type: 'decision',
+          refNumber,
+          title: decision.title!.trim(),
+          description: decision.description?.trim() || null,
+          status: 'accepted',
+          priority: entry.priority,
+          ownerId: decision.ownerId || null,
+          decisionDate: decision.decisionDate || null,
+          stakeholderIds,
+          parentEntryId: entryId,
+          closedAt: new Date(),
+          createdBy: options.userId,
+          updatedBy: options.userId,
+        }).returning();
+      } else {
+        await tx.update(raiddEntries)
+          .set({
+            status: 'closed',
+            closedAt: actionToClose!.closedAt ?? new Date(),
+            updatedBy: options.userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(raiddEntries.id, actionToClose!.id));
+      }
+
+      // Backing now exists within this transaction, so transition the parent
+      // directly. We intentionally bypass updateRaiddEntry's guard here because
+      // the backing we just created/closed would not be visible to a separate
+      // connection mid-transaction; the guard remains the safety net for all
+      // other (PATCH) closure paths.
+      const [updated] = await tx.update(raiddEntries)
+        .set({
+          status: options.resolveStatus,
+          resolutionNotes: options.resolutionNotes?.trim() || entry.resolutionNotes || null,
+          closedAt: new Date(),
+          updatedBy: options.userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(raiddEntries.id, entryId))
+        .returning();
+
+      return { entry: updated, decision: createdDecision };
+    });
   },
 
   async getNextRaiddRefNumber(projectId: string, type: string): Promise<string> {
