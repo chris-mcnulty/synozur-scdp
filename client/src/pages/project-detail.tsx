@@ -5428,11 +5428,41 @@ export default function ProjectDetail() {
                             </Select>
                           </TableCell>
                           <TableCell>
-                            {(allocation.status === 'completed' && (allocation as any).completedViaAlternatePath) && (
-                              <span title="Completed via alternate path" className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
-                                <GitMerge className="w-3.5 h-3.5" />
-                                Alt. path
-                              </span>
+                            {allocation.status === 'completed' && (
+                              embedReadonly ? (
+                                (allocation as any).completedViaAlternatePath && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                                    <GitMerge className="w-3.5 h-3.5" />
+                                    Alt. path
+                                  </span>
+                                )
+                              ) : (
+                                <UITooltipProvider>
+                                  <UITooltip>
+                                    <UITooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className={`h-7 px-2 gap-1 text-xs ${(allocation as any).completedViaAlternatePath ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300' : 'text-muted-foreground hover:text-foreground'}`}
+                                        onClick={() => updateAssignmentMutation.mutate({
+                                          allocationId: allocation.id,
+                                          data: { completedViaAlternatePath: !(allocation as any).completedViaAlternatePath }
+                                        })}
+                                        disabled={updateAssignmentMutation.isPending}
+                                        data-testid={`button-alt-path-${allocation.id}`}
+                                      >
+                                        <GitMerge className="w-3.5 h-3.5" />
+                                        {(allocation as any).completedViaAlternatePath && <span>Alt. path</span>}
+                                      </Button>
+                                    </UITooltipTrigger>
+                                    <UITooltipContent>
+                                      {(allocation as any).completedViaAlternatePath
+                                        ? 'Remove "completed via alternate path" flag'
+                                        : 'Mark as completed via alternate path'}
+                                    </UITooltipContent>
+                                  </UITooltip>
+                                </UITooltipProvider>
+                              )
                             )}
                           </TableCell>
                           {!embedReadonly && (
