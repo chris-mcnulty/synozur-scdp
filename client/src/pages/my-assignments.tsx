@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Layout } from "@/components/layout/layout";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search, ChevronRight, ArrowUpDown, UserCheck } from "lucide-react";
+import { Loader2, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search, ChevronRight, ArrowUpDown, UserCheck, XCircle, GitMerge } from "lucide-react";
 import { format, subMonths } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
@@ -165,7 +165,8 @@ export function MyAssignments() {
       open: [] as Assignment[],
       in_progress: [] as Assignment[],
       completed: [] as Assignment[],
-      cancelled: [] as Assignment[]
+      cancelled: [] as Assignment[],
+      obsolete: [] as Assignment[]
     };
     
     filteredAssignments.forEach((assignment: Assignment) => {
@@ -273,22 +274,30 @@ export function MyAssignments() {
     }
   });
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, completedViaAlternatePath?: boolean) => {
     const variants: Record<string, any> = {
       open: { variant: "outline", icon: AlertCircle, label: "Open" },
       in_progress: { variant: "default", icon: Clock, label: "In Progress" },
       completed: { variant: "success", icon: CheckCircle, label: "Completed" },
-      cancelled: { variant: "secondary", icon: null, label: "Cancelled" }
+      cancelled: { variant: "secondary", icon: null, label: "Cancelled" },
+      obsolete: { variant: "secondary", icon: XCircle, label: "Obsolete", className: "text-orange-700 bg-orange-100 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300" }
     };
     
     const config = variants[status] || variants.open;
     const Icon = config.icon;
     
     return (
-      <Badge variant={config.variant} className="flex items-center gap-1">
-        {Icon && <Icon className="w-3 h-3" />}
-        {config.label}
-      </Badge>
+      <div className="flex items-center gap-1">
+        <Badge variant={config.variant} className={`flex items-center gap-1 ${config.className || ''}`}>
+          {Icon && <Icon className="w-3 h-3" />}
+          {config.label}
+        </Badge>
+        {status === 'completed' && completedViaAlternatePath && (
+          <span title="Completed via alternate path" className="text-muted-foreground">
+            <GitMerge className="w-3 h-3 text-blue-500" />
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -353,6 +362,7 @@ export function MyAssignments() {
               <SelectItem value="in_progress">In Progress</SelectItem>
               <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
+              <SelectItem value="obsolete">Obsolete</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -401,6 +411,7 @@ export function MyAssignments() {
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="obsolete">Obsolete</SelectItem>
                 </SelectContent>
               </Select>
               
@@ -504,10 +515,10 @@ export function MyAssignments() {
                             </span>
                           ) : "-"}
                         </TableCell>
-                        <TableCell>{getStatusBadge(assignment.status)}</TableCell>
+                        <TableCell>{getStatusBadge(assignment.status, (assignment as any).completedViaAlternatePath)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {assignment.status !== 'completed' && assignment.status !== 'cancelled' && (
+                            {assignment.status !== 'completed' && assignment.status !== 'cancelled' && assignment.status !== 'obsolete' && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -535,6 +546,7 @@ export function MyAssignments() {
                                 <SelectItem value="in_progress">In Progress</SelectItem>
                                 <SelectItem value="completed">Completed</SelectItem>
                                 <SelectItem value="cancelled">Cancelled</SelectItem>
+                                <SelectItem value="obsolete">Obsolete</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>

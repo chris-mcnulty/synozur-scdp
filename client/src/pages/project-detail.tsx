@@ -153,7 +153,7 @@ import {
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles, Bookmark,
-  Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock, Hash, ShieldOff
+  Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock, Hash, ShieldOff, GitMerge, XCircle
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
@@ -1464,10 +1464,12 @@ export default function ProjectDetail() {
   const [assignStart, setAssignStart] = useState<string>("");
   const [assignEnd, setAssignEnd] = useState<string>("");
 
+  const [dialogStatus, setDialogStatus] = useState<string>('');
   useEffect(() => {
     if (showAssignmentDialog) {
       setAssignStart(editingAssignment?.plannedStartDate || "");
       setAssignEnd(editingAssignment?.plannedEndDate || "");
+      setDialogStatus(editingAssignment?.status || 'open');
     }
   }, [showAssignmentDialog, editingAssignment]);
 
@@ -5058,6 +5060,8 @@ export default function ProjectDetail() {
                       <SelectItem value="open">Open</SelectItem>
                       <SelectItem value="in_progress">In Progress</SelectItem>
                       <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="obsolete">Obsolete</SelectItem>
                     </SelectContent>
                   </Select>
                   <Select
@@ -5408,8 +5412,28 @@ export default function ProjectDetail() {
                                     Completed
                                   </div>
                                 </SelectItem>
+                                <SelectItem value="cancelled">
+                                  <div className="flex items-center gap-2">
+                                    <X className="w-3 h-3 text-muted-foreground" />
+                                    Cancelled
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="obsolete">
+                                  <div className="flex items-center gap-2">
+                                    <XCircle className="w-3 h-3 text-orange-500" />
+                                    Obsolete
+                                  </div>
+                                </SelectItem>
                               </SelectContent>
                             </Select>
+                          </TableCell>
+                          <TableCell>
+                            {(allocation.status === 'completed' && (allocation as any).completedViaAlternatePath) && (
+                              <span title="Completed via alternate path" className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                                <GitMerge className="w-3.5 h-3.5" />
+                                Alt. path
+                              </span>
+                            )}
                           </TableCell>
                           {!embedReadonly && (
                           <TableCell>
@@ -9063,6 +9087,7 @@ export default function ProjectDetail() {
                 pricingMode = "role";
               }
               
+              const completedViaAlternatePathChecked = formData.get('completedViaAlternatePath') === 'on';
               const data: AssignmentFormData = {
                 personId: personIdValue,
                 roleId: roleIdFinal,
@@ -9075,7 +9100,9 @@ export default function ProjectDetail() {
                 startDate: assignStart || undefined,
                 endDate: assignEnd || undefined,
                 taskDescription: formData.get('taskDescription') as string || undefined,
-                notes: formData.get('notes') as string || undefined
+                notes: formData.get('notes') as string || undefined,
+                ...(editingAssignment ? { status: dialogStatus } : {}),
+                ...(dialogStatus === 'completed' ? { completedViaAlternatePath: completedViaAlternatePathChecked } : {})
               };
               
               if (editingAssignment) {
@@ -9288,6 +9315,46 @@ export default function ProjectDetail() {
                   data-testid="input-notes"
                 />
               </div>
+
+              {editingAssignment && (
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={dialogStatus} onValueChange={setDialogStatus}>
+                    <SelectTrigger data-testid="select-dialog-status">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="open">Open</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="obsolete">Obsolete</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {editingAssignment && dialogStatus === 'completed' && (
+                <div className="flex items-center gap-3 p-3 rounded-md border bg-muted/40">
+                  <input
+                    type="checkbox"
+                    id="completedViaAlternatePath"
+                    name="completedViaAlternatePath"
+                    defaultChecked={!!editingAssignment?.completedViaAlternatePath}
+                    className="h-4 w-4 rounded border-gray-300"
+                    data-testid="checkbox-completed-via-alternate-path"
+                  />
+                  <div>
+                    <Label htmlFor="completedViaAlternatePath" className="flex items-center gap-1.5 cursor-pointer font-medium">
+                      <GitMerge className="w-3.5 h-3.5 text-blue-500" />
+                      Completed via alternate path
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Check if delivery was achieved through a different path than originally planned
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => {

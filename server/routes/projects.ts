@@ -2303,13 +2303,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           ].filter(Boolean);
           const taskNotes = notesParts.join('\n\n').trim();
           
-          // Determine completion status
-          let percentComplete = 0;
-          if (allocation.status === 'completed') {
-            percentComplete = 100;
-          } else if (allocation.status === 'in_progress') {
-            percentComplete = 50;
-          }
+          // Determine completion status — obsolete also closes the Planner task (100%)
+          const { mapStatusToPercent: mapS2P } = await import('@shared/planner-conflict.js');
+          let percentComplete = mapS2P(allocation.status);
           
           if (syncRecord) {
             // Validate and prepare dates for Planner update
@@ -2468,22 +2464,20 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           
           // Check if task status changed in Planner
           const taskPercentComplete = task.percentComplete || 0;
-          let newStatus: string | null = null;
-          
-          if (taskPercentComplete === 100) {
-            newStatus = 'completed';
-          } else if (taskPercentComplete > 0 && taskPercentComplete < 100) {
-            // Any progress between 1-99% means in progress
-            newStatus = 'in_progress';
-          } else if (taskPercentComplete === 0) {
-            newStatus = 'open';
-          }
+          const { mapPercentToStatus: mapP2S } = await import('@shared/planner-conflict.js');
+          let newStatus: string | null = mapP2S(taskPercentComplete);
           
           console.log('[PLANNER] Task', syncRecord.taskId, 'percentComplete:', taskPercentComplete, '→ status:', newStatus);
           
           // Get current allocation to compare
           const allocation = allocations.find(a => a.id === syncRecord.allocationId);
           console.log('[PLANNER] Allocation', syncRecord.allocationId, 'current status:', allocation?.status, 'new status:', newStatus);
+          
+          // Preserve local 'obsolete' status when Planner sends 100% — both map to the same
+          // percentComplete value but 'obsolete' has distinct semantics from 'completed'.
+          if (allocation?.status === 'obsolete' && newStatus === 'completed') {
+            newStatus = 'obsolete';
+          }
           
           if (allocation && newStatus && allocation.status !== newStatus) {
             // Update allocation status based on Planner task

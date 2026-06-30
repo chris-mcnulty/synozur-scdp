@@ -130,6 +130,8 @@ export default function CrossProjectResource() {
         return 'secondary';
       case 'cancelled':
         return 'destructive';
+      case 'obsolete':
+        return 'outline';
       default:
         return 'outline';
     }
@@ -241,6 +243,7 @@ export default function CrossProjectResource() {
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="obsolete">Obsolete</SelectItem>
                 </SelectContent>
               </Select>
             </div>

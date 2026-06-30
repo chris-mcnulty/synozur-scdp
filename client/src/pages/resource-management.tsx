@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Calendar, Clock, Users, Filter, ChevronDown, ChevronRight, ChevronLeft, Edit2, AlertCircle } from "lucide-react";
+import { Calendar, Clock, Users, Filter, ChevronDown, ChevronRight, ChevronLeft, Edit2, AlertCircle, GitMerge } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -297,16 +297,26 @@ export default function ResourceManagementPage() {
     toast({ title: "Timeline exported successfully" });
   };
 
-  const getStatusBadge = (status: string | null) => {
+  const getStatusBadge = (status: string | null, completedViaAlternatePath?: boolean) => {
     const statusConfig = {
       open: { variant: "secondary", label: "Open" },
       in_progress: { variant: "default", label: "In Progress" },
       completed: { variant: "success", label: "Completed" },
       cancelled: { variant: "destructive", label: "Cancelled" },
+      obsolete: { variant: "outline", label: "Obsolete" },
     } as const;
 
     const config = statusConfig[status as keyof typeof statusConfig] || { variant: "outline", label: status || "No Status" };
-    return <Badge variant={config.variant as any}>{config.label}</Badge>;
+    return (
+      <div className="flex items-center gap-1">
+        <Badge variant={config.variant as any}>{config.label}</Badge>
+        {status === 'completed' && completedViaAlternatePath && (
+          <span title="Completed via alternate path">
+            <GitMerge className="w-3 h-3 text-blue-500" />
+          </span>
+        )}
+      </div>
+    );
   };
 
   // Timeline grid helpers
@@ -489,6 +499,7 @@ export default function ResourceManagementPage() {
                     <SelectItem value="in_progress">In Progress</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
                     <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="obsolete">Obsolete</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -888,7 +899,7 @@ export default function ResourceManagementPage() {
                                 ? format(new Date(assignment.plannedEndDate), "MMM d, yyyy")
                                 : "-"}
                             </TableCell>
-                            <TableCell>{getStatusBadge(assignment.status)}</TableCell>
+                            <TableCell>{getStatusBadge(assignment.status, (assignment as any).completedViaAlternatePath)}</TableCell>
                             <TableCell>
                               <Button
                                 variant="ghost"

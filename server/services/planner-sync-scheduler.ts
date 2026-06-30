@@ -200,12 +200,7 @@ export async function syncProjectToPlanner(
         ].filter(Boolean);
         const taskNotes = notesParts.join('\n\n').trim();
 
-        let percentComplete = 0;
-        if (allocation.status === 'completed') {
-          percentComplete = 100;
-        } else if (allocation.status === 'in_progress') {
-          percentComplete = 50;
-        }
+        let percentComplete = mapStatusToPercent(allocation.status);
 
         if (syncRecord) {
           let updateStartDateTime: string | null = allocation.plannedStartDate || null;
@@ -250,19 +245,27 @@ export async function syncProjectToPlanner(
             const remotePercent = task.percentComplete ?? 0;
             if (conflict.winner === 'remote') {
               // Remote wins — apply inbound to local, do NOT push outbound.
+              // IMPORTANT: never overwrite a local 'obsolete' status with 'completed'
+              // from Planner (both map to percentComplete=100 but have different semantics).
+              // If local is already 'obsolete' and remote says 100%, local timestamp wins
+              // for status preservation — the remote-wins path only applies to other fields.
               const remoteStatus = mapPercentToStatus(remotePercent);
-              if (remoteStatus !== allocation.status) {
+              const localIsObsolete = allocation.status === 'obsolete';
+              const effectiveRemoteStatus = (localIsObsolete && remoteStatus === 'completed')
+                ? 'obsolete'
+                : remoteStatus;
+              if (effectiveRemoteStatus !== allocation.status) {
                 try {
                   // _syncWrite: true ensures the storage layer does NOT stamp
                   // lastEditedAt — sync writes must never masquerade as human edits.
                   await storage.updateProjectAllocation(allocation.id, {
-                    status: remoteStatus,
-                    completedDate: remoteStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
-                    startedDate: remoteStatus === 'in_progress' && !allocation.startedDate
+                    status: effectiveRemoteStatus,
+                    completedDate: effectiveRemoteStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
+                    startedDate: effectiveRemoteStatus === 'in_progress' && !allocation.startedDate
                       ? new Date().toISOString().slice(0, 10) : allocation.startedDate,
                     _syncWrite: true,
                   } as any);
-                  console.log(`[PLANNER-SYNC] LWW: remote wins for allocation ${allocation.id} → ${remoteStatus}`);
+                  console.log(`[PLANNER-SYNC] LWW: remote wins for allocation ${allocation.id} → ${effectiveRemoteStatus}`);
                 } catch (inboundErr: any) {
                   console.warn('[PLANNER-SYNC] Failed to apply inbound LWW update:', inboundErr.message);
                 }

@@ -69,6 +69,7 @@ export function mapPercentToStatus(percent: number | null | undefined): 'open' |
 export function mapStatusToPercent(status: string | null | undefined): number {
   switch (status) {
     case 'completed': return 100;
+    case 'obsolete': return 100;
     case 'in_progress': return 50;
     case 'cancelled': return 0;
     case 'open':

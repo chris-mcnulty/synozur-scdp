@@ -1050,7 +1050,8 @@ export const projectAllocations = pgTable("project_allocations", {
   notes: text("notes"),
   estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id), // Link to original estimate
   // Assignment tracking fields
-  status: text("status").notNull().default('open'), // open, in_progress, completed, cancelled
+  status: text("status").notNull().default('open'), // open, in_progress, completed, cancelled, obsolete
+  completedViaAlternatePath: boolean("completed_via_alternate_path").notNull().default(false),
   startedDate: date("started_date"), // Automatically set when status → in_progress
   completedDate: date("completed_date"), // Automatically set when status → completed
   roleInstanceLabel: text("role_instance_label"),
