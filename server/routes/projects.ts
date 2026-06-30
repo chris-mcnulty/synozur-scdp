@@ -6001,9 +6001,11 @@ CRITICAL — REPORTING PERIOD FOCUS: Key Accomplishments MUST describe work actu
 
 CRITICAL — PM CONTEXT LEADS: When PM CONTEXT is provided, it is the project manager's first-hand account of what mattered this period and is the PRIMARY source for Key Accomplishments. Lead with it, expand each point into specific bullets, and make sure the operational realities it describes (e.g., hands-on delivery support, vendor/partner escalations, recurring standups and review sessions) appear prominently near the top. Other data sources corroborate and add detail to the PM context — not the other way around.
 
-CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to populate Key Accomplishments and Upcoming Activities. Each task listed is an individual assignment with a description, person, role, epic/stage context, and dates. For Key Accomplishments, describe what was COMPLETED and what is currently IN PROGRESS — group related tasks into coherent narrative bullets with bold titles explaining the business value and work done. For Upcoming Activities, describe the UPCOMING TASKS that are scheduled after this period. NEVER say "no accomplishments" or "no upcoming activities" when task data is available. Transform raw task names into professional, client-appropriate descriptions.`;
+CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to populate Key Accomplishments and Upcoming Activities. Each task listed is an individual assignment with a description, person, role, epic/stage context, and dates. For Key Accomplishments, describe what was COMPLETED and what is currently IN PROGRESS — group related tasks into coherent narrative bullets with bold titles explaining the business value and work done. For Upcoming Activities, describe the UPCOMING TASKS that are scheduled after this period. NEVER say "no accomplishments" or "no upcoming activities" when task data is available. Transform raw task names into professional, client-appropriate descriptions.
 
-      const buildCompactTaskList = (allocs: any[], statusFilter: (a: any) => boolean) => {
+CRITICAL — UPCOMING ACTIVITIES MUST BE TIME-FRAMED: Every Upcoming Activity bullet MUST state a target timeframe so the reader can tell WHEN it happens. Use the {target: ...} dates attached to each UPCOMING TASK and the Target dates on UPCOMING DELIVERABLES — render them as a clear timeframe at the end of the description (e.g., "Target: Jul 2026" or "Target: Jul 8–22, 2026"). Do NOT present an activity as imminent when its target date is months out — state its real timeframe honestly. Order Upcoming Activities by target date, soonest first. ALSO reflect the UPCOMING DELIVERABLES in this section: weave each in-frame deliverable into Upcoming Activities with its target date so the deck shows what is actually due ahead. If an item is explicitly deferred or has no scheduled date, label it clearly (e.g., "(deferred — no target date)") rather than implying it is upcoming.`;
+
+      const buildCompactTaskList = (allocs: any[], statusFilter: (a: any) => boolean, includeDates = false) => {
         const grouped = new Map<string, string[]>();
         for (const alloc of allocs) {
           const taskDesc = (alloc as any).taskDescription || (alloc as any).activity?.name || '';
@@ -6022,8 +6024,13 @@ CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to
           const key = epicName || 'General';
           const task = taskDesc || stageName || 'Task';
           const person = personName ? ` (${personName.split(' ')[0]})` : '';
+          // For upcoming work, attach the planned timeframe so the AI can state WHEN each
+          // activity is targeted (reviewers can't tell near-term vs. far-future without it).
+          const when = includeDates && allocStart
+            ? ` {target: ${allocStart}${allocEnd && allocEnd !== allocStart ? `–${allocEnd}` : ''}}`
+            : '';
           if (!grouped.has(key)) grouped.set(key, []);
-          grouped.get(key)!.push(`${task}${person}`);
+          grouped.get(key)!.push(`${task}${person}${when}`);
         }
         if (grouped.size === 0) return 'None.';
         return Array.from(grouped.entries()).map(([epic, tasks]) =>
@@ -6051,7 +6058,16 @@ CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to
       );
       const compactUpcoming = buildCompactTaskList(allocations, (a) =>
         a.allocStatus !== 'completed' && !(a.completedDate && a.completedDate <= a.periodEnd) &&
-        a.allocStatus !== 'in_progress' && a.allocStart && a.allocStart > a.periodEnd
+        a.allocStatus !== 'in_progress' && a.allocStart && a.allocStart > a.periodEnd,
+        true // include target timeframes so each upcoming activity can state WHEN
+      );
+
+      // In-frame (upcoming) deliverables: not yet delivered and with a target date after the
+      // period end — these belong in Upcoming Activities so the deck reflects what is actually
+      // due ahead, with concrete target dates.
+      const upcomingDeliverables = (pptxDeliverables as any[]).filter((d: any) =>
+        d.status !== 'accepted' && d.status !== 'rejected' && !d.deliveredDate &&
+        d.targetDate && d.targetDate > effectiveEndDate
       );
 
       const userMessage = `Generate a status report for the following project activity:
@@ -6087,7 +6103,10 @@ UPCOMING TASKS (${upcomingActivities.length} total, grouped by epic):
 ${compactUpcoming}
 
 DELIVERABLES (${pptxDeliverables.length} total):
-${pptxDeliverables.length > 0 ? pptxDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — ${d.ownerName}` : ''}`).join('\n') : 'No deliverables tracked.'}
+${pptxDeliverables.length > 0 ? pptxDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}
+
+UPCOMING DELIVERABLES — due after this period, with target dates (${upcomingDeliverables.length}):
+${upcomingDeliverables.length > 0 ? upcomingDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — ${d.ownerName}` : ''} — Target: ${d.targetDate}`).join('\n') : 'None due after this period.'}
 
 RAIDD LOG — Active Risks (${activeRisks.length}):
 ${riskSummary}
