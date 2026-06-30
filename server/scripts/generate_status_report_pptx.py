@@ -1552,152 +1552,182 @@ def create_project_plan_slides(prs, data, primary_color, secondary_color):
 
 
 def create_deliverables_slide(prs, data, primary_color, secondary_color):
-    """Deliverables tracking slide with status table."""
+    """Deliverables tracking — max 10 items per slide, overflow to additional slides.
+    All fonts are kept at 8pt minimum. Phase/stage headers carry over to new pages
+    when a group spans the page boundary."""
     deliverables = data.get('deliverables', [])
     if not deliverables:
         return None
 
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_accent_bar(slide, primary_color, top=0)
-
-    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = "Deliverables Tracker"
-    set_font(run, size=22, bold=True, color=primary_color)
+    ITEMS_PER_PAGE = 10  # max deliverable rows per slide (phase headers don't count)
+    MIN_FONT = 8         # never go below this
 
     total = len(deliverables)
-    accepted = sum(1 for d in deliverables if d.get('status') == 'accepted')
+    accepted    = sum(1 for d in deliverables if d.get('status') == 'accepted')
     in_progress = sum(1 for d in deliverables if d.get('status') == 'in-progress')
-    in_review = sum(1 for d in deliverables if d.get('status') == 'in-review')
+    in_review   = sum(1 for d in deliverables if d.get('status') == 'in-review')
     not_started = sum(1 for d in deliverables if d.get('status') == 'not-started')
-    rejected = sum(1 for d in deliverables if d.get('status') == 'rejected')
+    rejected    = sum(1 for d in deliverables if d.get('status') == 'rejected')
 
-    summary_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.95), Inches(12), Inches(0.35))
-    stf = summary_box.text_frame
-    sp = stf.paragraphs[0]
     summary_parts = [f"{total} Total"]
-    if accepted:
-        summary_parts.append(f"{accepted} Accepted")
-    if in_review:
-        summary_parts.append(f"{in_review} In Review")
-    if in_progress:
-        summary_parts.append(f"{in_progress} In Progress")
-    if not_started:
-        summary_parts.append(f"{not_started} Not Started")
-    if rejected:
-        summary_parts.append(f"{rejected} Rejected")
-    srun = sp.add_run()
-    srun.text = "  |  ".join(summary_parts)
-    set_font(srun, size=10, bold=False, color='#666666')
+    if accepted:    summary_parts.append(f"{accepted} Accepted")
+    if in_review:   summary_parts.append(f"{in_review} In Review")
+    if in_progress: summary_parts.append(f"{in_progress} In Progress")
+    if not_started: summary_parts.append(f"{not_started} Not Started")
+    if rejected:    summary_parts.append(f"{rejected} Rejected")
+    summary_text = "  |  ".join(summary_parts)
+
+    status_colors = {
+        'accepted':    '#22C55E',
+        'in-review':   '#3B82F6',
+        'in-progress': '#F59E0B',
+        'not-started': '#9CA3AF',
+        'rejected':    '#EF4444',
+    }
 
     cols = 5
     col_widths = [Inches(4.0), Inches(2.0), Inches(1.8), Inches(2.5), Inches(2.5)]
-    table_top = Inches(1.4)
 
-    status_colors = {
-        'accepted': '#22C55E',
-        'in-review': '#3B82F6',
-        'in-progress': '#F59E0B',
-        'not-started': '#9CA3AF',
-        'rejected': '#EF4444',
-    }
-
-    # Group deliverables by stage, preserving first-seen order; unassigned last.
-    # Stage headers carry the parent epic as context when available.
+    # --- Group deliverables by stage, unassigned last ---
     phase_order = []
     phase_groups = {}
     for d in deliverables:
         key = d.get('stageId') or '__none__'
         if key not in phase_groups:
             stage_name = d.get('stageName') or 'Unassigned'
-            epic_name = d.get('epicName') or ''
-            if epic_name and key != '__none__':
-                header = f"{epic_name} — {stage_name}"
-            else:
-                header = stage_name
-            phase_groups[key] = {
-                'name': header,
-                'items': [],
-            }
+            epic_name  = d.get('epicName') or ''
+            header = f"{epic_name} — {stage_name}" if (epic_name and key != '__none__') else stage_name
+            phase_groups[key] = {'name': header, 'items': []}
             phase_order.append(key)
     for d in deliverables:
         phase_groups[d.get('stageId') or '__none__']['items'].append(d)
-    # Push the unassigned group to the end so real phases lead.
     if '__none__' in phase_order:
         phase_order = [k for k in phase_order if k != '__none__'] + ['__none__']
 
-    # Build the flat list of body rows (group headers + item rows), capped to fit the slide.
-    MAX_BODY_ROWS = 17
-    body = []  # each item: ('phase', name) or ('item', deliverable)
-    shown_items = 0
-    truncated = False
+    # --- Build full flat body (no cap) ---
+    full_body = []
     for key in phase_order:
         group = phase_groups[key]
-        if len(body) + 1 >= MAX_BODY_ROWS:
-            truncated = True
-            break
-        body.append(('phase', group['name']))
+        full_body.append(('phase', group['name']))
         for d in group['items']:
-            if len(body) >= MAX_BODY_ROWS:
-                truncated = True
-                break
-            body.append(('item', d))
-            shown_items += 1
-        if truncated:
-            break
+            full_body.append(('item', d))
 
-    rows = len(body) + 1  # +1 for column headers
-    table_shape = slide.shapes.add_table(rows, cols, Inches(0.3), table_top, sum(col_widths), Inches(0.32 * rows))
-    table = table_shape.table
-    for i, w in enumerate(col_widths):
-        table.columns[i].width = w
+    # --- Paginate: max ITEMS_PER_PAGE deliverable rows per slide ---
+    # Phase headers carry over to the next page when a group spans the boundary.
+    pages = []          # list of body-row lists, one per slide
+    current_page = []
+    page_item_count = 0
+    last_phase_seen = None  # most recent phase header for carry-over
 
-    headers = ['Deliverable', 'Owner', 'Status', 'Target Date', 'Delivered Date']
-    for i, h in enumerate(headers):
-        set_cell_text(table.cell(0, i), h, size=9, bold=True, color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
-
-    alt = 0
-    for idx, (kind, payload) in enumerate(body):
-        r = idx + 1
+    for entry in full_body:
+        kind, payload = entry
         if kind == 'phase':
-            # Full-width phase header row.
-            merged = table.cell(r, 0)
-            merged.merge(table.cell(r, cols - 1))
-            phase_name = payload
-            if len(phase_name) > 70:
-                phase_name = phase_name[:67] + '...'
-            set_cell_text(merged, phase_name, size=9, bold=True, color=primary_color, bg_color='#ECE6F8', alignment=PP_ALIGN.LEFT)
-            alt = 0
-            continue
+            last_phase_seen = entry
+            current_page.append(entry)
+        else:
+            # Deliverable item — flush page when limit reached
+            if page_item_count >= ITEMS_PER_PAGE:
+                pages.append(current_page)
+                current_page = []
+                page_item_count = 0
+                # Carry the current phase header so context is clear on the new slide
+                if last_phase_seen is not None:
+                    current_page.append(last_phase_seen)
+            current_page.append(entry)
+            page_item_count += 1
 
-        d = payload
-        alt += 1
-        bg = '#FFFFFF' if alt % 2 == 1 else '#F8F8FC'
-        name = d.get('name', '')
-        if len(name) > 48:
-            name = name[:45] + '...'
-        set_cell_text(table.cell(r, 0), name, size=8, bg_color=bg)
-        set_cell_text(table.cell(r, 1), d.get('ownerName', ''), size=8, bg_color=bg)
+    if current_page:
+        pages.append(current_page)
 
-        status = d.get('status', 'not-started')
-        status_label = status.replace('-', ' ').title()
-        s_color = status_colors.get(status, '#9CA3AF')
-        set_cell_text(table.cell(r, 2), status_label, size=8, bold=True, color=s_color, bg_color=bg)
+    num_pages = len(pages)
 
-        set_cell_text(table.cell(r, 3), d.get('targetDate', ''), size=8, bg_color=bg)
-        set_cell_text(table.cell(r, 4), d.get('deliveredDate', ''), size=8, bg_color=bg)
+    # --- Render one slide per page ---
+    first_slide = None
+    for page_idx, body in enumerate(pages):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        if first_slide is None:
+            first_slide = slide
+        add_accent_bar(slide, primary_color, top=0)
 
-    if truncated or shown_items < len(deliverables):
-        note_box = slide.shapes.add_textbox(Inches(0.5), Inches(7.0), Inches(12), Inches(0.3))
-        ntf = note_box.text_frame
-        np = ntf.paragraphs[0]
-        nrun = np.add_run()
-        nrun.text = f"Showing {shown_items} of {len(deliverables)} deliverables."
-        set_font(nrun, size=8, italic=True, color='#999999')
+        # Title
+        page_label = f"  (Page {page_idx + 1} of {num_pages})" if num_pages > 1 else ""
+        txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+        tf = txBox.text_frame
+        p = tf.paragraphs[0]
+        run = p.add_run()
+        run.text = f"Deliverables Tracker{page_label}"
+        set_font(run, size=22, bold=True, color=primary_color)
 
-    return slide
+        # Summary stats (overall counts, repeated on every slide for quick reference)
+        summary_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.95), Inches(12), Inches(0.35))
+        stf = summary_box.text_frame
+        sp = stf.paragraphs[0]
+        srun = sp.add_run()
+        srun.text = summary_text
+        set_font(srun, size=max(10, MIN_FONT), bold=False, color='#666666')
+
+        table_top = Inches(1.4)
+        rows = len(body) + 1  # +1 for column header row
+
+        table_shape = slide.shapes.add_table(
+            rows, cols,
+            Inches(0.3), table_top,
+            sum(col_widths), Inches(0.34 * rows)
+        )
+        table = table_shape.table
+        for i, w in enumerate(col_widths):
+            table.columns[i].width = w
+
+        # Column headers
+        headers = ['Deliverable', 'Owner', 'Status', 'Target Date', 'Delivered Date']
+        for i, h in enumerate(headers):
+            set_cell_text(table.cell(0, i), h, size=max(9, MIN_FONT), bold=True,
+                          color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
+
+        alt = 0
+        for idx, (kind, payload) in enumerate(body):
+            r = idx + 1
+            if kind == 'phase':
+                merged = table.cell(r, 0)
+                merged.merge(table.cell(r, cols - 1))
+                phase_name = payload
+                if len(phase_name) > 70:
+                    phase_name = phase_name[:67] + '...'
+                set_cell_text(merged, phase_name, size=max(9, MIN_FONT), bold=True,
+                              color=primary_color, bg_color='#ECE6F8', alignment=PP_ALIGN.LEFT)
+                alt = 0
+                continue
+
+            d = payload
+            alt += 1
+            bg = '#FFFFFF' if alt % 2 == 1 else '#F8F8FC'
+
+            name = d.get('name', '')
+            if len(name) > 48:
+                name = name[:45] + '...'
+            set_cell_text(table.cell(r, 0), name, size=max(MIN_FONT, MIN_FONT), bg_color=bg)
+            set_cell_text(table.cell(r, 1), d.get('ownerName', ''), size=MIN_FONT, bg_color=bg)
+
+            status = d.get('status', 'not-started')
+            status_label = status.replace('-', ' ').title()
+            s_color = status_colors.get(status, '#9CA3AF')
+            set_cell_text(table.cell(r, 2), status_label, size=MIN_FONT, bold=True,
+                          color=s_color, bg_color=bg)
+
+            set_cell_text(table.cell(r, 3), d.get('targetDate', ''), size=MIN_FONT, bg_color=bg)
+            set_cell_text(table.cell(r, 4), d.get('deliveredDate', ''), size=MIN_FONT, bg_color=bg)
+
+        # Page footer
+        if num_pages > 1:
+            footer_box = slide.shapes.add_textbox(Inches(0.5), Inches(7.0), Inches(12), Inches(0.3))
+            ftf = footer_box.text_frame
+            fp = ftf.paragraphs[0]
+            frun = fp.add_run()
+            items_on_page = sum(1 for kind, _ in body if kind == 'item')
+            frun.text = f"Page {page_idx + 1} of {num_pages}  ·  {items_on_page} deliverables shown  ·  {total} total"
+            set_font(frun, size=MIN_FONT, italic=True, color='#999999')
+
+    return first_slide
 
 
 def _remap_rids_in_element(element, rId_map):
