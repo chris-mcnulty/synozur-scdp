@@ -5845,6 +5845,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const allocStatus = (alloc as any).status || 'open';
         const allocStart = (alloc as any).plannedStartDate || '';
         const allocEnd = (alloc as any).plannedEndDate || allocStart;
+        const plannedEnd = (alloc as any).plannedEndDate || ''; // raw end date, NO allocStart fallback
         const completedDate = (alloc as any).completedDate || '';
 
         if (!taskDesc && !epicName) continue;
@@ -5855,12 +5856,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const context = epicName && taskDesc ? ` — ${epicName}${stageName ? ' > ' + stageName : ''}` : '';
         const label = `${taskLabel}${who}${context}${dateInfo}`;
 
-        // Only treat as "prior/completed" if the task ended within or after the report period start.
-        // Tasks that ended entirely before the period start are historical — skip them so
-        // accomplishments don't fill up with work from earlier phases of the project.
+        // Only treat as "completed" work that actually FINISHED WITHIN the report period.
+        // Uses an explicit completion date (completedDate, else a real planned end date — never
+        // the start date). Undated completions and work ending before/after the period are
+        // excluded so accomplishments reflect this period only, not earlier phases. Kept in
+        // lockstep with the compactCompleted predicate so the count header and the list agree.
+        const doneDate = completedDate || plannedEnd;
         const isCompletedInPeriod =
-          (allocStatus === 'completed' && (!allocEnd || allocEnd >= periodStart)) ||
-          (completedDate && completedDate >= periodStart && completedDate <= periodEnd);
+          (allocStatus === 'completed' || !!completedDate) &&
+          !!doneDate && doneDate >= periodStart && doneDate <= periodEnd;
 
         if (isCompletedInPeriod) {
           priorActivities.push(label);
@@ -5993,6 +5997,10 @@ Format the output as clean markdown with headers (##), bullet points (- ), and *
 
 CRITICAL: The RAIDD section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items. Use subsections (- Risks, - Issues, - Decisions, - Action Items, - Dependencies) within the RAIDD section.
 
+CRITICAL — REPORTING PERIOD FOCUS: Key Accomplishments MUST describe work actually performed DURING this reporting period (${effectiveStartDate} to ${effectiveEndDate}). Do NOT present prior-phase framing, planning, or setup from earlier in the project as current-period accomplishments. When a task spans multiple periods, credit only the portion of work done within this period. Favor concrete, period-specific signals — the TEAM ACTIVITY (time entries logged this period) and the PM CONTEXT — over generic epic/stage names. If a bullet reads like a restatement of an epic title rather than something the team actually did this period, leave it out.
+
+CRITICAL — PM CONTEXT LEADS: When PM CONTEXT is provided, it is the project manager's first-hand account of what mattered this period and is the PRIMARY source for Key Accomplishments. Lead with it, expand each point into specific bullets, and make sure the operational realities it describes (e.g., hands-on delivery support, vendor/partner escalations, recurring standups and review sessions) appear prominently near the top. Other data sources corroborate and add detail to the PM context — not the other way around.
+
 CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to populate Key Accomplishments and Upcoming Activities. Each task listed is an individual assignment with a description, person, role, epic/stage context, and dates. For Key Accomplishments, describe what was COMPLETED and what is currently IN PROGRESS — group related tasks into coherent narrative bullets with bold titles explaining the business value and work done. For Upcoming Activities, describe the UPCOMING TASKS that are scheduled after this period. NEVER say "no accomplishments" or "no upcoming activities" when task data is available. Transform raw task names into professional, client-appropriate descriptions.`;
 
       const buildCompactTaskList = (allocs: any[], statusFilter: (a: any) => boolean) => {
@@ -6005,10 +6013,11 @@ CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to
           const allocStatus = (alloc as any).status || 'open';
           const allocStart = (alloc as any).plannedStartDate || '';
           const allocEnd = (alloc as any).plannedEndDate || allocStart;
+          const plannedEnd = (alloc as any).plannedEndDate || ''; // raw end date, NO allocStart fallback
           const completedDate = (alloc as any).completedDate || '';
 
           if (!taskDesc && !epicName) continue;
-          if (!statusFilter({ allocStatus, allocStart, allocEnd, completedDate, periodStart, periodEnd: effectiveEndDate })) continue;
+          if (!statusFilter({ allocStatus, allocStart, allocEnd, plannedEnd, completedDate, periodStart, periodEnd: effectiveEndDate })) continue;
 
           const key = epicName || 'General';
           const task = taskDesc || stageName || 'Task';
@@ -6022,13 +6031,20 @@ CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to
         ).join('\n');
       };
 
-      // Only show as "completed" tasks that actually ended within the report period.
-      // Exclude tasks that finished entirely before the period start — those are historical and
-      // would otherwise make accomplishments look like old work from earlier in the project.
-      const compactCompleted = buildCompactTaskList(allocations, (a) =>
-        (a.allocStatus === 'completed' && (!a.allocEnd || a.allocEnd >= a.periodStart)) ||
-        (a.completedDate && a.completedDate >= a.periodStart && a.completedDate <= a.periodEnd)
-      );
+      // Only show as "completed" tasks that actually FINISHED WITHIN the report period.
+      // We bound the completion on BOTH ends: work that ended before the period start is
+      // historical, and work that ends after the period end hasn't happened yet. Undated
+      // "completed" tasks are excluded too — without a date we can't attribute them to this
+      // period, and including them is what made old, earlier-phase work resurface as
+      // current-period accomplishments.
+      const compactCompleted = buildCompactTaskList(allocations, (a) => {
+        // Use an EXPLICIT completion date only: the recorded completedDate, else a real
+        // planned end date. We do NOT fall back to the start date — without a genuine end
+        // signal we can't attribute the work to this period.
+        const doneDate = a.completedDate || a.plannedEnd;
+        const isDone = a.allocStatus === 'completed' || !!a.completedDate;
+        return isDone && !!doneDate && doneDate >= a.periodStart && doneDate <= a.periodEnd;
+      });
       const compactInProgress = buildCompactTaskList(allocations, (a) =>
         a.allocStatus !== 'completed' && !(a.completedDate && a.completedDate <= a.periodEnd) &&
         (a.allocStatus === 'in_progress' || (a.allocStart && a.allocStart <= a.periodEnd && a.allocEnd >= a.periodStart))
@@ -6086,7 +6102,7 @@ RAIDD LOG — Active Dependencies (${activeDependencies.length}):
 ${dependencySummary}
 
 RAIDD LOG — Decisions This Period (${recentDecisions.length}):
-${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}${pmNarrative ? `\n\nPM CONTEXT FOR THIS PERIOD (written by the project manager — incorporate and expand this in the narrative):\n${pmNarrative}` : ""}`;
+${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}${pmNarrative ? `\n\nPM CONTEXT FOR THIS PERIOD (written by the project manager — THIS IS THE PRIMARY SOURCE for Key Accomplishments. Lead with it and expand each point into specific, period-scoped bullets near the top; do not bury it beneath generic task/epic framing):\n${pmNarrative}` : ""}`;
 
       let aiReport = "";
       try {
