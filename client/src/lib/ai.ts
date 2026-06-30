@@ -156,7 +156,7 @@ export interface RaiddRewriteParams {
   draft: string;
   type?: string;
   title?: string;
-  mode?: "resolution" | "decision";
+  mode?: "resolution" | "decision" | "description";
 }
 
 export function useRewriteRaiddResolution() {

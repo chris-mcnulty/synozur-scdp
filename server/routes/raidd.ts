@@ -848,10 +848,15 @@ ${trimmedNarrative}${existingNote}`;
       const groundingDocs = await storage.getActiveGroundingDocumentsForTenant(tenantId);
       const groundingCtx = buildGroundingContext(groundingDocs, 'general');
 
-      const isDecision = mode === 'decision';
-      const systemPrompt = isDecision
-        ? `You are a consulting project management expert. Rewrite the user's rough notes into a clear, professional decision-log entry. Be concise and factual. Capture what was decided and the rationale. Do not invent facts that are not implied by the notes. Return only the rewritten text with no preamble or quotes.`
-        : `You are a consulting project management expert. Rewrite the user's rough notes into clear, professional resolution notes for a RAIDD ${type === 'issue' ? 'issue' : 'risk'}. Be concise and factual, describing how it was resolved. Do not invent facts that are not implied by the notes. Return only the rewritten text with no preamble or quotes.`;
+      const typeLabel = ({ risk: 'risk', issue: 'issue', decision: 'decision', dependency: 'dependency', action_item: 'action item' } as Record<string, string>)[type] || 'item';
+      let systemPrompt: string;
+      if (mode === 'decision') {
+        systemPrompt = `You are a consulting project management expert. Rewrite the user's rough notes into a clear, professional decision-log entry. Be concise and factual. Capture what was decided and the rationale. Do not invent facts that are not implied by the notes. Return only the rewritten text with no preamble or quotes.`;
+      } else if (mode === 'description') {
+        systemPrompt = `You are a consulting project management expert. Rewrite the user's rough notes into a clear, professional description for a RAIDD ${typeLabel}. Be concise and factual. Do not invent facts that are not implied by the notes. Return only the rewritten text with no preamble or quotes.`;
+      } else {
+        systemPrompt = `You are a consulting project management expert. Rewrite the user's rough notes into clear, professional resolution notes for a RAIDD ${type === 'issue' ? 'issue' : 'risk'}. Be concise and factual, describing how it was resolved. Do not invent facts that are not implied by the notes. Return only the rewritten text with no preamble or quotes.`;
+      }
 
       const userMessage = `${title ? `Item: ${title}\n\n` : ''}Rough notes:\n${draft.trim()}`;
 

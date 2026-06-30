@@ -1584,6 +1584,9 @@ function RaiddFormDialog({
   defaultParentId?: string | null;
 }) {
   const isDecisionReadOnly = isEdit && entry?.type === "decision" && entry?.status !== "open";
+  const { toast } = useToast();
+  const { data: descAiStatus } = useAIStatus();
+  const descRewrite = useRewriteRaiddResolution();
 
   const form = useForm<RaiddFormData>({
     resolver: zodResolver(raiddFormSchema),
@@ -1712,9 +1715,39 @@ function RaiddFormDialog({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description</FormLabel>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>Description</FormLabel>
+                    {descAiStatus?.configured && !isDecisionReadOnly && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={descRewrite.isPending || !field.value?.trim()}
+                        onClick={async () => {
+                          try {
+                            const result = await descRewrite.mutateAsync({
+                              draft: field.value || "",
+                              type: form.getValues("type"),
+                              title: form.getValues("title"),
+                              mode: "description",
+                            });
+                            field.onChange(result.text);
+                          } catch (error: any) {
+                            toast({ title: "AI rewrite failed", description: error.message, variant: "destructive" });
+                          }
+                        }}
+                        data-testid="button-ai-rewrite-description"
+                      >
+                        {descRewrite.isPending
+                          ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          : <Sparkles className="h-3.5 w-3.5 mr-1" />}
+                        AI rewrite
+                      </Button>
+                    )}
+                  </div>
                   <FormControl>
-                    <Textarea {...field} rows={3} disabled={isDecisionReadOnly} />
+                    <Textarea {...field} rows={3} disabled={isDecisionReadOnly} placeholder="Type a rough draft, then let AI clean it up." />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
