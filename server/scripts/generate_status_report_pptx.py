@@ -529,12 +529,12 @@ def _add_raidd_table_slide(prs, title_text, subtitle_text, entries, columns, col
         set_font(srun, size=9, color='#888888')
 
     table_top = Inches(1.05) if (subtitle_text and page_num in (1, None)) else Inches(0.85)
-    max_rows_per_page = 14
+    max_rows_per_page = 9
     display_entries = entries[:max_rows_per_page]
     rows = len(display_entries) + 1
     cols = len(columns)
 
-    table_shape = slide.shapes.add_table(rows, cols, Inches(0.2), table_top, sum(col_widths), Inches(0.38 * rows))
+    table_shape = slide.shapes.add_table(rows, cols, Inches(0.2), table_top, sum(col_widths), Inches(0.55 * rows))
     table = table_shape.table
     for i, w in enumerate(col_widths):
         table.columns[i].width = w
@@ -728,7 +728,7 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
             tag_run.text = f"[{label}]"
             set_font(tag_run, size=9, bold=True, color=PRIORITY_COLORS.get('critical', '#DC2626'))
 
-            detail = _truncate((e.get('mitigationPlan', '') or '').strip(), 160)
+            detail = (e.get('mitigationPlan', '') or '').strip()
             meta_parts = []
             owner = (e.get('ownerName', '') or '').strip()
             due = (e.get('dueDate', '') or '').strip()
@@ -753,7 +753,7 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         set_font(nrun, size=10, color='#555555')
 
     # --- Per-category detail slides ---
-    max_rows_per_page = 14
+    max_rows_per_page = 9
 
     def _priority_cell(entry):
         p = entry.get('priority', '')
@@ -771,7 +771,7 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         return (entry.get('refNumber', '') or '—', {'bold': True})
 
     def _title_cell(entry):
-        return (_truncate(entry.get('title', ''), 55), {})
+        return ((entry.get('title', '') or '').strip(), {})
 
     def _due_cell(entry):
         d = entry.get('dueDate', '')
@@ -780,7 +780,7 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         return (d or '—', {})
 
     def _desc_cell(entry):
-        return (_truncate(entry.get('description', '') or entry.get('mitigationPlan', '') or '', 80), {})
+        return ((entry.get('description', '') or entry.get('mitigationPlan', '') or '').strip(), {})
 
     def _impact_cell(entry):
         imp = entry.get('impact', '')
@@ -791,10 +791,10 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         return (lk.replace('_', ' ').title() if lk else '—', {})
 
     def _mitigation_cell(entry):
-        return (_truncate(entry.get('mitigationPlan', '') or '', 70), {})
+        return ((entry.get('mitigationPlan', '') or '').strip(), {})
 
     def _resolution_cell(entry):
-        return (_truncate(entry.get('resolutionNotes', '') or '', 70), {})
+        return ((entry.get('resolutionNotes', '') or '').strip(), {})
 
     def _paginate_category(entries, title, subtitle, columns, col_widths):
         if not entries:
@@ -1390,7 +1390,7 @@ def create_project_plan_slides(prs, data, primary_color, secondary_color):
     CONTENT_WIDTH = Inches(12.3)
     EPIC_HEIGHT = Inches(0.32)
     STAGE_HEIGHT = Inches(0.28)
-    ROW_HEIGHT = Inches(0.24)
+    ROW_HEIGHT = Inches(0.35)
     HEADER_HEIGHT = Inches(0.28)
 
     STATUS_ICONS = {
@@ -1532,7 +1532,7 @@ def create_project_plan_slides(prs, data, primary_color, secondary_color):
             cols_data = [
                 (Inches(0.3), icon, icon_color, True),
                 (Inches(2.8), assignee, '#222222', False),
-                (Inches(3.8), task[:80] + ('...' if len(task) > 80 else ''), '#444444', False),
+                (Inches(3.8), task, '#444444', False),
                 (Inches(1.3), f"{hours:.1f}h" if hours else '', '#555555', False),
                 (Inches(1.5), start_d, '#555555', False),
                 (Inches(1.5), end_d, '#555555', False),
@@ -1540,7 +1540,7 @@ def create_project_plan_slides(prs, data, primary_color, secondary_color):
             for col_w, text, color, is_icon in cols_data:
                 cell = slide.shapes.add_textbox(x, y_cursor, col_w, ROW_HEIGHT)
                 tf = cell.text_frame
-                tf.word_wrap = False
+                tf.word_wrap = not is_icon
                 p = tf.paragraphs[0]
                 run = p.add_run()
                 run.text = str(text)
