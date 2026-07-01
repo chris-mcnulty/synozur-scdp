@@ -374,6 +374,12 @@ export const projectsMethods: ThisType<IStorage> = {
     return project;
   },
 
+  async updateProjectLastPmNarrative(projectId: string, tenantId: string, text: string): Promise<void> {
+    await db.update(projects)
+      .set({ lastPmNarrative: text || null })
+      .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)));
+  },
+
   async deleteProject(id: string): Promise<void> {
     try {
       // Use a transaction to ensure all-or-nothing deletion

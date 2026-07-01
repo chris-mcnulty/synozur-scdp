@@ -24,6 +24,7 @@ interface StatusReportDialogProps {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectName: string;
+  lastPmNarrative?: string | null;
 }
 
 interface RaiddCounts {
@@ -61,7 +62,7 @@ const styleLabels: Record<ReportStyle, { label: string; description: string }> =
   client_facing: { label: "Client-Facing", description: "Professional update suitable for sharing with clients" },
 };
 
-export function StatusReportDialog({ open, onOpenChange, projectId, projectName }: StatusReportDialogProps) {
+export function StatusReportDialog({ open, onOpenChange, projectId, projectName, lastPmNarrative }: StatusReportDialogProps) {
   const { toast } = useToast();
   const today = new Date();
 
@@ -85,7 +86,14 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [raiddOpenOnly, setRaiddOpenOnly] = useState(true);
   const [decisionLogFilter, setDecisionLogFilter] = useState<"open" | "closed" | "all">("open");
   const [ragStatus, setRagStatus] = useState<"green" | "amber" | "red">("green");
-  const [pmNarrative, setPmNarrative] = useState("");
+  const [pmNarrative, setPmNarrative] = useState(lastPmNarrative || "");
+
+  // When the dialog opens, pre-fill the PM narrative from the cached server value
+  useEffect(() => {
+    if (open) {
+      setPmNarrative(lastPmNarrative || "");
+    }
+  }, [open, lastPmNarrative]);
 
   const { data: tenantSettings } = useQuery<any>({
     queryKey: ['/api/tenant/settings'],
@@ -437,14 +445,28 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm font-medium">PM Context for this Period</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">PM Context for this Period</Label>
+                  {pmNarrative && (
+                    <button
+                      type="button"
+                      onClick={() => setPmNarrative("")}
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                      Clear
+                    </button>
+                  )}
+                </div>
                 <Textarea
                   placeholder="Optional context the AI should incorporate — e.g. 'We experienced a 2-week schedule slip due to a scope change. A change order is pending client approval. Avoid overly optimistic language.'"
                   value={pmNarrative}
                   onChange={(e) => setPmNarrative(e.target.value)}
                   className="min-h-[80px] text-sm resize-none"
                 />
-                <p className="text-xs text-muted-foreground">Appears as PM-provided context in the AI prompt. Use it to steer framing, flag sensitivities, or add detail the data doesn't capture.</p>
+                <p className="text-xs text-muted-foreground">
+                  {lastPmNarrative ? "Pre-filled from your last export. Edit or clear before generating." : "Appears as PM-provided context in the AI prompt. Use it to steer framing, flag sensitivities, or add detail the data doesn't capture."}
+                </p>
               </div>
 
               <Separator />

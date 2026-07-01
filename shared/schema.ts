@@ -730,6 +730,8 @@ export const projects = pgTable("projects", {
   exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }), // costCurrency per 1 quoteCurrency
   exchangeRateLockedAt: timestamp("exchange_rate_locked_at"),
   exchangeRateSource: varchar("exchange_rate_source", { length: 20 }).default("live"), // 'live', 'locked', 'manual'
+  // PM Steering narrative cache — persists the last PM Context text used in a PPTX export
+  lastPmNarrative: text("last_pm_narrative"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_projects_tenant").on(table.tenantId),

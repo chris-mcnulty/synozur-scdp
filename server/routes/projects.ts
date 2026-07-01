@@ -5698,6 +5698,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
       const tenantId = req.user!.tenantId || (project as any).tenantId;
 
+      // Persist the PM steering narrative for future pre-fill
+      if (tenantId) {
+        try {
+          await storage.updateProjectLastPmNarrative(req.params.id, tenantId, pmNarrative);
+        } catch (err: any) {
+          console.warn("[PPTX] Failed to cache PM narrative:", err?.message);
+        }
+      }
+
       // Pre-flight data quality check — same check used by the text status report flow
       let dataQualityReport: Awaited<ReturnType<typeof storage.checkStatusReportDataQuality>> | null = null;
       try {

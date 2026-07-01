@@ -10016,6 +10016,7 @@ export default function ProjectDetail() {
           onOpenChange={setShowStatusReport}
           projectId={id || ""}
           projectName={analytics?.project?.name || ""}
+          lastPmNarrative={(analytics?.project as any)?.lastPmNarrative ?? null}
         />
 
         {/* AI Project Manager Agent */}
