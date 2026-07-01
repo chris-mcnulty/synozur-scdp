@@ -1877,7 +1877,12 @@ def _inject_placeholder_text(cSld_el, inject_texts, P, A):
     inject_texts keys:
         'title'    → shape with <p:ph type="title">
         'subtitle' → shape with <p:ph idx="1"> (body / subtitle placeholder)
+        'number'   → any shape (placeholder OR free-form text box) whose sole
+                     text content is exactly "01" — replaces it with the supplied
+                     value (e.g. "02", "03").  This handles templates where the
+                     section-number badge is a hardcoded text box, not a placeholder.
     """
+    import re as _re
     from lxml import etree as _etree
 
     if not inject_texts:
@@ -1886,10 +1891,30 @@ def _inject_placeholder_text(cSld_el, inject_texts, P, A):
     if spTree is None:
         return
 
+    number_value = inject_texts.get('number')
+    _num_pat = _re.compile(r'^\s*0\d\s*$')  # matches "01", "02", … "09"
+
     for sp in spTree.findall(f'{{{P}}}sp'):
         nvSpPr = sp.find(f'{{{P}}}nvSpPr')
         if nvSpPr is None:
             continue
+
+        txBody = sp.find(f'{{{P}}}txBody')
+        if txBody is None:
+            continue
+
+        # ── 'number' injection: scan every shape for a run that is exactly "0N" ──
+        if number_value:
+            all_runs = txBody.findall(f'.//{{{A}}}r')
+            all_texts = [r.find(f'{{{A}}}t') for r in all_runs]
+            full_text = ''.join(t.text or '' for t in all_texts if t is not None)
+            if _num_pat.match(full_text):
+                for t_el in all_texts:
+                    if t_el is not None:
+                        t_el.text = number_value if t_el == all_texts[0] else ''
+                continue  # done with this shape; skip placeholder logic below
+
+        # ── title / subtitle injection (placeholder shapes only) ──
         nvPr = nvSpPr.find(f'{{{P}}}nvPr')
         if nvPr is None:
             continue
@@ -1907,11 +1932,7 @@ def _inject_placeholder_text(cSld_el, inject_texts, P, A):
         else:
             continue
 
-        if not new_text:
-            continue
-
-        txBody = sp.find(f'{{{P}}}txBody')
-        if txBody is None:
+        if new_text is None:
             continue
 
         # Preserve the run properties from the first run (bold, colour, size)
@@ -1924,6 +1945,8 @@ def _inject_placeholder_text(cSld_el, inject_texts, P, A):
 
         # Support either a plain string or a list of strings (one paragraph each)
         lines = [new_text] if isinstance(new_text, str) else [l for l in new_text if l]
+        if not lines:
+            lines = [' ']  # keep a non-empty run so the placeholder box stays editable
 
         # Remove all existing paragraphs and replace with one paragraph per line
         for p_el in txBody.findall(f'{{{A}}}p'):
@@ -2488,8 +2511,9 @@ def generate_executive_narrative_pptx(data, output_path):
                 section_template_path, prs,
                 _part_cache=section_cache,
                 inject_texts={
-                    'title': section_name,
-                    'subtitle': f"{_exec_section_counter[0]:02d}",
+                    'title':    section_name,
+                    'number':   f"{_exec_section_counter[0]:02d}",
+                    'subtitle': ' ',
                 },
             )
             if not ok:
@@ -2568,8 +2592,9 @@ def generate_pptx(data, output_path):
                 section_template_path, prs,
                 _part_cache=section_cache,
                 inject_texts={
-                    'title': section_name,
-                    'subtitle': f"{_section_counter[0]:02d}",
+                    'title':    section_name,
+                    'number':   f"{_section_counter[0]:02d}",
+                    'subtitle': ' ',
                 },
             )
             if not ok:
