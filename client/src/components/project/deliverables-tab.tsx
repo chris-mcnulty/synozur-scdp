@@ -350,13 +350,13 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
     const dir = sortDir === "asc" ? 1 : -1;
 
     if (sortKey === "default") {
-      const stageA = stages.find(s => s.id === a.stageId)?.name ?? "";
-      const stageB = stages.find(s => s.id === b.stageId)?.name ?? "";
-      if (stageA !== stageB) {
-        if (!stageA) return 1;
-        if (!stageB) return -1;
-        return stageA.localeCompare(stageB);
-      }
+      // Use the natural stage order from the project plan (ordered by projectStages.order)
+      // rather than alphabetical name, so phases stay in their intended sequence.
+      const idxA = stages.findIndex(s => s.id === a.stageId);
+      const idxB = stages.findIndex(s => s.id === b.stageId);
+      const orderA = idxA === -1 ? Infinity : idxA;
+      const orderB = idxB === -1 ? Infinity : idxB;
+      if (orderA !== orderB) return orderA - orderB;
       if (!a.targetDate && !b.targetDate) return 0;
       if (!a.targetDate) return 1;
       if (!b.targetDate) return -1;
