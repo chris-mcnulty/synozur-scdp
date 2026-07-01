@@ -561,7 +561,7 @@ def _add_raidd_table_slide(prs, title_text, subtitle_text, entries, columns, col
         table.columns[i].width = w
 
     for i, (header, _) in enumerate(columns):
-        set_cell_text(table.cell(0, i), header, size=8, bold=True, color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
+        set_cell_text(table.cell(0, i), header, size=10, bold=True, color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
 
     for row_idx, entry in enumerate(display_entries):
         r = row_idx + 1
@@ -570,7 +570,7 @@ def _add_raidd_table_slide(prs, title_text, subtitle_text, entries, columns, col
             val, cell_opts = extractor(entry)
             color = cell_opts.get('color', None)
             bold = cell_opts.get('bold', False)
-            set_cell_text(table.cell(r, col_idx), val, size=7, bold=bold, color=color, bg_color=bg, alignment=PP_ALIGN.LEFT)
+            set_cell_text(table.cell(r, col_idx), val, size=9.5, bold=bold, color=color, bg_color=bg, alignment=PP_ALIGN.LEFT)
 
     return slide
 
@@ -823,7 +823,8 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         return ((entry.get('mitigationPlan', '') or '').strip(), {})
 
     def _resolution_cell(entry):
-        return ((entry.get('resolutionNotes', '') or '').strip(), {})
+        text = (entry.get('resolutionNotes', '') or entry.get('description', '') or '').strip()
+        return (text, {})
 
     def _paginate_category(entries, title, subtitle, columns, col_widths):
         if not entries:
@@ -967,17 +968,19 @@ def create_upcoming_slide(prs, data, sections, primary_color, secondary_color):
             p.space_before = Pt(6)
             p.space_after = Pt(2)
 
-            run = p.add_run()
-            run.text = f"• {item['title']}"
-            set_font(run, size=11, bold=True, color=primary_color)
+            if item['title']:
+                run = p.add_run()
+                run.text = f"• {item['title']}"
+                set_font(run, size=11, bold=True, color=primary_color)
+            else:
+                # No bold-prefixed title — render full line with inline bold support
+                render_inline_bold(p, f"• {item.get('description', '')}", size=11, primary_color=primary_color)
 
-            if item.get('description'):
+            if item['title'] and item.get('description'):
                 p2 = tf.add_paragraph()
                 p2.space_before = Pt(1)
                 p2.space_after = Pt(4)
-                run2 = p2.add_run()
-                run2.text = f"  {item['description']}"
-                set_font(run2, size=10)
+                render_inline_bold(p2, f"  {item['description']}", size=10)
 
             for sub in item.get('sub_items', []):
                 p3 = tf.add_paragraph()
@@ -1586,7 +1589,7 @@ def create_project_plan_slides(prs, data, primary_color, secondary_color):
                 p = tf.paragraphs[0]
                 run = p.add_run()
                 run.text = str(text)
-                sz = 10 if is_icon else 7
+                sz = 10 if is_icon else 8
                 set_font(run, size=sz, color=color)
                 x += col_w
 
