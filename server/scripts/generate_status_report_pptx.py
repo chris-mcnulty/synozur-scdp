@@ -507,6 +507,20 @@ def _priority_sort_key(entry):
     return order.get(entry.get('priority', 'medium'), 2)
 
 
+_RAIDD_SLIDE_HEIGHT_IN = 7.5
+_RAIDD_ROW_HEIGHT_IN = 0.55
+_RAIDD_BOTTOM_MARGIN_IN = 0.15
+_RAIDD_TABLE_TOP_WITH_SUBTITLE_IN = 1.05
+_RAIDD_TABLE_TOP_WITHOUT_SUBTITLE_IN = 0.85
+
+
+def _raidd_max_rows(table_top_in):
+    """Return the maximum number of data rows that fit on a slide given the table top offset."""
+    available_in = _RAIDD_SLIDE_HEIGHT_IN - table_top_in - _RAIDD_BOTTOM_MARGIN_IN
+    max_total_rows = int(available_in / _RAIDD_ROW_HEIGHT_IN)  # header + data rows
+    return max(1, max_total_rows - 1)
+
+
 def _add_raidd_table_slide(prs, title_text, subtitle_text, entries, columns, col_widths, primary_color, secondary_color, page_num=None, total_pages=None):
     """Create a single RAIDD category slide with a structured table."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -528,13 +542,20 @@ def _add_raidd_table_slide(prs, title_text, subtitle_text, entries, columns, col
         srun.text = subtitle_text
         set_font(srun, size=9, color='#888888')
 
-    table_top = Inches(1.05) if (subtitle_text and page_num in (1, None)) else Inches(0.85)
-    max_rows_per_page = 9
+    has_subtitle_header = bool(subtitle_text and page_num in (1, None))
+    table_top_in = _RAIDD_TABLE_TOP_WITH_SUBTITLE_IN if has_subtitle_header else _RAIDD_TABLE_TOP_WITHOUT_SUBTITLE_IN
+    table_top = Inches(table_top_in)
+
+    # Compute max data rows dynamically so the table never overflows the slide boundary
+    max_rows_per_page = _raidd_max_rows(table_top_in)
     display_entries = entries[:max_rows_per_page]
-    rows = len(display_entries) + 1
+    rows = len(display_entries) + 1  # +1 for header
     cols = len(columns)
 
-    table_shape = slide.shapes.add_table(rows, cols, Inches(0.2), table_top, sum(col_widths), Inches(0.55 * rows))
+    # Cap table height to available slide space
+    available_in = _RAIDD_SLIDE_HEIGHT_IN - table_top_in - _RAIDD_BOTTOM_MARGIN_IN
+    table_height_in = min(_RAIDD_ROW_HEIGHT_IN * rows, available_in)
+    table_shape = slide.shapes.add_table(rows, cols, Inches(0.2), table_top, sum(col_widths), Inches(table_height_in))
     table = table_shape.table
     for i, w in enumerate(col_widths):
         table.columns[i].width = w
@@ -758,7 +779,10 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         set_font(nrun, size=10, color='#555555')
 
     # --- Per-category detail slides ---
-    max_rows_per_page = 9
+    # Use worst-case table_top (page 1 with subtitle) so pagination is consistent
+    # across all pages — later pages without the subtitle header have slightly more
+    # room but using the tighter bound keeps page counts stable and avoids overflow.
+    max_rows_per_page = _raidd_max_rows(_RAIDD_TABLE_TOP_WITH_SUBTITLE_IN)
 
     def _priority_cell(entry):
         p = entry.get('priority', '')
