@@ -8,9 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { 
   FileText, Copy, Download, Mail, Sparkles, Calendar, 
   Edit, Eye, Loader2, Check, Send, X, Presentation,
@@ -192,6 +194,43 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName,
     }
   }, [periodPreset, customStartDate, customEndDate, today]);
 
+  const [executiveActionEnabled, setExecutiveActionEnabled] = useState(false);
+  const [executiveActionHtml, setExecutiveActionHtml] = useState("");
+  const [isDraftingAction, setIsDraftingAction] = useState(false);
+
+  const { data: executiveActionData } = useQuery<{ text: string | null; enabled: boolean }>({
+    queryKey: ['/api/projects', projectId, 'executive-action'],
+    queryFn: () => apiRequest(`/api/projects/${projectId}/executive-action`),
+    enabled: open,
+    staleTime: 60000,
+  });
+
+  useEffect(() => {
+    if (executiveActionData) {
+      setExecutiveActionEnabled(executiveActionData.enabled);
+      setExecutiveActionHtml(executiveActionData.text || "");
+    }
+  }, [executiveActionData]);
+
+  const handleGenerateDraft = async () => {
+    if (executiveActionHtml.replace(/<[^>]+>/g, '').trim()) {
+      if (!window.confirm("This will overwrite the current Executive Actions text. Continue?")) return;
+    }
+    setIsDraftingAction(true);
+    try {
+      const { start, end } = getDateRange();
+      const data = await apiRequest(`/api/projects/${projectId}/executive-action/draft`, {
+        method: "POST",
+        body: JSON.stringify({ periodStart: start, periodEnd: end }),
+      });
+      setExecutiveActionHtml(`<p>${data.text.replace(/\n\n/g, '</p><p>').replace(/\n/g, ' ')}</p>`);
+    } catch {
+      toast({ title: "Failed to generate draft", variant: "destructive" });
+    } finally {
+      setIsDraftingAction(false);
+    }
+  };
+
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [pendingJobMetadata, setPendingJobMetadata] = useState<ReportMetadata | null>(null);
 
@@ -325,6 +364,8 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName,
           ragStatus,
           pmNarrative,
           decisionLogFilter,
+          executiveActionEnabled,
+          executiveActionHtml,
         }),
         signal: pptxController.signal,
       });
@@ -340,12 +381,21 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName,
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
       toast({ title: "PowerPoint report downloaded" });
+      // Persist executive action state after successful download
+      try {
+        await apiRequest(`/api/projects/${projectId}/executive-action`, {
+          method: "PUT",
+          body: JSON.stringify({ text: executiveActionHtml || null, enabled: executiveActionEnabled }),
+        });
+      } catch {
+        // Non-blocking — don't fail the download if persist fails
+      }
     } catch {
       toast({ title: "Failed to generate PowerPoint report", variant: "destructive" });
     } finally {
       setIsDownloadingPptx(false);
     }
-  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, raiddOpenOnly, decisionLogFilter, ragStatus, pmNarrative, getDateRange, toast]);
+  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, raiddOpenOnly, decisionLogFilter, ragStatus, pmNarrative, executiveActionEnabled, executiveActionHtml, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${safeFormat(displayStart, "MMM d")} - ${safeFormat(displayEnd, "MMM d, yyyy")}`;
@@ -467,6 +517,46 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName,
                 <p className="text-xs text-muted-foreground">
                   {lastPmNarrative ? "Pre-filled from your last export. Edit or clear before generating." : "Appears as PM-provided context in the AI prompt. Use it to steer framing, flag sensitivities, or add detail the data doesn't capture."}
                 </p>
+              </div>
+
+              <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium">Executive Actions</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {executiveActionEnabled ? "Included on Progress Summary slide" : "Suppressed — text is preserved"}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={executiveActionEnabled}
+                    onCheckedChange={setExecutiveActionEnabled}
+                    aria-label="Enable Executive Actions section"
+                  />
+                </div>
+                {executiveActionEnabled && (
+                  <div className="space-y-2 pt-1">
+                    <div className="relative">
+                      <RichTextEditor
+                        content={executiveActionHtml}
+                        onChange={setExecutiveActionHtml}
+                        placeholder="Enter executive actions, decisions, and escalations for this period…"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleGenerateDraft}
+                      disabled={isDraftingAction}
+                    >
+                      {isDraftingAction
+                        ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Drafting…</>
+                        : <><Sparkles className="h-3.5 w-3.5" /> Generate draft</>}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">Supports bold, italic, and bullet lists. Appears as a labelled lower panel on the Progress Summary slide in the PowerPoint export.</p>
+                  </div>
+                )}
               </div>
 
               <Separator />

@@ -166,6 +166,8 @@ export interface IStorage {
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
   updateProjectLastPmNarrative(projectId: string, tenantId: string, text: string): Promise<void>;
   deleteProject(id: string): Promise<void>;
+  getProjectExecutiveAction(projectId: string, tenantId: string): Promise<{ text: string | null; enabled: boolean } | null>;
+  saveProjectExecutiveAction(projectId: string, tenantId: string, data: { text: string | null; enabled: boolean }): Promise<void>;
   copyEstimateStructureToProject(estimateId: string, projectId: string): Promise<void>;
   createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string, copyAssignments?: boolean): Promise<Project>;
   

@@ -1464,6 +1464,66 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     }
   });
 
+  // Executive Action — GET
+  app.get("/api/projects/:id/executive-action", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const result = await storage.getProjectExecutiveAction(req.params.id, tenantId);
+      if (!result) return res.status(404).json({ message: "Project not found" });
+      res.json(result);
+    } catch (error) {
+      console.error("[EXECUTIVE-ACTION] GET error:", error);
+      res.status(500).json({ message: "Failed to fetch executive action" });
+    }
+  });
+
+  // Executive Action — PUT (persist text + enabled)
+  app.put("/api/projects/:id/executive-action", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const { text, enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ message: "enabled (boolean) is required" });
+      await storage.saveProjectExecutiveAction(req.params.id, tenantId, { text: text ?? null, enabled });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[EXECUTIVE-ACTION] PUT error:", error);
+      res.status(500).json({ message: "Failed to save executive action" });
+    }
+  });
+
+  // Executive Action — AI draft
+  app.post("/api/projects/:id/executive-action/draft", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      if (project.tenantId && project.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
+
+      const { periodStart, periodEnd } = req.body;
+      const { aiService } = await import("../services/ai-service.js");
+      const systemPrompt = `You are a senior consulting project manager writing executive-level communications. Write exactly two concise paragraphs of Executive Actions for a project status report. Each paragraph should describe key decisions made or required, executive escalations, or strategic actions needed for this project during the reporting period. Write in plain prose only — no bullet lists, no markdown, no headers. Keep the language direct and board-appropriate.`;
+      const userMessage = `Project: ${project.name}
+Client: ${(project as any).client?.name || "Client"}
+Reporting Period: ${periodStart || "this period"} to ${periodEnd || "now"}
+Status: ${project.status}${project.description ? `\nDescription: ${project.description}` : ""}
+
+Write exactly two paragraphs of executive actions for this period. No bullets, no headers, plain prose only.`;
+
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        temperature: 0.5,
+        maxTokens: 600,
+        usageCtx: { tenantId, userId: (req.user as any)?.id, feature: "pptx_report" as any },
+      });
+      res.json({ text: result.content });
+    } catch (error: any) {
+      console.error("[EXECUTIVE-ACTION-DRAFT] Error:", error);
+      res.status(500).json({ message: "Failed to generate draft" });
+    }
+  });
+
   // Pre-flight data quality check for status report generation
   app.post("/api/projects/:projectId/status-report/preflight", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
@@ -5687,7 +5747,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots, raiddOpenOnly = true, ragStatus = "green", pmNarrative = "", decisionLogFilter = "open" } = req.body;
+      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots, raiddOpenOnly = true, ragStatus = "green", pmNarrative = "", decisionLogFilter = "open", executiveActionEnabled = false, executiveActionHtml = "" } = req.body;
       // templateSlots: per-slot opt-in from the dialog { title?: boolean, section?: boolean, closing?: boolean }
       // Fallback to legacy useBrandedSlides boolean for backward compatibility
       const resolvedSlots = templateSlots ?? (useBrandedSlides === false ? { title: false, section: false, closing: false } : { title: true, section: true, closing: true });
@@ -6253,6 +6313,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         raidd: raiddData,
         raiddOpenOnly,
         decisionLogFilter,
+        executiveActionEnabled: !!executiveActionEnabled,
+        executiveActionHtml: executiveActionHtml || '',
         deliverables: pptxDeliverables.map((d: any) => {
           const epic = epics.find((e: any) => e.id === d.epicId);
           const stage = allStages.find((s: any) => s.id === d.stageId);

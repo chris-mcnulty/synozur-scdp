@@ -3503,5 +3503,21 @@ export const projectsMethods: ThisType<IStorage> = {
 
   async deleteStatusReport(id: string): Promise<void> {
     await db.delete(statusReports).where(eq(statusReports.id, id));
-  }
+  },
+
+  async getProjectExecutiveAction(projectId: string, tenantId: string): Promise<{ text: string | null; enabled: boolean } | null> {
+    const [project] = await db.select({
+      executiveActionText: projects.executiveActionText,
+      executiveActionEnabled: projects.executiveActionEnabled,
+      tenantId: projects.tenantId,
+    }).from(projects).where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)));
+    if (!project) return null;
+    return { text: project.executiveActionText ?? null, enabled: project.executiveActionEnabled ?? false };
+  },
+
+  async saveProjectExecutiveAction(projectId: string, tenantId: string, data: { text: string | null; enabled: boolean }): Promise<void> {
+    await db.update(projects)
+      .set({ executiveActionText: data.text, executiveActionEnabled: data.enabled })
+      .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)));
+  },
 };

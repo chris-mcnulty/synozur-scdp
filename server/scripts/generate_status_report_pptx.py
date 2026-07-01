@@ -262,6 +262,116 @@ def create_title_slide(prs, data, primary_color, secondary_color):
 
     return slide
 
+def render_html_text(tf, html_content, primary_color, size=10, start_fresh=True):
+    """Parse simple inline HTML from Tiptap and render into a text frame.
+
+    Supported tags: <strong>/<b> (bold), <em>/<i> (italic), <u> (underline),
+    <li> (bullet paragraph), <p> (paragraph break).  All other tags are stripped.
+    """
+    import html as html_module
+    import html.parser
+
+    class _TiptapHTMLParser(html.parser.HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.segments = []  # list of (text, bold, italic, underline, is_bullet, is_paragraph_break)
+            self._bold = 0
+            self._italic = 0
+            self._underline = 0
+            self._in_li = False
+            self._pending_break = False
+
+        def handle_starttag(self, tag, attrs):
+            t = tag.lower()
+            if t in ('strong', 'b'):
+                self._bold += 1
+            elif t in ('em', 'i'):
+                self._italic += 1
+            elif t == 'u':
+                self._underline += 1
+            elif t == 'li':
+                self._in_li = True
+                self._pending_break = True
+            elif t in ('p', 'br'):
+                self._pending_break = True
+
+        def handle_endtag(self, tag):
+            t = tag.lower()
+            if t in ('strong', 'b'):
+                self._bold = max(0, self._bold - 1)
+            elif t in ('em', 'i'):
+                self._italic = max(0, self._italic - 1)
+            elif t == 'u':
+                self._underline = max(0, self._underline - 1)
+            elif t == 'li':
+                self._in_li = False
+                self._pending_break = True
+            elif t == 'p':
+                self._pending_break = True
+
+        def handle_data(self, data):
+            text = data
+            if not text:
+                return
+            self.segments.append((
+                text,
+                self._bold > 0,
+                self._italic > 0,
+                self._underline > 0,
+                self._in_li,
+                self._pending_break,
+            ))
+            self._pending_break = False
+
+    parser = _TiptapHTMLParser()
+    parser.feed(html_content)
+
+    started = not start_fresh
+
+    for (text, bold, italic, underline, is_bullet, is_break) in parser.segments:
+        # Collapse internal newlines to spaces but preserve surrounding whitespace
+        # so that inline runs like "Hello <strong>world</strong>" keep their space.
+        normalized = text.replace('\n', ' ')
+        if not normalized:
+            continue
+
+        if is_break or not started:
+            # Strip only when starting a new paragraph (leading/trailing whitespace
+            # on a paragraph boundary is never meaningful).
+            cleaned = normalized.strip()
+            if not cleaned:
+                continue
+            if not started:
+                p = tf.paragraphs[0]
+                started = True
+            else:
+                p = tf.add_paragraph()
+            p.space_after = Pt(3)
+            p.space_before = Pt(2)
+            if is_bullet:
+                run = p.add_run()
+                run.text = f"• {cleaned}"
+                set_font(run, size=size, bold=bold, italic=italic)
+                if underline:
+                    run.font.underline = True
+            else:
+                run = p.add_run()
+                run.text = cleaned
+                set_font(run, size=size, bold=bold, italic=italic)
+                if underline:
+                    run.font.underline = True
+        else:
+            # Inline run — preserve surrounding whitespace so adjacent runs
+            # like "Hello " + "world" do not merge into "Helloworld".
+            if not normalized:
+                continue
+            run = p.add_run()
+            run.text = normalized
+            set_font(run, size=size, bold=bold, italic=italic)
+            if underline:
+                run.font.underline = True
+
+
 def create_progress_summary_slide(prs, data, sections, primary_color, secondary_color):
     """Slide 2: Progress Summary with AI-generated narrative."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -292,13 +402,51 @@ def create_progress_summary_slide(prs, data, sections, primary_color, secondary_
             set_font(run, size=9, color='#666666')
 
     content_top = Inches(1.6) if metrics else Inches(1.2)
-    content_box = slide.shapes.add_textbox(Inches(0.8), content_top, Inches(11.5), Inches(5.5))
-    tf = content_box.text_frame
-    tf.word_wrap = True
 
-    summary_text = sections.get('Progress Summary', '')
-    if summary_text:
-        render_markdown_text(tf, summary_text, primary_color, size=11, start_fresh=True)
+    executive_action_enabled = data.get('executiveActionEnabled', False)
+    executive_action_html = (data.get('executiveActionHtml', '') or '').strip()
+    has_executive_action = executive_action_enabled and executive_action_html
+
+    if has_executive_action:
+        # Upper ~60% for AI narrative, lower ~40% for Executive Actions
+        narrative_height = Inches(3.2)
+        content_box = slide.shapes.add_textbox(Inches(0.8), content_top, Inches(11.5), narrative_height)
+        tf = content_box.text_frame
+        tf.word_wrap = True
+        summary_text = sections.get('Progress Summary', '')
+        if summary_text:
+            render_markdown_text(tf, summary_text, primary_color, size=11, start_fresh=True)
+
+        # Separator line
+        sep_top = content_top + narrative_height + Inches(0.08)
+        sep_shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.8), sep_top, Inches(11.5), Pt(1))
+        sep_shape.fill.solid()
+        sep_shape.fill.fore_color.rgb = hex_to_rgb('#CCCCCC')
+        sep_shape.line.fill.background()
+
+        # Executive Actions heading
+        ea_label_top = sep_top + Inches(0.1)
+        ea_label_box = slide.shapes.add_textbox(Inches(0.8), ea_label_top, Inches(11.5), Inches(0.35))
+        tf_label = ea_label_box.text_frame
+        p_label = tf_label.paragraphs[0]
+        run_label = p_label.add_run()
+        run_label.text = "Executive Actions"
+        set_font(run_label, size=13, bold=True, color=primary_color)
+
+        # Executive Actions content
+        ea_content_top = ea_label_top + Inches(0.35)
+        ea_content_height = Inches(7.5) - ea_content_top - Inches(0.1)
+        ea_content_box = slide.shapes.add_textbox(Inches(0.8), ea_content_top, Inches(11.5), max(ea_content_height, Inches(0.5)))
+        tf_ea = ea_content_box.text_frame
+        tf_ea.word_wrap = True
+        render_html_text(tf_ea, executive_action_html, primary_color, size=10, start_fresh=True)
+    else:
+        content_box = slide.shapes.add_textbox(Inches(0.8), content_top, Inches(11.5), Inches(5.5))
+        tf = content_box.text_frame
+        tf.word_wrap = True
+        summary_text = sections.get('Progress Summary', '')
+        if summary_text:
+            render_markdown_text(tf, summary_text, primary_color, size=11, start_fresh=True)
 
     # Milestone Posture intentionally omitted here — those details live on the
     # Timeline & Milestones slide, so showing them again would duplicate content.

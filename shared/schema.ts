@@ -732,6 +732,8 @@ export const projects = pgTable("projects", {
   exchangeRateSource: varchar("exchange_rate_source", { length: 20 }).default("live"), // 'live', 'locked', 'manual'
   // PM Steering narrative cache — persists the last PM Context text used in a PPTX export
   lastPmNarrative: text("last_pm_narrative"),
+  executiveActionText: text("executive_action_text"),
+  executiveActionEnabled: boolean("executive_action_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_projects_tenant").on(table.tenantId),
