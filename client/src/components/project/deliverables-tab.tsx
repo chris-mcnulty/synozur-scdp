@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Sparkles, MoreHorizontal, Pencil, Trash2, History, Clock, CheckCircle2, CircleDot, Eye, XCircle, Loader2, CalendarClock, AlertTriangle, ArrowRight } from "lucide-react";
+import { Plus, Sparkles, MoreHorizontal, Pencil, Trash2, History, Clock, CheckCircle2, CircleDot, Eye, XCircle, Loader2, CalendarClock, AlertTriangle, ArrowRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import type { ProjectDeliverable } from "@shared/schema";
 
 // Parse a YYYY-MM-DD string into a UTC date-only value (timezone-safe).
@@ -90,6 +90,19 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
   const [formAcceptanceNotes, setFormAcceptanceNotes] = useState("");
   const [formEpicId, setFormEpicId] = useState<string>("none");
   const [formStageId, setFormStageId] = useState<string>("none");
+
+  type SortKey = "name" | "phase" | "owner" | "status" | "targetDate" | "deliveredDate" | "default";
+  const [sortKey, setSortKey] = useState<SortKey>("default");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showPushDialog, setShowPushDialog] = useState(false);
@@ -334,17 +347,57 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
   const filtered = statusFilter === "all" ? deliverables : deliverables.filter(d => d.status === statusFilter);
 
   const sorted = [...filtered].sort((a, b) => {
-    const stageA = stages.find(s => s.id === a.stageId)?.name ?? "";
-    const stageB = stages.find(s => s.id === b.stageId)?.name ?? "";
-    if (stageA !== stageB) {
-      if (!stageA) return 1;
-      if (!stageB) return -1;
-      return stageA.localeCompare(stageB);
+    const dir = sortDir === "asc" ? 1 : -1;
+
+    if (sortKey === "default") {
+      const stageA = stages.find(s => s.id === a.stageId)?.name ?? "";
+      const stageB = stages.find(s => s.id === b.stageId)?.name ?? "";
+      if (stageA !== stageB) {
+        if (!stageA) return 1;
+        if (!stageB) return -1;
+        return stageA.localeCompare(stageB);
+      }
+      if (!a.targetDate && !b.targetDate) return 0;
+      if (!a.targetDate) return 1;
+      if (!b.targetDate) return -1;
+      return a.targetDate.localeCompare(b.targetDate);
     }
-    if (!a.targetDate && !b.targetDate) return 0;
-    if (!a.targetDate) return 1;
-    if (!b.targetDate) return -1;
-    return a.targetDate.localeCompare(b.targetDate);
+
+    if (sortKey === "name") {
+      return dir * a.name.localeCompare(b.name);
+    }
+    if (sortKey === "phase") {
+      const phaseA = epicName(a.epicId) ?? "";
+      const phaseB = epicName(b.epicId) ?? "";
+      if (!phaseA && !phaseB) return 0;
+      if (!phaseA) return dir;
+      if (!phaseB) return -dir;
+      return dir * phaseA.localeCompare(phaseB);
+    }
+    if (sortKey === "owner") {
+      const oa = a.ownerName ?? "";
+      const ob = b.ownerName ?? "";
+      if (!oa && !ob) return 0;
+      if (!oa) return dir;
+      if (!ob) return -dir;
+      return dir * oa.localeCompare(ob);
+    }
+    if (sortKey === "status") {
+      return dir * a.status.localeCompare(b.status);
+    }
+    if (sortKey === "targetDate") {
+      if (!a.targetDate && !b.targetDate) return 0;
+      if (!a.targetDate) return dir;
+      if (!b.targetDate) return -dir;
+      return dir * a.targetDate.localeCompare(b.targetDate);
+    }
+    if (sortKey === "deliveredDate") {
+      if (!a.deliveredDate && !b.deliveredDate) return 0;
+      if (!a.deliveredDate) return dir;
+      if (!b.deliveredDate) return -dir;
+      return dir * a.deliveredDate.localeCompare(b.deliveredDate);
+    }
+    return 0;
   });
 
   const counts = {
@@ -469,12 +522,34 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                       </TableHead>
                     )}
                     <TableHead className="w-8"></TableHead>
-                    <TableHead>Deliverable</TableHead>
-                    <TableHead>Phase</TableHead>
-                    <TableHead>Owner</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Target Date</TableHead>
-                    <TableHead>Delivered</TableHead>
+                    {(["name", "phase", "owner", "status", "targetDate", "deliveredDate"] as SortKey[]).map((key) => {
+                      const labels: Record<string, string> = {
+                        name: "Deliverable",
+                        phase: "Phase",
+                        owner: "Owner",
+                        status: "Status",
+                        targetDate: "Target Date",
+                        deliveredDate: "Delivered",
+                      };
+                      const isActive = sortKey === key;
+                      return (
+                        <TableHead
+                          key={key}
+                          className="cursor-pointer select-none hover:bg-muted/50"
+                          onClick={() => handleSort(key)}
+                        >
+                          <span className="flex items-center gap-1">
+                            {labels[key]}
+                            {isActive
+                              ? sortDir === "asc"
+                                ? <ArrowUp className="h-3 w-3 text-muted-foreground" />
+                                : <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                              : <ArrowUpDown className="h-3 w-3 text-muted-foreground/40" />
+                            }
+                          </span>
+                        </TableHead>
+                      );
+                    })}
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
