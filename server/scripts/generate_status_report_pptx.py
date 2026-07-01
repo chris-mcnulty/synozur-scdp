@@ -729,18 +729,27 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
     ]
 
     crit_y = alert_y if alerts else card_y + card_h + Inches(0.3)
-    crit_box = slide.shapes.add_textbox(Inches(0.5), crit_y, Inches(12.3), Inches(7.0 - crit_y / Inches(1)))
+    # Box extends to 0.15" from slide bottom so content is always within bounds.
+    crit_box_h = max(Inches(0.5), Inches(7.35) - crit_y)
+    crit_box = slide.shapes.add_textbox(Inches(0.5), crit_y, Inches(12.3), crit_box_h)
     ctf = crit_box.text_frame
     ctf.word_wrap = True
-    ctf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
 
     header_p = ctf.paragraphs[0]
     header_run = header_p.add_run()
     header_run.text = "Critical Items Requiring Attention"
-    set_font(header_run, size=13, bold=True, color=primary_color)
+    set_font(header_run, size=11, bold=True, color=primary_color)
+
+    # Cap items so they always fit at 8pt minimum: each item occupies ~0.35"
+    # (one title line + one sub line + spacing). The available height minus the
+    # 0.2" header leaves room for at most this many items.
+    _crit_avail_in = (crit_box_h / 914400) - 0.2
+    MAX_CRIT_ITEMS = max(4, int(_crit_avail_in / 0.35))
 
     if critical_items:
-        for type_key, e in critical_items:
+        shown = critical_items[:MAX_CRIT_ITEMS]
+        hidden = len(critical_items) - len(shown)
+        for type_key, e in shown:
             ref = (e.get('refNumber', '') or '').strip()
             title = (e.get('title', '') or '').strip()
             label = type_labels.get(type_key, type_key.replace('_', ' ').title())
@@ -749,10 +758,10 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
             ip.space_before = Pt(4)
             ref_run = ip.add_run()
             ref_run.text = f"{ref + ' ' if ref else ''}{title}  "
-            set_font(ref_run, size=10, bold=True, color='#222222')
+            set_font(ref_run, size=9, bold=True, color='#222222')
             tag_run = ip.add_run()
             tag_run.text = f"[{label}]"
-            set_font(tag_run, size=9, bold=True, color=PRIORITY_COLORS.get('critical', '#DC2626'))
+            set_font(tag_run, size=8, bold=True, color=PRIORITY_COLORS.get('critical', '#DC2626'))
 
             detail = (e.get('mitigationPlan', '') or '').strip()
             meta_parts = []
@@ -770,13 +779,20 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
                 sp.space_before = Pt(1)
                 sub_run = sp.add_run()
                 sub_run.text = sub_text
-                set_font(sub_run, size=9, color='#555555')
+                set_font(sub_run, size=8, color='#555555')
+
+        if hidden > 0:
+            mp = ctf.add_paragraph()
+            mp.space_before = Pt(6)
+            mrun = mp.add_run()
+            mrun.text = f"… and {hidden} more critical item{'s' if hidden != 1 else ''} — see detail slides"
+            set_font(mrun, size=8, italic=True, color='#888888')
     else:
         np = ctf.add_paragraph()
         np.space_before = Pt(4)
         nrun = np.add_run()
         nrun.text = "No critical items at this time. See the following slides for all open RAIDD items."
-        set_font(nrun, size=10, color='#555555')
+        set_font(nrun, size=9, color='#555555')
 
     # --- Per-category detail slides ---
     # Use worst-case table_top (page 1 with subtitle) so pagination is consistent
@@ -2463,12 +2479,18 @@ def generate_executive_narrative_pptx(data, output_path):
     else:
         create_exec_title_slide(prs, data, primary_color, secondary_color)
 
+    _exec_section_counter = [0]
+
     def insert_section_header(section_name):
+        _exec_section_counter[0] += 1
         if section_template_path and os.path.exists(section_template_path):
             ok = copy_first_slide(
                 section_template_path, prs,
                 _part_cache=section_cache,
-                inject_texts={'title': section_name},
+                inject_texts={
+                    'title': section_name,
+                    'subtitle': f"{_exec_section_counter[0]:02d}",
+                },
             )
             if not ok:
                 print(f"[EXEC-PPTX] Section header failed for '{section_name}'", file=sys.stderr)
@@ -2537,12 +2559,18 @@ def generate_pptx(data, output_path):
     else:
         create_title_slide(prs, data, primary_color, secondary_color)
 
+    _section_counter = [0]
+
     def insert_section_header(section_name):
+        _section_counter[0] += 1
         if section_template_path and os.path.exists(section_template_path):
             ok = copy_first_slide(
                 section_template_path, prs,
                 _part_cache=section_cache,
-                inject_texts={'title': section_name},
+                inject_texts={
+                    'title': section_name,
+                    'subtitle': f"{_section_counter[0]:02d}",
+                },
             )
             if not ok:
                 print(f"[PPTX_TEMPLATE] Section header insertion failed before '{section_name}' — continuing without template slide", file=sys.stderr)
