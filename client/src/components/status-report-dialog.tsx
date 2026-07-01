@@ -83,6 +83,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
   const [templateSlots, setTemplateSlots] = useState({ title: true, section: true, closing: true });
   const [raiddOpenOnly, setRaiddOpenOnly] = useState(true);
+  const [decisionLogFilter, setDecisionLogFilter] = useState<"open" | "closed" | "all">("open");
   const [ragStatus, setRagStatus] = useState<"green" | "amber" | "red">("green");
   const [pmNarrative, setPmNarrative] = useState("");
 
@@ -315,6 +316,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
           raiddOpenOnly,
           ragStatus,
           pmNarrative,
+          decisionLogFilter,
         }),
         signal: pptxController.signal,
       });
@@ -335,7 +337,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     } finally {
       setIsDownloadingPptx(false);
     }
-  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, raiddOpenOnly, ragStatus, pmNarrative, getDateRange, toast]);
+  }, [projectId, style, includeProjectPlan, projectPlanFilter, templateSlots, raiddOpenOnly, decisionLogFilter, ragStatus, pmNarrative, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${safeFormat(displayStart, "MMM d")} - ${safeFormat(displayEnd, "MMM d, yyyy")}`;
@@ -493,6 +495,23 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                   <label htmlFor="raiddOpenOnly" className="text-sm cursor-pointer">
                     RAIDD log: active items only (open &amp; in progress)
                   </label>
+                </div>
+
+                <div className="ml-6 flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">Decision Log:</span>
+                  {(["open", "closed", "all"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setDecisionLogFilter(f)}
+                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                        decisionLogFilter === f
+                          ? "border-primary bg-primary/10 text-primary font-medium"
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      {f === "open" ? "Open" : f === "closed" ? "Closed" : "All"}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="flex items-center gap-2">

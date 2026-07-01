@@ -5687,7 +5687,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots, raiddOpenOnly = true, ragStatus = "green", pmNarrative = "" } = req.body;
+      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter, useBrandedSlides, templateSlots, raiddOpenOnly = true, ragStatus = "green", pmNarrative = "", decisionLogFilter = "open" } = req.body;
       // templateSlots: per-slot opt-in from the dialog { title?: boolean, section?: boolean, closing?: boolean }
       // Fallback to legacy useBrandedSlides boolean for backward compatibility
       const resolvedSlots = templateSlots ?? (useBrandedSlides === false ? { title: false, section: false, closing: false } : { title: true, section: true, closing: true });
@@ -6175,11 +6175,21 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           status: r.status, ownerName: r.ownerName || r.assigneeName || '',
           mitigationPlan: r.description || '', dueDate: r.dueDate || '',
         })),
-        decisions: raiddEntries.filter((r: any) => r.type === 'decision').map((r: any) => ({
-          refNumber: r.refNumber || '', title: r.title, priority: r.priority,
-          status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.description || '',
-          dueDate: r.dueDate || '',
-        })),
+        decisions: (() => {
+          const decisionOpenStatuses = ['proposed', 'open', 'in_progress'];
+          const decisionClosedStatuses = ['approved', 'rejected', 'closed', 'completed'];
+          const allDecisions = raiddEntries.filter((r: any) => r.type === 'decision');
+          const filteredDecisions = decisionLogFilter === 'open'
+            ? allDecisions.filter((r: any) => decisionOpenStatuses.includes(r.status))
+            : decisionLogFilter === 'closed'
+            ? allDecisions.filter((r: any) => decisionClosedStatuses.includes(r.status))
+            : allDecisions;
+          return filteredDecisions.map((r: any) => ({
+            refNumber: r.refNumber || '', title: r.title, priority: r.priority,
+            status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.description || '',
+            dueDate: r.dueDate || '',
+          }));
+        })(),
         dependencies: raiddEntries.filter((r: any) => r.type === 'dependency' && raiddStatusFilter(r)).map((r: any) => ({
           refNumber: r.refNumber || '', title: r.title, priority: r.priority,
           status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
@@ -6233,6 +6243,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         })),
         raidd: raiddData,
         raiddOpenOnly,
+        decisionLogFilter,
         deliverables: pptxDeliverables.map((d: any) => {
           const epic = epics.find((e: any) => e.id === d.epicId);
           const stage = allStages.find((s: any) => s.id === d.stageId);

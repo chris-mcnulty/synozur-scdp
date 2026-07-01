@@ -554,10 +554,6 @@ def _add_raidd_table_slide(prs, title_text, subtitle_text, entries, columns, col
     return slide
 
 
-def _truncate(text, max_len=60):
-    if not text:
-        return ''
-    return text[:max_len - 3] + '...' if len(text) > max_len else text
 
 
 def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
@@ -566,12 +562,23 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
     buckets = _classify_raidd(raidd_raw)
 
     open_statuses = RAIDD_OPEN_STATUSES
+    decision_open_statuses = {'proposed', 'open', 'in_progress'}
+    decision_closed_statuses = {'approved', 'rejected', 'closed', 'completed'}
 
     risks = sorted(buckets['risk'], key=_priority_sort_key)
     actions = sorted(buckets['action_item'], key=_priority_sort_key)
     issues = sorted(buckets['issue'], key=_priority_sort_key)
-    decisions = buckets['decision']
+    all_decisions = buckets['decision']
     dependencies = sorted(buckets['dependency'], key=_priority_sort_key)
+
+    _decision_filter_raw = data.get('decisionLogFilter', 'open')
+    decision_log_filter = str(_decision_filter_raw).strip().lower() if _decision_filter_raw else 'open'
+    if decision_log_filter == 'open':
+        decisions = [d for d in all_decisions if d.get('status') in decision_open_statuses]
+    elif decision_log_filter == 'closed':
+        decisions = [d for d in all_decisions if d.get('status') in decision_closed_statuses]
+    else:
+        decisions = all_decisions
 
     active_risks = [e for e in risks if e.get('status') in open_statuses]
     active_issues = [e for e in issues if e.get('status') in open_statuses]
@@ -617,9 +624,7 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
         ('Risks', len(display_risks), _secondary(len(active_risks), len(risks)), '#DC2626'),
         ('Action Items', len(display_actions), _secondary(len(active_actions), len(actions)), '#EA580C'),
         ('Issues', len(display_issues), _secondary(len(active_issues), len(issues)), '#CA8A04'),
-        # Decisions have no open/closed lifecycle (statuses are proposed/approved, never
-        # open/in_progress), so they are always shown in full regardless of the active-only setting.
-        ('Decisions', len(decisions), None, '#3B82F6'),
+        ('Decisions', len(decisions), f"{len(all_decisions) - len(decisions)} hidden" if decision_log_filter != 'all' and len(decisions) != len(all_decisions) else None, '#3B82F6'),
         ('Dependencies', len(display_deps), _secondary(len(active_deps), len(dependencies)), '#8B5CF6'),
     ]
 
@@ -869,10 +874,17 @@ def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
 
     # Decisions table
     if decisions:
+        if decision_log_filter == 'open':
+            decisions_subtitle = f"{len(decisions)} open  |  {len(all_decisions)} total"
+        elif decision_log_filter == 'closed':
+            decisions_subtitle = f"{len(decisions)} closed  |  {len(all_decisions)} total"
+        else:
+            open_count = sum(1 for d in all_decisions if d.get('status') in decision_open_statuses)
+            decisions_subtitle = f"{len(decisions)} total  |  {open_count} open"
         _paginate_category(
             decisions,
             "Decisions",
-            f"{len(decisions)} total",
+            decisions_subtitle,
             [
                 ('Ref', _ref_cell),
                 ('Decision', _title_cell),
