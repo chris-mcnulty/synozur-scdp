@@ -1410,12 +1410,18 @@ def create_project_plan_slides(prs, data, primary_color, secondary_color):
         'in_progress': '\u25D2',
         'completed': '\u2713',
         'cancelled': '\u2717',
+        'canceled': '\u2717',
+        'superseded': '\u2717',
+        'obsolete': '\u2717',
     }
     STATUS_COLORS = {
         'open': '#9ca3af',
         'in_progress': '#3b82f6',
         'completed': '#22c55e',
         'cancelled': '#ef4444',
+        'canceled': '#ef4444',
+        'superseded': '#ef4444',
+        'obsolete': '#ef4444',
     }
 
     flat_items = []

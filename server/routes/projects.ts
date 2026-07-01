@@ -6349,9 +6349,10 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
       if (includeProjectPlan) {
         const planFilter = projectPlanFilter === 'all' ? 'all' : 'open';
+        const terminalStatuses = new Set(['cancelled', 'canceled', 'superseded', 'obsolete']);
         const filteredAllocations = planFilter === 'all'
           ? allocations
-          : allocations.filter((a: any) => a.status === 'open' || a.status === 'in_progress');
+          : allocations.filter((a: any) => a.status === 'open' || a.status === 'in_progress' || terminalStatuses.has(a.status));
 
         const userCache = new Map<string, string>();
         const roleCache = new Map<string, string>();
