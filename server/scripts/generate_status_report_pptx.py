@@ -1658,12 +1658,21 @@ def create_deliverables_slide(prs, data, primary_color, secondary_color):
             stage_name = d.get('stageName') or 'Unassigned'
             epic_name  = d.get('epicName') or ''
             header = f"{epic_name} — {stage_name}" if (epic_name and key != '__none__') else stage_name
-            phase_groups[key] = {'name': header, 'items': []}
+            phase_groups[key] = {'name': header, 'sort_name': stage_name, 'items': []}
             phase_order.append(key)
     for d in deliverables:
         phase_groups[d.get('stageId') or '__none__']['items'].append(d)
-    if '__none__' in phase_order:
-        phase_order = [k for k in phase_order if k != '__none__'] + ['__none__']
+
+    # Sort groups by stage name using natural numeric sort so "1-Discovery",
+    # "3-Prototype", "4-Pilot", "5-Handover" appear in numeric sequence
+    # rather than insertion order from the DB.
+    import re as _re
+    def _phase_sort_key(k):
+        name = phase_groups[k].get('sort_name', '')
+        return [int(c) if c.isdigit() else c.lower() for c in _re.split(r'(\d+)', name)]
+
+    named_keys = sorted([k for k in phase_order if k != '__none__'], key=_phase_sort_key)
+    phase_order = named_keys + (['__none__'] if '__none__' in phase_groups else [])
 
     # --- Build full flat body (no cap) ---
     full_body = []
