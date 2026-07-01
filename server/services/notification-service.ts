@@ -1,5 +1,5 @@
 import { db } from "../db.js";
-import { notifications, userNotificationPreferences } from "@shared/schema.js";
+import { notifications, userNotificationPreferences, tenantUsers } from "@shared/schema.js";
 import { and, eq } from "drizzle-orm";
 import type { NotificationType } from "@shared/schema.js";
 
@@ -64,6 +64,18 @@ export async function getUserChannelPrefs(
 
   if (row) {
     return { inApp: row.inApp, email: row.email, teams: row.teams };
+  }
+
+  // Client-role users typically have no login and cannot manage their own
+  // preferences, so default ALL channels off unless an explicit pref row exists.
+  const [membership] = await db
+    .select({ role: tenantUsers.role })
+    .from(tenantUsers)
+    .where(and(eq(tenantUsers.userId, userId), eq(tenantUsers.tenantId, tenantId)))
+    .limit(1);
+
+  if (membership?.role === 'client') {
+    return { inApp: false, email: false, teams: false };
   }
 
   return DEFAULT_PREFS[notificationType] ?? { inApp: true, email: false, teams: false };

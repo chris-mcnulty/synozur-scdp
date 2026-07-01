@@ -12,17 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Shield, Users, Search, Crown, Briefcase, User, Building, Plus, Trash2, UserPlus } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Shield, Users, Search, Crown, Briefcase, User, Building, Plus, Trash2, UserPlus, BellOff, Loader2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface PlatformUser {
   id: string;
@@ -216,6 +207,18 @@ export default function PlatformUsers() {
     },
   });
 
+  const disableClientNotifsMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("/api/admin/notifications/disable-client-notifications", { method: "POST" });
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Done", description: data?.message || "Client notifications disabled." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error.message || "Please try again.", variant: "destructive" });
+    },
+  });
+
   const filteredUsers = users.filter(user => {
     const searchLower = searchTerm.toLowerCase();
     return (
@@ -351,6 +354,53 @@ export default function PlatformUsers() {
                 </TableBody>
               </Table>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BellOff className="w-5 h-5" />
+              Client Stakeholder Notifications
+            </CardTitle>
+            <CardDescription>
+              Client-role users default to all notifications off. Use the button below to silence any existing client users who may have received notifications before this policy was in place.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/40">
+              <div>
+                <p className="text-sm font-medium">Disable all notifications for existing client users</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Sets every notification channel to off for all current client-role memberships across all tenants. Will not affect non-client users.
+                </p>
+              </div>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="ml-4 shrink-0" disabled={disableClientNotifsMutation.isPending}>
+                    {disableClientNotifsMutation.isPending ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Running…</>
+                    ) : (
+                      <><BellOff className="w-4 h-4 mr-2" /> Silence all clients</>
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Silence all client-role users?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will set every notification channel (in-app, email, Teams) to <strong>off</strong> for every client-role membership across all tenants. Existing preference rows will be overwritten. This cannot be undone in bulk.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => disableClientNotifsMutation.mutate()}>
+                      Yes, silence all clients
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </CardContent>
         </Card>
 

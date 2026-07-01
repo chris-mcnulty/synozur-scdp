@@ -2494,4 +2494,59 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
       res.status(500).json({ message: error?.message || "Failed to sync rates from Federal Register" });
     }
   });
+
+  // POST /api/admin/notifications/disable-client-notifications
+  // Bulk-inserts explicit "all off" preference rows for every client-role
+  // tenant membership across all tenants.  Existing rows are overwritten so
+  // that previously-noisy clients are silenced even if a row already existed.
+  app.post("/api/admin/notifications/disable-client-notifications", requireAuth, requirePlatformAdmin, async (_req, res) => {
+    try {
+      const { tenantUsers, userNotificationPreferences } = await import("@shared/schema.js");
+      const { db } = await import("../db.js");
+      const { eq, sql } = await import("drizzle-orm");
+
+      // All notification types that have defaults defined
+      const ALL_TYPES = [
+        'expense_submitted', 'expense_approval_needed', 'expense_approved', 'expense_rejected',
+        'project_health_alert', 'raidd_overdue', 'status_report_due', 'ai_budget_alert',
+        'project_budget_alert', 'time_reminder', 'expense_reminder',
+        'timesheet_submitted', 'timesheet_approved', 'timesheet_rejected',
+        'invoice_sent', 'invoice_paid', 'raidd_assigned', 'general',
+      ];
+
+      const clientMemberships = await db
+        .select({ userId: tenantUsers.userId, tenantId: tenantUsers.tenantId })
+        .from(tenantUsers)
+        .where(eq(tenantUsers.role, 'client'));
+
+      if (clientMemberships.length === 0) {
+        return res.json({ updated: 0, users: 0, message: 'No client-role memberships found.' });
+      }
+
+      let rowsUpserted = 0;
+      for (const { userId, tenantId } of clientMemberships) {
+        for (const notificationType of ALL_TYPES) {
+          await db
+            .insert(userNotificationPreferences)
+            .values({ userId, tenantId, notificationType, inApp: false, email: false, teams: false })
+            .onConflictDoUpdate({
+              target: [
+                userNotificationPreferences.userId,
+                userNotificationPreferences.tenantId,
+                userNotificationPreferences.notificationType,
+              ],
+              set: { inApp: false, email: false, teams: false, updatedAt: sql`now()` },
+            });
+          rowsUpserted++;
+        }
+      }
+
+      const uniqueUsers = new Set(clientMemberships.map(m => m.userId)).size;
+      console.log(`[ADMIN] Disabled notifications for ${uniqueUsers} client users (${rowsUpserted} preference rows upserted).`);
+      res.json({ updated: rowsUpserted, users: uniqueUsers, message: `All notifications disabled for ${uniqueUsers} client user(s) across ${clientMemberships.length} membership(s).` });
+    } catch (error: any) {
+      console.error("[ADMIN] Error disabling client notifications:", error);
+      res.status(500).json({ message: error?.message || "Failed to disable client notifications" });
+    }
+  });
 }
