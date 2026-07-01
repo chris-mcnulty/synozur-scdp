@@ -95,7 +95,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName,
     if (open) {
       setPmNarrative(lastPmNarrative || "");
     }
-  }, [open, lastPmNarrative]);
+  }, [open, lastPmNarrative, projectId]);
 
   const { data: tenantSettings } = useQuery<any>({
     queryKey: ['/api/tenant/settings'],
