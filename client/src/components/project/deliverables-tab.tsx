@@ -333,6 +333,20 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
 
   const filtered = statusFilter === "all" ? deliverables : deliverables.filter(d => d.status === statusFilter);
 
+  const sorted = [...filtered].sort((a, b) => {
+    const stageA = stages.find(s => s.id === a.stageId)?.name ?? "";
+    const stageB = stages.find(s => s.id === b.stageId)?.name ?? "";
+    if (stageA !== stageB) {
+      if (!stageA) return 1;
+      if (!stageB) return -1;
+      return stageA.localeCompare(stageB);
+    }
+    if (!a.targetDate && !b.targetDate) return 0;
+    if (!a.targetDate) return 1;
+    if (!b.targetDate) return -1;
+    return a.targetDate.localeCompare(b.targetDate);
+  });
+
   const counts = {
     total: deliverables.length,
     accepted: deliverables.filter(d => d.status === "accepted").length,
@@ -431,7 +445,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
 
           {isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : filtered.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               {deliverables.length === 0 ? "No deliverables yet. Add one manually or extract from a project narrative." : "No deliverables match the selected filter."}
             </div>
@@ -443,11 +457,11 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                     {!embedReadonly && (
                       <TableHead className="w-8">
                         <Checkbox
-                          checked={filtered.length > 0 && filtered.every(d => selectedIds.has(d.id))}
+                          checked={sorted.length > 0 && sorted.every(d => selectedIds.has(d.id))}
                           onCheckedChange={(c) => {
                             const next = new Set(selectedIds);
-                            if (c) filtered.forEach(d => next.add(d.id));
-                            else filtered.forEach(d => next.delete(d.id));
+                            if (c) sorted.forEach(d => next.add(d.id));
+                            else sorted.forEach(d => next.delete(d.id));
                             setSelectedIds(next);
                           }}
                           data-testid="checkbox-select-all-deliverables"
@@ -465,7 +479,7 @@ export function DeliverablesTab({ projectId, projectTeamMembers }: DeliverablesT
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(d => {
+                  {sorted.map(d => {
                     const isOverdue = d.targetDate && d.status !== "accepted" && d.status !== "rejected" && new Date(d.targetDate) < new Date();
                     return (
                       <TableRow key={d.id} className={`dark:border-gray-700 ${isOverdue ? 'bg-red-50 dark:bg-red-950/20' : ''}`}>
