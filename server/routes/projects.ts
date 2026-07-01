@@ -1882,6 +1882,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           createdBy: user.id,
           maxAttempts: 2,
         });
+        // Persist the PM steering narrative for future pre-fill (best-effort, non-blocking)
+        if (srTenantId) {
+          try {
+            await storage.updateProjectLastPmNarrative(projectId, srTenantId, pmNarrative);
+          } catch (err: any) {
+            console.warn("[STATUS-REPORT] Failed to cache PM narrative:", err?.message);
+          }
+        }
+
         return res.status(202).json({
           jobId: job.id,
           message: 'Status report generation queued',
@@ -1987,6 +1996,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         metadata: reportMetadata,
         generatedBy: user.id,
       });
+
+      // Persist the PM steering narrative for future pre-fill (best-effort, non-blocking)
+      if (user.tenantId) {
+        try {
+          await storage.updateProjectLastPmNarrative(projectId, user.tenantId, pmNarrative);
+        } catch (err: any) {
+          console.warn("[STATUS-REPORT] Failed to cache PM narrative:", err?.message);
+        }
+      }
 
       res.json({
         report: result!.content,
