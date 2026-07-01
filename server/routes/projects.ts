@@ -1841,7 +1841,7 @@ RAIDD LOG — Decisions This Period (${recentDecisions.length}):
 ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}${pmNarrative ? `\n\nPM CONTEXT FOR THIS PERIOD (written by the project manager — incorporate and expand this in the narrative):\n${pmNarrative}` : ""}`;
 
       const { aiService, buildGroundingContext } = await import("../services/ai-service.js");
-      const srTenantId = (req.user as any)?.tenantId;
+      const srTenantId = (req.user as any)?.tenantId || (project as any).tenantId;
       const srGroundingDocs = srTenantId
         ? await storage.getActiveGroundingDocumentsForTenant(srTenantId)
         : await storage.getActiveGroundingDocuments();
@@ -1998,9 +1998,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       });
 
       // Persist the PM steering narrative for future pre-fill (best-effort, non-blocking)
-      if (user.tenantId) {
+      if (srTenantId) {
         try {
-          await storage.updateProjectLastPmNarrative(projectId, user.tenantId, pmNarrative);
+          await storage.updateProjectLastPmNarrative(projectId, srTenantId, pmNarrative);
         } catch (err: any) {
           console.warn("[STATUS-REPORT] Failed to cache PM narrative:", err?.message);
         }
