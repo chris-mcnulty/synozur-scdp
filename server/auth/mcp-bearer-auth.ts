@@ -202,7 +202,28 @@ export const mcpBearerAuth = async (req: Request, res: Response, next: NextFunct
 
     next();
   } catch (error: any) {
-    console.error("[MCP-BEARER] Token validation failed:", error.message);
-    return res.status(401).json({ error: "Invalid or expired bearer token" });
+    const isExpired = error?.name === "TokenExpiredError";
+    console.error(
+      `[MCP-BEARER] Token validation failed (${isExpired ? "expired" : "invalid"}):`,
+      error.message
+    );
+    if (isExpired) {
+      res.set(
+        "WWW-Authenticate",
+        'Bearer realm="Constellation", error="invalid_token", error_description="Access token expired"'
+      );
+      return res.status(401).json({
+        error: "Bearer token expired",
+        code: "token_expired",
+      });
+    }
+    res.set(
+      "WWW-Authenticate",
+      'Bearer realm="Constellation", error="invalid_request", error_description="Token validation failed"'
+    );
+    return res.status(401).json({
+      error: "Invalid bearer token",
+      code: "token_invalid",
+    });
   }
 };
