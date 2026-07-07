@@ -5,8 +5,8 @@ import { db } from "../db.js";
 import { users, tenants } from "../../shared/schema.js";
 import { sql, eq } from "drizzle-orm";
 import { storage } from "../storage.js";
+import { VALID_TOKEN_AUDIENCES } from "../lib/entra-resource.js";
 
-const CONSTELLATION_CLIENT_ID = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
 const KNOWN_CLIENTS_KEY = "COPILOT_KNOWN_CLIENT_IDS";
 
 const jwksClient = jwksRsa({
@@ -88,7 +88,7 @@ async function verifyToken(token: string): Promise<jwt.JwtPayload> {
       token,
       signingKey,
       {
-        audience: [`api://${CONSTELLATION_CLIENT_ID}`, CONSTELLATION_CLIENT_ID],
+        audience: VALID_TOKEN_AUDIENCES,
         algorithms: ["RS256"],
       },
       (err, payload) => {

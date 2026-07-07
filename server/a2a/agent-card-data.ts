@@ -10,7 +10,11 @@
  * Spec: https://google.github.io/A2A/specification/#agent-card
  */
 
-const CONSTELLATION_APP_ID = "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+import {
+  DOMAIN_APP_ID_URI,
+  MCP_ACCESS_SCOPE,
+} from "../lib/entra-resource.js";
+
 const ENTRA_BASE = "https://login.microsoftonline.com/common/oauth2/v2.0";
 
 export const AGENT_CARD_STATIC = {
@@ -34,10 +38,10 @@ export const AGENT_CARD_STATIC = {
       authorizationUrl: `${ENTRA_BASE}/authorize`,
       tokenUrl: `${ENTRA_BASE}/token`,
       scopes: {
-        [`api://${CONSTELLATION_APP_ID}/access_as_user`]:
+        [MCP_ACCESS_SCOPE]:
           "Access Constellation MCP as the signed-in user",
       },
-      audience: `api://${CONSTELLATION_APP_ID}`,
+      audience: DOMAIN_APP_ID_URI,
       issuerPattern: `https://login.microsoftonline.com/{tenantId}/v2.0`,
     },
     credentials: null,

@@ -1252,8 +1252,8 @@ securityDefinitions:
     flow: accessCode
     tokenUrl: https://login.windows.net/common/oauth2/authorize
     scopes:
-      api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user: api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user
+      api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user: api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user
     authorizationUrl: https://login.microsoftonline.com/common/oauth2/authorize
 security:
   - oauth2:
-      - api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user
+      - api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user

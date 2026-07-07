@@ -9,9 +9,15 @@
  * Constellation-specific audience/scope constraints.
  */
 
-export const EXPECTED_APP_ID = "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
-export const EXPECTED_SCOPE = `api://${EXPECTED_APP_ID}/access_as_user`;
-export const EXPECTED_AUDIENCE = `api://${EXPECTED_APP_ID}`;
+import {
+  CONSTELLATION_CLIENT_ID,
+  DOMAIN_APP_ID_URI,
+  MCP_ACCESS_SCOPE,
+} from "../lib/entra-resource.js";
+
+export const EXPECTED_APP_ID = CONSTELLATION_CLIENT_ID;
+export const EXPECTED_SCOPE = MCP_ACCESS_SCOPE;
+export const EXPECTED_AUDIENCE = DOMAIN_APP_ID_URI;
 
 export interface AgentCardSkill {
   id: string;

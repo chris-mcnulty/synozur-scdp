@@ -38,7 +38,8 @@ The Constellation app must declare itself as an API before other apps can reques
 1. Go to **Azure Portal → Entra ID → App registrations**
 2. Open the **Constellation app registration** (`198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` / SCDP-Content)
 3. Go to **Expose an API**
-4. Click **Set** next to Application ID URI → set it to: `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`
+4. Click **Set** next to Application ID URI → set it to: `api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`
+   > **Why the domain-based form?** Teams tab SSO requires the Application ID URI to include the app's verified domain (`api://<domain>/<client-id>`). Since Azure allows only one Application ID URI per app, the domain-based form is authoritative everywhere — the connector's Resource URL and Scope (step 2.3) must use it too, or token requests fail with `AADSTS500011 invalid_resource`.
 5. Click **Add a scope** with these values:
    - Scope name: `access_as_user`
    - Who can consent: **Admins and users**
@@ -132,10 +133,12 @@ Select **OAuth 2.0** as the authentication type, then fill in:
 | Client secret | The **Connector app's** client secret (from step 1.4) |
 | Authorization URL | `https://login.microsoftonline.com` (just the base URL — Power Platform appends `/{Tenant ID}/oauth2/authorize` automatically. Do NOT include the full path or it will be duplicated) |
 | Tenant ID | `common` (multi-tenant — matches Constellation's authority so users from any Entra directory can authenticate) |
-| Resource URL | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (the **Constellation app's** Application ID URI — tells Azure which API the token is for) |
+| Resource URL | `api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (the **Constellation app's** Application ID URI — tells Azure which API the token is for) |
 | Enable on-behalf-of login | `false` |
-| Scope | `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` (the **Constellation app's** exposed scope from step 1.1) |
+| Scope | `api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user` (the **Constellation app's** exposed scope from step 1.1) |
 | Redirect URL | Auto-generated after saving — copy this value and add it to the **Connector app's** Authentication redirect URIs in Entra (in addition to the `global.consent.azure-apim.net` URI from step 1.5) |
+
+> **Note:** The Resource URL and Scope must use the **domain-based** Application ID URI (`api://constellation.synozur.com/<client-id>`), not the short form `api://<client-id>`. The domain-based form is required for Teams tab SSO and is the URI actually set on the app registration — using the short form here causes `AADSTS500011 invalid_resource` during connection setup.
 
 ### 2.4 Definition tab — Import from OpenAPI file
 
@@ -410,7 +413,7 @@ Add the Copilot Studio agent's client ID to this array in the app manifest JSON 
    - Clients & CRM
 7. Select all skills (or the subset your agent needs) and click **Add**
 
-> **Authentication note:** Copilot Studio reads the `authentication.oauth2` block in the agent card to configure the OAuth flow automatically. It uses the `tokenUrl`, `authorizationUrl`, and `audience` fields to acquire tokens scoped to `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user`. No manual OAuth configuration is required unless the auto-detected values need to be overridden.
+> **Authentication note:** Copilot Studio reads the `authentication.oauth2` block in the agent card to configure the OAuth flow automatically. It uses the `tokenUrl`, `authorizationUrl`, and `audience` fields to acquire tokens scoped to `api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user`. No manual OAuth configuration is required unless the auto-detected values need to be overridden.
 
 ---
 
@@ -419,7 +422,7 @@ Add the Copilot Studio agent's client ID to this array in the app manifest JSON 
 1. In agent settings → **Security** → **Authentication**
 2. Select **Authenticate with Microsoft**
 3. Ensure **Allow users from any organization** (multi-tenant) is enabled — Constellation's Entra authority is set to `common`
-4. Confirm the **OAuth scope** field shows: `api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user`
+4. Confirm the **OAuth scope** field shows: `api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user`
 5. Save
 
 ---
@@ -505,7 +508,7 @@ Once the end-to-end tests pass:
 |-------|-----|
 | Agent card import fails | Confirm `https://constellation.synozur.com/.well-known/agent.json` returns HTTP 200 with valid JSON and `"protocolVersion": "1.0"` |
 | OAuth consent prompt appears for every user | Ensure the Copilot Studio agent's Client ID is listed in `knownClientApplications` on the Constellation app registration (step 5.2) |
-| 401 after import — "audience invalid" | Confirm the `audience` field in the agent card (`api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`) matches the Application ID URI set in **Expose an API** on the Constellation app registration |
+| 401 after import — "audience invalid" | Confirm the `audience` field in the agent card (`api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6`) matches the Application ID URI set in **Expose an API** on the Constellation app registration |
 | Skills not appearing after import | Verify the `skills` array in `agent.json` is valid JSON — use `GET /.well-known/agent.json` and validate against the A2A 1.0 schema |
 | "Tenant context could not be resolved" (403) | The signed-in user's Entra OID isn't mapped to a Constellation user. Ask them to log into Constellation directly at least once via SSO to create the mapping |
 | Teams channel shows agent but it doesn't respond | Confirm the agent is **Published** in Copilot Studio (draft agents do not respond in Teams) |

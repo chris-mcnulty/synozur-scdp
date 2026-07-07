@@ -21,9 +21,9 @@
       "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
       "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
       "scopes": {
-        "api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user": "Access Constellation MCP as the signed-in user"
+        "api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6/access_as_user": "Access Constellation MCP as the signed-in user"
       },
-      "audience": "api://198aa0a6-d2ed-4f35-b41b-b6f6778a30d6",
+      "audience": "api://constellation.synozur.com/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6",
       "issuerPattern": "https://login.microsoftonline.com/{tenantId}/v2.0"
     },
     "credentials": null

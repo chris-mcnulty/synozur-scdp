@@ -2,6 +2,11 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { AGENT_CARD_STATIC } from "../a2a/agent-card-data.js";
 import { getEffectiveKnownClientIds } from "../auth/mcp-bearer-auth.js";
+import {
+  CONSTELLATION_CLIENT_ID,
+  DOMAIN_APP_ID_URI,
+  MCP_ACCESS_SCOPE,
+} from "../lib/entra-resource.js";
 import { getFailingSince, getLastAlertSentAt, REMINDER_INTERVAL_MS } from "../services/agent-card-health-scheduler.js";
 import { graphClient } from "../services/graph-client.js";
 import { z } from "zod";
@@ -152,10 +157,9 @@ export function registerCopilotStudioRoutes(
         const oauth2 = AGENT_CARD_STATIC.authentication.oauth2 as any;
         const staticScopeKey = Object.keys(oauth2.scopes)[0];
 
-        const runtimeClientId =
-          process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
-        const runtimeAudience = `api://${runtimeClientId}`;
-        const runtimeScope = `${runtimeAudience}/access_as_user`;
+        const runtimeClientId = CONSTELLATION_CLIENT_ID;
+        const runtimeAudience = DOMAIN_APP_ID_URI;
+        const runtimeScope = MCP_ACCESS_SCOPE;
 
         const tenantId = getActiveTenantId(req);
         const tenantContext = req.tenantContext;
