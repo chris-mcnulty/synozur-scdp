@@ -1195,7 +1195,7 @@ def create_timeline_slide(prs, data, primary_color, secondary_color):
     timeline = data.get('timeline', {})
     epic_groups = timeline.get('epicGroups', [])
     unlinked_milestones = timeline.get('unlinkedMilestones', [])
-    payment_milestones = timeline.get('paymentMilestones', [])
+    payment_milestones = []  # suppressed — payment milestones run off-screen on large projects
     all_milestones = data.get('milestones', [])
 
     has_epic_data = any(eg.get('stages') for eg in epic_groups)
