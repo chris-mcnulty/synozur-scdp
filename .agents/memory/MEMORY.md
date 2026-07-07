@@ -1,3 +1,4 @@
 - [Payroll module integration pattern](payroll-integration.md) — routes import storage modules directly, not via the storage singleton; IStorage interface still needs explicit declarations
 - [Status report period scoping](status-report-period-scoping.md) — "completed" needs an explicit end date bounded both ends in-period; count header + list must share one predicate; PM context leads accomplishments
 - [Bulk date-shift (push out) pattern](bulk-date-shift-pattern.md) — deliverables/assignments reschedule via anchor + day-delta ({ids[], deltaDays}), never per-row absolute dates
+- [Verify prod build freshness](prod-build-freshness.md) — curl the live endpoint before claiming prod behavior; stale builds mimic "feature broken" when it's just not deployed
