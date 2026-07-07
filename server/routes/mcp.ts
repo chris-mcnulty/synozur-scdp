@@ -52,9 +52,9 @@ const requireMcpTenant = (req: Request, res: Response, next: NextFunction) => {
 };
 
 /** Hard cap on list responses to keep token counts within Copilot Studio's context window. */
-const MCP_MAX_ITEMS = 100;
+const MCP_MAX_ITEMS = 25;
 /** Max chars for any free-text description field in an MCP response. */
-const MCP_DESC_MAX = 200;
+const MCP_DESC_MAX = 120;
 function trunc(s: string | null | undefined, max = MCP_DESC_MAX): string | null {
   if (!s) return s ?? null;
   return s.length <= max ? s : s.slice(0, max) + '…';
@@ -157,7 +157,21 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       if (to) {
         filtered = filtered.filter((a: any) => !a.plannedStartDate || a.plannedStartDate <= to);
       }
-      res.json({ data: filtered });
+      const page = filtered.slice(0, MCP_MAX_ITEMS);
+      res.json({
+        data: page.map((a: any) => ({
+          id: a.id,
+          projectId: a.projectId,
+          projectName: a.project?.name ?? null,
+          role: a.role ?? null,
+          plannedStartDate: a.plannedStartDate ?? null,
+          plannedEndDate: a.plannedEndDate ?? null,
+          allocationPercentage: a.allocationPercentage ?? null,
+          status: a.status ?? null,
+        })),
+        total: filtered.length,
+        truncated: filtered.length > MCP_MAX_ITEMS,
+      });
     } catch (error: any) {
       console.error("[MCP] /mcp/assignments error:", error);
       res.status(500).json({ error: "Failed to retrieve assignments" });
@@ -336,7 +350,20 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
       if (status) {
         deliverables = deliverables.filter((d: any) => d.status === status);
       }
-      res.json({ data: deliverables });
+      const page = deliverables.slice(0, MCP_MAX_ITEMS);
+      res.json({
+        data: page.map((d: any) => ({
+          id: d.id,
+          name: trunc(d.name, 80),
+          status: d.status ?? null,
+          dueDate: d.dueDate ?? null,
+          stageName: d.stage?.name ?? null,
+          ownerId: d.ownerId ?? null,
+          ownerName: d.owner?.name ?? null,
+        })),
+        total: deliverables.length,
+        truncated: deliverables.length > MCP_MAX_ITEMS,
+      });
     } catch (error: any) {
       console.error("[MCP] /mcp/projects/:projectId/deliverables error:", error);
       res.status(500).json({ error: "Failed to retrieve deliverables" });
@@ -356,7 +383,20 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
         status: req.query.status as string,
         priority: req.query.priority as string,
       });
-      res.json({ data: entries });
+      const page = entries.slice(0, MCP_MAX_ITEMS);
+      res.json({
+        data: page.map((e: any) => ({
+          id: e.id,
+          type: e.type,
+          title: trunc(e.title, 80),
+          status: e.status ?? null,
+          priority: e.priority ?? null,
+          dueDate: e.dueDate ?? null,
+          assigneeName: e.assignee?.name ?? null,
+        })),
+        total: entries.length,
+        truncated: entries.length > MCP_MAX_ITEMS,
+      });
     } catch (error: any) {
       console.error("[MCP] /mcp/projects/:projectId/raidd error:", error);
       res.status(500).json({ error: "Failed to retrieve RAIDD entries" });
