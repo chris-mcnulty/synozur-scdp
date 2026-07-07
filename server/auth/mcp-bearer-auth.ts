@@ -75,13 +75,23 @@ function getSigningKey(header: jwt.JwtHeader): Promise<string> {
   });
 }
 
-async function verifyToken(token: string): Promise<jwt.JwtPayload> {
+/**
+ * Verify an MCP bearer token. Audience must be one of VALID_TOKEN_AUDIENCES
+ * (domain-based App ID URI, legacy short-form URI, or bare client ID) and the
+ * issuer must be an Entra v1 (sts.windows.net) or v2 (login.microsoftonline.com)
+ * issuer. Exported for regression tests; `resolveSigningKey` is injectable so
+ * tests can supply a local key instead of hitting the Microsoft JWKS endpoint.
+ */
+export async function verifyToken(
+  token: string,
+  resolveSigningKey: (header: jwt.JwtHeader) => Promise<string> = getSigningKey
+): Promise<jwt.JwtPayload> {
   const decoded = jwt.decode(token, { complete: true });
   if (!decoded || !decoded.header) {
     throw new Error("Invalid token format");
   }
 
-  const signingKey = await getSigningKey(decoded.header);
+  const signingKey = await resolveSigningKey(decoded.header);
 
   return new Promise((resolve, reject) => {
     jwt.verify(
