@@ -58,6 +58,28 @@ export async function getEffectiveKnownClientIds(tenantId: string | null | undef
   };
 }
 
+/**
+ * Pure decision function for the azp (authorized party) allow-list check.
+ * Enforcement rules:
+ *   - tenant override present (source === "tenant"): always enforce, even when
+ *     the list is empty (an empty override is an explicit "deny everyone"
+ *     lockdown for the tenant).
+ *   - global list non-empty: enforce against it.
+ *   - no override and empty global list: open access (any validly-signed token).
+ * Exported for regression tests; the middleware below is the only runtime caller.
+ */
+export function evaluateAzpEnforcement(
+  azp: string | undefined,
+  effective: string[],
+  source: "tenant" | "global" | "none"
+): { enforced: boolean; allowed: boolean } {
+  const enforced = source === "tenant" || effective.length > 0;
+  if (!enforced) {
+    return { enforced: false, allowed: true };
+  }
+  return { enforced: true, allowed: !!azp && effective.includes(azp) };
+}
+
 // Backwards-compat shim: existing callers (e.g. cache invalidation) shouldn't break.
 // The storage layer manages its own caching, so this becomes a no-op.
 export function invalidateKnownClientCache(): void {
@@ -156,24 +178,18 @@ export const mcpBearerAuth = async (req: Request, res: Response, next: NextFunct
     const userTenantId = dbUser.primaryTenantId || null;
     const { effective: knownClientIds, source } = await getEffectiveKnownClientIds(userTenantId);
 
-    // Enforcement rules:
-    //   - tenant override present: always enforce, even when the list is empty
-    //     (an empty override is an explicit "deny everyone" lockdown for the tenant).
-    //   - global list non-empty: enforce against it.
-    //   - no override and empty global list: open access (any validly-signed token).
-    const enforceAzp = source === "tenant" || knownClientIds.length > 0;
-    if (enforceAzp) {
-      const azp = claims.azp as string | undefined;
-      if (!azp || !knownClientIds.includes(azp)) {
-        console.warn(
-          `[MCP-BEARER] Rejected token: azp ${azp} not in known client list (source=${source}, tenant=${userTenantId?.substring(0, 8) || "none"})`
-        );
-        return res.status(403).json({
-          error: "Client application not authorized",
-          code: "mcp_client_not_authorized",
-          hint: "Add this application's client ID to the Copilot Studio pre-authorized clients list in AI Settings.",
-        });
-      }
+    // Enforcement rules live in evaluateAzpEnforcement (see its doc comment).
+    const azp = claims.azp as string | undefined;
+    const azpDecision = evaluateAzpEnforcement(azp, knownClientIds, source);
+    if (!azpDecision.allowed) {
+      console.warn(
+        `[MCP-BEARER] Rejected token: azp ${azp} not in known client list (source=${source}, tenant=${userTenantId?.substring(0, 8) || "none"})`
+      );
+      return res.status(403).json({
+        error: "Client application not authorized",
+        code: "mcp_client_not_authorized",
+        hint: "Add this application's client ID to the Copilot Studio pre-authorized clients list in AI Settings.",
+      });
     }
 
     req.user = {
