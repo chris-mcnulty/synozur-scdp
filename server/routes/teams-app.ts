@@ -70,6 +70,9 @@ export function registerTeamsAppRoutes(app: Express, deps: TeamsAppDeps) {
       template.staticTabs[0].contentUrl = `https://${domain}/embed/dashboard`;
       template.validDomains = [domain];
       if (overrides.entraAppId) {
+        // NOTE: The static teams/manifest.json hard-codes this resource URI.
+        // If the app's domain ever changes, keep the static file in sync with
+        // DOMAIN_APP_ID_URI from server/lib/entra-resource.ts.
         template.webApplicationInfo.resource = `api://${domain}/${overrides.entraAppId}`;
       }
     }

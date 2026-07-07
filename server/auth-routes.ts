@@ -4,6 +4,7 @@ import { db } from "./db";
 import { users, tenants, tenantUsers, servicePlans, blockedDomains, sessions } from "@shared/schema";
 import { sql, eq, and } from "drizzle-orm";
 import { autoAssignTenantToUser } from "./tenant-context";
+import { CONSTELLATION_CLIENT_ID, APP_ID_URI_DOMAIN, VALID_TOKEN_AUDIENCES } from "./lib/entra-resource";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -442,8 +443,8 @@ export function registerAuthRoutes(app: Express): void {
       const jwtLib = await import("jsonwebtoken");
       const jwksRsa = await import("jwks-rsa");
 
-      const expectedClientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
-      const baseUrl = process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'constellation.synozur.com'}`;
+      const expectedClientId = CONSTELLATION_CLIENT_ID;
+      const baseUrl = process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN || APP_ID_URI_DOMAIN}`;
 
       const jwksClient = jwksRsa.default({
         jwksUri: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
@@ -472,11 +473,11 @@ export function registerAuthRoutes(app: Express): void {
           token,
           signingKey,
           {
+            // Shared audience list from server/lib/entra-resource.ts, plus the
+            // dev-domain variant used when the Teams tab points at a Replit dev URL.
             audience: [
-              expectedClientId,
-              `api://${expectedClientId}`,
-              `api://constellation.synozur.com/${expectedClientId}`,
-              `api://${process.env.REPLIT_DEV_DOMAIN || 'constellation.synozur.com'}/${expectedClientId}`,
+              ...VALID_TOKEN_AUDIENCES,
+              `api://${process.env.REPLIT_DEV_DOMAIN || APP_ID_URI_DOMAIN}/${expectedClientId}`,
             ],
             algorithms: ["RS256"],
           },
