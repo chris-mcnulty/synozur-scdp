@@ -467,10 +467,10 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
             total: Math.round(totalExpenses * 100) / 100,
             count: expenseData.length,
           },
-          team: Array.from(teamMembers.values()).sort((a, b) => b.hours - a.hours).map(m => ({
+          team: Array.from(teamMembers.values()).sort((a, b) => b.hours - a.hours).slice(0, 10).map(m => ({
             name: m.name,
             hours: Math.round(m.hours * 10) / 10,
-            topActivities: m.activities.slice(0, 5),
+            topActivities: m.activities.slice(0, 3).map(a => trunc(a, 80)),
           })),
           raidd: {
             openRisks: openRisks.length,
@@ -478,29 +478,26 @@ export function registerMcpRoutes(app: Express, { requireAuth, requireRole }: Mc
             openActions: openActions.length,
             decisions: openDecisions.length,
             criticalItems: raiddData.filter((r: any) => r.priority === "critical" && r.status !== "closed").length,
-            items: raiddData.filter((r: any) => r.status !== "closed").map((r: any) => ({
+            items: raiddData.filter((r: any) => r.status !== "closed").slice(0, 10).map((r: any) => ({
               type: r.type,
-              title: r.title,
+              title: trunc(r.title, 80),
               priority: r.priority,
               status: r.status,
-              owner: r.owner,
             })),
           },
-          milestones: milestones.map((m: any) => ({
-            name: m.name,
+          milestones: milestones.slice(0, 10).map((m: any) => ({
+            name: trunc(m.name, 60),
             status: m.status,
             dueDate: m.dueDate,
-            amount: m.amount ? Number(m.amount) : null,
           })),
-          deliverables: deliverables.map((d: any) => ({
-            name: d.name,
+          deliverables: deliverables.slice(0, 10).map((d: any) => ({
+            name: trunc(d.name, 60),
             status: d.status,
             dueDate: d.dueDate,
           })),
-          allocations: allocations.map((a: any) => ({
+          allocations: allocations.slice(0, 10).map((a: any) => ({
             userName: a.user?.name,
             role: a.role,
-            allocation: a.allocation,
             startDate: a.plannedStartDate,
             endDate: a.plannedEndDate,
           })),
