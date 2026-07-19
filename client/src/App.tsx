@@ -123,6 +123,22 @@ function PlatformAdminGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Fires the splash beacon for "/" before redirecting unauthenticated visitors to /login
+function TrackedSplash() {
+  useEffect(() => {
+    try {
+      let sid = sessionStorage.getItem("anon_session_id");
+      if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("anon_session_id", sid); }
+      fetch("/api/analytics/pageview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "/", sessionId: sid, referrer: document.referrer }),
+      }).catch(() => {});
+    } catch {}
+  }, []);
+  return <Redirect to="/login" />;
+}
+
 function Router() {
   const [processingSession, setProcessingSession] = useState(true);
   const { isRecovering } = useSessionRecovery();
@@ -213,7 +229,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/">
-        {user ? <Dashboard /> : <Redirect to="/login" />}
+        {user ? <Dashboard /> : <TrackedSplash />}
       </Route>
       <Route path="/dashboard">
         {user ? <Dashboard /> : <Redirect to="/login" />}
