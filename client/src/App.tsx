@@ -49,6 +49,7 @@ import PlatformUsers from "@/pages/platform-users";
 import PlatformAirports from "@/pages/platform-airports";
 import PlatformOconus from "@/pages/platform-oconus";
 import PlatformGroundingDocs from "@/pages/platform-grounding-docs";
+import PlatformTraffic from "@/pages/platform-traffic";
 import TenantGroundingDocs from "@/pages/tenant-grounding-docs";
 import About from "@/pages/about";
 import UserGuide from "@/pages/user-guide";
@@ -463,6 +464,13 @@ function Router() {
         {user ? (
           <PlatformAdminGuard>
             <PlatformGroundingDocs />
+          </PlatformAdminGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/platform/traffic">
+        {user ? (
+          <PlatformAdminGuard>
+            <PlatformTraffic />
           </PlatformAdminGuard>
         ) : <Redirect to="/login" />}
       </Route>

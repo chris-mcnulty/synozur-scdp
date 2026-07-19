@@ -139,7 +139,7 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/file-repository", "/admin/sharepoint", "/vocabulary", "/ai-grounding", "/ai-settings"] },
-  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
+  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs", "/platform/traffic"] },
 ];
 
 function getSectionForPath(path: string): string | null {
@@ -382,6 +382,7 @@ export function MobileNav() {
                     <MobileNavItem href="/platform/tenants" icon={<Crown />} label="Tenants" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/service-plans" icon={<Package />} label="Service Plans" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/users" icon={<Shield />} label="Platform Users" onClick={handleNavClick} />
+                    <MobileNavItem href="/platform/traffic" icon={<BarChart3 />} label="Traffic Report" onClick={handleNavClick} />
                     <MobileSubGroupLabel label="Reference Data" />
                     <MobileNavItem href="/platform/airports" icon={<Plane />} label="Airport Codes" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/oconus" icon={<Globe />} label="OCONUS Rates" onClick={handleNavClick} />

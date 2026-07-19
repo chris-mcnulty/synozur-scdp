@@ -2266,6 +2266,51 @@ export function registerAdminRoutes(app: Express, deps: AdminRouteDeps) {
     }
   });
 
+  // GET /api/analytics/pageviews/monthly — platform admin only
+  app.get("/api/analytics/pageviews/monthly", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const days = Math.min(parseInt(String(req.query.days || "30")), 365);
+      const since = new Date(Date.now() - days * 86400_000).toISOString();
+      const rows = await db.execute(sql`
+        SELECT
+          date_trunc('month', created_at)::date::text AS month,
+          path,
+          CAST(COUNT(*) AS integer) AS visits,
+          CAST(COUNT(DISTINCT session_id) AS integer) AS "uniqueSessions"
+        FROM page_views
+        WHERE created_at >= ${since}::timestamptz
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+      `);
+      res.json({ rows: rows.rows });
+    } catch (error: any) {
+      console.error("[ANALYTICS] monthly pageviews failed:", error);
+      res.status(500).json({ message: "Failed to fetch monthly pageviews" });
+    }
+  });
+
+  // GET /api/analytics/pageviews/referrers — platform admin only
+  app.get("/api/analytics/pageviews/referrers", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const days = Math.min(parseInt(String(req.query.days || "30")), 365);
+      const since = new Date(Date.now() - days * 86400_000).toISOString();
+      const rows = await db.execute(sql`
+        SELECT
+          COALESCE(NULLIF(referrer, ''), '(direct)') AS referrer,
+          CAST(COUNT(*) AS integer) AS visits
+        FROM page_views
+        WHERE created_at >= ${since}::timestamptz
+        GROUP BY 1
+        ORDER BY 2 DESC
+        LIMIT 20
+      `);
+      res.json({ rows: rows.rows });
+    } catch (error: any) {
+      console.error("[ANALYTICS] referrers failed:", error);
+      res.status(500).json({ message: "Failed to fetch referrers" });
+    }
+  });
+
   // GET /api/admin/agent-card-health — returns the last cached health check result, history, and scheduler config
   app.get("/api/admin/agent-card-health", requireAuth, requirePlatformAdmin, async (_req, res) => {
     const last = getLastAgentCardHealthResult();

@@ -140,7 +140,7 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "payroll", paths: ["/payroll", "/payroll/employees", "/payroll/schedules", "/payroll/runs", "/payroll/gl", "/payroll/audit", "/distributions", "/payroll/jurisdictions", "/payroll/tax-settings"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/vendor-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/admin/agent-card-health", "/admin/background-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
-  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
+  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs", "/platform/traffic"] },
 ];
 
 function getSectionForPath(path: string): string | null {
@@ -356,6 +356,7 @@ export function Sidebar() {
                 <SidebarItem href="/platform/tenants" icon={<Crown />} label="Tenants" />
                 <SidebarItem href="/platform/service-plans" icon={<Package />} label="Service Plans" />
                 <SidebarItem href="/platform/users" icon={<Shield />} label="Platform Users" />
+                <SidebarItem href="/platform/traffic" icon={<BarChart3 />} label="Traffic Report" />
                 <SubGroupLabel label="Reference Data" />
                 <SidebarItem href="/platform/airports" icon={<Plane />} label="Airport Codes" />
                 <SidebarItem href="/platform/oconus" icon={<Globe />} label="OCONUS Rates" />
