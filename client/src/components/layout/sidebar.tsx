@@ -138,7 +138,7 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-vendor-invoices", "/me/paystubs", "/my-raidd", "/notifications", "/notifications/preferences"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
   { sectionId: "payroll", paths: ["/payroll", "/payroll/employees", "/payroll/schedules", "/payroll/runs", "/payroll/gl", "/payroll/audit", "/distributions", "/payroll/jurisdictions", "/payroll/tax-settings"] },
-  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/financials/revenue", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/vendor-invoices", "/contractor-cost-invoices", "/rates"] },
+  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/financials/revenue", "/financials/profitability", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/vendor-invoices", "/contractor-cost-invoices", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/admin/agent-card-health", "/admin/background-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs", "/platform/traffic"] },
 ];
@@ -302,6 +302,7 @@ export function Sidebar() {
                 <SidebarItem href="/invoice-report" icon={<FileText />} label="Invoice Report" />
                 <SidebarItem href="/client-revenue-report" icon={<Building2 />} label="Client Revenue" />
                 <SidebarItem href="/financials/revenue" icon={<TrendingUp />} label="Revenue Recognition" requiredRoles={["admin", "billing-admin", "executive"]} />
+                <SidebarItem href="/financials/profitability" icon={<BarChart3 />} label="Profitability" requiredRoles={["admin", "billing-admin", "executive", "pm", "portfolio-manager"]} />
                 <SubGroupLabel label="Approvals" />
                 <SidebarItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" />
                 <SidebarItem href="/approvals/time" icon={<Clock />} label="Time Approval" />

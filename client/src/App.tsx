@@ -89,6 +89,7 @@ import PayrollTaxForms from "@/pages/payroll-tax-forms";
 import PayrollAchOriginator from "@/pages/payroll-ach-originator";
 import Distributions from "@/pages/distributions";
 import FinancialsRevenue from "@/pages/financials-revenue";
+import FinancialsProfitability from "@/pages/financials-profitability";
 import DistributionRunDetail from "@/pages/distribution-run-detail";
 import MyPaystubs from "@/pages/my-paystubs";
 import MyPaystubDetail from "@/pages/my-paystub-detail";
@@ -368,6 +369,13 @@ function Router() {
       </Route>
       <Route path="/financials/revenue">
         {user ? <FinancialsRevenue /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/financials/profitability">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "billing-admin", "executive", "pm", "portfolio-manager"]}>
+            <FinancialsProfitability />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/users">
         {user ? <Users /> : <Redirect to="/login" />}

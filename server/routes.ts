@@ -39,6 +39,7 @@ import { AI_PROVIDERS, AI_FEATURES, AI_MODELS, AI_MODEL_INFO, insertAiConfigurat
 import { registerUserRoutes } from "./routes/users.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerReportsRoutes } from "./routes/reports.js";
+import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerPlannerRoutes } from "./routes/planner.js";
 import { registerTeamsAutomationRoutes } from "./routes/teams-automation.js";
 import { registerClientRoutes } from "./routes/clients.js";
@@ -573,6 +574,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerUserRoutes(app, { requireAuth, requireRole });
     registerTenantRoutes(app, { requireAuth, requireRole, requirePlatformAdmin, sharePointFileStorage });
     registerReportsRoutes(app, { requireAuth, requireRole, sharePointFileStorage });
+    registerAnalyticsRoutes(app, { requireAuth, requireRole });
     registerPlannerRoutes(app, { requireAuth, requireRole });
     registerTeamsAutomationRoutes(app, { requireAuth, requireRole });
     registerClientRoutes(app, { requireAuth, requireRole, sharePointFileStorage });
