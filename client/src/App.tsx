@@ -20,6 +20,7 @@ import TimeApproval from "@/pages/time-approval";
 import ReimbursementBatches from "@/pages/reimbursement-batches";
 import ContractorInvoices from "@/pages/contractor-invoices";
 import MyContractorInvoices from "@/pages/my-contractor-invoices";
+import ContractorCostInvoices from "@/pages/contractor-cost-invoices";
 import VendorInvoices from "@/pages/vendor-invoices";
 import VendorInvoiceDetail from "@/pages/vendor-invoice-detail";
 import MyVendorInvoices from "@/pages/my-vendor-invoices";
@@ -324,6 +325,13 @@ function Router() {
       </Route>
       <Route path="/my-contractor-invoices">
         {user ? <MyContractorInvoices /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/contractor-cost-invoices">
+        {user ? (
+          <PermissionGuard allowedRoles={['admin', 'billing-admin', 'pm']}>
+            <ContractorCostInvoices />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/my-vendor-invoices">
         {user ? <MyVendorInvoices /> : <Redirect to="/login" />}

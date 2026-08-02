@@ -21,6 +21,7 @@ import { registerPlatformRoutes, enforcePlanStatus } from "./routes/platform.js"
 import { registerSharePointContainerRoutes } from "./routes/sharepoint-containers.js";
 import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerVendorInvoiceRoutes } from "./routes/vendor-invoices.js";
+import { registerContractorCostInvoiceRoutes } from "./routes/contractor-cost-invoices.js";
 import { registerPayrollRoutes } from "./routes/payroll.js";
 import { registerDistributionRoutes } from "./routes/distribution.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
@@ -321,6 +322,13 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register vendor invoice (inbound AP) routes
   registerVendorInvoiceRoutes(app, {
+    requireAuth,
+    requireRole,
+    smartFileStorage,
+  });
+
+  // Register contractor cost invoice ledger routes
+  registerContractorCostInvoiceRoutes(app, {
     requireAuth,
     requireRole,
     smartFileStorage,

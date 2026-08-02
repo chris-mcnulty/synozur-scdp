@@ -1708,6 +1708,86 @@ export const projectCostPostings = pgTable("project_cost_postings", {
   invoiceBatchIdx: index("idx_project_cost_postings_invoice_batch").on(table.invoiceBatchId),
 }));
 
+// ============================================================================
+// CONTRACTOR COST INVOICE LEDGER
+// Tracks inbound invoices from contractor subcontractors billed to projects.
+// Separate from vendor_invoices (AP/reconciliation flow) and the outbound
+// contractor_invoices (PDF invoices we generate for contractors to bill clients).
+// ============================================================================
+
+export const contractorCostInvoiceStatusEnum = z.enum(['draft', 'submitted', 'approved', 'paid']);
+export type ContractorCostInvoiceStatus = z.infer<typeof contractorCostInvoiceStatusEnum>;
+
+export const contractorCostInvoiceLineKindEnum = z.enum(['service', 'expense']);
+export type ContractorCostInvoiceLineKind = z.infer<typeof contractorCostInvoiceLineKindEnum>;
+
+export const contractorCostInvoiceLineReconcileStatusEnum = z.enum(['unreconciled', 'reconciled', 'approved']);
+export type ContractorCostInvoiceLineReconcileStatus = z.infer<typeof contractorCostInvoiceLineReconcileStatusEnum>;
+
+export const contractorCostInvoices = pgTable("contractor_cost_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  contractorUserId: varchar("contractor_user_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").references(() => projects.id),
+  invoiceNumber: text("invoice_number").notNull(),
+  engagementLabel: text("engagement_label"), // e.g. "SOW-2026-Q1", "Phase 2"
+  invoiceDate: date("invoice_date").notNull(),
+  total: decimal("total", { precision: 12, scale: 2 }).notNull().default('0'),
+  // Lifecycle: draft → submitted → approved → paid
+  status: text("status").notNull().default("draft"),
+  // SPE / object-storage file reference for the uploaded PDF/image
+  pdfFileId: text("pdf_file_id"),
+  pdfFileName: text("pdf_file_name"),
+  pdfSpeWebUrl: text("pdf_spe_web_url"),
+  notes: text("notes"),
+  createdBy: varchar("created_by").references(() => users.id),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_cci_tenant").on(table.tenantId),
+  contractorIdx: index("idx_cci_contractor").on(table.contractorUserId),
+  projectIdx: index("idx_cci_project").on(table.projectId),
+  statusIdx: index("idx_cci_status").on(table.status),
+  dateIdx: index("idx_cci_date").on(table.invoiceDate),
+}));
+
+export const contractorCostInvoiceLines = pgTable("contractor_cost_invoice_lines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => contractorCostInvoices.id, { onDelete: 'cascade' }),
+  lineNumber: integer("line_number").notNull().default(1),
+  // kind: service (time-based) or expense (pass-through cost)
+  kind: text("kind").notNull().default("service"),
+  description: text("description"),
+  hours: decimal("hours", { precision: 10, scale: 2 }),
+  rate: decimal("rate", { precision: 12, scale: 2 }),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default('0'),
+  // reconcileStatus: unreconciled → reconciled → approved
+  reconcileStatus: text("reconcile_status").notNull().default("unreconciled"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  invoiceIdx: index("idx_ccil_invoice").on(table.invoiceId),
+}));
+
+export const insertContractorCostInvoiceSchema = createInsertSchema(contractorCostInvoices).omit({
+  id: true, createdAt: true, updatedAt: true, approvedAt: true, paidAt: true,
+});
+export type InsertContractorCostInvoice = z.infer<typeof insertContractorCostInvoiceSchema>;
+export type ContractorCostInvoice = typeof contractorCostInvoices.$inferSelect;
+
+export const insertContractorCostInvoiceLineSchema = createInsertSchema(contractorCostInvoiceLines).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertContractorCostInvoiceLine = z.infer<typeof insertContractorCostInvoiceLineSchema>;
+export type ContractorCostInvoiceLine = typeof contractorCostInvoiceLines.$inferSelect;
+
+// ============================================================================
+// END CONTRACTOR COST INVOICE LEDGER
+// ============================================================================
+
 // Add unique constraint for project rate overrides
 export const projectRateOverridesUniqueConstraint = sql`
   CREATE UNIQUE INDEX IF NOT EXISTS project_rate_overrides_unique_idx

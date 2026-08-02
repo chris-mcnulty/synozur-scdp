@@ -112,6 +112,7 @@ export class ProjectDetailErrorBoundary extends Component<ErrorBoundaryProps, Er
 }
 import { ProjectRateOverridesSection } from "@/components/ProjectRateOverridesSection";
 import { ProjectRetainerManagement } from "@/components/ProjectRetainerManagement";
+import { ProjectContractorCostsPanel } from "@/components/ProjectContractorCostsPanel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -1393,7 +1394,7 @@ export default function ProjectDetail() {
   const selectedContractsSubtab = useMemo(() => {
     const params = new URLSearchParams(searchString);
     const sub = params.get('subtab');
-    const valid = ['sows', 'budget-history', 'payment-milestones', 'sub-sow', 'rate-overrides', 'retainer'];
+    const valid = ['sows', 'budget-history', 'payment-milestones', 'sub-sow', 'rate-overrides', 'retainer', 'contractor-costs'];
     return sub && valid.includes(sub) ? sub : 'sows';
   }, [searchString]);
 
@@ -5720,6 +5721,7 @@ export default function ProjectDetail() {
                 <TabsTrigger value="sub-sow" data-testid="tab-contracts-sub-sow">Sub-SOW Generator</TabsTrigger>
                 <TabsTrigger value="rate-overrides" data-testid="tab-contracts-rate-overrides">Rate Overrides</TabsTrigger>
                 <TabsTrigger value="retainer" data-testid="tab-contracts-retainer">Retainer</TabsTrigger>
+                <TabsTrigger value="contractor-costs" data-testid="tab-contracts-contractor-costs">Contractor Costs</TabsTrigger>
               </TabsList>
               
               <TabsContent value="sows" className="space-y-6">
@@ -6572,6 +6574,10 @@ export default function ProjectDetail() {
                   isEditable={!embedReadonly && ['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
                   commercialScheme={project?.commercialScheme}
                 />
+              </TabsContent>
+
+              <TabsContent value="contractor-costs" className="space-y-6">
+                <ProjectContractorCostsPanel projectId={id || ''} />
               </TabsContent>
               
             </Tabs>
