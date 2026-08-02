@@ -5689,3 +5689,62 @@ export const insertDistributionLineSchema = createInsertSchema(distributionLines
 });
 export type InsertDistributionLine = z.infer<typeof insertDistributionLineSchema>;
 export type DistributionLine = typeof distributionLines.$inferSelect;
+
+// ============================================================================
+// REVENUE RECOGNITION
+// ============================================================================
+
+export const revenueSourceTypeEnum = z.enum(['invoice', 'po', 'contract', 'manual']);
+export type RevenueSourceType = z.infer<typeof revenueSourceTypeEnum>;
+
+/**
+ * project_revenue_entries — one row per recognised (or pending) revenue event.
+ *
+ * Entries can be:
+ *   (a) confirmed from an existing finalized invoice_batch  (invoiceBatchId set)
+ *   (b) manually entered for POs / contracts not yet in the invoice system
+ *
+ * No double-entry of amounts: when linked to an invoice_batch the amount is
+ * copied from the batch total at confirmation time and is treated read-only.
+ */
+export const projectRevenueEntries = pgTable("project_revenue_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: 'cascade' }),
+
+  // Source classification
+  sourceType: varchar("source_type", { length: 20 }).notNull().default("invoice"),
+
+  // Reference identifier (GL invoice number, PO number, contract ref, etc.)
+  referenceNumber: varchar("reference_number", { length: 255 }),
+
+  // Amount in project quote currency — copied from invoice batch when linked
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+
+  // Recognition flag
+  recognized: boolean("recognized").notNull().default(false),
+  recognizedAt: timestamp("recognized_at"),
+  recognizedBy: varchar("recognized_by").references(() => users.id, { onDelete: 'set null' }),
+
+  // Cross-reference to outbound invoice batch (null for manual entries)
+  invoiceBatchId: varchar("invoice_batch_id").references(() => invoiceBatches.id, { onDelete: 'set null' }),
+
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (t) => ({
+  tenantIdx: index("idx_pre_tenant").on(t.tenantId),
+  projectIdx: index("idx_pre_project").on(t.projectId),
+  clientIdx: index("idx_pre_client").on(t.clientId),
+  batchIdx: index("idx_pre_batch").on(t.invoiceBatchId),
+  // Prevent the same invoice batch from being confirmed as revenue for the same project twice.
+  // The WHERE clause (handled at app layer + DB partial index) only applies when invoiceBatchId IS NOT NULL.
+  batchProjectUniq: uniqueIndex("idx_pre_batch_project_uniq").on(t.invoiceBatchId, t.projectId),
+}));
+
+export const insertProjectRevenueEntrySchema = createInsertSchema(projectRevenueEntries).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertProjectRevenueEntry = z.infer<typeof insertProjectRevenueEntrySchema>;
+export type ProjectRevenueEntry = typeof projectRevenueEntries.$inferSelect;

@@ -88,6 +88,7 @@ import PayrollTaxSettings from "@/pages/payroll-tax-settings";
 import PayrollTaxForms from "@/pages/payroll-tax-forms";
 import PayrollAchOriginator from "@/pages/payroll-ach-originator";
 import Distributions from "@/pages/distributions";
+import FinancialsRevenue from "@/pages/financials-revenue";
 import DistributionRunDetail from "@/pages/distribution-run-detail";
 import MyPaystubs from "@/pages/my-paystubs";
 import MyPaystubDetail from "@/pages/my-paystub-detail";
@@ -364,6 +365,9 @@ function Router() {
       </Route>
       <Route path="/client-revenue-report">
         {user ? <ClientRevenueReport /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/financials/revenue">
+        {user ? <FinancialsRevenue /> : <Redirect to="/login" />}
       </Route>
       <Route path="/users">
         {user ? <Users /> : <Redirect to="/login" />}

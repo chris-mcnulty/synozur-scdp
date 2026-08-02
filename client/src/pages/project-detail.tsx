@@ -3562,7 +3562,8 @@ export default function ProjectDetail() {
   const cumulativeBurnData = monthlyMetrics
     .filter(m => safeFormatMonth(m.month) !== null)
     .map(m => {
-      cumulativeRevenue += (m.revenue || 0) + (m.expenseAmount || 0);
+      // Expenses are client pass-through; cumulative service revenue only.
+      cumulativeRevenue += (m.revenue || 0);
       return {
         month: safeFormatMonth(m.month)!,
         cumulative: cumulativeRevenue,

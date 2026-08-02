@@ -57,6 +57,7 @@ import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerRevenueRoutes } from "./routes/revenue.js";
 import { registerGalaxyV1Routes } from "./routes/galaxy/v1/index.js";
 import { enqueueGalaxyEvent } from "./services/galaxy-webhook-delivery.js";
 
@@ -333,6 +334,9 @@ export async function registerRoutes(app: Express): Promise<void> {
     requireRole,
     smartFileStorage,
   });
+
+  // Register revenue recognition routes
+  registerRevenueRoutes(app, { requireAuth, requireRole });
 
   // Register estimate routes (extracted module)
   registerEstimateRoutes(app, {

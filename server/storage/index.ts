@@ -137,6 +137,7 @@ import {
   contractorCostInvoicesMethods,
   type ContractorCostInvoicesMethods,
 } from "./contractor-cost-invoices";
+import { revenueMethods, type RevenueEntryWithDetails } from "./revenue";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers, placeholderUser, placeholderClient, placeholderProject } from "./helpers";
 export { generateInvoicePDF, generateSubSOWPdf, generateEstimateProposalPdf } from "./pdf-generation";
@@ -680,6 +681,20 @@ export interface IStorage {
   // Profit Calculation Methods
   calculateProjectProfit(projectId: string): Promise<{ revenue: number; cost: number; profit: number; }>;
   calculateProjectMargin(projectId: string): Promise<number>;
+
+  // Revenue Recognition
+  getRevenueEntries(filters?: { tenantId?: string; projectId?: string; clientId?: string; recognized?: boolean }): Promise<RevenueEntryWithDetails[]>;
+  getRevenueEntry(id: string, tenantId?: string): Promise<RevenueEntryWithDetails | undefined>;
+  createRevenueEntry(entry: import("@shared/schema").InsertProjectRevenueEntry): Promise<import("@shared/schema").ProjectRevenueEntry>;
+  updateRevenueEntry(id: string, update: Partial<import("@shared/schema").InsertProjectRevenueEntry>, tenantId?: string): Promise<import("@shared/schema").ProjectRevenueEntry>;
+  deleteRevenueEntry(id: string, tenantId?: string): Promise<void>;
+  bulkRecognizeRevenueEntries(ids: string[], recognizedBy: string, tenantId?: string): Promise<number>;
+  getRecognizedRevenueForProject(projectId: string): Promise<number>;
+  getSuggestedRevenueFromInvoices(tenantId: string): Promise<Array<{
+    invoiceBatchId: string; batchId: string; projectId: string | null; projectName: string | null;
+    clientId: string | null; clientName: string | null; projectAmount: string; totalAmount: string;
+    finalizedAt: Date | null; glInvoiceNumber: string | null;
+  }>>;
   
   // Portfolio Reporting Methods
   getPortfolioMetrics(filters?: { 
@@ -1363,6 +1378,7 @@ Object.assign(
   payrollStorage,
   distributionStorage,
   contractorCostInvoicesMethods,
+  revenueMethods,
 );
 
 export const storage: IStorage & VendorInvoicesMethods & QuickbooksMethods & ContractorCostInvoicesMethods = new DatabaseStorage() as DatabaseStorage;

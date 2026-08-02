@@ -2432,8 +2432,12 @@ def create_exec_financial_slide(prs, data, primary_color, secondary_color):
         util_text = "Utilization Rate: N/A"
 
     revenue = stats.get('totalRevenue', 0)
+    # Gross margin uses labour cost only — expenses are client pass-through and
+    # must not be treated as a cost against service revenue.
+    # Zero labour cost with positive revenue is a valid 100% gross margin.
+    labor_cost = stats.get('totalLaborCost', 0)
     if revenue > 0:
-        margin = ((revenue - stats.get('totalExpenses', 0)) / revenue) * 100
+        margin = ((revenue - labor_cost) / revenue) * 100
         margin_text = f"Gross Margin: {margin:.1f}%"
     else:
         margin_text = "Gross Margin: N/A"

@@ -166,12 +166,16 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
       .from(invoiceBatches)
       .where(and(...batchConditions));
       
+      // Service-only lines (non-expense), using billedAmount (final post-adjustment)
+      // with fallback to amount.  Expense lines are client pass-through and must not
+      // contribute to project billed revenue, profit, or margin.
       const batchProjectLines = await db.select({
         batchId: invoiceLines.batchId,
         projectId: invoiceLines.projectId,
-        lineTotal: sql<string>`SUM(COALESCE(${invoiceLines.amount}, 0))`.as('line_total')
+        lineTotal: sql<string>`SUM(COALESCE(CAST(${invoiceLines.billedAmount} AS NUMERIC), CAST(${invoiceLines.amount} AS NUMERIC), 0))`.as('line_total')
       })
       .from(invoiceLines)
+      .where(sql`${invoiceLines.type} IS DISTINCT FROM 'expense'`)
       .groupBy(invoiceLines.batchId, invoiceLines.projectId);
       
       const projectRevenueMap = new Map<string, number>();
@@ -339,10 +343,12 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
         const burnedHours = timeStats.hours;
         const laborCost = timeStats.laborCost;
 
+        // Expenses are client pass-through — tracked for reimbursement reconciliation
+        // but excluded from actualCost, profit, and margin calculations.
         const expenseStats = expenseAggMap.get(project.id) || { amount: 0, count: 0 };
-        const expenseCost = expenseStats.amount;
+        const expensePassthrough = expenseStats.amount; // kept for display/reconciliation only
 
-        const actualCost = laborCost + expenseCost;
+        const actualCost = laborCost; // labour only — no pass-through expenses
 
         const projectEstimateId = estimateIdByProject.get(project.id);
         const estimate = projectEstimateId ? estimateMap.get(projectEstimateId) : undefined;
@@ -1360,6 +1366,9 @@ ${raiddSummary}`;
         totalHours: Math.round(totalHours * 10) / 10,
         billableHours: Math.round(billableHours * 10) / 10,
         totalRevenue: Math.round(totalRevenue),
+        // Labour cost only — expenses are client pass-through and excluded from margin.
+        totalLaborCost: Math.round(totalCost),
+        // Expenses retained for separate reimbursement-reconciliation display only.
         totalExpenses: Math.round(totalExpenseAmount),
         activeProjects: activeProjects.length,
         estimatesCreated: activity.estimates.length,
@@ -1544,6 +1553,7 @@ ${raiddSummary}`;
           totalHours: stats.totalHours || 0,
           billableHours: stats.billableHours || 0,
           totalRevenue: stats.totalRevenue || 0,
+          totalLaborCost: stats.totalLaborCost || 0,
           totalExpenses: stats.totalExpenses || 0,
           activeProjects: stats.activeProjects || 0,
           estimatesCreated: stats.estimatesCreated || 0,

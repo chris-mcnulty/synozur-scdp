@@ -15,6 +15,7 @@ import {
   changeOrders,
   invoiceBatches,
   invoiceLines,
+  projectRevenueEntries,
   sows,
   projectBudgetHistory,
   projectEpics,
@@ -665,7 +666,47 @@ export const projectsMethods: ThisType<IStorage> = {
     const project = await this.getProject(projectId);
     
     let revenue = 0;
-    
+
+    // ── Revenue recognition entries take precedence ───────────────────────────
+    // If the project has ANY project_revenue_entries (recognized or pending), use the
+    // sum of recognized entries as the authoritative revenue figure.  This reflects
+    // formal recognition semantics: pending entries are NOT yet revenue.
+    // Projects with no entries at all fall back to the legacy invoice-line calculation
+    // for backward compatibility.
+    const [revenueEntryAgg] = await db
+      .select({
+        totalEntries: sql<number>`COUNT(*)`,
+        recognizedRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${projectRevenueEntries.recognized} THEN CAST(${projectRevenueEntries.amount} AS NUMERIC) ELSE 0 END), 0)`,
+      })
+      .from(projectRevenueEntries)
+      .where(eq(projectRevenueEntries.projectId, projectId));
+
+    if (Number(revenueEntryAgg?.totalEntries ?? 0) > 0) {
+      // This project uses revenue entries — recognized amount is the revenue figure.
+      revenue = Number(revenueEntryAgg?.recognizedRevenue ?? 0);
+
+      // Cost calculation (same as below — salaried resources excluded)
+      const [costData] = await db.select({
+        totalCost: sql<number>`COALESCE(SUM(
+          CASE 
+            WHEN COALESCE(${users.isSalaried}, false) = true THEN 0
+            WHEN COALESCE(${roles.isAlwaysSalaried}, false) = true THEN 0
+            ELSE CAST(${timeEntries.hours} AS NUMERIC) * CAST(
+              COALESCE(${timeEntries.costRate}, ${users.defaultCostRate}, 75) AS NUMERIC
+            )
+          END
+        ), 0)`,
+      })
+      .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
+      .leftJoin(roles, eq(users.roleId, roles.id))
+      .where(eq(timeEntries.projectId, projectId));
+
+      const cost = Number(costData?.totalCost || 0);
+      return { revenue, cost, profit: revenue - cost };
+    }
+    // ── Fallback: legacy invoice-line / retainer / T&M calculation ───────────
+
     if (project && project.commercialScheme === 'retainer') {
       // For retainer projects, calculate recognized revenue based on elapsed months
       if (project.startDate && project.retainerTotal) {
@@ -1915,24 +1956,18 @@ export const projectsMethods: ThisType<IStorage> = {
       });
     });
 
-    // Check if this is a fixed-price project (expenses should NOT count as revenue)
-    const isFixedPrice = ['retainer', 'milestone', 'fixed-price'].includes(project.commercialScheme);
-    
+    // Expenses are client pass-through — they are NEVER added to revenue regardless of
+    // commercial scheme. Track them in expenseAmount for reimbursement reconciliation only.
     expenseMetrics.forEach(metric => {
       const existing = metricsMap.get(metric.month);
       if (existing) {
-        // For fixed-price projects, expenses don't count as revenue (only T&M projects bill expenses)
-        const expenseRevenue = isFixedPrice ? 0 : Number(metric.expenseAmount) || 0;
-        existing.revenue += expenseRevenue; // Add expense to revenue for T&M projects only
         existing.expenseAmount = Number(metric.expenseAmount) || 0;
       } else {
-        // For new months with only expenses, determine if expenses should be revenue
-        const expenseRevenue = isFixedPrice ? 0 : Number(metric.expenseAmount) || 0;
         metricsMap.set(metric.month, {
           month: metric.month,
           billableHours: 0,
           nonBillableHours: 0,
-          revenue: expenseRevenue,
+          revenue: 0,
           expenseAmount: Number(metric.expenseAmount) || 0
         });
       }
@@ -2041,10 +2076,11 @@ export const projectsMethods: ThisType<IStorage> = {
       revenue = totalBudget * completionPercentage;
     } else {
       // For time & materials projects:
-      // - Both time and expenses count as consumed budget
-      // - Revenue equals the actual billed amount
-      consumedBudget = timeBasedCost + totalExpenses;
-      revenue = consumedBudget; // T&M revenue = time + expenses
+      // - Consumed budget = time-based cost only. Expenses are client pass-through
+      //   and do NOT consume the project hours/cost budget.
+      // - Revenue = time-based billable amount only; expenses are reimbursed separately.
+      consumedBudget = timeBasedCost;
+      revenue = timeBasedCost;
     }
     
     const burnRatePercentage = totalBudget > 0 ? (consumedBudget / totalBudget) * 100 : 0;
@@ -2184,24 +2220,19 @@ export const projectsMethods: ThisType<IStorage> = {
     const projectSows = await this.getSows(projectId);
     const contracted = projectSows.reduce((sum, sow) => sum + parseFloat(sow.value), 0);
     
-    // Get actual cost from time entries and expenses. Prefer actualCostAmount
-    // (back-filled when a contractor vendor invoice was reconciled & posted)
-    // over the rate-card estimate.
+    // Actual cost = labour cost only (time entries).
+    // Expenses are a client passthrough — they are tracked for reconciliation but
+    // do NOT contribute to project cost or profit margin.
     const timeEntryResult = await db.select({
       totalCost: sql<number>`COALESCE(SUM(COALESCE(CAST(${timeEntries.actualCostAmount} AS NUMERIC), CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.costRate} AS NUMERIC))), 0)::float`
     })
     .from(timeEntries)
     .where(eq(timeEntries.projectId, projectId));
 
-    const expenseResult = await db.select({
-      totalExpenses: sql<number>`COALESCE(SUM(COALESCE(CAST(${expenses.actualCostAmount} AS NUMERIC), CAST(${expenses.amount} AS NUMERIC))), 0)::float`
-    })
-    .from(expenses)
-    .where(eq(expenses.projectId, projectId));
-    
-    const actualCost = (timeEntryResult[0]?.totalCost || 0) + (expenseResult[0]?.totalExpenses || 0);
-    
-    // Get billed amount from invoice lines
+    const actualCost = timeEntryResult[0]?.totalCost || 0;
+
+    // Billed = finalized invoice lines for services only (excluding expense pass-through lines).
+    // Expense lines are tracked separately for reimbursement reconciliation.
     const billedResult = await db.select({
       totalBilled: sql<number>`COALESCE(SUM(CAST(${invoiceLines.billedAmount} AS NUMERIC)), 0)::float`
     })
@@ -2209,7 +2240,8 @@ export const projectsMethods: ThisType<IStorage> = {
     .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
     .where(and(
       eq(invoiceLines.projectId, projectId),
-      eq(invoiceBatches.status, 'finalized')
+      eq(invoiceBatches.status, 'finalized'),
+      sql`${invoiceLines.type} IS DISTINCT FROM 'expense'`
     ));
     
     const billed = billedResult[0]?.totalBilled || 0;
@@ -2293,6 +2325,32 @@ export const projectsMethods: ThisType<IStorage> = {
       ? await baseQuery.where(and(...conditions))
       : await baseQuery;
 
+    // Batch-fetch recognized revenue entries for all projects in one query.
+    // Projects that have ANY revenue entries use the recognized-entries model;
+    // projects with no entries fall back to the time-entry-derived revenue above.
+    const allProjectIds = results.map(r => r.project.id).filter(Boolean);
+    const revenueEntryMap = new Map<string, { totalEntries: number; recognizedRevenue: number }>();
+    if (allProjectIds.length > 0) {
+      const revenueAgg = await db
+        .select({
+          projectId: projectRevenueEntries.projectId,
+          totalEntries: sql<number>`COUNT(*)`,
+          recognizedRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${projectRevenueEntries.recognized} THEN CAST(${projectRevenueEntries.amount} AS NUMERIC) ELSE 0 END), 0)`,
+        })
+        .from(projectRevenueEntries)
+        .where(inArray(projectRevenueEntries.projectId, allProjectIds))
+        .groupBy(projectRevenueEntries.projectId);
+
+      for (const row of revenueAgg) {
+        if (row.projectId) {
+          revenueEntryMap.set(row.projectId, {
+            totalEntries: Number(row.totalEntries),
+            recognizedRevenue: Number(row.recognizedRevenue),
+          });
+        }
+      }
+    }
+
     // Process each project to calculate additional metrics
     const processedResults = await Promise.all(results.map(async (row) => {
       // Get estimated hours from latest estimate
@@ -2313,7 +2371,13 @@ export const projectsMethods: ThisType<IStorage> = {
 
       const actualHours = Number(row.actualHours) || 0;
       const actualCost = Number(row.actualCost) || 0;
-      const revenue = Number(row.revenue) || 0;
+
+      // Revenue: prefer recognized entries if the project uses the new recognition model.
+      const revEntry = revenueEntryMap.get(row.project.id);
+      const revenue = revEntry && revEntry.totalEntries > 0
+        ? revEntry.recognizedRevenue  // recognized entries only — pending ones don't count yet
+        : Number(row.revenue) || 0;   // fallback: time-entry-derived billing rate estimate
+
       const profitMargin = revenue > 0 ? ((revenue - actualCost) / revenue) * 100 : 0;
       const completionPercentage = estimatedHours > 0 ? Math.min(100, (actualHours / estimatedHours) * 100) : 0;
       
