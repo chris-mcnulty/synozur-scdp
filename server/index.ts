@@ -88,6 +88,10 @@ function detectEnvironment() {
 
 // Environment validation function - non-blocking for deployment
 function validateEnvironment() {
+  // Accept NEON_DATABASE_URL as an alias
+  if (!process.env.DATABASE_URL && process.env.NEON_DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.NEON_DATABASE_URL;
+  }
   const requiredVars = ['DATABASE_URL'];
   const missing = requiredVars.filter(varName => !process.env[varName]);
   

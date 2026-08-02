@@ -9,7 +9,7 @@ packages = ["alsa-lib", "at-spi2-atk", "at-spi2-core", "atk", "cairo", "chromium
 [deployment]
 run = ["sh", "-c", "npm start"]
 deploymentTarget = "autoscale"
-build = ["sh", "-c", "npm run build && npx tsx scripts/validate-agent-card.ts"]
+build = ["sh", "-c", "npm run build && npm run db:push && npx tsx scripts/validate-agent-card.ts"]
 publicDir = "dist/public"
 
 [[ports]]
