@@ -19,17 +19,160 @@ interface Jurisdiction {
   isActive: boolean;
 }
 
+// ── Wage-premium section ───────────────────────────────────────────────────
+// Handles jurisdictions whose rule.kind === 'wage_premium' (e.g. WA PFML,
+// WA Cares Fund). Tenants can override employeePct / employerPct / wageBase.
+// The most common case: WA employers with <50 employees set employerPct to 0.
+
+interface WagePremiumSectionProps {
+  list: Jurisdiction[];
+  upsert: any;
+  del: any;
+  toast: any;
+}
+
+function WagePremiumSection({ list, upsert, del, toast }: WagePremiumSectionProps) {
+  const [draft, setDraft] = useState<Record<string, { employeePct: string; employerPct: string; wageBaseDollars: string }>>({});
+
+  const rows = useMemo(() => {
+    if (!list) return [];
+    const grouped = new Map<string, { code: string; name: string; platform: Jurisdiction | null; tenant: Jurisdiction | null }>();
+    for (const j of list) {
+      if (j.rule?.kind !== 'wage_premium') continue;
+      const slot = grouped.get(j.code) ?? { code: j.code, name: j.name, platform: null, tenant: null };
+      if (j.tenantId === null) slot.platform = j;
+      else slot.tenant = j;
+      slot.name = j.name;
+      grouped.set(j.code, slot);
+    }
+    return Array.from(grouped.values()).sort((a, b) => a.code.localeCompare(b.code));
+  }, [list]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Wage-premium jurisdictions</CardTitle>
+        <p className="text-sm text-muted-foreground mt-1">
+          State payroll premiums split between employee and employer (e.g. WA Paid Family &amp; Medical Leave).
+          Override the rates here if your situation differs from the platform default — the most common case
+          is WA employers with fewer than 50 employees, who pay <strong>0% employer share</strong> for PFML.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <table className="w-full text-sm">
+          <thead className="text-left text-muted-foreground border-b">
+            <tr>
+              <th className="py-2 pr-4">Code</th>
+              <th className="pr-4">Name</th>
+              <th className="pr-4">Employee %</th>
+              <th className="pr-4">Employer %</th>
+              <th className="pr-4">Wage cap</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const plat = row.platform?.rule ?? {};
+              const over = row.tenant?.rule ?? {};
+              const d = draft[row.code] ?? { employeePct: '', employerPct: '', wageBaseDollars: '' };
+
+              const showEmpPct  = over.employeePct  != null ? over.employeePct  : plat.employeePct;
+              const showErPct   = over.employerPct  != null ? over.employerPct  : plat.employerPct;
+              const showWageCap = over.wageBaseCents != null ? over.wageBaseCents : plat.wageBaseCents;
+
+              return (
+                <tr key={row.code} className="border-b last:border-0 align-top">
+                  <td className="py-3 pr-4 font-mono">{row.code}</td>
+                  <td className="pr-4 py-3">{row.name}</td>
+
+                  {/* Employee % */}
+                  <td className="pr-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number" step="0.0001" placeholder={showEmpPct != null ? String(showEmpPct) : '—'}
+                        value={d.employeePct}
+                        onChange={ev => setDraft(s => ({ ...s, [row.code]: { ...d, employeePct: ev.target.value } }))}
+                        className="w-24"
+                      />
+                      <span>%</span>
+                    </div>
+                    {row.tenant?.rule?.employeePct != null && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Override: {row.tenant.rule.employeePct}%</p>
+                    )}
+                  </td>
+
+                  {/* Employer % */}
+                  <td className="pr-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number" step="0.0001" placeholder={showErPct != null ? String(showErPct) : '0'}
+                        value={d.employerPct}
+                        onChange={ev => setDraft(s => ({ ...s, [row.code]: { ...d, employerPct: ev.target.value } }))}
+                        className="w-24"
+                      />
+                      <span>%</span>
+                    </div>
+                    {row.tenant?.rule?.employerPct != null && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Override: {row.tenant.rule.employerPct}%</p>
+                    )}
+                  </td>
+
+                  {/* Wage cap */}
+                  <td className="pr-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground">$</span>
+                      <Input
+                        type="number" step="1"
+                        placeholder={showWageCap != null ? String(Math.round(showWageCap / 100)) : 'no cap'}
+                        value={d.wageBaseDollars}
+                        onChange={ev => setDraft(s => ({ ...s, [row.code]: { ...d, wageBaseDollars: ev.target.value } }))}
+                        className="w-28"
+                      />
+                    </div>
+                    {row.tenant?.rule?.wageBaseCents != null && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Override: ${Math.round(row.tenant.rule.wageBaseCents / 100).toLocaleString()}</p>
+                    )}
+                  </td>
+
+                  <td className="py-3 text-right space-x-2 whitespace-nowrap">
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={!d.employeePct && !d.employerPct && !d.wageBaseDollars}
+                      onClick={() => {
+                        const base = { ...(row.platform?.rule ?? row.tenant?.rule ?? {}), kind: 'wage_premium' };
+                        if (d.employeePct !== '')  base.employeePct  = Number(d.employeePct);
+                        if (d.employerPct !== '')  base.employerPct  = Number(d.employerPct);
+                        if (d.wageBaseDollars !== '') base.wageBaseCents = Math.round(Number(d.wageBaseDollars) * 100);
+                        upsert.mutate({
+                          code: row.code, name: row.name,
+                          level: row.platform?.level ?? row.tenant?.level ?? 'state',
+                          rule: base, isActive: true,
+                        });
+                        setDraft(s => { const n = { ...s }; delete n[row.code]; return n; });
+                      }}
+                    >Save override</Button>
+                    {row.tenant && (
+                      <Button size="icon" variant="ghost" onClick={() => del.mutate(row.tenant!.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * Tenant-scoped tax jurisdiction overrides. The list returned by the API
  * is the union of platform defaults (tenant_id IS NULL) + tenant overrides;
  * when a (tenant, code) pair has an override row, the engine uses that one.
- *
- * The focus of this page is SUTA experience-rate overrides — every state
- * SUTA seed comes with the new-employer rate, and tenants are expected to
- * replace it with the experience-rated percentage their state assigned.
- * Other jurisdiction shapes (state withholding brackets, local flat
- * percent, wage premiums) are visible but not editable here — those are
- * platform-managed today.
  */
 export default function PayrollJurisdictions() {
   const { data: list, isLoading } = useQuery<Jurisdiction[]>({ queryKey: ["/api/payroll/jurisdictions"] });
@@ -185,27 +328,8 @@ export default function PayrollJurisdictions() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle>Other jurisdictions (read-only)</CardTitle></CardHeader>
-          <CardContent>
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted-foreground border-b">
-                <tr><th className="py-2">Code</th><th>Name</th><th>Level</th><th>Kind</th><th>Scope</th></tr>
-              </thead>
-              <tbody>
-                {(list || []).filter(j => j.rule?.kind !== 'suta').map(j => (
-                  <tr key={j.id} className="border-b last:border-0">
-                    <td className="py-2 font-mono">{j.code}</td>
-                    <td>{j.name}</td>
-                    <td>{j.level}</td>
-                    <td className="font-mono text-xs">{j.rule?.kind}</td>
-                    <td>{j.tenantId ? <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40">tenant override</span> : <span className="text-xs text-muted-foreground">platform</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+        {/* ── Wage-premium overrides (WA PFML, WA Cares, etc.) ─────────────── */}
+        <WagePremiumSection list={list ?? []} upsert={upsert} del={del} toast={toast} />
 
         {/* Federal / FICA reference rates — hardcoded in the payroll engine */}
         <Card>

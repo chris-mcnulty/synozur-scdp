@@ -5223,6 +5223,10 @@ export const payrollAchOriginator = pgTable("payroll_ach_originator", {
   immediateOrigin: varchar("immediate_origin", { length: 10 }).notNull(),
   immediateDestinationName: varchar("immediate_destination_name", { length: 23 }).notNull(),
   immediateDestination: varchar("immediate_destination", { length: 10 }).notNull(),
+  // Batch Header (Record 5) optional fields
+  companyDiscretionaryData: varchar("company_discretionary_data", { length: 20 }),  // pos 40-59; Chase uses account number here
+  standardEntryClass: varchar("standard_entry_class", { length: 3 }).default('PPD'), // PPD = personal accounts, CCD = business
+  serviceClassCode: varchar("service_class_code", { length: 3 }).default('220'),     // 200=mixed, 220=credits only; Chase often requires 200
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });

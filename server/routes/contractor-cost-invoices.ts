@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { db } from "../db.js";
-import { users, projects } from "@shared/schema";
+import { users, projects, tenantUsers } from "@shared/schema";
 import { storage } from "../storage/index.js";
 import { extractContractorInvoice } from "../services/contractor-invoice-extractor.js";
 import type {
@@ -45,11 +45,12 @@ async function checkForeignKeyTenancy(
   projectId: string | undefined,
   tenantId: string,
 ): Promise<string | null> {
-  // Verify contractor user belongs to this tenant
+  // Verify contractor user belongs to this tenant (via tenant_users join)
   const [contractorRow] = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, contractorUserId), eq(users.tenantId, tenantId)))
+    .innerJoin(tenantUsers, and(eq(tenantUsers.userId, users.id), eq(tenantUsers.tenantId, tenantId)))
+    .where(eq(users.id, contractorUserId))
     .limit(1);
   if (!contractorRow) {
     return "Contractor user not found in this tenant.";

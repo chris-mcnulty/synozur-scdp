@@ -653,6 +653,9 @@ export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
         immediateOrigin: originator.immediateOrigin,
         immediateDestinationName: originator.immediateDestinationName,
         immediateDestination: originator.immediateDestination,
+        companyDiscretionaryData: originator.companyDiscretionaryData ?? undefined,
+        standardEntryClass: originator.standardEntryClass ?? undefined,
+        serviceClassCode: originator.serviceClassCode ?? undefined,
       }, entries, effectiveDate);
       await payrollStorage.appendAudit({
         tenantId, actorUserId: (req.user as any)?.id,

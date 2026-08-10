@@ -30,6 +30,9 @@ export default function PayrollAchOriginator() {
     immediateOrigin: "",
     immediateDestinationName: "",
     immediateDestination: "",
+    companyDiscretionaryData: "",
+    standardEntryClass: "PPD",
+    serviceClassCode: "220",
   });
 
   useEffect(() => {
@@ -41,6 +44,9 @@ export default function PayrollAchOriginator() {
       immediateOrigin: data.immediateOrigin ?? "",
       immediateDestinationName: data.immediateDestinationName ?? "",
       immediateDestination: data.immediateDestination ?? "",
+      companyDiscretionaryData: data.companyDiscretionaryData ?? "",
+      standardEntryClass: data.standardEntryClass ?? "PPD",
+      serviceClassCode: data.serviceClassCode ?? "220",
     });
   }, [data]);
 
@@ -200,6 +206,71 @@ export default function PayrollAchOriginator() {
                 <HelpText>
                   Your bank's full 9-digit routing number, left-padded with a zero to make 10 digits.
                   For example, routing 121000358 → enter <strong>0121000358</strong>.
+                </HelpText>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Batch options</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              These fields appear in every NACHA batch header your bank receives. Leave them at their defaults
+              unless your bank's ACH enrollment paperwork specifies different values.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Company discretionary data</Label>
+                <Input
+                  value={form.companyDiscretionaryData}
+                  onChange={e => setForm({ ...form, companyDiscretionaryData: e.target.value.slice(0, 20) })}
+                  maxLength={20}
+                  placeholder="(blank)"
+                  data-testid="input-company-discretionary-data"
+                />
+                <HelpText>
+                  20-character free field in the batch header (positions 40–59). Most banks leave this blank.
+                  JPMorgan Chase may ask you to put your originating account number here — check your Chase
+                  ACH enrollment paperwork.
+                </HelpText>
+              </div>
+
+              <div>
+                <Label>Standard entry class (SEC code)</Label>
+                <select
+                  value={form.standardEntryClass}
+                  onChange={e => setForm({ ...form, standardEntryClass: e.target.value })}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  data-testid="select-standard-entry-class"
+                >
+                  <option value="PPD">PPD — Personal accounts (payroll default)</option>
+                  <option value="CCD">CCD — Business / corporate accounts</option>
+                </select>
+                <HelpText>
+                  <strong>PPD</strong> is correct for direct deposit to employee personal checking/savings accounts.
+                  Use <strong>CCD</strong> only if paying to business bank accounts (e.g. sole-proprietor 1099 contractors
+                  whose bank requires it).
+                </HelpText>
+              </div>
+
+              <div>
+                <Label>Service class code</Label>
+                <select
+                  value={form.serviceClassCode}
+                  onChange={e => setForm({ ...form, serviceClassCode: e.target.value })}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  data-testid="select-service-class-code"
+                >
+                  <option value="220">220 — Credits only (payroll default)</option>
+                  <option value="225">225 — Debits only (collections)</option>
+                </select>
+                <HelpText>
+                  <strong>220</strong> is correct for payroll (all credits). Use <strong>225</strong> only for
+                  debit/collection batches. Code 200 (mixed) is explicitly rejected by JPMorgan Chase and most
+                  other banks — do not use it.
                 </HelpText>
               </div>
             </div>
