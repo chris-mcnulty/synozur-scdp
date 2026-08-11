@@ -2,6 +2,7 @@ import {
   projectRevenueEntries,
   projects,
   clients,
+  invoiceBatches,
   type ProjectRevenueEntry,
   type InsertProjectRevenueEntry,
   type Project,
@@ -15,6 +16,12 @@ import { eq, and, desc, sql, inArray } from "drizzle-orm";
 export type RevenueEntryWithDetails = ProjectRevenueEntry & {
   project: Pick<Project, 'id' | 'name' | 'code' | 'sowTotal'>;
   client: Pick<Client, 'id' | 'name'>;
+  /** Only present when the entry was confirmed from an invoice batch */
+  invoicePaymentStatus: string | null;
+  invoicePaymentDate: string | null;
+  invoicePaymentAmount: string | null;
+  /** Human-readable batch ID (e.g. INV-20240101-1234) for linking to the billing page */
+  invoiceBatchRef: string | null;
 };
 
 export const revenueMethods: ThisType<IStorage> = {
@@ -35,10 +42,17 @@ export const revenueMethods: ThisType<IStorage> = {
         entry: projectRevenueEntries,
         project: { id: projects.id, name: projects.name, code: projects.code, sowTotal: projects.sowTotal },
         client: { id: clients.id, name: clients.name },
+        batch: {
+          paymentStatus: invoiceBatches.paymentStatus,
+          paymentDate: invoiceBatches.paymentDate,
+          paymentAmount: invoiceBatches.paymentAmount,
+          batchId: invoiceBatches.batchId,
+        },
       })
       .from(projectRevenueEntries)
       .leftJoin(projects, eq(projectRevenueEntries.projectId, projects.id))
       .leftJoin(clients, eq(projectRevenueEntries.clientId, clients.id))
+      .leftJoin(invoiceBatches, eq(projectRevenueEntries.invoiceBatchId, invoiceBatches.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(projectRevenueEntries.createdAt));
 
@@ -46,6 +60,10 @@ export const revenueMethods: ThisType<IStorage> = {
       ...r.entry,
       project: r.project as Pick<Project, 'id' | 'name' | 'code' | 'sowTotal'>,
       client: r.client as Pick<Client, 'id' | 'name'>,
+      invoicePaymentStatus: r.batch?.paymentStatus ?? null,
+      invoicePaymentDate: r.batch?.paymentDate ?? null,
+      invoicePaymentAmount: r.batch?.paymentAmount ?? null,
+      invoiceBatchRef: r.batch?.batchId ?? null,
     }));
   },
 
@@ -59,10 +77,17 @@ export const revenueMethods: ThisType<IStorage> = {
         entry: projectRevenueEntries,
         project: { id: projects.id, name: projects.name, code: projects.code, sowTotal: projects.sowTotal },
         client: { id: clients.id, name: clients.name },
+        batch: {
+          paymentStatus: invoiceBatches.paymentStatus,
+          paymentDate: invoiceBatches.paymentDate,
+          paymentAmount: invoiceBatches.paymentAmount,
+          batchId: invoiceBatches.batchId,
+        },
       })
       .from(projectRevenueEntries)
       .leftJoin(projects, eq(projectRevenueEntries.projectId, projects.id))
       .leftJoin(clients, eq(projectRevenueEntries.clientId, clients.id))
+      .leftJoin(invoiceBatches, eq(projectRevenueEntries.invoiceBatchId, invoiceBatches.id))
       .where(and(...conditions))
       .limit(1);
 
@@ -72,6 +97,10 @@ export const revenueMethods: ThisType<IStorage> = {
       ...r.entry,
       project: r.project as Pick<Project, 'id' | 'name' | 'code' | 'sowTotal'>,
       client: r.client as Pick<Client, 'id' | 'name'>,
+      invoicePaymentStatus: r.batch?.paymentStatus ?? null,
+      invoicePaymentDate: r.batch?.paymentDate ?? null,
+      invoicePaymentAmount: r.batch?.paymentAmount ?? null,
+      invoiceBatchRef: r.batch?.batchId ?? null,
     };
   },
 

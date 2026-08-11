@@ -39,6 +39,12 @@ interface RevenueEntry {
   createdAt: string;
   project: { id: string; name: string; code: string; sowTotal: string | null };
   client: { id: string; name: string };
+  /** Payment status from the linked invoice batch (null for manual entries) */
+  invoicePaymentStatus: string | null;
+  invoicePaymentDate: string | null;
+  invoicePaymentAmount: string | null;
+  /** Human-readable batch ID used in the /billing/batches/:batchId URL */
+  invoiceBatchRef: string | null;
 }
 
 interface InvoiceSuggestion {
@@ -492,6 +498,7 @@ export default function FinancialsRevenue() {
                       <TableHead>Reference</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Payment</TableHead>
                       <TableHead>Effective date</TableHead>
                       <TableHead className="w-20"></TableHead>
                     </TableRow>
@@ -535,6 +542,35 @@ export default function FinancialsRevenue() {
                               Pending
                             </Badge>
                           )}
+                        </TableCell>
+                        <TableCell>
+                          {entry.invoiceBatchId && entry.invoicePaymentStatus ? (
+                            entry.invoicePaymentStatus === "paid" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                                <CheckCircle className="h-3 w-3" /> Paid
+                                {entry.invoicePaymentDate && (
+                                  <span className="font-normal ml-0.5">
+                                    {format(new Date(entry.invoicePaymentDate), "MMM d")}
+                                  </span>
+                                )}
+                              </span>
+                            ) : entry.invoicePaymentStatus === "partial" ? (
+                              <Link href={`/billing/batches/${entry.invoiceBatchRef}`}>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 cursor-pointer hover:opacity-80">
+                                  <Clock className="h-3 w-3" /> Partial
+                                  {entry.invoicePaymentAmount && (
+                                    <span className="font-normal ml-0.5">{fmtAmount(entry.invoicePaymentAmount)}</span>
+                                  )}
+                                </span>
+                              </Link>
+                            ) : (
+                              <Link href={`/billing/batches/${entry.invoiceBatchRef}`}>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 cursor-pointer hover:opacity-80">
+                                  <AlertCircle className="h-3 w-3" /> Unpaid
+                                </span>
+                              </Link>
+                            )
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {entry.recognizedAt
