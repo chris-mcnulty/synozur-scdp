@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
 import { ArrowLeft, Download, DollarSign } from "lucide-react";
@@ -35,7 +35,21 @@ export default function PayrollRunDetail() {
       const body = Object.keys(overrides).length > 0 ? { overrides } : {};
       return apiRequest(`/api/payroll/runs/${id}/preview`, { method: "POST", body: JSON.stringify(body) });
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/payroll/runs", id] }); toast({ title: "Preview computed" }); },
+    onSuccess: (result: any) => {
+      // Immediately populate the cache with the preview result so items
+      // appear without waiting for a round-trip refetch. We merge in the
+      // existing reimbursements from the current cache since the preview
+      // endpoint doesn't return them.
+      queryClient.setQueryData(["/api/payroll/runs", id], (prev: any) => ({
+        run: result.run,
+        items: result.items,
+        reimbursements: prev?.reimbursements ?? [],
+      }));
+      // Also invalidate so the next background refetch picks up any
+      // reimbursement-line changes that preview may have written.
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/runs", id] });
+      toast({ title: "Preview computed", description: `${result.items?.length ?? 0} employee(s) computed.` });
+    },
     onError: (e: any) => toast({ title: "Preview failed", description: e.message, variant: "destructive" }),
   });
   const approve = useMutation({
@@ -124,7 +138,62 @@ export default function PayrollRunDetail() {
             )}
             {r.status === 'previewed' && <Button onClick={() => approve.mutate()} disabled={approve.isPending} data-testid="button-approve">Approve</Button>}
             {r.status === 'approved' && <Button onClick={() => finalize.mutate()} disabled={finalize.isPending} data-testid="button-finalize">Finalize</Button>}
-            <a href={`/api/payroll/runs/${id}/gl-export?format=csv`}><Button variant="outline"><Download className="h-4 w-4 mr-2" />GL CSV</Button></a>
+            <Button variant="outline" onClick={async () => {
+              try {
+                const sid = getSessionId();
+                const res = await fetch(`/api/payroll/runs/${id}/gl-export?format=csv`, {
+                  headers: sid ? { 'x-session-id': sid } : {},
+                  credentials: 'include',
+                });
+                if (!res.ok) {
+                  const msg = await res.text();
+                  throw new Error(msg || res.statusText);
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `payroll-gl-${id}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } catch (e: any) {
+                toast({ title: 'GL export failed', description: e.message, variant: 'destructive' });
+              }
+            }} data-testid="button-gl-csv">
+              <Download className="h-4 w-4 mr-2" />GL CSV
+            </Button>
+            {(r.status === 'approved' || r.status === 'finalized') && (
+              <Button variant="outline" onClick={async () => {
+                try {
+                  const sid = getSessionId();
+                  const res = await fetch(`/api/payroll/runs/${id}/ach-export`, {
+                    headers: sid ? { 'x-session-id': sid } : {},
+                    credentials: 'include',
+                  });
+                  if (!res.ok) {
+                    const msg = await res.text();
+                    throw new Error(msg || res.statusText);
+                  }
+                  const entryCount = res.headers.get('X-Ach-Entry-Count');
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `payroll-ach-${id}.ach`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                  toast({ title: 'NACHA file downloaded', description: entryCount ? `${entryCount} direct-deposit entr${entryCount === '1' ? 'y' : 'ies'} included.` : undefined });
+                } catch (e: any) {
+                  toast({ title: 'NACHA export failed', description: e.message, variant: 'destructive' });
+                }
+              }} data-testid="button-ach-file">
+                <Download className="h-4 w-4 mr-2" />NACHA file
+              </Button>
+            )}
             {qboReady && r.status === 'finalized' && !qboJournal && (
               <Button variant="outline" onClick={() => pushJournal.mutate()} disabled={pushJournal.isPending} data-testid="button-push-qbo">
                 {pushJournal.isPending ? 'Posting…' : 'Post GL to QuickBooks'}

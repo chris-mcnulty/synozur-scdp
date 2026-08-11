@@ -80,14 +80,65 @@ async function appliedMigrations(pool: Pool): Promise<Set<string>> {
  *
  * Semicolons inside quoted/comment regions are NOT treated as delimiters.
  */
+/**
+ * Strip leading line comments, block comments, and blank lines from a
+ * statement.  Returns "" if the statement is comments-only.
+ *
+ * Statements in hand-written migrations often start with explanatory
+ * `-- ...` comment blocks; discarding those statements outright (instead of
+ * just their comment prefix) silently skips real SQL.
+ */
+/**
+ * Given sql with a block comment opening at `start` (sql[start..start+1] === "/*"),
+ * return the index just past the matching close, honoring PostgreSQL's
+ * nested block comments.  Returns -1 if unterminated.
+ */
+function findBlockCommentEnd(sql: string, start: number): number {
+  let depth = 0;
+  let i = start;
+  while (i < sql.length - 1) {
+    if (sql[i] === "/" && sql[i + 1] === "*") {
+      depth++;
+      i += 2;
+    } else if (sql[i] === "*" && sql[i + 1] === "/") {
+      depth--;
+      i += 2;
+      if (depth === 0) return i;
+    } else {
+      i++;
+    }
+  }
+  return -1;
+}
+
+function stripLeadingComments(stmt: string): string {
+  let s = stmt;
+  for (;;) {
+    const t = s.replace(/^\s+/, "");
+    if (t.startsWith("--")) {
+      const nl = t.indexOf("\n");
+      if (nl === -1) return "";
+      s = t.slice(nl + 1);
+      continue;
+    }
+    if (t.startsWith("/*")) {
+      const end = findBlockCommentEnd(t, 0);
+      if (end === -1) return "";
+      s = t.slice(end);
+      continue;
+    }
+    return t.trim();
+  }
+}
+
 function splitStatements(sql: string): string[] {
   // If the file uses Drizzle's explicit breakpoints, prefer those — they are
   // always at statement boundaries and require no further parsing.
   if (sql.includes("--> statement-breakpoint")) {
     return sql
       .split(/--> statement-breakpoint/g)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !/^--/.test(s));
+      .map((s) => stripLeadingComments(s.trim()))
+      .filter((s) => s.length > 0);
   }
 
   // Otherwise, tokenise character-by-character.
@@ -105,12 +156,12 @@ function splitStatements(sql: string): string[] {
       continue;
     }
 
-    // Block comment: /* ... */
+    // Block comment: /* ... */ (nesting-aware, per PostgreSQL)
     if (sql[i] === "/" && sql[i + 1] === "*") {
-      const end = sql.indexOf("*/", i + 2);
+      const end = findBlockCommentEnd(sql, i);
       if (end === -1) { current += sql.slice(i); break; }
-      current += sql.slice(i, end + 2);
-      i = end + 2;
+      current += sql.slice(i, end);
+      i = end;
       continue;
     }
 
@@ -162,7 +213,9 @@ function splitStatements(sql: string): string[] {
   current = current.trim();
   if (current.length > 0) statements.push(current);
 
-  return statements.filter((s) => !/^--/.test(s) && s.length > 0);
+  return statements
+    .map((s) => stripLeadingComments(s))
+    .filter((s) => s.length > 0);
 }
 
 async function runMigration(
@@ -211,7 +264,12 @@ async function main(): Promise<void> {
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
-    const pending = allFiles.filter((f) => !applied.has(f));
+    // Seed migrations are idempotent (ON CONFLICT DO NOTHING) and are always
+    // re-run, even when recorded as applied.  This heals databases where a
+    // seed file was marked applied but its INSERTs never landed (e.g. it ran
+    // before the target tables existed and the errors were swallowed).
+    const isSeed = (f: string) => /seed/i.test(f);
+    const pending = allFiles.filter((f) => !applied.has(f) || isSeed(f));
 
     if (pending.length === 0) {
       console.log("No pending migrations — schema is up to date.");
@@ -219,7 +277,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      `Running ${pending.length} pending migration(s) (${allFiles.length - pending.length} already applied):\n`
+      `Running ${pending.length} migration(s) (${allFiles.length - pending.length} already applied and non-repeatable):\n`
     );
 
     for (const filename of pending) {
