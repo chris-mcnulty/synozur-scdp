@@ -338,7 +338,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Register contractor payment tracking routes
-  registerContractorPaymentRoutes(app);
+  registerContractorPaymentRoutes(app, requireAuth);
 
   // Register revenue recognition routes
   registerRevenueRoutes(app, { requireAuth, requireRole });

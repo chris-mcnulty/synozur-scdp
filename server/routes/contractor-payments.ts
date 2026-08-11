@@ -10,8 +10,7 @@
  * DELETE /api/contractor-payments/:id            — delete unmatched payment
  */
 
-import type { Express } from "express";
-import { requireAuth } from "../auth.js";
+import type { Express, RequestHandler } from "express";
 import { storage } from "../storage/index.js";
 
 const BILLING_ROLES = new Set(["admin", "billing_admin"]);
@@ -19,7 +18,7 @@ function isBillingAdmin(role: string | undefined) {
   return role && BILLING_ROLES.has(role);
 }
 
-export function registerContractorPaymentRoutes(app: Express) {
+export function registerContractorPaymentRoutes(app: Express, requireAuth: RequestHandler) {
   // ── POST /api/contractor-payments ──────────────────────────────────────────
   app.post("/api/contractor-payments", requireAuth, async (req, res) => {
     try {
