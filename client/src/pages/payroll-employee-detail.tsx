@@ -18,6 +18,7 @@ export default function PayrollEmployeeDetail() {
   const { data, isLoading } = useQuery<any>({ queryKey: ["/api/payroll/employees", id] });
   const [filingStatus, setFilingStatus] = useState('single');
   const [bankAccountType, setBankAccountType] = useState('checking');
+  const { data: schedules } = useQuery<any[]>({ queryKey: ["/api/payroll/schedules"] });
   const [comp, setComp] = useState<any>({ compType: 'salary', amountCents: 0, effectiveFrom: new Date().toISOString().slice(0, 10) });
   const [ded, setDed] = useState<any>({ deductionType: 'pre_tax', preTaxScope: 'federal_only', benefitCategory: '', box12Code: '', name: '', amountCents: 0, effectiveFrom: new Date().toISOString().slice(0, 10), isActive: true });
 
@@ -67,6 +68,47 @@ export default function PayrollEmployeeDetail() {
             </Link>
           </div>
         )}
+
+        <Card>
+          <CardHeader><CardTitle>Employment</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 max-w-xl">
+              <div>
+                <Label>Pay schedule</Label>
+                <Select
+                  value={e.defaultPayScheduleId || ''}
+                  onValueChange={v => patchEmp.mutate({ defaultPayScheduleId: v })}
+                >
+                  <SelectTrigger data-testid="select-pay-schedule">
+                    <SelectValue placeholder="No schedule assigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(schedules ?? []).map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!e.defaultPayScheduleId && (
+                  <p className="text-xs text-destructive mt-1">
+                    Required — regular payroll runs skip employees without a pay schedule.
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select value={e.status} onValueChange={v => patchEmp.mutate({ status: v })}>
+                  <SelectTrigger data-testid="select-emp-status"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="onboarding">Onboarding</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="on_leave">On leave</SelectItem>
+                    <SelectItem value="terminated">Terminated</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader><CardTitle>Tax & banking</CardTitle></CardHeader>
