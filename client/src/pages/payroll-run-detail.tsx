@@ -12,7 +12,7 @@ import {
 import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
-import { ArrowLeft, Download, DollarSign, RotateCcw, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Download, DollarSign, RotateCcw, AlertTriangle, Pencil, Check, X } from "lucide-react";
 import { ManualTransferSheet, type TransferRecipient } from "@/components/payroll/manual-transfer-sheet";
 import { TaxDepositSummary } from "@/components/payroll/tax-deposit-summary";
 
@@ -68,8 +68,17 @@ export default function PayrollRunDetail() {
 
   const reopen = useMutation({
     mutationFn: () => apiRequest(`/api/payroll/runs/${id}/reopen`, { method: "POST" }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/payroll/runs", id] }); toast({ title: "Run reopened", description: "Status reset to Approved. You can now update the pay date and re-export the NACHA file." }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/payroll/runs", id] }); toast({ title: "Run reopened", description: "Status reset to Draft. Edit the pay date, re-preview, then approve and finalize again." }); },
     onError: (e: any) => toast({ title: "Reopen failed", description: e.message, variant: "destructive" }),
+  });
+
+  // Pay date inline editing
+  const [editingPayDate, setEditingPayDate] = useState(false);
+  const [payDateDraft, setPayDateDraft] = useState('');
+  const updatePayDate = useMutation({
+    mutationFn: (payDate: string) => apiRequest(`/api/payroll/runs/${id}`, { method: "PATCH", body: JSON.stringify({ payDate }) }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/payroll/runs", id] }); setEditingPayDate(false); toast({ title: "Pay date updated" }); },
+    onError: (e: any) => toast({ title: "Update failed", description: e.message, variant: "destructive" }),
   });
 
   // NACHA export dialog state
@@ -140,7 +149,41 @@ export default function PayrollRunDetail() {
 
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Payroll run · {fmtDate(r.payDate)}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold">
+                Payroll run ·{" "}
+                {editingPayDate ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Input
+                      type="date"
+                      value={payDateDraft}
+                      onChange={e => setPayDateDraft(e.target.value)}
+                      className="h-8 w-40 text-base font-semibold inline-block"
+                      autoFocus
+                    />
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600" onClick={() => updatePayDate.mutate(payDateDraft)} disabled={updatePayDate.isPending || !payDateDraft}>
+                      <Check className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingPayDate(false)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </span>
+                ) : (
+                  <span>
+                    {fmtDate(r.payDate)}
+                    {canEdit && (
+                      <button
+                        className="ml-2 inline-flex items-center text-muted-foreground hover:text-foreground"
+                        title="Edit pay date"
+                        onClick={() => { setPayDateDraft(r.payDate ?? ''); setEditingPayDate(true); }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                  </span>
+                )}
+              </h1>
+            </div>
             <p className="text-sm text-muted-foreground">
               Period {fmtDate(r.periodStart)} – {fmtDate(r.periodEnd)} · status <span className="font-medium">{r.status}</span>
               {isBonus && <span className="ml-2 px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">Bonus / off-cycle</span>}

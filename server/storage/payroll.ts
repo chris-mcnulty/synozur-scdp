@@ -752,7 +752,21 @@ export const payrollStorage = {
       throw new Error('This run has a reversal run; it cannot be reopened. Remove the reversal first.');
     }
     const [updated] = await db.update(payrollRuns)
-      .set({ status: 'approved', finalizedAt: null as any })
+      .set({ status: 'draft', finalizedAt: null as any, approvedBy: null as any, approvedAt: null as any })
+      .where(and(eq(payrollRuns.tenantId, tenantId), eq(payrollRuns.id, runId)))
+      .returning();
+    return updated;
+  },
+
+  async updateRunPayDate(tenantId: string, runId: string, payDate: string): Promise<PayrollRun> {
+    const run = await this.getRun(tenantId, runId);
+    if (!run) throw new Error('Run not found');
+    if (run.status === 'finalized' || run.status === 'voided') {
+      throw new Error(`Cannot change pay date on a ${run.status} run — reopen it first.`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(payDate)) throw new Error('payDate must be YYYY-MM-DD');
+    const [updated] = await db.update(payrollRuns)
+      .set({ payDate })
       .where(and(eq(payrollRuns.tenantId, tenantId), eq(payrollRuns.id, runId)))
       .returning();
     return updated;

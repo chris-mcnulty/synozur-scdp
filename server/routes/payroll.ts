@@ -506,6 +506,22 @@ export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
   // Reopen a finalized run back to 'approved' so the pay date can be
   // corrected and a new ACH file regenerated (e.g. Chase rejects a same-day
   // effective entry date). Blocked if a reversal run references this one.
+  // PATCH /api/payroll/runs/:id — update mutable fields (payDate) before finalization
+  app.patch('/api/payroll/runs/:id', requireAuth, PM, async (req, res) => {
+    try {
+      const tenantId = tenantOf(req);
+      const { payDate } = req.body as { payDate?: string };
+      if (!payDate) return res.status(400).json({ message: 'payDate is required' });
+      const updated = await payrollStorage.updateRunPayDate(tenantId, req.params.id, payDate);
+      await payrollStorage.appendAudit({
+        tenantId, actorUserId: (req.user as any)?.id, action: 'run.update',
+        entityType: 'run', entityId: updated.id,
+        details: { field: 'payDate', value: payDate }, ipAddress: req.ip,
+      });
+      res.json(updated);
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
+  });
+
   app.post('/api/payroll/runs/:id/reopen', requireAuth, PM, async (req, res) => {
     try {
       const tenantId = tenantOf(req);
