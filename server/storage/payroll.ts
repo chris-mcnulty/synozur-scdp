@@ -730,6 +730,34 @@ export const payrollStorage = {
     return row;
   },
 
+  /**
+   * Reopen a finalized run back to 'approved' so the pay date can be
+   * corrected and a new ACH file exported. Blocked if a reversal run
+   * already references this run (it would corrupt YTD netting).
+   */
+  async reopenRun(tenantId: string, runId: string): Promise<PayrollRun> {
+    const run = await this.getRun(tenantId, runId);
+    if (!run) throw new Error('Run not found');
+    if (run.status !== 'finalized') throw new Error(`Only finalized runs can be reopened; this run is ${run.status}`);
+    // Block reopen if a reversal run already references this one — that would
+    // corrupt YTD accumulators by leaving the reversal's negatives in place
+    // while the original run reverts to an un-finalized state.
+    const reversals = await db.select({ id: payrollRuns.id })
+      .from(payrollRuns)
+      .where(and(
+        eq(payrollRuns.tenantId, tenantId),
+        eq(payrollRuns.reversesRunId as any, runId),
+      ));
+    if (reversals.length > 0) {
+      throw new Error('This run has a reversal run; it cannot be reopened. Remove the reversal first.');
+    }
+    const [updated] = await db.update(payrollRuns)
+      .set({ status: 'approved', finalizedAt: null as any })
+      .where(and(eq(payrollRuns.tenantId, tenantId), eq(payrollRuns.id, runId)))
+      .returning();
+    return updated;
+  },
+
   async finalizeRun(tenantId: string, runId: string): Promise<PayrollRun> {
     const run = await this.getRun(tenantId, runId);
     if (!run) throw new Error('Run not found');

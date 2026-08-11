@@ -6,10 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fmtMoney, fmtDate } from "@/lib/payroll-format";
-import { ArrowLeft, Download, DollarSign } from "lucide-react";
+import { ArrowLeft, Download, DollarSign, RotateCcw, AlertTriangle } from "lucide-react";
 import { ManualTransferSheet, type TransferRecipient } from "@/components/payroll/manual-transfer-sheet";
 import { TaxDepositSummary } from "@/components/payroll/tax-deposit-summary";
 
@@ -62,6 +65,19 @@ export default function PayrollRunDetail() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/payroll/runs", id] }); toast({ title: "Finalized" }); },
     onError: (e: any) => toast({ title: "Finalize failed", description: e.message, variant: "destructive" }),
   });
+
+  const reopen = useMutation({
+    mutationFn: () => apiRequest(`/api/payroll/runs/${id}/reopen`, { method: "POST" }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/payroll/runs", id] }); toast({ title: "Run reopened", description: "Status reset to Approved. You can now update the pay date and re-export the NACHA file." }); },
+    onError: (e: any) => toast({ title: "Reopen failed", description: e.message, variant: "destructive" }),
+  });
+
+  // NACHA export dialog state
+  const [nachaDlg, setNachaDlg] = useState(false);
+  // Default effective date = tomorrow (Chase requires T+1 minimum)
+  const tomorrowIso = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+  const [nachaDate, setNachaDate] = useState(tomorrowIso);
+  const [nachaLoading, setNachaLoading] = useState(false);
 
   // QuickBooks GL push: post a finalized run's GL export as a QBO Journal Entry.
   const { data: qboStatus } = useQuery<{ connected: boolean; isEnabled: boolean }>({
@@ -138,6 +154,11 @@ export default function PayrollRunDetail() {
             )}
             {r.status === 'previewed' && <Button onClick={() => approve.mutate()} disabled={approve.isPending} data-testid="button-approve">Approve</Button>}
             {r.status === 'approved' && <Button onClick={() => finalize.mutate()} disabled={finalize.isPending} data-testid="button-finalize">Finalize</Button>}
+            {r.status === 'finalized' && (
+              <Button variant="outline" className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20" onClick={() => { if (confirm('Reopen this run? It will return to Approved status so you can correct the pay date and re-export the NACHA file. YTD accumulators will remain intact.')) reopen.mutate(); }} disabled={reopen.isPending} data-testid="button-reopen">
+                <RotateCcw className="h-4 w-4 mr-2" />{reopen.isPending ? 'Reopening…' : 'Reopen Run'}
+              </Button>
+            )}
             <Button variant="outline" onClick={async () => {
               try {
                 const sid = getSessionId();
@@ -165,31 +186,10 @@ export default function PayrollRunDetail() {
               <Download className="h-4 w-4 mr-2" />GL CSV
             </Button>
             {(r.status === 'approved' || r.status === 'finalized') && (
-              <Button variant="outline" onClick={async () => {
-                try {
-                  const sid = getSessionId();
-                  const res = await fetch(`/api/payroll/runs/${id}/ach-export`, {
-                    headers: sid ? { 'x-session-id': sid } : {},
-                    credentials: 'include',
-                  });
-                  if (!res.ok) {
-                    const msg = await res.text();
-                    throw new Error(msg || res.statusText);
-                  }
-                  const entryCount = res.headers.get('X-Ach-Entry-Count');
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `payroll-ach-${id}.ach`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                  toast({ title: 'NACHA file downloaded', description: entryCount ? `${entryCount} direct-deposit entr${entryCount === '1' ? 'y' : 'ies'} included.` : undefined });
-                } catch (e: any) {
-                  toast({ title: 'NACHA export failed', description: e.message, variant: 'destructive' });
-                }
+              <Button variant="outline" onClick={() => {
+                // Default to tomorrow when opening the dialog
+                setNachaDate(tomorrowIso);
+                setNachaDlg(true);
               }} data-testid="button-ach-file">
                 <Download className="h-4 w-4 mr-2" />NACHA file
               </Button>
@@ -378,6 +378,92 @@ export default function PayrollRunDetail() {
 
         <TaxDepositSummary items={items} payDate={r.payDate ? fmtDate(r.payDate) : undefined} />
       </div>
+
+      {/* ── NACHA export dialog ── */}
+      <Dialog open={nachaDlg} onOpenChange={(o) => { if (!o) setNachaDlg(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Download NACHA / ACH File</DialogTitle>
+            <DialogDescription>
+              Choose the ACH settlement (effective entry) date. Chase requires at least
+              1 business day in the future — same-day dates are rejected with error 50100.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-sm">
+            <div className="rounded-md border p-3 bg-muted/40 space-y-1">
+              <div><span className="text-muted-foreground">Payroll period</span> — <span className="font-medium">{r.periodStart} → {r.periodEnd}</span></div>
+              <div><span className="text-muted-foreground">Pay date (record)</span> — <span className="font-medium">{r.payDate}</span></div>
+              <div><span className="text-muted-foreground">Run status</span> — <span className="font-medium capitalize">{r.status}</span></div>
+            </div>
+            <div className="flex items-start gap-2 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md p-3">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p className="text-xs">
+                The settlement date below is stamped in the NACHA file as the <strong>Effective Entry Date</strong>.
+                It does not change the payroll record's pay date. Set it to the date you want Chase to
+                settle the ACH credits (weekdays only, T+1 minimum).
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="nacha-date">ACH settlement date *</Label>
+              <Input
+                id="nacha-date"
+                type="date"
+                value={nachaDate}
+                min={tomorrowIso}
+                onChange={(e) => setNachaDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNachaDlg(false)}>Cancel</Button>
+            <Button
+              disabled={!nachaDate || nachaLoading}
+              onClick={async () => {
+                setNachaLoading(true);
+                try {
+                  const sid = getSessionId();
+                  const res = await fetch(
+                    `/api/payroll/runs/${id}/ach-export?effectiveDate=${nachaDate}`,
+                    { headers: sid ? { 'x-session-id': sid } : {}, credentials: 'include' },
+                  );
+                  if (!res.ok) {
+                    const msg = await res.text();
+                    throw new Error(msg || res.statusText);
+                  }
+                  const entryCount = res.headers.get('X-Ach-Entry-Count');
+                  const dateUsed = res.headers.get('X-Ach-Effective-Date') ?? nachaDate;
+                  const wasAdvanced = res.headers.get('X-Ach-Date-Advanced') === '1';
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `payroll-${r.periodEnd}.ach`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                  setNachaDlg(false);
+                  toast({
+                    title: 'NACHA file downloaded',
+                    description: [
+                      entryCount ? `${entryCount} direct-deposit entr${entryCount === '1' ? 'y' : 'ies'} included.` : '',
+                      `Settlement date: ${dateUsed}.`,
+                      wasAdvanced ? 'Date was auto-advanced to next business day.' : '',
+                    ].filter(Boolean).join(' '),
+                  });
+                } catch (e: any) {
+                  toast({ title: 'NACHA export failed', description: e.message, variant: 'destructive' });
+                } finally {
+                  setNachaLoading(false);
+                }
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download ACH File
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

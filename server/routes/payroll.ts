@@ -503,6 +503,21 @@ export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
     } catch (e: any) { res.status(400).json({ message: e.message }); }
   });
 
+  // Reopen a finalized run back to 'approved' so the pay date can be
+  // corrected and a new ACH file regenerated (e.g. Chase rejects a same-day
+  // effective entry date). Blocked if a reversal run references this one.
+  app.post('/api/payroll/runs/:id/reopen', requireAuth, PM, async (req, res) => {
+    try {
+      const tenantId = tenantOf(req);
+      const run = await payrollStorage.reopenRun(tenantId, req.params.id);
+      await payrollStorage.appendAudit({
+        tenantId, actorUserId: (req.user as any)?.id, action: 'run.reopen',
+        entityType: 'run', entityId: run.id, ipAddress: req.ip,
+      });
+      res.json(run);
+    } catch (e: any) { res.status(400).json({ message: e.message }); }
+  });
+
   // Create a reversal run that unwinds a finalized run. Result is a fresh
   // 'draft' run with negative items; admin still has to approve and finalize.
   app.post('/api/payroll/runs/:id/reverse', requireAuth, PM, async (req, res) => {
@@ -645,13 +660,47 @@ export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
       if (entries.length === 0) {
         return res.status(400).json({ message: 'No employees with bank info on this run', skipped });
       }
-      const effectiveDate = run.payDate.replace(/-/g, '').slice(2); // YYMMDD
+      // Resolve effective (settlement) date — caller may override via ?effectiveDate=YYYY-MM-DD.
+      // Chase rule: must be at least 1 business day in the future (error 50100).
+      // If the requested date is today or in the past, auto-advance to next business day.
+      function nextBusinessDay(iso: string): string {
+        const d = new Date(iso + 'T12:00:00Z');
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        // Advance past weekends. We use UTC dates throughout.
+        const advance = (dt: Date) => {
+          const dow = dt.getUTCDay();
+          if (dow === 0) dt.setUTCDate(dt.getUTCDate() + 1); // Sunday → Monday
+          if (dow === 6) dt.setUTCDate(dt.getUTCDate() + 2); // Saturday → Monday
+          return dt;
+        };
+        // Must be strictly after today (Chase requires T+1 minimum).
+        if (d <= today) {
+          const tomorrow = new Date(today);
+          tomorrow.setUTCDate(today.getUTCDate() + 1);
+          return advance(tomorrow).toISOString().slice(0, 10);
+        }
+        return advance(d).toISOString().slice(0, 10);
+      }
+
+      const rawEffectiveDate =
+        (req.query.effectiveDate as string) || run.payDate;
+      const resolvedDate = nextBusinessDay(rawEffectiveDate);
+      const effectiveDateAdvanced = resolvedDate !== rawEffectiveDate;
+      // YYMMDD format for NACHA batch header
+      const effectiveDate = resolvedDate.replace(/-/g, '').slice(2);
+
+      // Chase-specific: immediateOrigin must be "0000000000" (10 zeroes).
+      // Per Chase ACH specs, any other value is silently ignored; using 0000000000
+      // prevents warning 50xxx on file upload.
+      const chaseImmediateOrigin = '0000000000';
+
       const file = buildNachaFile({
         companyName: originator.companyName,
         companyId: originator.companyId,
         originatingDfi: originator.originatingDfi,
         immediateOriginName: originator.immediateOriginName,
-        immediateOrigin: originator.immediateOrigin,
+        immediateOrigin: chaseImmediateOrigin,
         immediateDestinationName: originator.immediateDestinationName,
         immediateDestination: originator.immediateDestination,
         companyDiscretionaryData: originator.companyDiscretionaryData ?? undefined,
@@ -665,9 +714,13 @@ export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
         ipAddress: req.ip,
       });
       res.setHeader('Content-Type', 'text/plain');
-      res.setHeader('Content-Disposition', `attachment; filename="payroll-ach-${run.id}.ach"`);
+      res.setHeader('Content-Disposition', `attachment; filename="payroll-${resolvedDate}.ach"`);
       res.setHeader('X-Ach-Entry-Count', String(file.entryCount));
       res.setHeader('X-Ach-Total-Cents', String(file.totalCents));
+      res.setHeader('X-Ach-Effective-Date', resolvedDate);
+      if (effectiveDateAdvanced) {
+        res.setHeader('X-Ach-Date-Advanced', '1');
+      }
       res.send(file.content);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
