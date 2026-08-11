@@ -138,7 +138,7 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/my-projects", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-contractor-invoices", "/my-vendor-invoices", "/me/paystubs", "/my-raidd", "/notifications", "/notifications/preferences"] },
   { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/portfolio/schedule-health", "/reports", "/executive-narrative", "/projects", "/clients", "/resource-management", "/resource-planning", "/resource-planning/capacity", "/estimates", "/crm/deals"] },
   { sectionId: "payroll", paths: ["/payroll", "/payroll/employees", "/payroll/schedules", "/payroll/runs", "/payroll/gl", "/payroll/audit", "/distributions", "/payroll/jurisdictions", "/payroll/tax-settings"] },
-  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/financials/revenue", "/financials/profitability", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/vendor-invoices", "/contractor-cost-invoices", "/rates"] },
+  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/financials/revenue", "/financials/profitability", "/expense-management", "/expense-approval", "/approvals/time", "/reimbursement-batches", "/contractor-invoices", "/vendor-invoices", "/contractor-cost-invoices", "/contractor-payments", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/admin/agent-card-health", "/admin/background-jobs", "/file-repository", "/admin/sharepoint", "/m365-integration", "/vocabulary", "/ai-grounding", "/ai-settings"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs", "/platform/traffic"] },
 ];
@@ -313,6 +313,7 @@ export function Sidebar() {
                 <SubGroupLabel label="Accounts Payable" />
                 <SidebarItem href="/vendor-invoices" icon={<Inbox />} label="Vendor Invoices" />
                 <SidebarItem href="/contractor-cost-invoices" icon={<FileText />} label="Contractor Cost Invoices" />
+                <SidebarItem href="/contractor-payments" icon={<DollarSign />} label="Contractor Payments" />
                 <SubGroupLabel label="Rates" />
                 <SidebarItem href="/rates" icon={<Calculator />} label="Rate Management" />
               </CollapsibleSection>

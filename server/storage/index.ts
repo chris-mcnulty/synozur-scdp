@@ -137,6 +137,10 @@ import {
   contractorCostInvoicesMethods,
   type ContractorCostInvoicesMethods,
 } from "./contractor-cost-invoices";
+import {
+  contractorPaymentsMethods,
+  type ContractorPaymentsMethods,
+} from "./contractor-payments";
 import { revenueMethods, type RevenueEntryWithDetails } from "./revenue";
 
 export { normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual, formatDateToYYYYMMDD, getTodayUTC, convertDecimalFieldsToNumbers, placeholderUser, placeholderClient, placeholderProject } from "./helpers";
@@ -1351,7 +1355,7 @@ export interface IStorage {
 export class DatabaseStorage {
 }
 
-export interface DatabaseStorage extends IStorage, VendorInvoicesMethods, QuickbooksMethods, ContractorCostInvoicesMethods {}
+export interface DatabaseStorage extends IStorage, VendorInvoicesMethods, QuickbooksMethods, ContractorCostInvoicesMethods, ContractorPaymentsMethods {}
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -1378,10 +1382,11 @@ Object.assign(
   payrollStorage,
   distributionStorage,
   contractorCostInvoicesMethods,
+  contractorPaymentsMethods,
   revenueMethods,
 );
 
-export const storage: IStorage & VendorInvoicesMethods & QuickbooksMethods & ContractorCostInvoicesMethods = new DatabaseStorage() as DatabaseStorage;
+export const storage: IStorage & VendorInvoicesMethods & QuickbooksMethods & ContractorCostInvoicesMethods & ContractorPaymentsMethods = new DatabaseStorage() as DatabaseStorage;
 
 /**
  * Shared rate resolution helper that implements the complete rate hierarchy:

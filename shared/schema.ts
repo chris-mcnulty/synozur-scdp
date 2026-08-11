@@ -5770,3 +5770,65 @@ export const insertProjectRevenueEntrySchema = createInsertSchema(projectRevenue
 });
 export type InsertProjectRevenueEntry = z.infer<typeof insertProjectRevenueEntrySchema>;
 export type ProjectRevenueEntry = typeof projectRevenueEntries.$inferSelect;
+
+// ============================================================================
+// CONTRACTOR PAYMENT TRACKING
+// Records outbound payments to contractors and allocates them against
+// contractor_cost_invoices (AP matching). Mirrors the Excel "Payments &
+// Advances" sheet so the full AP cycle is trackable inside the app.
+// ============================================================================
+
+export const contractorPaymentMethodEnum = z.enum(['ach', 'check', 'wire', 'other']);
+export type ContractorPaymentMethod = z.infer<typeof contractorPaymentMethodEnum>;
+
+export const contractorPaymentStatusEnum = z.enum(['unmatched', 'partial', 'matched']);
+export type ContractorPaymentStatus = z.infer<typeof contractorPaymentStatusEnum>;
+
+export const contractorPayments = pgTable("contractor_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  contractorUserId: varchar("contractor_user_id").notNull().references(() => users.id),
+  payeeEntityName: text("payee_entity_name"),
+  paymentDate: date("payment_date").notNull(),
+  paymentMethod: text("payment_method").notNull().default("ach"),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  reference: text("reference"),
+  notes: text("notes"),
+  evidenceFileId: text("evidence_file_id"),
+  evidenceFileName: text("evidence_file_name"),
+  unmatchedAmount: decimal("unmatched_amount", { precision: 12, scale: 2 }).notNull().default('0'),
+  // unmatched = none allocated, partial = some allocated, matched = fully allocated
+  status: text("status").notNull().default("unmatched"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (t) => ({
+  tenantIdx: index("idx_cp_tenant").on(t.tenantId),
+  contractorIdx: index("idx_cp_contractor").on(t.contractorUserId),
+  dateIdx: index("idx_cp_date").on(t.paymentDate),
+  statusIdx: index("idx_cp_status").on(t.status),
+}));
+
+export const contractorPaymentAllocations = pgTable("contractor_payment_allocations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  paymentId: varchar("payment_id").notNull().references(() => contractorPayments.id, { onDelete: 'cascade' }),
+  invoiceId: varchar("invoice_id").notNull().references(() => contractorCostInvoices.id, { onDelete: 'cascade' }),
+  allocatedAmount: decimal("allocated_amount", { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (t) => ({
+  paymentIdx: index("idx_cpa_payment").on(t.paymentId),
+  invoiceIdx: index("idx_cpa_invoice").on(t.invoiceId),
+  uniq: uniqueIndex("idx_cpa_payment_invoice_uniq").on(t.paymentId, t.invoiceId),
+}));
+
+export const insertContractorPaymentSchema = createInsertSchema(contractorPayments).omit({
+  id: true, unmatchedAmount: true, status: true, createdAt: true, updatedAt: true,
+});
+export type InsertContractorPayment = z.infer<typeof insertContractorPaymentSchema>;
+export type ContractorPayment = typeof contractorPayments.$inferSelect;
+
+export const insertContractorPaymentAllocationSchema = createInsertSchema(contractorPaymentAllocations).omit({
+  id: true, createdAt: true,
+});
+export type InsertContractorPaymentAllocation = z.infer<typeof insertContractorPaymentAllocationSchema>;
+export type ContractorPaymentAllocation = typeof contractorPaymentAllocations.$inferSelect;

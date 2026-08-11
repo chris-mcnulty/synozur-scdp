@@ -21,6 +21,7 @@ import ReimbursementBatches from "@/pages/reimbursement-batches";
 import ContractorInvoices from "@/pages/contractor-invoices";
 import MyContractorInvoices from "@/pages/my-contractor-invoices";
 import ContractorCostInvoices from "@/pages/contractor-cost-invoices";
+import ContractorPayments from "@/pages/contractor-payments";
 import VendorInvoices from "@/pages/vendor-invoices";
 import VendorInvoiceDetail from "@/pages/vendor-invoice-detail";
 import MyVendorInvoices from "@/pages/my-vendor-invoices";
@@ -327,6 +328,11 @@ function Router() {
       </Route>
       <Route path="/my-contractor-invoices">
         {user ? <MyContractorInvoices /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/contractor-payments">
+        {user && (user.role === "admin" || user.role === "billing_admin")
+          ? <ContractorPayments />
+          : <Redirect to="/login" />}
       </Route>
       <Route path="/contractor-cost-invoices">
         {user ? (
