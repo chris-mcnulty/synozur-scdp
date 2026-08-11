@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DollarSign, CheckCircle, Clock, Plus, Trash2, Search,
-  FileText, AlertCircle, RefreshCw, ChevronRight, TrendingUp,
+  FileText, AlertCircle, RefreshCw, ChevronRight, TrendingUp, Pencil,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -254,6 +254,26 @@ export default function FinancialsRevenue() {
     onError: (e: any) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
   });
 
+  // ── Edit recognition date dialog state
+  const [editDateDialog, setEditDateDialog] = useState<{
+    entry: RevenueEntry;
+    recognizedAt: string; // ISO date string (YYYY-MM-DD)
+  } | null>(null);
+
+  const editDateMutation = useMutation({
+    mutationFn: ({ id, recognizedAt }: { id: string; recognizedAt: string }) =>
+      apiRequest(`/api/financials/revenue/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ recognizedAt }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/financials/revenue"] });
+      setEditDateDialog(null);
+      toast({ title: "Effective date updated" });
+    },
+    onError: (e: any) => toast({ title: "Failed to update date", description: e.message, variant: "destructive" }),
+  });
+
   // ── Confirm-invoice dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
     suggestion: InvoiceSuggestion;
@@ -472,8 +492,8 @@ export default function FinancialsRevenue() {
                       <TableHead>Reference</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Recognized</TableHead>
-                      <TableHead className="w-16"></TableHead>
+                      <TableHead>Effective date</TableHead>
+                      <TableHead className="w-20"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -523,6 +543,22 @@ export default function FinancialsRevenue() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            {entry.recognized && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                title="Edit effective date"
+                                onClick={() => setEditDateDialog({
+                                  entry,
+                                  recognizedAt: entry.recognizedAt
+                                    ? entry.recognizedAt.slice(0, 10)
+                                    : new Date().toISOString().slice(0, 10),
+                                })}
+                              >
+                                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                              </Button>
+                            )}
                             <Button
                               size="icon"
                               variant="ghost"
@@ -662,6 +698,49 @@ export default function FinancialsRevenue() {
           clients={clients}
           projects={projects as any}
         />
+
+        {/* ── Edit recognition date dialog ── */}
+        {editDateDialog && (
+          <Dialog open onOpenChange={(open) => { if (!open) setEditDateDialog(null); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Edit effective date</DialogTitle>
+                <DialogDescription>
+                  Correct the recognition date for this revenue entry. The new date will be stamped as <strong>recognizedAt</strong>.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="rounded-md border p-3 space-y-1 bg-muted/40 text-sm">
+                  <div className="font-medium">{editDateDialog.entry.project?.name}</div>
+                  <div className="text-muted-foreground">{editDateDialog.entry.client?.name}</div>
+                  <div className="font-semibold">{fmtAmount(editDateDialog.entry.amount)}</div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-effective-date">Effective / recognition date</Label>
+                  <input
+                    id="edit-effective-date"
+                    type="date"
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={editDateDialog.recognizedAt}
+                    onChange={(e) => setEditDateDialog(d => d ? { ...d, recognizedAt: e.target.value } : null)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditDateDialog(null)}>Cancel</Button>
+                <Button
+                  disabled={!editDateDialog.recognizedAt || editDateMutation.isPending}
+                  onClick={() => editDateMutation.mutate({
+                    id: editDateDialog.entry.id,
+                    recognizedAt: editDateDialog.recognizedAt,
+                  })}
+                >
+                  {editDateMutation.isPending ? "Saving…" : "Save"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* ── Confirm-invoice dialog ── */}
         {confirmDialog && (

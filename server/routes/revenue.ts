@@ -244,6 +244,9 @@ export function registerRevenueRoutes(app: Express, deps: RevenueDeps) {
       } else if (body.recognized === false) {
         update.recognizedAt = null;
         update.recognizedBy = null;
+      } else if (existing.recognized && body.recognizedAt !== undefined) {
+        // Correcting the recognition date on an already-recognized entry.
+        update.recognizedAt = body.recognizedAt ? new Date(body.recognizedAt) : null;
       }
 
       // Tenant-scoped update — extra safety in case the in-memory check raced.
