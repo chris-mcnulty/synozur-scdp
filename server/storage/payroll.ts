@@ -593,7 +593,12 @@ export const payrollStorage = {
 
     const jurisdictions = await this.listJurisdictions(tenantId);
 
-    await db.delete(payrollRunItems).where(and(
+    // All writes (delete old items → insert rebuilt items/lines → update run
+    // totals) happen in one transaction so a failure mid-rebuild can't leave
+    // the run with partial items or stale cached totals. Reads inside the
+    // loop are fine on the shared connection.
+    return await db.transaction(async (tx) => {
+    await tx.delete(payrollRunItems).where(and(
       eq(payrollRunItems.tenantId, tenantId),
       eq(payrollRunItems.runId, runId),
     ));
@@ -612,7 +617,7 @@ export const payrollStorage = {
       // calling computePayroll so the line shows in the breakdown.
       let reimbursementCents = 0;
       let reimbursementExpenses: Array<{ id: string; amountCents: number; category: string; description: string | null }> = [];
-      if (emp.userId && emp.employeeType === 'w2') {
+      if (run.includeReimbursements && emp.userId && emp.employeeType === 'w2') {
         const candidates = await this.listReimbursableExpensesForUser(
           tenantId, emp.userId, run.periodEnd,
         );
@@ -658,7 +663,7 @@ export const payrollStorage = {
         ytdFutaWagesCents: ytd.ytdFutaWagesCents,
         reimbursementCents,
       });
-      const [item] = await db.insert(payrollRunItems).values({
+      const [item] = await tx.insert(payrollRunItems).values({
         tenantId, runId,
         employeeId: emp.id,
         hoursWorked: String(finalHoursWorked),
@@ -684,7 +689,7 @@ export const payrollStorage = {
       // them paid until finalize — preview can be replayed any number of
       // times without locking the expenses.
       if (reimbursementExpenses.length > 0) {
-        await db.insert(payrollReimbursementLines).values(reimbursementExpenses.map(e => ({
+        await tx.insert(payrollReimbursementLines).values(reimbursementExpenses.map(e => ({
           tenantId,
           runItemId: item.id,
           expenseId: e.id,
@@ -701,7 +706,7 @@ export const payrollStorage = {
       totalNet += result.netPayCents;
     }
 
-    const [updated] = await db.update(payrollRuns).set({
+    const [updated] = await tx.update(payrollRuns).set({
       status: 'previewed',
       totalGrossCents: totalGross,
       totalEmployeeTaxCents: totalEeTax,
@@ -711,6 +716,7 @@ export const payrollStorage = {
     }).where(and(eq(payrollRuns.tenantId, tenantId), eq(payrollRuns.id, runId))).returning();
 
     return { run: updated, items };
+    });
   },
 
   async approveRun(tenantId: string, runId: string, approvedBy: string): Promise<PayrollRun> {
@@ -1248,6 +1254,44 @@ export const payrollStorage = {
       ));
     if (!row) return null;
     return { run: row.run, item: row.item };
+  },
+
+  /**
+   * Calendar-year-to-date totals for an employee's paystub, summed across
+   * FINALIZED runs with payDate in the same year, up to and including the
+   * given payDate. Includes the stub's own run (it's finalized by the time
+   * an employee can see it), so the numbers read like a standard paystub's
+   * YTD column. Reversal runs carry negative item amounts, so they net out
+   * automatically.
+   */
+  async getPaystubYtd(tenantId: string, employeeId: string, payDate: string): Promise<{
+    grossCents: number; employeeTaxCents: number;
+    preTaxDeductionCents: number; postTaxDeductionCents: number; netPayCents: number;
+  }> {
+    const yearStart = `${payDate.slice(0, 4)}-01-01`;
+    const [row] = await db.select({
+      gross: sql<number>`coalesce(sum(${payrollRunItems.grossCents}), 0)::int`,
+      eeTax: sql<number>`coalesce(sum(${payrollRunItems.employeeTaxCents}), 0)::int`,
+      preTax: sql<number>`coalesce(sum(${payrollRunItems.preTaxDeductionCents}), 0)::int`,
+      postTax: sql<number>`coalesce(sum(${payrollRunItems.postTaxDeductionCents}), 0)::int`,
+      net: sql<number>`coalesce(sum(${payrollRunItems.netPayCents}), 0)::int`,
+    })
+      .from(payrollRunItems)
+      .innerJoin(payrollRuns, eq(payrollRunItems.runId, payrollRuns.id))
+      .where(and(
+        eq(payrollRunItems.tenantId, tenantId),
+        eq(payrollRunItems.employeeId, employeeId),
+        eq(payrollRuns.status, 'finalized'),
+        gte(payrollRuns.payDate, yearStart),
+        lte(payrollRuns.payDate, payDate),
+      ));
+    return {
+      grossCents: row?.gross ?? 0,
+      employeeTaxCents: row?.eeTax ?? 0,
+      preTaxDeductionCents: row?.preTax ?? 0,
+      postTaxDeductionCents: row?.postTax ?? 0,
+      netPayCents: row?.net ?? 0,
+    };
   },
 
   // ---- ACH originator (one row per tenant) ----

@@ -8,7 +8,7 @@ const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 export default function MyPaystubDetail() {
   const { runId } = useParams<{ runId: string }>();
-  const { data, isLoading, error } = useQuery<{ run: any; item: any; reimbursements?: Array<{ id: string; amountCents: number; category: string; description: string | null }> }>({
+  const { data, isLoading, error } = useQuery<{ run: any; item: any; reimbursements?: Array<{ id: string; amountCents: number; category: string; description: string | null }>; ytd?: { grossCents: number; employeeTaxCents: number; preTaxDeductionCents: number; postTaxDeductionCents: number; netPayCents: number } }>({
     queryKey: [`/api/me/payroll/paystubs/${runId}`],
   });
 
@@ -100,6 +100,32 @@ export default function MyPaystubDetail() {
                     </tr>
                   ))}
                   <tr className="border-t font-medium"><td className="py-2">Total reimbursements</td><td className="text-right">{usd(reimbursementTotal)}</td></tr>
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        )}
+
+        {data.ytd && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Year to date</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Totals across all finalized paychecks in {String(data.run.payDate).slice(0, 4)}, through this pay date.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <table className="w-full text-sm" data-testid="table-ytd">
+                <tbody>
+                  <tr><td className="py-1">YTD gross</td><td className="text-right">{usd(data.ytd.grossCents)}</td></tr>
+                  {data.ytd.preTaxDeductionCents > 0 && (
+                    <tr><td className="py-1">YTD pre-tax deductions</td><td className="text-right">{usd(data.ytd.preTaxDeductionCents)}</td></tr>
+                  )}
+                  <tr><td className="py-1">YTD taxes withheld</td><td className="text-right">{usd(data.ytd.employeeTaxCents)}</td></tr>
+                  {data.ytd.postTaxDeductionCents > 0 && (
+                    <tr><td className="py-1">YTD other deductions</td><td className="text-right">{usd(data.ytd.postTaxDeductionCents)}</td></tr>
+                  )}
+                  <tr className="border-t font-medium"><td className="py-2">YTD net pay</td><td className="text-right">{usd(data.ytd.netPayCents)}</td></tr>
                 </tbody>
               </table>
             </CardContent>

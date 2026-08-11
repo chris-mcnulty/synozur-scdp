@@ -5385,6 +5385,10 @@ export const payrollRuns = pgTable("payroll_runs", {
   // ignore this field — they inherit their employee set from the run they
   // unwind.
   targetEmployeeIds: jsonb("target_employee_ids").$type<string[]>(),
+  // Whether preview should bundle approved reimbursable expenses into this
+  // run's net pay. Defaults OFF until accounting confirms the accountable-plan
+  // treatment; toggling only matters before finalization (preview rebuilds).
+  includeReimbursements: boolean("include_reimbursements").notNull().default(false),
   status: varchar("status", { length: 20 }).notNull().default('draft'),
   // Totals (cached for reporting; recomputed from items on preview).
   totalGrossCents: integer("total_gross_cents").notNull().default(0),

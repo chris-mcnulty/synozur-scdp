@@ -27,6 +27,7 @@ export default function PayrollRuns() {
     periodEnd: string;
     payDate: string;
     targetEmployeeIds: string[];
+    includeReimbursements: boolean;
   }>({
     runType: 'regular',
     payScheduleId: '',
@@ -34,6 +35,9 @@ export default function PayrollRuns() {
     periodEnd: today,
     payDate: today,
     targetEmployeeIds: [],
+    // Default OFF: expense reimbursements stay out of payroll until
+    // accounting confirms the treatment.
+    includeReimbursements: false,
   });
 
   const create = useMutation({
@@ -61,6 +65,7 @@ export default function PayrollRuns() {
       periodEnd: form.periodEnd,
       payDate: form.payDate,
       runType: form.runType,
+      includeReimbursements: form.includeReimbursements,
     };
     if (isBonus) {
       if (form.targetEmployeeIds.length === 0) {
@@ -104,6 +109,18 @@ export default function PayrollRuns() {
               <div><Label>Period start</Label><Input type="date" value={form.periodStart} onChange={e => setForm({ ...form, periodStart: e.target.value })} /></div>
               <div><Label>Period end</Label><Input type="date" value={form.periodEnd} onChange={e => setForm({ ...form, periodEnd: e.target.value })} /></div>
               <div><Label>Pay date</Label><Input type="date" value={form.payDate} onChange={e => setForm({ ...form, payDate: e.target.value })} /></div>
+              <div className="col-span-2 flex items-start gap-2 pt-1">
+                <Checkbox
+                  id="include-reimbursements"
+                  checked={form.includeReimbursements}
+                  onCheckedChange={v => setForm({ ...form, includeReimbursements: v === true })}
+                  data-testid="checkbox-include-reimbursements"
+                />
+                <div className="grid gap-0.5 leading-none">
+                  <Label htmlFor="include-reimbursements">Include expense reimbursements</Label>
+                  <p className="text-xs text-muted-foreground">Bundle approved reimbursable expenses into net pay. Off by default pending accounting confirmation.</p>
+                </div>
+              </div>
 
               {isBonus && (
                 <div className="col-span-6 border-t pt-4 mt-2">

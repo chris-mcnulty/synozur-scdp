@@ -1189,7 +1189,8 @@ export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
       const detail = await payrollStorage.getPaystubForEmployee(tenantId, emp.id, req.params.runId);
       if (!detail) return res.status(404).json({ message: 'Paystub not found' });
       const reimbursements = await payrollStorage.listReimbursementsForRunItem(tenantId, detail.item.id);
-      res.json({ ...detail, reimbursements });
+      const ytd = await payrollStorage.getPaystubYtd(tenantId, emp.id, detail.run.payDate);
+      res.json({ ...detail, reimbursements, ytd });
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
