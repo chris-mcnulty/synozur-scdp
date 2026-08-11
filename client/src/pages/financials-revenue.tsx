@@ -54,6 +54,9 @@ interface InvoiceSuggestion {
   totalAmount: string;
   finalizedAt: string | null;
   glInvoiceNumber: string | null;
+  paymentStatus: string;     // 'unpaid' | 'partial' | 'paid'
+  paymentDate: string | null;
+  paymentAmount: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -214,9 +217,9 @@ export default function FinancialsRevenue() {
     queryKey: ["/api/financials/revenue"],
   });
 
+  // Load eagerly (not tab-gated) so summary cards can show unconfirmed total.
   const { data: suggestions = [], isLoading: suggestionsLoading } = useQuery<InvoiceSuggestion[]>({
     queryKey: ["/api/financials/revenue/suggestions"],
-    enabled: tab === "suggestions",
   });
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
@@ -251,15 +254,24 @@ export default function FinancialsRevenue() {
     onError: (e: any) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
   });
 
+  // ── Confirm-invoice dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    suggestion: InvoiceSuggestion;
+    effectiveDate: string; // ISO date string
+  } | null>(null);
+
   const confirmInvoiceMutation = useMutation({
-    mutationFn: ({ invoiceBatchId, projectId, recognized }: { invoiceBatchId: string; projectId: string; recognized: boolean }) =>
+    mutationFn: ({ invoiceBatchId, projectId, recognized, recognizedAt }: {
+      invoiceBatchId: string; projectId: string; recognized: boolean; recognizedAt?: string;
+    }) =>
       apiRequest("/api/financials/revenue/confirm-invoice", {
         method: "POST",
-        body: JSON.stringify({ invoiceBatchId, projectId, recognized }),
+        body: JSON.stringify({ invoiceBatchId, projectId, recognized, recognizedAt }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/financials/revenue"] });
       queryClient.invalidateQueries({ queryKey: ["/api/financials/revenue/suggestions"] });
+      setConfirmDialog(null);
       toast({ title: "Invoice confirmed as revenue entry" });
     },
     onError: (e: any) => {
@@ -292,6 +304,8 @@ export default function FinancialsRevenue() {
   const totalRecognized = entries.filter(e => e.recognized).reduce((s, e) => s + Number(e.amount), 0);
   const totalPending = entries.filter(e => !e.recognized).reduce((s, e) => s + Number(e.amount), 0);
   const totalAll = totalRecognized + totalPending;
+  // Value of finalized invoices not yet confirmed as a revenue entry at all.
+  const totalUnconfirmed = suggestions.reduce((s, sg) => s + Number(sg.projectAmount), 0);
 
   const pendingInSelectedIds = Array.from(selectedIds).filter(
     (id) => entries.find((e) => e.id === id && !e.recognized)
@@ -325,7 +339,7 @@ export default function FinancialsRevenue() {
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Total Entries</CardTitle>
@@ -356,6 +370,16 @@ export default function FinancialsRevenue() {
               <p className="text-xs text-muted-foreground">{entries.filter(e => !e.recognized).length} entries</p>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Unconfirmed Invoices</CardTitle>
+              <AlertCircle className="h-4 w-4 text-red-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-700 dark:text-red-400">{fmtAmount(totalUnconfirmed)}</div>
+              <p className="text-xs text-muted-foreground">{suggestions.length} invoice{suggestions.length !== 1 ? "s" : ""} not yet confirmed</p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Tabs: Entries vs Suggestions */}
@@ -368,7 +392,7 @@ export default function FinancialsRevenue() {
               )}
             </TabsTrigger>
             <TabsTrigger value="suggestions">
-              Unrecognised Invoices
+              Unrecognized Invoices
               {suggestions.length > 0 && (
                 <span className="ml-2 text-xs bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">{suggestions.length}</span>
               )}
@@ -423,7 +447,7 @@ export default function FinancialsRevenue() {
                   <TrendingUp className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
                   <p className="text-muted-foreground">
                     {entries.length === 0
-                      ? "No revenue entries yet. Confirm finalized invoices from the Unrecognised Invoices tab, or add a manual entry."
+                      ? "No revenue entries yet. Confirm finalized invoices from the Unrecognized Invoices tab, or add a manual entry."
                       : "No entries match the current filters."}
                   </p>
                 </CardContent>
@@ -531,7 +555,7 @@ export default function FinancialsRevenue() {
             )}
           </TabsContent>
 
-          {/* ── Unrecognised Invoices tab ── */}
+          {/* ── Unrecognized Invoices tab ── */}
           <TabsContent value="suggestions" className="space-y-4">
             <Card>
               <CardHeader>
@@ -557,6 +581,7 @@ export default function FinancialsRevenue() {
                         <TableHead>Project</TableHead>
                         <TableHead>Client</TableHead>
                         <TableHead>Finalized</TableHead>
+                        <TableHead>Payment</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -580,6 +605,23 @@ export default function FinancialsRevenue() {
                           <TableCell className="text-sm text-muted-foreground">
                             {s.finalizedAt ? format(new Date(s.finalizedAt), "MMM d, yyyy") : "—"}
                           </TableCell>
+                          <TableCell>
+                            {s.paymentStatus === "paid" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                                <CheckCircle className="h-3 w-3" /> Paid
+                                {s.paymentDate && <span className="font-normal ml-0.5">{format(new Date(s.paymentDate), "MMM d")}</span>}
+                              </span>
+                            ) : s.paymentStatus === "partial" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                <Clock className="h-3 w-3" /> Partial
+                                {s.paymentAmount && <span className="font-normal ml-0.5">{fmtAmount(s.paymentAmount)}</span>}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                                <AlertCircle className="h-3 w-3" /> Unpaid
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-mono font-medium">
                             {fmtAmount(s.projectAmount)}
                             {s.projectAmount !== s.totalAmount && (
@@ -589,36 +631,20 @@ export default function FinancialsRevenue() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={confirmInvoiceMutation.isPending || !s.projectId}
-                                onClick={() =>
-                                  confirmInvoiceMutation.mutate({
-                                    invoiceBatchId: s.invoiceBatchId,
-                                    projectId: s.projectId!,
-                                    recognized: false,
-                                  })
-                                }
-                              >
-                                Confirm (Pending)
-                              </Button>
-                              <Button
-                                size="sm"
-                                disabled={confirmInvoiceMutation.isPending || !s.projectId}
-                                onClick={() =>
-                                  confirmInvoiceMutation.mutate({
-                                    invoiceBatchId: s.invoiceBatchId,
-                                    projectId: s.projectId!,
-                                    recognized: true,
-                                  })
-                                }
-                              >
-                                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                                Confirm & Recognize
-                              </Button>
-                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!s.projectId}
+                              onClick={() => setConfirmDialog({
+                                suggestion: s,
+                                effectiveDate: s.finalizedAt
+                                  ? s.finalizedAt.slice(0, 10)
+                                  : new Date().toISOString().slice(0, 10),
+                              })}
+                            >
+                              <ChevronRight className="h-3.5 w-3.5 mr-1" />
+                              Confirm…
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -636,6 +662,84 @@ export default function FinancialsRevenue() {
           clients={clients}
           projects={projects as any}
         />
+
+        {/* ── Confirm-invoice dialog ── */}
+        {confirmDialog && (
+          <Dialog open onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Confirm invoice as revenue</DialogTitle>
+                <DialogDescription>
+                  Choose whether to mark this revenue as recognized immediately, and set the effective date.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2 text-sm">
+                <div className="rounded-md border p-3 space-y-1 bg-muted/40">
+                  <div className="font-medium">{confirmDialog.suggestion.glInvoiceNumber || confirmDialog.suggestion.batchId}</div>
+                  <div className="text-muted-foreground">{confirmDialog.suggestion.projectName} · {confirmDialog.suggestion.clientName}</div>
+                  <div className="text-muted-foreground">
+                    Finalized {confirmDialog.suggestion.finalizedAt ? format(new Date(confirmDialog.suggestion.finalizedAt), "MMM d, yyyy") : "—"}
+                    {" · "}
+                    <span className={
+                      confirmDialog.suggestion.paymentStatus === "paid"
+                        ? "text-green-600 dark:text-green-400 font-medium"
+                        : confirmDialog.suggestion.paymentStatus === "partial"
+                        ? "text-amber-600 dark:text-amber-400 font-medium"
+                        : "text-red-600 dark:text-red-400 font-medium"
+                    }>
+                      {confirmDialog.suggestion.paymentStatus === "paid" ? "Paid" : confirmDialog.suggestion.paymentStatus === "partial" ? "Partially paid" : "Unpaid"}
+                    </span>
+                  </div>
+                  <div className="font-semibold mt-1">{fmtAmount(confirmDialog.suggestion.projectAmount)}</div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="effective-date">
+                    Effective / recognition date
+                    <span className="text-muted-foreground font-normal ml-1 text-xs">— defaults to invoice finalized date</span>
+                  </Label>
+                  <input
+                    id="effective-date"
+                    type="date"
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={confirmDialog.effectiveDate}
+                    onChange={(e) => setConfirmDialog(d => d ? { ...d, effectiveDate: e.target.value } : null)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This date will be stamped as <strong>recognizedAt</strong> if you choose "Confirm &amp; Recognize".
+                    For "Confirm (Pending)" it is saved but only applied when you manually recognize later.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
+                <Button
+                  variant="outline"
+                  disabled={confirmInvoiceMutation.isPending}
+                  onClick={() => confirmInvoiceMutation.mutate({
+                    invoiceBatchId: confirmDialog.suggestion.invoiceBatchId,
+                    projectId: confirmDialog.suggestion.projectId!,
+                    recognized: false,
+                  })}
+                >
+                  Confirm (Pending)
+                </Button>
+                <Button
+                  disabled={confirmInvoiceMutation.isPending || !confirmDialog.effectiveDate}
+                  onClick={() => confirmInvoiceMutation.mutate({
+                    invoiceBatchId: confirmDialog.suggestion.invoiceBatchId,
+                    projectId: confirmDialog.suggestion.projectId!,
+                    recognized: true,
+                    recognizedAt: confirmDialog.effectiveDate,
+                  })}
+                >
+                  <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                  Confirm &amp; Recognize
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </Layout>
   );

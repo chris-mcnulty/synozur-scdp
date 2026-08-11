@@ -137,11 +137,15 @@ export const revenueMethods: ThisType<IStorage> = {
     totalAmount: string;
     finalizedAt: Date | null;
     glInvoiceNumber: string | null;
+    paymentStatus: string;
+    paymentDate: string | null;
+    paymentAmount: string | null;
   }>> {
     type Row = {
       id: string; batchId: string; projectId: string | null; projectName: string | null;
       clientId: string | null; clientName: string | null; projectAmount: string;
       totalAmount: string; finalizedAt: Date | null; glInvoiceNumber: string | null;
+      paymentStatus: string; paymentDate: string | null; paymentAmount: string | null;
     };
 
     // Break down by project so multi-project batches get one suggestion row per project.
@@ -157,7 +161,10 @@ export const revenueMethods: ThisType<IStorage> = {
         CAST(il_proj.project_amount AS TEXT)                AS "projectAmount",
         CAST(ib.total_amount AS TEXT)                      AS "totalAmount",
         ib.finalized_at                                    AS "finalizedAt",
-        ib.gl_invoice_number                               AS "glInvoiceNumber"
+        ib.gl_invoice_number                               AS "glInvoiceNumber",
+        ib.payment_status                                  AS "paymentStatus",
+        CAST(ib.payment_date AS TEXT)                      AS "paymentDate",
+        CAST(ib.payment_amount AS TEXT)                    AS "paymentAmount"
       FROM invoice_batches ib
       JOIN (
         SELECT
@@ -195,6 +202,9 @@ export const revenueMethods: ThisType<IStorage> = {
       totalAmount: r.totalAmount,
       finalizedAt: r.finalizedAt,
       glInvoiceNumber: r.glInvoiceNumber,
+      paymentStatus: r.paymentStatus ?? 'unpaid',
+      paymentDate: r.paymentDate ?? null,
+      paymentAmount: r.paymentAmount ?? null,
     }));
   },
 };

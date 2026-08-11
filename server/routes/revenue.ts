@@ -143,7 +143,7 @@ export function registerRevenueRoutes(app: Express, deps: RevenueDeps) {
       const uid = userId(req);
       if (!tid) return res.status(400).json({ message: "Tenant context required" });
 
-      const { invoiceBatchId, projectId, recognized = false, notes } = req.body;
+      const { invoiceBatchId, projectId, recognized = false, notes, recognizedAt: recognizedAtRaw } = req.body;
       if (!invoiceBatchId) return res.status(400).json({ message: "invoiceBatchId required" });
       if (!projectId) return res.status(400).json({ message: "projectId required" });
 
@@ -196,7 +196,8 @@ export function registerRevenueRoutes(app: Express, deps: RevenueDeps) {
           referenceNumber: batch.glInvoiceNumber || batch.batchId,
           amount: lineAgg.projectAmount,
           recognized,
-          recognizedAt: recognized ? new Date() : null,
+          // Prefer caller-supplied date (user-chosen effective date); fall back to now.
+          recognizedAt: recognized ? (recognizedAtRaw ? new Date(recognizedAtRaw) : new Date()) : null,
           recognizedBy: recognized ? uid : null,
           invoiceBatchId: batch.id,
           notes: notes ?? null,
