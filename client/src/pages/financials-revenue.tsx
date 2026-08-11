@@ -681,7 +681,7 @@ export default function FinancialsRevenue() {
                             {s.paymentStatus === "paid" ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
                                 <CheckCircle className="h-3 w-3" /> Paid
-                                {s.paymentDate && <span className="font-normal ml-0.5">{format(new Date(s.paymentDate), "MMM d")}</span>}
+                                {s.paymentDate && <span className="font-normal ml-0.5">{format(new Date(s.paymentDate), "MMM d, yyyy")}</span>}
                               </span>
                             ) : s.paymentStatus === "partial" ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
@@ -794,7 +794,8 @@ export default function FinancialsRevenue() {
                   <div className="text-muted-foreground">{confirmDialog.suggestion.projectName} · {confirmDialog.suggestion.clientName}</div>
                   <div className="text-muted-foreground">
                     Finalized {confirmDialog.suggestion.finalizedAt ? format(new Date(confirmDialog.suggestion.finalizedAt), "MMM d, yyyy") : "—"}
-                    {" · "}
+                  </div>
+                  <div>
                     <span className={
                       confirmDialog.suggestion.paymentStatus === "paid"
                         ? "text-green-600 dark:text-green-400 font-medium"
@@ -802,8 +803,22 @@ export default function FinancialsRevenue() {
                         ? "text-amber-600 dark:text-amber-400 font-medium"
                         : "text-red-600 dark:text-red-400 font-medium"
                     }>
-                      {confirmDialog.suggestion.paymentStatus === "paid" ? "Paid" : confirmDialog.suggestion.paymentStatus === "partial" ? "Partially paid" : "Unpaid"}
+                      {confirmDialog.suggestion.paymentStatus === "paid"
+                        ? "Paid"
+                        : confirmDialog.suggestion.paymentStatus === "partial"
+                        ? "Partially paid"
+                        : "Unpaid"}
                     </span>
+                    {confirmDialog.suggestion.paymentDate && (
+                      <span className="text-muted-foreground ml-1">
+                        on {format(new Date(confirmDialog.suggestion.paymentDate), "MMM d, yyyy")}
+                      </span>
+                    )}
+                    {confirmDialog.suggestion.paymentAmount && confirmDialog.suggestion.paymentStatus === "partial" && (
+                      <span className="text-muted-foreground ml-1">
+                        ({fmtAmount(confirmDialog.suggestion.paymentAmount)} received)
+                      </span>
+                    )}
                   </div>
                   <div className="font-semibold mt-1">{fmtAmount(confirmDialog.suggestion.projectAmount)}</div>
                 </div>
