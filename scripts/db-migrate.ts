@@ -269,6 +269,29 @@ async function main(): Promise<void> {
     // seed file was marked applied but its INSERTs never landed (e.g. it ran
     // before the target tables existed and the errors were swallowed).
     const isSeed = (f: string) => /seed/i.test(f);
+
+    // BASELINE: every migration up to and including 0037 predates this
+    // runner.  Both dev and prod schemas already reflect them (dev via
+    // drizzle push over time; prod via Replit's dev→prod schema sync at
+    // publish).  Replaying them can fail hard — e.g. historical data
+    // transforms referencing columns that were later dropped/renamed
+    // (0006's UPDATE on projects.estimate_id).  Record them as applied
+    // WITHOUT executing.  Seed files are exempt: their data is not carried
+    // by schema sync, and they are safe to run repeatedly.
+    const BASELINE_THROUGH = "0037";
+    const isBaselined = (f: string) =>
+      f.slice(0, 4) <= BASELINE_THROUGH && !isSeed(f);
+
+    const toBaseline = allFiles.filter((f) => !applied.has(f) && isBaselined(f));
+    for (const filename of toBaseline) {
+      await pool.query(
+        "INSERT INTO _schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING",
+        [filename]
+      );
+      console.log(`  ↷ ${filename}  (baselined — recorded without executing)`);
+    }
+    toBaseline.forEach((f) => applied.add(f));
+
     const pending = allFiles.filter((f) => !applied.has(f) || isSeed(f));
 
     if (pending.length === 0) {

@@ -5345,7 +5345,21 @@ export const payrollTaxJurisdictions = pgTable("payroll_tax_jurisdictions", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (t) => ({
   codeIdx: uniqueIndex("uq_payroll_jur_tenant_code").on(t.tenantId, t.code),
+  // Platform-level rows (tenant_id IS NULL) are not deduped by codeIdx —
+  // Postgres treats NULLs as distinct. This partial index is the ON CONFLICT
+  // arbiter that keeps repeatable seed migrations idempotent.
+  platformCodeIdx: uniqueIndex("uq_payroll_jur_platform_code").on(t.code).where(sql`tenant_id IS NULL`),
 }));
+
+// Migration bookkeeping for scripts/db-migrate.ts. Declared here so
+// `drizzle-kit push` (run by post-merge reconciliation and dev tooling)
+// treats it as part of the schema instead of dropping it as an unknown
+// table — losing this table resets migration history and makes the runner
+// replay historical migrations that cannot run against the current schema.
+export const schemaMigrations = pgTable("_schema_migrations", {
+  filename: text("filename").primaryKey(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
 
 export const insertPayrollTaxJurisdictionSchema = createInsertSchema(payrollTaxJurisdictions).omit({ id: true, createdAt: true });
 export type InsertPayrollTaxJurisdiction = z.infer<typeof insertPayrollTaxJurisdictionSchema>;
