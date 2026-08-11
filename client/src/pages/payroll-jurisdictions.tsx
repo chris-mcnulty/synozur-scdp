@@ -169,6 +169,136 @@ function WagePremiumSection({ list, upsert, del, toast }: WagePremiumSectionProp
   );
 }
 
+// ── State & local income tax section (read-only) ──────────────────────────
+// Lists platform-seeded income-tax jurisdictions (rule.kind === 'brackets'
+// or 'flat_percent'), e.g. US-CA / US-NY brackets, US-PA / US-PA-PHL flat
+// rates. These are platform-managed defaults; tenant overrides (if any)
+// are shown alongside.
+
+function describeIncomeTaxRule(rule: any): string {
+  if (!rule) return '—';
+  if (rule.kind === 'flat_percent') {
+    return `Flat ${rule.employeePct}%`;
+  }
+  if (rule.kind === 'brackets' && Array.isArray(rule.brackets) && rule.brackets.length > 0) {
+    const rates = rule.brackets.map((b: any) => b.ratePct).filter((r: any) => r != null);
+    const min = Math.min(...rates);
+    const max = Math.max(...rates);
+    return `${rule.brackets.length} brackets, ${min}% – ${max}%`;
+  }
+  return '—';
+}
+
+function IncomeTaxSection({ list }: { list: Jurisdiction[] }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const rows = useMemo(() => {
+    const grouped = new Map<string, { code: string; name: string; level: string; platform: Jurisdiction | null; tenant: Jurisdiction | null }>();
+    for (const j of list) {
+      if (j.rule?.kind !== 'brackets' && j.rule?.kind !== 'flat_percent') continue;
+      const slot = grouped.get(j.code) ?? { code: j.code, name: j.name, level: j.level, platform: null, tenant: null };
+      if (j.tenantId === null) slot.platform = j;
+      else slot.tenant = j;
+      slot.name = j.name;
+      slot.level = j.level;
+      grouped.set(j.code, slot);
+    }
+    return Array.from(grouped.values()).sort((a, b) => a.code.localeCompare(b.code));
+  }, [list]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>State &amp; local income tax rates (platform-managed)</CardTitle>
+        <p className="text-sm text-muted-foreground mt-1">
+          Income-tax jurisdictions the payroll engine applies automatically based on each employee's work
+          location. These are platform-managed defaults maintained by Synozur — shown here for reference so
+          you can verify what the engine uses. If your tenant has an override for a code, it is applied
+          instead of the platform default.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <table className="w-full text-sm">
+          <thead className="text-left text-muted-foreground border-b">
+            <tr>
+              <th className="py-2 pr-4">Code</th>
+              <th className="pr-4">Name</th>
+              <th className="pr-4">Level</th>
+              <th className="pr-4">Rule</th>
+              <th className="pr-4">Rate summary</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const active = row.tenant ?? row.platform;
+              const rule = active?.rule;
+              const isBrackets = rule?.kind === 'brackets';
+              const isOpen = !!expanded[row.code];
+              return (
+                <>
+                  <tr key={row.code} className="border-b last:border-0" data-testid={`row-incometax-${row.code}`}>
+                    <td className="py-2 pr-4 font-mono">{row.code}</td>
+                    <td className="pr-4">{row.name}</td>
+                    <td className="pr-4 capitalize">{row.level}</td>
+                    <td className="pr-4">{isBrackets ? 'Brackets' : 'Flat percent'}</td>
+                    <td className="pr-4">
+                      {describeIncomeTaxRule(rule)}
+                      {rule?.stdDeductionCents != null && rule.stdDeductionCents > 0 && (
+                        <span className="text-xs text-muted-foreground"> · std deduction ${(rule.stdDeductionCents / 100).toLocaleString()}</span>
+                      )}
+                      {row.tenant && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Tenant override active{row.platform ? ` (platform default: ${describeIncomeTaxRule(row.platform.rule)})` : ''}
+                        </p>
+                      )}
+                    </td>
+                    <td className="text-right whitespace-nowrap">
+                      {isBrackets && (
+                        <Button
+                          size="sm" variant="ghost"
+                          onClick={() => setExpanded(s => ({ ...s, [row.code]: !isOpen }))}
+                          data-testid={`button-incometax-brackets-${row.code}`}
+                        >{isOpen ? 'Hide brackets' : 'View brackets'}</Button>
+                      )}
+                    </td>
+                  </tr>
+                  {isBrackets && isOpen && (
+                    <tr key={`${row.code}-detail`} className="border-b last:border-0 bg-muted/30">
+                      <td colSpan={6} className="py-2 px-4">
+                        <table className="w-full text-xs">
+                          <thead className="text-left text-muted-foreground">
+                            <tr>
+                              <th className="py-1 pr-4">Taxable income up to</th>
+                              <th className="pr-4">Marginal rate</th>
+                              <th>Base tax</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rule.brackets.map((b: any, i: number) => (
+                              <tr key={i} className="border-t border-border/50">
+                                <td className="py-1 pr-4">{b.upToCents != null ? `$${(b.upToCents / 100).toLocaleString()}` : 'No limit'}</td>
+                                <td className="pr-4">{b.ratePct}%</td>
+                                <td>${(b.baseCents / 100).toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * Tenant-scoped tax jurisdiction overrides. The list returned by the API
  * is the union of platform defaults (tenant_id IS NULL) + tenant overrides;
@@ -330,6 +460,9 @@ export default function PayrollJurisdictions() {
 
         {/* ── Wage-premium overrides (WA PFML, WA Cares, etc.) ─────────────── */}
         <WagePremiumSection list={list ?? []} upsert={upsert} del={del} toast={toast} />
+
+        {/* ── State & local income tax (read-only reference) ───────────────── */}
+        <IncomeTaxSection list={list ?? []} />
 
         {/* Federal / FICA reference rates — hardcoded in the payroll engine */}
         <Card>
