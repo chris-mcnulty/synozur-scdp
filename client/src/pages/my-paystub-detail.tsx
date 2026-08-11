@@ -2,15 +2,43 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { getSessionId } from "@/lib/queryClient";
 import { fmtDate } from "@/lib/payroll-format";
 
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 export default function MyPaystubDetail() {
   const { runId } = useParams<{ runId: string }>();
+  const { toast } = useToast();
   const { data, isLoading, error } = useQuery<{ run: any; item: any; reimbursements?: Array<{ id: string; amountCents: number; category: string; description: string | null }>; ytd?: { grossCents: number; employeeTaxCents: number; preTaxDeductionCents: number; postTaxDeductionCents: number; netPayCents: number } }>({
     queryKey: [`/api/me/payroll/paystubs/${runId}`],
   });
+
+  async function downloadPdf() {
+    try {
+      const sid = getSessionId();
+      const res = await fetch(`/api/me/payroll/paystubs/${runId}/pdf`, {
+        headers: sid ? { 'x-session-id': sid } : {},
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(await res.text() || res.statusText);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const cd = res.headers.get('content-disposition');
+      a.download = cd?.match(/filename="(.+?)"/)?.[1] ?? `paystub-${runId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast({ title: 'PDF download failed', description: e.message, variant: 'destructive' });
+    }
+  }
 
   if (isLoading) return <Layout><div className="p-6 text-sm text-muted-foreground">Loading…</div></Layout>;
   if (error || !data) return <Layout><div className="p-6 text-sm text-muted-foreground">Paystub not available.</div></Layout>;
@@ -29,8 +57,15 @@ export default function MyPaystubDetail() {
       <div className="p-6 space-y-4 max-w-3xl">
         <div>
           <Link href="/me/paystubs"><span className="text-sm text-primary underline cursor-pointer">← all paystubs</span></Link>
-          <h1 className="text-2xl font-semibold mt-1">Paystub — {fmtDate(data.run.payDate)}</h1>
-          <p className="text-sm text-muted-foreground">Pay period {fmtDate(data.run.periodStart)} – {fmtDate(data.run.periodEnd)}</p>
+          <div className="flex items-start justify-between mt-1">
+            <div>
+              <h1 className="text-2xl font-semibold">Paystub — {fmtDate(data.run.payDate)}</h1>
+              <p className="text-sm text-muted-foreground">Pay period {fmtDate(data.run.periodStart)} – {fmtDate(data.run.periodEnd)}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={downloadPdf} data-testid="button-download-paystub-pdf">
+              <Download className="h-4 w-4 mr-2" />Download PDF
+            </Button>
+          </div>
         </div>
 
         <Card>

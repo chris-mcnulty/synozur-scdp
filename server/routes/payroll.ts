@@ -27,6 +27,7 @@ import {
   type Efw2Employee, type FirePayee,
 } from "../services/tax-forms-efile";
 import { htmlToPdf } from "../services/html-to-pdf";
+import { renderPaystubPdf } from "../services/paystub-pdf";
 import { storage } from "../storage";
 
 interface PayrollRouteDeps {
@@ -1191,6 +1192,82 @@ export function registerPayrollRoutes(app: Express, deps: PayrollRouteDeps) {
       const reimbursements = await payrollStorage.listReimbursementsForRunItem(tenantId, detail.item.id);
       const ytd = await payrollStorage.getPaystubYtd(tenantId, emp.id, detail.run.payDate);
       res.json({ ...detail, reimbursements, ytd });
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Employee self-service: download own paystub as PDF
+  app.get('/api/me/payroll/paystubs/:runId/pdf', requireAuth, async (req, res) => {
+    try {
+      const tenantId = tenantOf(req);
+      const userId = (req.user as any).id;
+      const emp = await payrollStorage.findEmployeeByUserId(tenantId, userId);
+      if (!emp) return res.status(404).json({ message: 'You are not enrolled in payroll' });
+      const detail = await payrollStorage.getPaystubForEmployee(tenantId, emp.id, req.params.runId);
+      if (!detail) return res.status(404).json({ message: 'Paystub not found' });
+      const [reimbursements, ytd, tenant] = await Promise.all([
+        payrollStorage.listReimbursementsForRunItem(tenantId, detail.item.id),
+        payrollStorage.getPaystubYtd(tenantId, emp.id, detail.run.payDate),
+        storage.getTenant(tenantId),
+      ]);
+      const employeeName = emp.firstName && emp.lastName
+        ? `${emp.firstName} ${emp.lastName}`
+        : undefined;
+      const pdf = await renderPaystubPdf({
+        companyName: (tenant as any)?.name,
+        employeeName,
+        run: detail.run as any,
+        item: detail.item as any,
+        reimbursements: reimbursements.map(r => ({
+          id: r.id,
+          amountCents: r.amountCents,
+          category: r.category,
+          description: r.description,
+        })),
+        ytd,
+      });
+      const payDate = String(detail.run.payDate).slice(0, 10);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="paystub-${payDate}.pdf"`);
+      res.send(pdf);
+    } catch (e: any) { res.status(500).json({ message: e.message }); }
+  });
+
+  // Admin: download a specific employee's paystub PDF for a run
+  app.get('/api/payroll/runs/:id/employees/:employeeId/paystub.pdf', requireAuth, PM, async (req, res) => {
+    try {
+      const tenantId = tenantOf(req);
+      const { id: runId, employeeId } = req.params;
+      // Verify the employee belongs to this tenant
+      const emp = await payrollStorage.getEmployee(tenantId, employeeId);
+      if (!emp) return res.status(404).json({ message: 'Employee not found' });
+      const detail = await payrollStorage.getPaystubForEmployee(tenantId, employeeId, runId);
+      if (!detail) return res.status(404).json({ message: 'Paystub not found — run must be finalized' });
+      const [reimbursements, ytd, tenant] = await Promise.all([
+        payrollStorage.listReimbursementsForRunItem(tenantId, detail.item.id),
+        payrollStorage.getPaystubYtd(tenantId, employeeId, detail.run.payDate),
+        storage.getTenant(tenantId),
+      ]);
+      const employeeName = emp.firstName && emp.lastName
+        ? `${emp.firstName} ${emp.lastName}`
+        : undefined;
+      const pdf = await renderPaystubPdf({
+        companyName: (tenant as any)?.name,
+        employeeName,
+        run: detail.run as any,
+        item: detail.item as any,
+        reimbursements: reimbursements.map(r => ({
+          id: r.id,
+          amountCents: r.amountCents,
+          category: r.category,
+          description: r.description,
+        })),
+        ytd,
+      });
+      const payDate = String(detail.run.payDate).slice(0, 10);
+      const safeName = (employeeName ?? employeeId).replace(/[^a-z0-9]/gi, '-').toLowerCase();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="paystub-${safeName}-${payDate}.pdf"`);
+      res.send(pdf);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 

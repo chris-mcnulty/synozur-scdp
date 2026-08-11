@@ -311,7 +311,7 @@ export default function PayrollRunDetail() {
             ) : (
               <table className="w-full text-sm">
                 <thead className="text-left text-muted-foreground border-b">
-                  <tr><th className="py-2">Employee</th><th className="text-right">Gross</th><th className="text-right">Pre-tax ded.</th><th className="text-right">Emp tax</th><th className="text-right">Empr tax</th><th className="text-right">Post-tax ded.</th><th className="text-right">Net</th></tr>
+                  <tr><th className="py-2">Employee</th><th className="text-right">Gross</th><th className="text-right">Pre-tax ded.</th><th className="text-right">Emp tax</th><th className="text-right">Empr tax</th><th className="text-right">Post-tax ded.</th><th className="text-right">Net</th>{r.status === 'finalized' && <th></th>}</tr>
                 </thead>
                 <tbody>
                   {items.map(it => {
@@ -325,6 +325,40 @@ export default function PayrollRunDetail() {
                         <td className="text-right">{fmtMoney(it.employerTaxCents)}</td>
                         <td className="text-right">{fmtMoney(it.postTaxDeductionCents)}</td>
                         <td className="text-right font-medium">{fmtMoney(it.netPayCents)}</td>
+                        {r.status === 'finalized' && (
+                          <td className="text-right pl-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              title="Download paystub PDF"
+                              data-testid={`button-paystub-pdf-${it.employeeId}`}
+                              onClick={async () => {
+                                try {
+                                  const sid = getSessionId();
+                                  const res = await fetch(`/api/payroll/runs/${id}/employees/${it.employeeId}/paystub.pdf`, {
+                                    headers: sid ? { 'x-session-id': sid } : {},
+                                    credentials: 'include',
+                                  });
+                                  if (!res.ok) throw new Error(await res.text() || res.statusText);
+                                  const blob = await res.blob();
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = res.headers.get('content-disposition')?.match(/filename="(.+?)"/)?.[1] ?? `paystub-${it.employeeId}.pdf`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                  URL.revokeObjectURL(url);
+                                } catch (e: any) {
+                                  toast({ title: 'PDF download failed', description: e.message, variant: 'destructive' });
+                                }
+                              }}
+                            >
+                              <Download className="h-3.5 w-3.5 mr-1" />PDF
+                            </Button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
