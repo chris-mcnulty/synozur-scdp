@@ -577,6 +577,20 @@ export const payrollStorage = {
           e.status !== 'terminated'
         );
 
+    // A regular run with zero matches is almost always a setup problem
+    // (employees have no default pay schedule, or a different one than the
+    // run). Fail loudly with a diagnostic instead of previewing an empty run.
+    if (elig.length === 0 && !(targets && targets.length > 0)) {
+      const nonTerminated = employees.filter(e => e.status !== 'terminated');
+      const unassigned = nonTerminated.filter(e => !e.defaultPayScheduleId);
+      const detail = nonTerminated.length === 0
+        ? 'No employees are set up.'
+        : unassigned.length > 0
+          ? `${unassigned.length} of ${nonTerminated.length} employee(s) have no pay schedule assigned (${unassigned.map(e => `${e.firstName} ${e.lastName}`).join(', ')}). Edit each employee and set their pay schedule to "${schedule.name}".`
+          : `None of the ${nonTerminated.length} employee(s) are assigned to the "${schedule.name}" schedule.`;
+      throw new Error(`No employees matched this run's pay schedule. ${detail}`);
+    }
+
     const jurisdictions = await this.listJurisdictions(tenantId);
 
     await db.delete(payrollRunItems).where(and(
