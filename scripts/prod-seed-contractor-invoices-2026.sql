@@ -1,15 +1,14 @@
 -- ============================================================
 -- 2026 Contractor Cost Invoice Seed
--- Generated from dev DB. IDs resolved by email / project code.
--- Safe to run multiple times (uses INSERT ... ON CONFLICT DO NOTHING).
+-- No BEGIN/COMMIT — Replit SQL console auto-wraps transactions.
+-- IDs resolved by email / project code — environment agnostic.
+-- Safe to re-run (ON CONFLICT DO NOTHING throughout).
 -- ============================================================
 
-BEGIN;
-
--- ── Invoices ─────────────────────────────────────────────
+-- ── 1. Invoices ──────────────────────────────────────────────
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -23,9 +22,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -39,9 +39,10 @@ VALUES (
   'Invoice ledger row | Billing entity: eMark Consulting Ltd.',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -55,9 +56,10 @@ VALUES (
   'Source ref turn11search1; Invoice 1005 - PE Travel 2026.01.20-2026.01.22.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -71,9 +73,10 @@ VALUES (
   'Source ref turn11search2; Invoice 1006 - Narrative Travel 2026.01.26-2026.01.29.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -87,9 +90,10 @@ VALUES (
   'Source ref turn11search3; Invoice 1007 - PE Travel 2026.02.03-2026.02.06.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -103,9 +107,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -119,9 +124,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -135,9 +141,10 @@ VALUES (
   'Source ref turn11search4; Invoice 1008 - PE Time 2026.01.19-2026.02.20.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -151,9 +158,10 @@ VALUES (
   'Source ref turn11search5; Invoice 1009 - Narrative Travel 2026.03.08-2026.03.09.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -167,9 +175,10 @@ VALUES (
   'Source ref turn11search6; Invoice 1010 - PEA Time 2026.02.23-2026.03.06.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -183,9 +192,10 @@ VALUES (
   'Source ref turn11search7; Invoice 1011 - PEA Time 2026.03.09-2026.03.20.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -199,9 +209,10 @@ VALUES (
   'Source ref turn11search8; Invoice 1012 - Narrative Time 2026.02.23-2026.03.06.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -215,9 +226,10 @@ VALUES (
   'Source ref turn11search9; Invoice 1013 - Narrative Time 2026.03.09-2026.03.20.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -231,9 +243,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -247,9 +260,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -263,9 +277,10 @@ VALUES (
   'Invoice ledger row | Billing entity: eMark Consulting Ltd.',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -279,9 +294,10 @@ VALUES (
   'Invoice ledger row | Billing entity: eMark Consulting Ltd.',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -295,9 +311,10 @@ VALUES (
   'Invoice ledger row | Billing entity: eMark Consulting Ltd.',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -311,9 +328,10 @@ VALUES (
   'Source ref turn11search10; Invoice 1014 - Narrative Time 2026.03.23-2026.04.10.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -327,9 +345,10 @@ VALUES (
   'Source ref turn11search11; Invoice 1015 - PEA Time 2026.03.23-2026.04.10.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -343,9 +362,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -359,9 +379,10 @@ VALUES (
   'Source ref turn11search12; Invoice 1016 - Narrative Time 2026.04.13-2026.05.08.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -375,9 +396,10 @@ VALUES (
   'Source ref turn11search13; Invoice 1017 - PEA Time 2026.04.13-2026.05.08.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -391,9 +413,10 @@ VALUES (
   'Source ref turn11search14; Invoice 1018 - Synozur Travel 2026.05.04-2026.05.07.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -407,9 +430,10 @@ VALUES (
   'Invoice ledger row | Billing entity: eMark Consulting Ltd.',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -423,9 +447,10 @@ VALUES (
   'Invoice ledger row | Billing entity: eMark Consulting Ltd.',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -439,9 +464,10 @@ VALUES (
   'Source ref turn11search15; Invoice 1019 - Narrative Travel 2026.05.17-2026.05.20.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -455,9 +481,10 @@ VALUES (
   'Source ref turn11search16; Invoice 1020 - CA AI Fluency Days 2026.06.02-2026.06.04.pdf | Billing entity: Three People''s Names',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -471,9 +498,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -487,9 +515,10 @@ VALUES (
   'Statement invoice row | Billing entity: At Last Consulting',
   now(), now()
 ) ON CONFLICT DO NOTHING;
+
 INSERT INTO contractor_cost_invoices
-  (id, tenant_id, contractor_user_id, project_id, invoice_number, engagement_label,
-   invoice_date, total, status, notes, created_at, updated_at)
+  (id, tenant_id, contractor_user_id, project_id, invoice_number,
+   engagement_label, invoice_date, total, status, notes, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   (SELECT id FROM tenants LIMIT 1),
@@ -504,10 +533,10 @@ VALUES (
   now(), now()
 ) ON CONFLICT DO NOTHING;
 
--- ── Invoice Lines ────────────────────────────────────────
--- Lines are linked by matching (contractor_email, invoice_number)
+-- ── 2. Invoice lines ─────────────────────────────────────────
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -527,8 +556,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -548,8 +579,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -569,8 +602,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 2
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -590,8 +625,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -611,8 +648,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -632,8 +671,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -653,8 +694,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -674,8 +717,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -695,8 +740,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -716,8 +763,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -737,8 +786,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 2
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -758,8 +809,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -779,8 +832,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -800,8 +855,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -821,8 +878,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -842,8 +901,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -863,8 +924,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -884,8 +947,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -905,8 +970,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -926,8 +993,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -947,8 +1016,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -968,8 +1039,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -989,8 +1062,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1010,8 +1085,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1031,8 +1108,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1052,8 +1131,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1073,8 +1154,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1094,8 +1177,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1115,8 +1200,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1136,8 +1223,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 2
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1157,8 +1246,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1178,8 +1269,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1199,8 +1292,10 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     SELECT 1 FROM contractor_cost_invoice_lines x
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
+
 INSERT INTO contractor_cost_invoice_lines
-  (id, invoice_id, line_number, kind, description, hours, rate, amount, reconcile_status, created_at, updated_at)
+  (id, invoice_id, line_number, kind, description, hours, rate, amount,
+   reconcile_status, created_at, updated_at)
 SELECT
   gen_random_uuid(),
   cci.id,
@@ -1221,30 +1316,25 @@ WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
     WHERE x.invoice_id = cci.id AND x.line_number = 1
   );
 
--- ── Payments ─────────────────────────────────────────────
-DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
+-- ── 3. Payments + allocations (one CTE per payment) ──────────
+INSERT INTO contractor_payments
+  (id, tenant_id, contractor_user_id, payment_date, payment_method,
+   amount, reference, notes, unmatched_amount, status, created_at, updated_at)
+VALUES (
+  gen_random_uuid(),
+  (SELECT id FROM tenants LIMIT 1),
+  (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1),
+  '2025-10-14',
+  'zelle',
+  2000.00,
+  'Narrative Phase 0 advance',
+  'Payment row',
+  0,
+  'unmatched',
+  now(), now()
+) ON CONFLICT DO NOTHING;
 
-  -- Payment 2025-10-14 michelle.boyd@synozur.com $2000.00
-  INSERT INTO contractor_payments
-    (id, tenant_id, contractor_user_id, payment_date, payment_method,
-     amount, reference, notes, unmatched_amount, status, created_at, updated_at)
-  VALUES (
-    gen_random_uuid(),
-    (SELECT id FROM tenants LIMIT 1),
-    (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1),
-    '2025-10-14',
-    'zelle',
-    2000.00,
-    'Narrative Phase 0 advance',
-    'Payment row',
-    0,
-    'unmatched',
-    now(), now()
-  )
-  ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
-
-  -- Payment 2025-12-09 michelle.boyd@synozur.com $5111.95
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1262,23 +1352,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1001'
+     LIMIT 1),
+    5111.95,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1001
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1001'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5111.95, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-02-27 eric.riz@synozur.com $3500.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1296,23 +1385,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '260201_SA-16'
+     LIMIT 1),
+    3500.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 260201_SA-16
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
-      AND invoice_number = '260201_SA-16'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 3500.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-02-27 michelle.boyd@synozur.com $4200.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1330,23 +1418,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1020'
+     LIMIT 1),
+    4200.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1020
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1020'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 4200.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-03-23 eric.riz@synozur.com $3435.78
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1364,23 +1451,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '260321-SY-03'
+     LIMIT 1),
+    3435.78,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 260321-SY-03
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
-      AND invoice_number = '260321-SY-03'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 3435.78, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-03-23 joshua.christensen@synozur.com $4828.66
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1398,37 +1484,33 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1005'
+     LIMIT 1),
+    2414.33,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1007'
+     LIMIT 1),
+    2414.33,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1005
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1005'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2414.33, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1007
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1007'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2414.33, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-03-23 joshua.christensen@synozur.com $7100.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1446,65 +1528,55 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1010'
+     LIMIT 1),
+    1775.00,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1011'
+     LIMIT 1),
+    1775.00,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1012'
+     LIMIT 1),
+    1775.00,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1013'
+     LIMIT 1),
+    1775.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1010
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1010'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1775.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1011
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1011'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1775.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1012
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1012'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1775.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1013
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1013'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1775.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-03-26 michelle.boyd@synozur.com $3000.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1522,23 +1594,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1025'
+     LIMIT 1),
+    3000.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1025
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1025'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 3000.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-04-15 michelle.boyd@synozur.com $3388.75
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1556,51 +1627,44 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1021'
+     LIMIT 1),
+    1129.58,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1024'
+     LIMIT 1),
+    1129.58,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1027'
+     LIMIT 1),
+    1129.58,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1021
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1021'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1129.58, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1024
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1024'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1129.58, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1027
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1027'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1129.58, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-04-15 joshua.christensen@synozur.com $4766.82
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1618,37 +1682,33 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1009'
+     LIMIT 1),
+    2383.41,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1014'
+     LIMIT 1),
+    2383.41,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1009
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1009'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2383.41, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1014
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1014'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2383.41, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-04-28 eric.riz@synozur.com $7158.07
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1666,43 +1726,39 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
-
-  -- allocation → invoice 260201_SA-16
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
-      AND invoice_number = '260201_SA-16'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 7158.07, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-05-14 michelle.boyd@synozur.com $1000.00
-  INSERT INTO contractor_payments
-    (id, tenant_id, contractor_user_id, payment_date, payment_method,
-     amount, reference, notes, unmatched_amount, status, created_at, updated_at)
-  VALUES (
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
     gen_random_uuid(),
-    (SELECT id FROM tenants LIMIT 1),
-    (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1),
-    '2026-05-14',
-    'zelle',
-    1000.00,
-    'Narrative travel advance',
-    'Payment row',
-    0,
-    'unmatched',
-    now(), now()
-  )
-  ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '260201_SA-16'
+     LIMIT 1),
+    7158.07,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- Payment 2026-05-14 joshua.christensen@synozur.com $2200.00
+INSERT INTO contractor_payments
+  (id, tenant_id, contractor_user_id, payment_date, payment_method,
+   amount, reference, notes, unmatched_amount, status, created_at, updated_at)
+VALUES (
+  gen_random_uuid(),
+  (SELECT id FROM tenants LIMIT 1),
+  (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1),
+  '2026-05-14',
+  'zelle',
+  1000.00,
+  'Narrative travel advance',
+  'Payment row',
+  0,
+  'unmatched',
+  now(), now()
+) ON CONFLICT DO NOTHING;
+
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1720,23 +1776,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1017'
+     LIMIT 1),
+    2200.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1017
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1017'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2200.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-05-18 michelle.boyd@synozur.com $5000.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1754,23 +1809,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1030'
+     LIMIT 1),
+    5000.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1030
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1030'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5000.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-05-29 joshua.christensen@synozur.com $8448.90
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1788,51 +1842,44 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1015'
+     LIMIT 1),
+    2816.30,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1016'
+     LIMIT 1),
+    2816.30,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1018'
+     LIMIT 1),
+    2816.30,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1015
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1015'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2816.30, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1016
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1016'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2816.30, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1018
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1018'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 2816.30, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-06-09 eric.riz@synozur.com $5133.07
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1850,23 +1897,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '260322-SA-04'
+     LIMIT 1),
+    5133.07,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 260322-SA-04
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
-      AND invoice_number = '260322-SA-04'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5133.07, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-06-09 eric.riz@synozur.com $5175.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1884,23 +1930,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '260401-SA-05'
+     LIMIT 1),
+    5175.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 260401-SA-05
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
-      AND invoice_number = '260401-SA-05'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5175.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-06-30 joshua.christensen@synozur.com $4911.91
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1918,23 +1963,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1019'
+     LIMIT 1),
+    4911.91,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1019
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1019'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 4911.91, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-07-02 joshua.christensen@synozur.com $5400.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1952,23 +1996,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1020'
+     LIMIT 1),
+    5400.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1020
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'joshua.christensen@synozur.com' LIMIT 1)
-      AND invoice_number = '1020'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5400.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-07-02 eric.riz@synozur.com $8961.65
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -1986,23 +2029,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '260515-SA-06'
+     LIMIT 1),
+    8961.65,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 260515-SA-06
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'eric.riz@synozur.com' LIMIT 1)
-      AND invoice_number = '260515-SA-06'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 8961.65, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-07-02 michelle.boyd@synozur.com $10950.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -2020,37 +2062,33 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1028'
+     LIMIT 1),
+    5475.00,
+    now()
+UNION ALL
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1029'
+     LIMIT 1),
+    5475.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1028
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1028'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5475.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- allocation → invoice 1029
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1029'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5475.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-07-13 michelle.boyd@synozur.com $1450.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -2068,23 +2106,22 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1030'
+     LIMIT 1),
+    1450.00,
+    now()
+ON CONFLICT DO NOTHING;
 
-  -- allocation → invoice 1030
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1030'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 1450.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- Payment 2026-07-14 michelle.boyd@synozur.com $5000.00
+WITH ins AS (
   INSERT INTO contractor_payments
     (id, tenant_id, contractor_user_id, payment_date, payment_method,
      amount, reference, notes, unmatched_amount, status, created_at, updated_at)
@@ -2102,21 +2139,17 @@ DO $$ DECLARE pay_id uuid; inv_id uuid; BEGIN
     now(), now()
   )
   ON CONFLICT DO NOTHING
-  RETURNING id INTO pay_id;
-
-  -- allocation → invoice 1029
-  IF pay_id IS NOT NULL THEN
-    SELECT id INTO inv_id
-    FROM contractor_cost_invoices
-    WHERE tenant_id = (SELECT id FROM tenants LIMIT 1)
-      AND contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
-      AND invoice_number = '1029'
-    LIMIT 1;
-
-    INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
-    VALUES (gen_random_uuid(), pay_id, inv_id, 5000.00, now())
-    ON CONFLICT DO NOTHING;
-  END IF;
-END $$;
-
-COMMIT;
+  RETURNING id
+)
+INSERT INTO contractor_payment_allocations (id, payment_id, invoice_id, allocated_amount, created_at)
+  SELECT
+    gen_random_uuid(),
+    ins.id,
+    (SELECT cci.id FROM contractor_cost_invoices cci
+     WHERE cci.tenant_id = (SELECT id FROM tenants LIMIT 1)
+       AND cci.contractor_user_id = (SELECT id FROM users WHERE email = 'michelle.boyd@synozur.com' LIMIT 1)
+       AND cci.invoice_number = '1029'
+     LIMIT 1),
+    5000.00,
+    now()
+ON CONFLICT DO NOTHING;
