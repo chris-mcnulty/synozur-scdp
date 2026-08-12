@@ -369,7 +369,7 @@ export default function FinancialsProfitability() {
                     <div>{fmtDollar(row.totalCost)}</div>
                     {row.expensesCost > 0 && (
                       <div className="text-xs text-muted-foreground">
-                        {fmtDollar(row.expensesCost)} expenses
+                        +{fmtDollar(row.expensesCost)} pass-through exp.
                       </div>
                     )}
                   </TableCell>
@@ -579,18 +579,20 @@ export default function FinancialsProfitability() {
     const feesCost = rows.reduce((s, r) => s + r.feesCost, 0);
     const expCost = rows.reduce((s, r) => s + r.expensesCost, 0);
 
+    // Expenses are client pass-through reimbursements — shown for reference,
+    // but not part of the Revenue → Fees → Gross Profit calculation.
     const waterfallData = [
       { name: "Revenue", value: totalRevenue, fill: "hsl(var(--primary))" },
       { name: "Fees Cost", value: -feesCost, fill: "#f97316" },
-      { name: "Exp. Cost", value: -expCost, fill: "#fb923c" },
       { name: "Gross Profit", value: totals.grossProfit, fill: totals.grossProfit >= 0 ? "#10b981" : "#ef4444" },
+      { name: "Pass-through Exp.", value: expCost, fill: "#94a3b8" },
     ];
 
     return (
       <Card>
         <CardHeader>
           <CardTitle>Portfolio Waterfall</CardTitle>
-          <CardDescription>Revenue → Fees → Expenses → Gross Profit</CardDescription>
+          <CardDescription>Revenue → Fees → Gross Profit (pass-through expenses shown for reference)</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={220}>

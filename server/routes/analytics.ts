@@ -233,7 +233,9 @@ async function getProjectProfitabilityRows(
 
     const feesCost = feesCostMap.get(p.id) || 0;
     const expensesCost = expCostMap.get(p.id) || 0;
-    const totalCost = feesCost + expensesCost;
+    // Expenses are client pass-through reimbursements: tracked for billing
+    // reconciliation but excluded from cost/profit/margin.
+    const totalCost = feesCost;
 
     const grossProfit = totalRevenue - totalCost;
     const grossMarginPct = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
@@ -437,13 +439,16 @@ async function getProjectProfitabilityDetail(
     contractorName: r.contractor_name,
     feesCost: Number(r.fees_cost) || 0,
     expensesCost: Number(r.expenses_cost) || 0,
-    totalCost: (Number(r.fees_cost) || 0) + (Number(r.expenses_cost) || 0),
+    // Pass-through expenses excluded from cost
+    totalCost: Number(r.fees_cost) || 0,
     invoiceCount: Number(r.invoice_count) || 0,
   }));
 
   const feesCost = byContractor.reduce((s, c) => s + c.feesCost, 0);
   const expensesCost = byContractor.reduce((s, c) => s + c.expensesCost, 0);
-  const totalCost = feesCost + expensesCost;
+  // Expenses are client pass-through reimbursements: tracked for billing
+  // reconciliation but excluded from cost/profit/margin.
+  const totalCost = feesCost;
 
   // SOW value
   const [sowAgg] = await db
@@ -542,6 +547,7 @@ async function getMarginAccuracyTrend(tenantId: string): Promise<TrendPoint[]> {
       JOIN contractor_cost_invoice_lines ccil ON ccil.invoice_id = cci.id
       WHERE cci.tenant_id = ${tenantId}
         AND cci.status IN ('approved', 'paid')
+        AND ccil.kind = 'service' -- expenses are pass-through, not cost
     ) combined
     WHERE period_date IS NOT NULL
     GROUP BY DATE_TRUNC('month', period_date)
