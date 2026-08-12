@@ -10,6 +10,10 @@ description: DATABASE_URL vs NEON_DATABASE_URL point to different Neon databases
 
 **How to apply:** For any DB inspection or seeding, write a temporary script under `scripts/` importing `../server/db.js`, run with `npx tsx scripts/<name>.ts`, then delete it.
 
+# Prod has multiple tenants
+
+Production has 4 tenants (real one: "The Synozur Alliance"); dev has 1. Never resolve tenant with `LIMIT 1` in prod SQL — select by name. Any tenant-scoped seed verified only in dev can silently land under the wrong prod tenant.
+
 # tsx execution pitfall
 
 `npx tsx -e "..."` and scripts placed in `/tmp` fail with "top-level await with cjs" — they resolve as CJS outside the workspace ESM config. Scripts must live in the workspace (e.g. `scripts/`) to use ESM/top-level await, or wrap in an async `main()`.
