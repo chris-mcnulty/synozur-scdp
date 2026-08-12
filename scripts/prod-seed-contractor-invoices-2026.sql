@@ -2467,3 +2467,74 @@ VALUES (
   5400.00,
   now()
 ) ON CONFLICT DO NOTHING;
+
+
+-- ══════════════════════════════════════════════════════════════════
+-- Rob Asen & Andrew Borg (added from spreadsheet; not present in dev DB)
+-- ══════════════════════════════════════════════════════════════════
+
+-- Invoice WHPHSYN2026-001 — Rob Asen
+INSERT INTO contractor_cost_invoices (tenant_id, contractor_user_id, project_id, invoice_number, engagement_label, invoice_date, total, status, notes, created_by)
+SELECT (SELECT id FROM tenants LIMIT 1), u.id, NULL, 'WHPHSYN2026-001', 'CA AI Fluency Days', '2026-06-08', 2814.26, 'paid', 'Invoice line item 1; email reference turn2search36; SOW reference turn2search35 | Billing entity: WHPH Services LLC | Invoice line item 2; expense support should be retained; payment screenshot image.png', NULL
+FROM users u WHERE u.email = 'rob.asen@synozur.com'
+AND NOT EXISTS (SELECT 1 FROM contractor_cost_invoices i WHERE i.tenant_id = (SELECT id FROM tenants LIMIT 1) AND i.contractor_user_id = u.id AND i.invoice_number = 'WHPHSYN2026-001');
+INSERT INTO contractor_cost_invoice_lines (invoice_id, kind, description, hours, rate, amount)
+SELECT i.id, 'service', 'CA AI Fluency Days', NULL, NULL, 2000.00
+FROM contractor_cost_invoices i JOIN users u ON u.id = i.contractor_user_id
+WHERE i.tenant_id = (SELECT id FROM tenants LIMIT 1) AND u.email = 'rob.asen@synozur.com' AND i.invoice_number = 'WHPHSYN2026-001'
+AND NOT EXISTS (SELECT 1 FROM contractor_cost_invoice_lines l WHERE l.invoice_id = i.id AND l.kind = 'service');
+INSERT INTO contractor_cost_invoice_lines (invoice_id, kind, description, hours, rate, amount)
+SELECT i.id, 'expense', 'Expenses', NULL, NULL, 814.26
+FROM contractor_cost_invoices i JOIN users u ON u.id = i.contractor_user_id
+WHERE i.tenant_id = (SELECT id FROM tenants LIMIT 1) AND u.email = 'rob.asen@synozur.com' AND i.invoice_number = 'WHPHSYN2026-001'
+AND NOT EXISTS (SELECT 1 FROM contractor_cost_invoice_lines l WHERE l.invoice_id = i.id AND l.kind = 'expense');
+
+-- Invoice WHPHSYN2026-002 — Rob Asen
+INSERT INTO contractor_cost_invoices (tenant_id, contractor_user_id, project_id, invoice_number, engagement_label, invoice_date, total, status, notes, created_by)
+SELECT (SELECT id FROM tenants LIMIT 1), u.id, NULL, 'WHPHSYN2026-002', '2026 Leaders Offsite', '2026-05-15', 1093.76, 'paid', 'Invoice amount from email; line-item detail not retrievable from email thread | Billing entity: WHPH Services LLC', NULL
+FROM users u WHERE u.email = 'rob.asen@synozur.com'
+AND NOT EXISTS (SELECT 1 FROM contractor_cost_invoices i WHERE i.tenant_id = (SELECT id FROM tenants LIMIT 1) AND i.contractor_user_id = u.id AND i.invoice_number = 'WHPHSYN2026-002');
+INSERT INTO contractor_cost_invoice_lines (invoice_id, kind, description, hours, rate, amount)
+SELECT i.id, 'expense', 'Expenses', NULL, NULL, 1093.76
+FROM contractor_cost_invoices i JOIN users u ON u.id = i.contractor_user_id
+WHERE i.tenant_id = (SELECT id FROM tenants LIMIT 1) AND u.email = 'rob.asen@synozur.com' AND i.invoice_number = 'WHPHSYN2026-002'
+AND NOT EXISTS (SELECT 1 FROM contractor_cost_invoice_lines l WHERE l.invoice_id = i.id AND l.kind = 'expense');
+
+-- Payment 2026-02-20 — Andrew Borg $1800.00
+INSERT INTO contractor_payments (tenant_id, contractor_user_id, payee_entity_name, payment_date, payment_method, amount, reference, notes, unmatched_amount, status, created_by)
+SELECT (SELECT id FROM tenants LIMIT 1), u.id, 'Andrew Borg / eC3 Consulting, LLC', '2026-02-20', 'other', 1800.00, 'SOW-CA-SMT', 'User-provided screenshot in chat showing paid vendor payment for $1,800.00', 1800.00, 'unmatched', NULL
+FROM users u WHERE u.email = 'andrew.borg@synozur.com'
+AND NOT EXISTS (SELECT 1 FROM contractor_payments p WHERE p.tenant_id = (SELECT id FROM tenants LIMIT 1) AND p.contractor_user_id = u.id AND p.payment_date = '2026-02-20' AND p.amount = 1800.00);
+
+-- Payment 2026-02-19 — Andrew Borg $1183.52
+INSERT INTO contractor_payments (tenant_id, contractor_user_id, payee_entity_name, payment_date, payment_method, amount, reference, notes, unmatched_amount, status, created_by)
+SELECT (SELECT id FROM tenants LIMIT 1), u.id, 'Andrew Borg / eC3 Consulting, LLC', '2026-02-19', 'other', 1183.52, NULL, 'User-provided screenshot in chat showing paid vendor payment for $1,183.52', 1183.52, 'unmatched', NULL
+FROM users u WHERE u.email = 'andrew.borg@synozur.com'
+AND NOT EXISTS (SELECT 1 FROM contractor_payments p WHERE p.tenant_id = (SELECT id FROM tenants LIMIT 1) AND p.contractor_user_id = u.id AND p.payment_date = '2026-02-19' AND p.amount = 1183.52);
+
+-- Payment 2026-07-02 — Rob Asen $2814.26
+INSERT INTO contractor_payments (tenant_id, contractor_user_id, payee_entity_name, payment_date, payment_method, amount, reference, notes, unmatched_amount, status, created_by)
+SELECT (SELECT id FROM tenants LIMIT 1), u.id, 'WHPH Services LLC', '2026-07-02', 'check', 2814.26, 'WHPHSYN2026-001', 'Screenshot shows Pay to Rob Asen, Status Paid, Send on Jul 2 2026, Deliver by Jul 3 2026, Amount $2,814.26', 0.00, 'matched', NULL
+FROM users u WHERE u.email = 'rob.asen@synozur.com'
+AND NOT EXISTS (SELECT 1 FROM contractor_payments p WHERE p.tenant_id = (SELECT id FROM tenants LIMIT 1) AND p.contractor_user_id = u.id AND p.payment_date = '2026-07-02' AND p.amount = 2814.26);
+INSERT INTO contractor_payment_allocations (payment_id, invoice_id, allocated_amount)
+SELECT p.id, i.id, 2814.26
+FROM contractor_payments p
+JOIN users u ON u.id = p.contractor_user_id AND p.tenant_id = (SELECT id FROM tenants LIMIT 1)
+JOIN contractor_cost_invoices i ON i.tenant_id = (SELECT id FROM tenants LIMIT 1) AND i.contractor_user_id = u.id AND i.invoice_number = 'WHPHSYN2026-001'
+WHERE u.email = 'rob.asen@synozur.com' AND p.payment_date = '2026-07-02' AND p.amount = 2814.26
+AND NOT EXISTS (SELECT 1 FROM contractor_payment_allocations a WHERE a.payment_id = p.id AND a.invoice_id = i.id);
+
+-- Payment 2026-07-02 — Rob Asen $1093.76
+INSERT INTO contractor_payments (tenant_id, contractor_user_id, payee_entity_name, payment_date, payment_method, amount, reference, notes, unmatched_amount, status, created_by)
+SELECT (SELECT id FROM tenants LIMIT 1), u.id, 'WHPH Services LLC', '2026-07-02', 'check', 1093.76, 'WHPHSYN2026-002', 'Paid Jul 2 / Jul 3 for $1,093.76', 0.00, 'matched', NULL
+FROM users u WHERE u.email = 'rob.asen@synozur.com'
+AND NOT EXISTS (SELECT 1 FROM contractor_payments p WHERE p.tenant_id = (SELECT id FROM tenants LIMIT 1) AND p.contractor_user_id = u.id AND p.payment_date = '2026-07-02' AND p.amount = 1093.76);
+INSERT INTO contractor_payment_allocations (payment_id, invoice_id, allocated_amount)
+SELECT p.id, i.id, 1093.76
+FROM contractor_payments p
+JOIN users u ON u.id = p.contractor_user_id AND p.tenant_id = (SELECT id FROM tenants LIMIT 1)
+JOIN contractor_cost_invoices i ON i.tenant_id = (SELECT id FROM tenants LIMIT 1) AND i.contractor_user_id = u.id AND i.invoice_number = 'WHPHSYN2026-002'
+WHERE u.email = 'rob.asen@synozur.com' AND p.payment_date = '2026-07-02' AND p.amount = 1093.76
+AND NOT EXISTS (SELECT 1 FROM contractor_payment_allocations a WHERE a.payment_id = p.id AND a.invoice_id = i.id);
+
