@@ -311,7 +311,9 @@ function InvoiceFormPanel({ open, onOpenChange, invoice, contractors, projects, 
         engagementLabel: engagementLabel || undefined,
         invoiceDate,
         total,
-        status,
+        // Only send status when it actually changed — the API treats status as a
+        // transition and rejects approved/paid via PATCH (unchanged = no-op).
+        status: isEdit && status === invoice?.status ? undefined : status,
         notes: notes || undefined,
         pdfFileId: uploadedFileRef?.fileId ?? invoice?.pdfFileId ?? undefined,
         pdfFileName: uploadedFileRef?.fileName ?? invoice?.pdfFileName ?? undefined,
@@ -698,10 +700,16 @@ export default function ContractorCostInvoicesPage() {
                   </TableHeader>
                   <TableBody>
                     {filtered.map(inv => {
-                      const contractorName = inv.contractor?.contractorBusinessName || inv.contractor?.name || "Unknown";
+                      const businessName = inv.contractor?.contractorBusinessName;
+                      const personName = inv.contractor?.name;
                       return (
                         <TableRow key={inv.id} className="hover:bg-muted/50">
-                          <TableCell className="font-medium">{contractorName}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{businessName || personName || "Unknown"}</div>
+                            {businessName && personName && businessName !== personName && (
+                              <div className="text-xs text-muted-foreground">{personName}</div>
+                            )}
+                          </TableCell>
                           <TableCell>
                             {inv.pdfSpeWebUrl ? (
                               <a href={inv.pdfSpeWebUrl} target="_blank" rel="noreferrer" className="hover:underline inline-flex items-center gap-1">

@@ -368,6 +368,13 @@ export function registerContractorCostInvoiceRoutes(
         const existing = await cci.getContractorCostInvoice(req.params.id, tenantId);
         if (!existing) return res.status(404).json({ message: "Invoice not found" });
 
+        // An unchanged status is a no-op, not a transition — strip it so edits to
+        // other fields (e.g. project) on approved/paid invoices aren't rejected
+        // by the draft/submitted-only status rule.
+        if (typeof (req.body as any)?.status === "string" && (req.body as any).status === existing.status) {
+          delete (req.body as any).status;
+        }
+
         const parsed = updateInvoiceSchema.safeParse(req.body);
         if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
 
