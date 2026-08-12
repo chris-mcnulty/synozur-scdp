@@ -72,6 +72,7 @@ interface ProjectOption {
   id: string;
   name: string;
   code: string;
+  clientName: string | null;
 }
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -427,7 +428,8 @@ function InvoiceFormPanel({ open, onOpenChange, invoice, contractors, projects, 
                   <SelectItem value="__none__">— None —</SelectItem>
                   {projects.map(p => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.code} {p.name}
+                      {p.clientName ? `${p.clientName} — ` : ""}{p.name}
+                      {p.code ? ` (${p.code})` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -565,8 +567,19 @@ export default function ContractorCostInvoicesPage() {
     queryFn: async () => {
       const res: any = await apiRequest("/api/projects");
       // projects list returns { items: [...], ... } or array
-      if (Array.isArray(res)) return res.map((p: any) => ({ id: p.id, name: p.name, code: p.code }));
-      return (res.items ?? []).map((p: any) => ({ id: p.id, name: p.name, code: p.code }));
+      const raw: any[] = Array.isArray(res) ? res : (res.items ?? []);
+      const mapped: ProjectOption[] = raw.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        clientName: p.client?.name ?? null,
+      }));
+      // Sort by client name, then project name
+      return mapped.sort(
+        (a, b) =>
+          (a.clientName ?? "\uffff").localeCompare(b.clientName ?? "\uffff") ||
+          a.name.localeCompare(b.name),
+      );
     },
   });
 
