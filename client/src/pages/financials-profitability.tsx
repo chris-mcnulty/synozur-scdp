@@ -81,6 +81,17 @@ interface AccountRollupRow {
   projects: ProfitabilityRow[];
 }
 
+interface YoYRow {
+  year: number;
+  recognizedRevenue: number;
+  pendingRevenue: number;
+  totalRevenue: number;
+  feesCost: number;
+  expensesCost: number;
+  grossProfit: number;
+  grossMarginPct: number;
+}
+
 interface TrendPoint {
   period: string;
   recognizedRevenue: number;
@@ -96,6 +107,11 @@ type SortKey = "projectName" | "clientName" | "totalRevenue" | "totalCost" | "gr
 export default function FinancialsProfitability() {
   const [tab, setTab] = useState("projects");
   const [clientFilter, setClientFilter] = useState("all");
+  const [yearFilter, setYearFilter] = useState("all");
+  const yearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    return Array.from({ length: 6 }, (_, i) => String(current - i));
+  }, []);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("totalRevenue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -106,10 +122,11 @@ export default function FinancialsProfitability() {
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
 
   const profitabilityQuery = useQuery<ProfitabilityRow[]>({
-    queryKey: ["/api/analytics/profitability", clientFilter],
+    queryKey: ["/api/analytics/profitability", clientFilter, yearFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (clientFilter !== "all") params.set("clientId", clientFilter);
+      if (yearFilter !== "all") params.set("year", yearFilter);
       const r = await fetch(`/api/analytics/profitability?${params}`, {
         headers: { "x-session-id": localStorage.getItem("sessionId") || "" },
       });
@@ -119,10 +136,11 @@ export default function FinancialsProfitability() {
   });
 
   const accountQuery = useQuery<AccountRollupRow[]>({
-    queryKey: ["/api/analytics/profitability", clientFilter, "account"],
+    queryKey: ["/api/analytics/profitability", clientFilter, yearFilter, "account"],
     queryFn: async () => {
       const params = new URLSearchParams({ groupBy: "account" });
       if (clientFilter !== "all") params.set("clientId", clientFilter);
+      if (yearFilter !== "all") params.set("year", yearFilter);
       const r = await fetch(`/api/analytics/profitability?${params}`, {
         headers: { "x-session-id": localStorage.getItem("sessionId") || "" },
       });
@@ -142,6 +160,20 @@ export default function FinancialsProfitability() {
       return r.json();
     },
     enabled: tab === "trend",
+  });
+
+  const yoyQuery = useQuery<YoYRow[]>({
+    queryKey: ["/api/analytics/profitability-yoy", clientFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams({ years: "3" });
+      if (clientFilter !== "all") params.set("clientId", clientFilter);
+      const r = await fetch(`/api/analytics/profitability-yoy?${params}`, {
+        headers: { "x-session-id": localStorage.getItem("sessionId") || "" },
+      });
+      if (!r.ok) throw new Error("Failed to fetch year-over-year data");
+      return r.json();
+    },
+    enabled: tab === "yoy",
   });
 
   // ── derived data ──────────────────────────────────────────────────────────────
@@ -209,6 +241,7 @@ export default function FinancialsProfitability() {
   function downloadCsv() {
     const params = new URLSearchParams({ format: "csv" });
     if (clientFilter !== "all") params.set("clientId", clientFilter);
+    if (yearFilter !== "all") params.set("year", yearFilter);
     const url = `/api/analytics/profitability?${params}`;
     const a = document.createElement("a");
     a.href = url;
@@ -241,6 +274,17 @@ export default function FinancialsProfitability() {
           ))}
         </SelectContent>
       </Select>
+      <Select value={yearFilter} onValueChange={setYearFilter}>
+        <SelectTrigger className="w-36">
+          <SelectValue placeholder="All Years" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Years</SelectItem>
+          {yearOptions.map(y => (
+            <SelectItem key={y} value={y}>{y}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Button variant="outline" size="sm" onClick={downloadCsv}>
         <Download className="h-4 w-4 mr-1" />
         Export CSV
@@ -269,7 +313,7 @@ export default function FinancialsProfitability() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{fmtDollar(totals.totalCost)}</div>
-          <p className="text-xs text-muted-foreground">Contractor fees + expenses</p>
+          <p className="text-xs text-muted-foreground">Contractor fees (expenses are pass-through)</p>
         </CardContent>
       </Card>
       <Card>
@@ -491,6 +535,125 @@ export default function FinancialsProfitability() {
 
   // ── trend chart ───────────────────────────────────────────────────────────────
 
+  const renderYoY = () => {
+    if (yoyQuery.isLoading) {
+      return <Skeleton className="h-80 w-full" />;
+    }
+    if (yoyQuery.isError) {
+      return <p className="text-destructive text-sm">Failed to load year-over-year data.</p>;
+    }
+
+    const yoy = yoyQuery.data ?? [];
+    const hasData = yoy.some(y => y.totalRevenue > 0 || y.feesCost > 0);
+    if (!hasData) {
+      return (
+        <Card>
+          <CardContent className="flex items-center justify-center h-60 text-muted-foreground text-sm">
+            No year-over-year data available yet.
+          </CardContent>
+        </Card>
+      );
+    }
+
+    const chartData = yoy.map(y => ({
+      year: String(y.year),
+      Revenue: y.totalRevenue,
+      "Fees Cost": y.feesCost,
+      "Gross Profit": y.grossProfit,
+    }));
+
+    const yoyDelta = (curr: number, prev: number | undefined) => {
+      if (prev === undefined || prev === 0) return null;
+      const pct = ((curr - prev) / Math.abs(prev)) * 100;
+      return pct;
+    };
+
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Year-over-Year Comparison</CardTitle>
+            <CardDescription>
+              Revenue, contractor fees, and gross profit for the last 3 years
+              {clientFilter !== "all" ? " (filtered by client)" : ""}. Pass-through expenses excluded from profit.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="year" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v: number) => fmtDollar(v)} />
+                <Legend />
+                <Bar dataKey="Revenue" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="Fees Cost" fill="#f97316" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="Gross Profit" fill="#10b981" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Year</TableHead>
+                <TableHead className="text-right">Revenue</TableHead>
+                <TableHead className="text-right">YoY</TableHead>
+                <TableHead className="text-right">Fees Cost</TableHead>
+                <TableHead className="text-right">Gross Profit</TableHead>
+                <TableHead className="text-right">YoY</TableHead>
+                <TableHead className="text-right">Margin %</TableHead>
+                <TableHead className="text-right">Pass-through Exp.</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {yoy.map((y, i) => {
+                const prev = i > 0 ? yoy[i - 1] : undefined;
+                const revDelta = yoyDelta(y.totalRevenue, prev?.totalRevenue);
+                const profitDelta = yoyDelta(y.grossProfit, prev?.grossProfit);
+                const deltaCell = (d: number | null) =>
+                  d === null ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <span className={d >= 0 ? "text-green-600" : "text-red-600"}>
+                      {d >= 0 ? "+" : ""}{d.toFixed(1)}%
+                    </span>
+                  );
+                return (
+                  <TableRow key={y.year}>
+                    <TableCell className="font-medium">{y.year}</TableCell>
+                    <TableCell className="text-right">
+                      <div>{fmtDollar(y.totalRevenue)}</div>
+                      {y.pendingRevenue > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          {fmtDollar(y.recognizedRevenue)} recognized
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">{deltaCell(revDelta)}</TableCell>
+                    <TableCell className="text-right">{fmtDollar(y.feesCost)}</TableCell>
+                    <TableCell className={`text-right font-semibold ${y.grossProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {fmtDollar(y.grossProfit)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">{deltaCell(profitDelta)}</TableCell>
+                    <TableCell className="text-right">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${marginBg(y.grossMarginPct)}`}>
+                        {y.grossMarginPct.toFixed(1)}%
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">{fmtDollar(y.expensesCost)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  };
+
   const renderTrend = () => {
     if (trendQuery.isLoading) {
       return <Skeleton className="h-80 w-full" />;
@@ -646,6 +809,7 @@ export default function FinancialsProfitability() {
             <TabsTrigger value="projects">Projects</TabsTrigger>
             <TabsTrigger value="accounts">By Account</TabsTrigger>
             <TabsTrigger value="trend">Margin Trend</TabsTrigger>
+            <TabsTrigger value="yoy">Year over Year</TabsTrigger>
           </TabsList>
 
           <TabsContent value="projects" className="space-y-4 pt-2">
@@ -673,6 +837,10 @@ export default function FinancialsProfitability() {
 
           <TabsContent value="trend" className="pt-2">
             {renderTrend()}
+          </TabsContent>
+
+          <TabsContent value="yoy" className="pt-2">
+            {renderYoY()}
           </TabsContent>
         </Tabs>
       </div>

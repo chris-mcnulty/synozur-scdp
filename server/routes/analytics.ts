@@ -40,9 +40,16 @@ export function registerAnalyticsRoutes(app: Express, deps: AnalyticsRouteDeps) 
         const tenantId = getTenantId(req);
         if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
 
-        const { clientId, pmId, dateFrom, dateTo } = req.query as Record<string, string | undefined>;
+        const { clientId, pmId, year } = req.query as Record<string, string | undefined>;
+        let { dateFrom, dateTo } = req.query as Record<string, string | undefined>;
         const format = req.query.format as string | undefined;
         const groupBy = req.query.groupBy as string | undefined;
+
+        // year is shorthand for a full calendar-year window
+        if (year && /^\d{4}$/.test(year)) {
+          dateFrom = `${year}-01-01`;
+          dateTo = `${year}-12-31`;
+        }
 
         const rows = await getProjectProfitabilityRows(tenantId, { clientId, pmId, dateFrom, dateTo });
 
@@ -79,6 +86,31 @@ export function registerAnalyticsRoutes(app: Express, deps: AnalyticsRouteDeps) 
       } catch (err) {
         console.error("[analytics/profitability/:projectId]", err);
         res.status(500).json({ message: "Failed to fetch project profitability detail" });
+      }
+    }
+  );
+
+  // ── GET /api/analytics/profitability-yoy ─────────────────────────────────────
+  // Returns yearly revenue/cost/profit aggregates for year-over-year comparison.
+  // Query params: years (default 3), clientId
+  app.get(
+    "/api/analytics/profitability-yoy",
+    requireAuth,
+    requireRole(FINANCE_ROLES),
+    async (req, res) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+
+        const yearsParam = parseInt(String(req.query.years || "3"), 10);
+        const years = Number.isFinite(yearsParam) ? Math.min(Math.max(yearsParam, 1), 10) : 3;
+        const clientId = req.query.clientId as string | undefined;
+
+        const rows = await getYearlyProfitability(tenantId, years, clientId);
+        res.json(rows);
+      } catch (err) {
+        console.error("[analytics/profitability-yoy]", err);
+        res.status(500).json({ message: "Failed to fetch year-over-year profitability" });
       }
     }
   );
@@ -166,6 +198,7 @@ async function getProjectProfitabilityRows(
   const idList = sql.join(projectIds.map(id => sql`${id}::text`), sql`,`);
 
   // 2. Recognized revenue per project
+  // Revenue is dated by when it was recognized (falling back to entry creation)
   const revenueRows = await db
     .select({
       projectId: projectRevenueEntries.projectId,
@@ -173,7 +206,17 @@ async function getProjectProfitabilityRows(
       amount: projectRevenueEntries.amount,
     })
     .from(projectRevenueEntries)
-    .where(inArray(projectRevenueEntries.projectId, projectIds));
+    .where(
+      and(
+        inArray(projectRevenueEntries.projectId, projectIds),
+        filters.dateFrom
+          ? sql`COALESCE(${projectRevenueEntries.recognizedAt}, ${projectRevenueEntries.createdAt})::date >= ${filters.dateFrom}`
+          : undefined,
+        filters.dateTo
+          ? sql`COALESCE(${projectRevenueEntries.recognizedAt}, ${projectRevenueEntries.createdAt})::date <= ${filters.dateTo}`
+          : undefined,
+      )
+    );
 
   const recognizedRevMap = new Map<string, number>();
   const pendingRevMap = new Map<string, number>();
@@ -508,6 +551,103 @@ async function getProjectProfitabilityDetail(
   };
 }
 
+// ─── Year-over-year profitability ─────────────────────────────────────────────
+
+interface YoYRow {
+  year: number;
+  recognizedRevenue: number;
+  pendingRevenue: number;
+  totalRevenue: number;
+  feesCost: number;
+  expensesCost: number; // pass-through, informational only
+  grossProfit: number;
+  grossMarginPct: number;
+}
+
+async function getYearlyProfitability(
+  tenantId: string,
+  years: number,
+  clientId?: string
+): Promise<YoYRow[]> {
+  const currentYear = new Date().getFullYear();
+  const fromYear = currentYear - years + 1;
+
+  type Row = {
+    yr: string;
+    recognized_revenue: string;
+    pending_revenue: string;
+    fees_cost: string;
+    expenses_cost: string;
+  };
+  const result = await db.execute<Row>(sql`
+    SELECT
+      yr,
+      COALESCE(SUM(recognized_revenue), 0) AS recognized_revenue,
+      COALESCE(SUM(pending_revenue), 0) AS pending_revenue,
+      COALESCE(SUM(fees_cost), 0) AS fees_cost,
+      COALESCE(SUM(expenses_cost), 0) AS expenses_cost
+    FROM (
+      -- Revenue entries, dated by recognition (fallback: creation)
+      SELECT
+        EXTRACT(YEAR FROM COALESCE(pre.recognized_at, pre.created_at))::int AS yr,
+        CASE WHEN pre.recognized THEN CAST(pre.amount AS NUMERIC) ELSE 0 END AS recognized_revenue,
+        CASE WHEN pre.recognized THEN 0 ELSE CAST(pre.amount AS NUMERIC) END AS pending_revenue,
+        0 AS fees_cost,
+        0 AS expenses_cost
+      FROM project_revenue_entries pre
+      JOIN projects p ON p.id = pre.project_id
+      WHERE p.tenant_id = ${tenantId}
+        ${clientId ? sql`AND p.client_id = ${clientId}` : sql``}
+
+      UNION ALL
+
+      -- Contractor cost invoice lines (approved + paid), dated by invoice date
+      SELECT
+        EXTRACT(YEAR FROM cci.invoice_date)::int AS yr,
+        0, 0,
+        CASE WHEN ccil.kind = 'service' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END AS fees_cost,
+        CASE WHEN ccil.kind = 'expense' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END AS expenses_cost
+      FROM contractor_cost_invoices cci
+      JOIN contractor_cost_invoice_lines ccil ON ccil.invoice_id = cci.id
+      LEFT JOIN projects p ON p.id = cci.project_id
+      WHERE cci.tenant_id = ${tenantId}
+        AND cci.status IN ('approved', 'paid')
+        AND cci.invoice_date IS NOT NULL
+        ${clientId ? sql`AND p.client_id = ${clientId}` : sql``}
+    ) combined
+    WHERE yr BETWEEN ${fromYear} AND ${currentYear}
+    GROUP BY yr
+    ORDER BY yr
+  `);
+
+  const byYear = new Map<number, Row>();
+  for (const r of result.rows) byYear.set(Number(r.yr), r);
+
+  const out: YoYRow[] = [];
+  for (let y = fromYear; y <= currentYear; y++) {
+    const r = byYear.get(y);
+    const recognizedRevenue = Number(r?.recognized_revenue) || 0;
+    const pendingRevenue = Number(r?.pending_revenue) || 0;
+    const totalRevenue = recognizedRevenue + pendingRevenue;
+    const feesCost = Number(r?.fees_cost) || 0;
+    const expensesCost = Number(r?.expenses_cost) || 0;
+    // Expenses are pass-through reimbursements — excluded from profit/margin
+    const grossProfit = totalRevenue - feesCost;
+    const grossMarginPct = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+    out.push({
+      year: y,
+      recognizedRevenue,
+      pendingRevenue,
+      totalRevenue,
+      feesCost,
+      expensesCost,
+      grossProfit,
+      grossMarginPct: Math.round(grossMarginPct * 10) / 10,
+    });
+  }
+  return out;
+}
+
 // ─── Margin accuracy trend ────────────────────────────────────────────────────
 
 interface TrendPoint {
@@ -528,7 +668,7 @@ async function getMarginAccuracyTrend(tenantId: string): Promise<TrendPoint[]> {
     FROM (
       -- Revenue recognized entries
       SELECT
-        COALESCE(pre.entry_date, pre.created_at)::date AS period_date,
+        COALESCE(pre.recognized_at, pre.created_at)::date AS period_date,
         CAST(pre.amount AS NUMERIC) AS recognized_revenue,
         0 AS total_cost
       FROM project_revenue_entries pre
