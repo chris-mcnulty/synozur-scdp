@@ -1,5 +1,5 @@
 // v2.1 - Safe date parsing for production stability
-import { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, Component, ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
@@ -1442,6 +1442,8 @@ export default function ProjectDetail() {
   const [showSowDialog, setShowSowDialog] = useState(false);
   const [editingSow, setEditingSow] = useState<Sow | null>(null);
   const [deletingSowId, setDeletingSowId] = useState<string | null>(null);
+  const [sowPendingFile, setSowPendingFile] = useState<File | null>(null);
+  const sowFileInputRef = useRef<HTMLInputElement>(null);
   
   // Milestone state
   const [showMilestoneDialog, setShowMilestoneDialog] = useState(false);
@@ -2263,12 +2265,18 @@ export default function ProjectDetail() {
         body: JSON.stringify(processedData)
       });
     },
-    onSuccess: () => {
-      toast({
-        title: "SOW created",
-        description: "The SOW has been created successfully."
-      });
+    onSuccess: (newSow: any) => {
+      // If the user selected a file in the create dialog, upload it now that we have an ID
+      if (sowPendingFile && newSow?.id) {
+        uploadSowDocumentMutation.mutate({ sowId: newSow.id, file: sowPendingFile });
+      } else {
+        toast({
+          title: "SOW created",
+          description: "The SOW has been created successfully."
+        });
+      }
       setShowSowDialog(false);
+      setSowPendingFile(null);
       sowForm.reset();
       refetchSows();
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/analytics`] });
@@ -3256,6 +3264,7 @@ export default function ProjectDetail() {
   };
 
   const handleOpenSowDialog = (sow?: Sow) => {
+    setSowPendingFile(null);
     if (sow) {
       setEditingSow(sow);
       sowForm.reset({
@@ -7280,7 +7289,7 @@ export default function ProjectDetail() {
         </div>
 
         {/* SOW Dialog */}
-        <Dialog open={showSowDialog} onOpenChange={setShowSowDialog}>
+        <Dialog open={showSowDialog} onOpenChange={(open) => { if (!open) { setShowSowDialog(false); setSowPendingFile(null); } else { setShowSowDialog(true); } }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>
@@ -7469,6 +7478,60 @@ export default function ProjectDetail() {
                       </FormItem>
                     )}
                   />
+                </div>
+
+                {/* File upload — works on both create and edit */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Attach Document</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={sowFileInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0] ?? null;
+                        if (!file) return;
+                        if (editingSow) {
+                          // Edit mode: upload immediately
+                          uploadSowDocumentMutation.mutate({ sowId: editingSow.id, file });
+                        } else {
+                          // Create mode: hold until after save
+                          setSowPendingFile(file);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sowFileInputRef.current?.click()}
+                      disabled={uploadSowDocumentMutation.isPending}
+                    >
+                      {uploadSowDocumentMutation.isPending ? "Uploading…" : "Choose file…"}
+                    </Button>
+                    {sowPendingFile && !editingSow && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span className="truncate max-w-[200px]">{sowPendingFile.name}</span>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setSowPendingFile(null)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                    {editingSow && editingSow.documentName && !sowPendingFile && (
+                      <span className="text-sm text-muted-foreground truncate max-w-[200px]">
+                        Current: {editingSow.documentName}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {editingSow ? "Upload a new file to replace the current document." : "File will be attached after saving."}
+                  </p>
                 </div>
 
                 <FormField
