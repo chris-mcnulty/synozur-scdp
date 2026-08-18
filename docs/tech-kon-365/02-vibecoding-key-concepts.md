@@ -115,6 +115,17 @@ Even if you never write application code by hand, you should be able to read you
 
 ---
 
+## 9. Build Common Modules Once, Reuse Everywhere
+
+The fastest way to make an AI-built codebase unmaintainable is to let the AI re-solve the same problem a slightly different way on every screen. The antidote is a **common-module discipline**: shared, single-source-of-truth modules for the cross-cutting concerns every page needs — and a standing rule that new work *consumes* them rather than reinventing them.
+
+- **The two canonical examples: branding and navigation.** A tenant's colors, logo, and fonts should be defined in **one** theming module and flow everywhere automatically — change it once, the whole app updates. The navigation/app bar should be defined **once** from a single menu structure and rendered on every page, adapting to the user's role — not hand-rebuilt per screen. When branding and nav live in common modules, consistency is automatic and re-skinning for a new tenant is a config change, not a code hunt.
+- **Why this matters more with AI, not less.** An AI assistant, asked to "add a page," will happily generate its own header, its own color values, and its own nav links inline — a fresh near-duplicate every time. Left unchecked you get ten slightly different app bars and a branding change that takes a week. Point the AI at the existing common module and tell it to use it; review new code for "did this duplicate something we already have?"
+- **Centralize the primitives, too.** A shared UI component library (buttons, dialogs, tables), a shared data-fetching client, and shared hooks mean behavior and look are defined once and inherited. This is ordinary DRY — but at the *module* level, where it pays the most.
+- **The test:** if changing the logo, the primary color, or a top-level menu item requires editing more than one place, your common modules aren't common yet. Fix that before you add the eleventh screen.
+
+---
+
 ## The Through-Line
 
 AI collapses the cost of *writing* code to nearly zero. It does nothing to reduce the cost of getting the *system* wrong — a bad design, a leaked credential, an unreviewed merge, a `WHERE`-less `UPDATE`. Those costs are as high as ever, and they land faster now because the code arrives faster.
