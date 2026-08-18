@@ -1,6 +1,6 @@
 # Constellation (SCDP): A Reference Architecture for Building on Microsoft
 
-*Tech Kon 365 — Seattle*
+*TechCon 365 — Seattle*
 *Companion source document for slide generation. Each top-level section is a candidate slide or slide group; bullets are candidate talking points. Written to be fed to an AI agent building the deck.*
 
 ---

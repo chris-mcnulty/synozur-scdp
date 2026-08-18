@@ -1,6 +1,6 @@
 # Vibecoding, Done Right: Key Concepts for AI-Assisted Software Delivery
 
-*Tech Kon 365 — Seattle*
+*TechCon 365 — Seattle*
 *Companion deck source document. This is written to be fed to an AI agent building presentation slides. Each top-level section is a candidate slide or slide group; the bullets are candidate talking points.*
 
 ---
