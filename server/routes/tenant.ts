@@ -54,7 +54,9 @@ const m365ConfigUpdateSchema = z.object({
 });
 
 const tenantSettingsUpdateSchema = z.object({
-  name: z.string().min(1, "Company name is required").max(255),
+  // This route is used by independent Organization Settings tabs, so every
+  // field must be optional. Individual tabs send only the settings they own.
+  name: z.string().min(1, "Company name is required").max(255).optional(),
   logoUrl: z.string().url().max(2000).optional().nullable().or(z.literal("")),
   logoUrlDark: z.string().url().max(2000).optional().nullable().or(z.literal("")),
   companyAddress: z.string().max(1000).optional().nullable(),
@@ -96,7 +98,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
   app.get("/api/tenant/settings", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const tenantId = user?.primaryTenantId;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       
       if (!tenantId) {
         return res.status(404).json({ message: "No tenant associated with user" });
@@ -557,7 +559,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
   app.patch("/api/tenant/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const user = req.user as any;
-      const tenantId = user?.primaryTenantId;
+      const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
       
       if (!tenantId) {
         return res.status(404).json({ message: "No tenant associated with user" });
@@ -573,7 +575,7 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
 
       const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, digestDefaultDay, digestDefaultTime, requireTimeApproval, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue, autoCreateInvoiceOnMilestoneInvoiced } = validationResult.data;
 
-      const updateData: any = {
+      const requestedValues = {
         name,
         logoUrl,
         logoUrlDark,
@@ -594,6 +596,12 @@ export function registerTenantRoutes(app: Express, deps: TenantRouteDeps) {
         defaultTimezone,
         showChangelogOnLogin,
       };
+      // Preserve existing values that were not submitted by the current
+      // settings tab. Null and an empty string are meaningful clear-values,
+      // so only omit undefined.
+      const updateData: any = Object.fromEntries(
+        Object.entries(requestedValues).filter(([, value]) => value !== undefined)
+      );
 
       if (defaultBillingRate !== undefined) updateData.defaultBillingRate = defaultBillingRate;
       if (defaultCostRate !== undefined) updateData.defaultCostRate = defaultCostRate;

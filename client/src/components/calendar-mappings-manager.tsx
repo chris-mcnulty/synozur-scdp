@@ -170,7 +170,7 @@ export function CalendarMappingsManager() {
   return (
     <>
       {/* Bulk actions toolbar */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-2 min-w-0">
         <Select
           value={reassignProjectId}
           onValueChange={setReassignProjectId}
@@ -216,7 +216,7 @@ export function CalendarMappingsManager() {
           {mappings.map(m => (
             <li
               key={m.eventKey}
-              className="flex items-center gap-2 rounded-md border border-border p-2"
+              className="flex flex-col gap-2 rounded-md border border-border p-2 sm:flex-row sm:items-center"
               data-testid={`mapping-row-${m.eventKey}`}
             >
               <div className="flex-1 min-w-0">
@@ -237,7 +237,7 @@ export function CalendarMappingsManager() {
                 disabled={projectsQuery.isLoading || updateMutation.isPending}
               >
                 <SelectTrigger
-                  className="w-44 h-8"
+                  className="h-8 w-full sm:w-44"
                   data-testid={`select-project-${m.eventKey}`}
                 >
                   <SelectValue>
