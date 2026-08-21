@@ -5,3 +5,4 @@
 - [Expenses are pass-through, never margin](expenses-pass-through.md) — expense reimbursements are tracked for billing reconciliation but excluded from all cost/profit/margin math; only fees count
 - [Dev DB split-brain & tsx pitfalls](dev-db-split-brain.md) — DATABASE_URL ≠ NEON_DATABASE_URL (different Neon DBs); always go through server/db.ts via workspace tsx scripts, never psql
 - [Verify prod build freshness](prod-build-freshness.md) — curl the live endpoint before claiming prod behavior; stale builds mimic "feature broken" when it's just not deployed
+- [Planner conflict policy](planner-conflict-policy.md) — last-write-wins is mandatory for every tenant; never restore a per-tenant stale-push fallback

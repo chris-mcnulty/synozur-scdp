@@ -1,36 +1,32 @@
 import * as cron from 'node-cron';
 import { storage } from '../storage.js';
-import { resolveTaskConflict, classifyGraphError, sanitizeGraphErrorMessage, mapStatusToPercent, mapPercentToStatus } from '@shared/planner-conflict.js';
+import { resolveTaskConflict, shouldSendOutboundPlannerUpdate, classifyGraphError, sanitizeGraphErrorMessage, mapStatusToPercent, mapPercentToStatus } from '@shared/planner-conflict.js';
 import { recordPlannerAudit } from './planner-sync-audit.js';
 import { maybeSendSyncFailureAlert, suspendConnection, FATAL_ERROR_CODE_SET } from './planner-sync-alerts.js';
 import { withGraphRetry, withEtagRetry } from './planner-graph-retry.js';
 import { db } from '../db.js';
-import { projectPlannerConnections, plannerTaskSync, tenantSettings } from '@shared/schema.js';
+import { projectPlannerConnections, plannerTaskSync } from '@shared/schema.js';
 import { and, eq, sql } from 'drizzle-orm';
 
 /**
- * Task #126 — Per-tenant rollout flag for the LWW resolver. Semantics:
- *   - Existing tenants are seeded by migration with explicit row 'false', so
- *     they keep legacy push-always behavior until an operator opts in.
- *   - NEW tenants (no row) DEFAULT TO TRUE — they get the safer LWW
- *     resolver out of the box.
- * The migration enforces (a); this function enforces (b) by treating a
- * missing row as "true".
+ * Apply a Planner-owned status without turning the inbound write into a local
+ * human edit. `obsolete` deliberately remains distinct from a Planner 100%
+ * completion even though both map to percentComplete=100.
  */
-async function isLwwEnabledForTenant(tenantId: string | null | undefined): Promise<boolean> {
-  if (!tenantId) return true;
-  try {
-    const [row] = await db.select()
-      .from(tenantSettings)
-      .where(and(
-        eq(tenantSettings.tenantId, tenantId),
-        eq(tenantSettings.settingKey, 'plannerSyncLwwEnabled'),
-      ))
-      .limit(1);
-    if (!row) return true; // new tenants default ON
-    return String((row as any).settingValue ?? 'true').toLowerCase() !== 'false';
-  } catch {
-    return true;
+async function applyRemotePlannerStatus(allocation: any, remotePercent: number): Promise<void> {
+  const remoteStatus = mapPercentToStatus(remotePercent);
+  const effectiveRemoteStatus = allocation.status === 'obsolete' && remoteStatus === 'completed'
+    ? 'obsolete'
+    : remoteStatus;
+  if (effectiveRemoteStatus !== allocation.status) {
+    await storage.updateProjectAllocation(allocation.id, {
+      status: effectiveRemoteStatus,
+      completedDate: effectiveRemoteStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
+      startedDate: effectiveRemoteStatus === 'in_progress' && !allocation.startedDate
+        ? new Date().toISOString().slice(0, 10) : allocation.startedDate,
+      _syncWrite: true,
+    } as any);
+    console.log(`[PLANNER-SYNC] LWW: remote wins for allocation ${allocation.id} → ${effectiveRemoteStatus}`);
   }
 }
 
@@ -220,7 +216,6 @@ export async function syncProjectToPlanner(
             // against allocation.lastEditedAt and let the side with the newer human edit win.
             // STRICT LWW: when remote wins (or equal), skip the outbound PATCH entirely so
             // we never silently push stale local fields back to Planner.
-            const lwwEnabled = await isLwwEnabledForTenant(await getConnectionTenantId(connection));
             let conflict = resolveTaskConflict(
               {
                 lastEditedAt: (allocation as any).lastEditedAt ?? null,
@@ -237,39 +232,12 @@ export async function syncProjectToPlanner(
               }
             );
 
-            // Rollout flag off → revert to legacy 'always push outbound'.
-            if (!lwwEnabled) {
-              conflict = { ...conflict, winner: 'local', reason: 'lww_disabled_rollout' } as any;
-            }
-
             const remotePercent = task.percentComplete ?? 0;
             if (conflict.winner === 'remote') {
-              // Remote wins — apply inbound to local, do NOT push outbound.
-              // IMPORTANT: never overwrite a local 'obsolete' status with 'completed'
-              // from Planner (both map to percentComplete=100 but have different semantics).
-              // If local is already 'obsolete' and remote says 100%, local timestamp wins
-              // for status preservation — the remote-wins path only applies to other fields.
-              const remoteStatus = mapPercentToStatus(remotePercent);
-              const localIsObsolete = allocation.status === 'obsolete';
-              const effectiveRemoteStatus = (localIsObsolete && remoteStatus === 'completed')
-                ? 'obsolete'
-                : remoteStatus;
-              if (effectiveRemoteStatus !== allocation.status) {
-                try {
-                  // _syncWrite: true ensures the storage layer does NOT stamp
-                  // lastEditedAt — sync writes must never masquerade as human edits.
-                  await storage.updateProjectAllocation(allocation.id, {
-                    status: effectiveRemoteStatus,
-                    completedDate: effectiveRemoteStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
-                    startedDate: effectiveRemoteStatus === 'in_progress' && !allocation.startedDate
-                      ? new Date().toISOString().slice(0, 10) : allocation.startedDate,
-                    _syncWrite: true,
-                  } as any);
-                  console.log(`[PLANNER-SYNC] LWW: remote wins for allocation ${allocation.id} → ${effectiveRemoteStatus}`);
-                } catch (inboundErr: any) {
-                  console.warn('[PLANNER-SYNC] Failed to apply inbound LWW update:', inboundErr.message);
-                }
-              }
+              // Remote wins — apply inbound to local, then skip every outbound
+              // Planner PATCH. This includes tenants that previously had the
+              // rollout flag set to false.
+              await applyRemotePlannerStatus(allocation, remotePercent);
             }
 
             await recordPlannerAudit({
@@ -287,7 +255,8 @@ export async function syncProjectToPlanner(
             // STRICT LWW: only push outbound when local strictly won. Otherwise the
             // local state is what we just pulled in, and another PATCH would just be
             // a no-op race risk.
-            if (conflict.winner === 'local') {
+            let outboundWon = shouldSendOutboundPlannerUpdate(conflict);
+            if (outboundWon) {
               const doUpdate = async () => plannerService.updateTask(syncRecord.taskId, (task as any)['@odata.etag'] || '', {
                 title: taskTitle,
                 bucketId: bucket.id,
@@ -319,7 +288,10 @@ export async function syncProjectToPlanner(
                       title: (fresh as any).title ?? null,
                     }
                   );
-                  if (reConflict.winner !== 'local') {
+                  conflict = reConflict;
+                  outboundWon = shouldSendOutboundPlannerUpdate(reConflict);
+                  if (!outboundWon) {
+                    await applyRemotePlannerStatus(allocation, fresh.percentComplete ?? 0);
                     console.log(`[PLANNER-SYNC] LWW after 412: remote now wins, abandoning outbound PATCH`);
                     return null as any;
                   }
@@ -335,16 +307,18 @@ export async function syncProjectToPlanner(
                 { label: 'updateTask' }
               );
 
-              try {
-                const taskDetails = await withGraphRetry(() => plannerService.getTaskDetails(syncRecord.taskId), { label: 'getTaskDetails' });
-                if (taskDetails) {
-                  await withGraphRetry(
-                    () => plannerService.updateTaskDetails(syncRecord.taskId, taskDetails['@odata.etag'] || '', taskNotes),
-                    { label: 'updateTaskDetails' },
-                  );
+              if (outboundWon) {
+                try {
+                  const taskDetails = await withGraphRetry(() => plannerService.getTaskDetails(syncRecord.taskId), { label: 'getTaskDetails' });
+                  if (taskDetails) {
+                    await withGraphRetry(
+                      () => plannerService.updateTaskDetails(syncRecord.taskId, taskDetails['@odata.etag'] || '', taskNotes),
+                      { label: 'updateTaskDetails' },
+                    );
+                  }
+                } catch (notesErr: any) {
+                  console.warn('[PLANNER-SYNC] Failed to update task notes:', notesErr.message);
                 }
-              } catch (notesErr: any) {
-                console.warn('[PLANNER-SYNC] Failed to update task notes:', notesErr.message);
               }
             } else {
               console.log(`[PLANNER-SYNC] LWW: outbound PATCH skipped for ${syncRecord.taskId} (winner=${conflict.winner}, reason=${conflict.reason})`);
@@ -784,17 +758,7 @@ export async function pullPlannerTask(
   );
 
   if (conflict.winner === 'remote') {
-    const remoteStatus = mapPercentToStatus(task.percentComplete ?? 0);
-    if (remoteStatus !== allocation.status) {
-      // _syncWrite: true → don't bump lastEditedAt; this is a sync write, not a human edit.
-      await storage.updateProjectAllocation(allocation.id, {
-        status: remoteStatus,
-        completedDate: remoteStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
-        startedDate: remoteStatus === 'in_progress' && !allocation.startedDate
-          ? new Date().toISOString().slice(0, 10) : allocation.startedDate,
-        _syncWrite: true,
-      } as any);
-    }
+    await applyRemotePlannerStatus(allocation, task.percentComplete ?? 0);
   }
 
   await storage.updatePlannerTaskSync(sync.id, {

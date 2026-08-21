@@ -9,11 +9,13 @@
  */
 import {
   resolveTaskConflict,
+  shouldSendOutboundPlannerUpdate,
   mapPercentToStatus,
   mapStatusToPercent,
   classifyGraphError,
 } from '../shared/planner-conflict.js';
 import { describe, it, expect } from './_harness.js';
+import { withEtagRetry } from '../server/services/planner-graph-retry.js';
 
 describe('mapPercentToStatus', () => {
   it('maps 0 → open', () => expect(mapPercentToStatus(0)).toBe('open'));
@@ -56,15 +58,19 @@ describe('resolveTaskConflict — REGRESSION: completed→in_progress bug', () =
     expect(r.winner).toBe('remote');
     expect(r.reason).toBe('remote_newer_than_local');
     expect(r.fields).toContain('status');
+    // This is the invariant for scheduled and manual sync: a remote winner
+    // must never produce the stale 50% PATCH that reopens the Planner task.
+    expect(shouldSendOutboundPlannerUpdate(r)).toBe(false);
   });
 
-  it('local wins when local.lastEditedAt is newer than remote.lastModified', () => {
+  it('allows a deliberate newer local reopen or progress edit to push', () => {
     const r = resolveTaskConflict(
-      { lastEditedAt: '2026-04-01T11:00:00Z', status: 'completed' },
-      { lastModifiedDateTime: '2026-04-01T10:00:00Z', percentComplete: 50 }
+      { lastEditedAt: '2026-04-01T11:00:00Z', status: 'in_progress' },
+      { lastModifiedDateTime: '2026-04-01T10:00:00Z', percentComplete: 100 }
     );
     expect(r.winner).toBe('local');
     expect(r.reason).toBe('local_newer_than_remote');
+    expect(shouldSendOutboundPlannerUpdate(r)).toBe(true);
   });
 
   it('remote wins on exact-tie (so stale local converges to Planner)', () => {
@@ -84,6 +90,26 @@ describe('resolveTaskConflict — REGRESSION: completed→in_progress bug', () =
     );
     expect(r.winner).toBe('local');
     expect(r.reason).toBe('remote_missing_timestamp');
+  });
+});
+
+describe('withEtagRetry — Planner completion race', () => {
+  it('re-fetches immediately after a 412 instead of retrying the stale PATCH', async () => {
+    let outboundAttempts = 0;
+    let rebuildCalls = 0;
+    const result = await withEtagRetry(
+      async () => {
+        outboundAttempts++;
+        throw { statusCode: 412, message: 'Precondition failed' };
+      },
+      async () => {
+        rebuildCalls++;
+        return 'remote-won-no-patch';
+      },
+    );
+    expect(result).toBe('remote-won-no-patch');
+    expect(outboundAttempts).toBe(1);
+    expect(rebuildCalls).toBe(1);
   });
 });
 

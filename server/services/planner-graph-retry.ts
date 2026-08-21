@@ -26,6 +26,10 @@ export async function withGraphRetry<T>(
     } catch (err: any) {
       lastErr = err;
       const cls = classifyGraphError(err);
+      // An ETag mismatch is a concurrency signal, not a transient transport
+      // error. Let withEtagRetry re-fetch and re-run LWW immediately instead
+      // of retrying a stale PATCH body and ETag several times.
+      if (cls.code === 'etag_mismatch') throw err;
       if (!cls.retryable) throw err;
       const delay = jitter(cls.retryAfterMs ?? BASE_BACKOFF_MS * Math.pow(2, attempt));
       console.warn(`[PLANNER-RETRY] ${opts.label || 'graph'} attempt ${attempt + 1} → ${cls.code}; retry in ${delay}ms`);

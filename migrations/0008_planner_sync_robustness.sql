@@ -20,13 +20,11 @@ UPDATE "project_allocations"
 SET "last_edited_at" = COALESCE("updated_at", "created_at", now())
 WHERE "last_edited_at" IS NULL;
 
--- 1b. Rollout flag — explicit 'false' is seeded for every EXISTING tenant so
--- they keep legacy push-always behavior until an operator opts in.
--- NEW tenants (created after this migration) intentionally have NO row, and
--- the scheduler treats a missing row as enabled (LWW on by default for new
--- tenants).
+-- 1b. Historical rollout marker. LWW is mandatory for all tenants; this row
+-- records the enabled state for existing tenants without creating a legacy
+-- push-always exception.
 INSERT INTO "tenant_settings" ("tenant_id", "setting_key", "setting_value")
-SELECT t."id", 'plannerSyncLwwEnabled', 'false'
+SELECT t."id", 'plannerSyncLwwEnabled', 'true'
 FROM "tenants" t
 WHERE NOT EXISTS (
   SELECT 1 FROM "tenant_settings" ts

@@ -41,6 +41,15 @@ export interface ConflictResolution {
   fields?: string[];
 }
 
+/**
+ * Planner status updates are only safe when the local human edit strictly won
+ * the timestamp comparison. Keeping this rule beside the resolver makes every
+ * sync entry point use the same no-stale-PATCH decision.
+ */
+export function shouldSendOutboundPlannerUpdate(conflict: ConflictResolution): boolean {
+  return conflict.winner === 'local';
+}
+
 const LOCAL_NEVER_EDITED_REASON = 'local_never_edited';
 const REMOTE_MISSING_TIMESTAMP_REASON = 'remote_missing_timestamp';
 const REMOTE_NEWER_REASON = 'remote_newer_than_local';
