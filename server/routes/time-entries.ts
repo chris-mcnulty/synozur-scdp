@@ -5,6 +5,7 @@ import { insertTimeEntrySchema, timeEntries, projectWorkstreams } from "@shared/
 import { eq } from "drizzle-orm";
 import { getAllSessions } from "../session-store";
 import { notify } from "../services/notification-service.js";
+import { classifyCommercialTimeEntry, validateCommercialSelection } from "../lib/commercial-buckets.js";
 
 interface TimeEntryRouteDeps {
   requireAuth: any;
@@ -12,6 +13,12 @@ interface TimeEntryRouteDeps {
 }
 
 export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) {
+  const canManageCommercialClassification = async (req: any, projectId: string) => {
+    if (["admin", "billing-admin", "executive", "portfolio-manager"].includes(req.user?.role)) return true;
+    if (req.user?.role !== "pm") return false;
+    const project = await storage.getProject(projectId);
+    return project?.pm === req.user.id;
+  };
 
   app.get("/api/time-entries", deps.requireAuth, async (req, res) => {
     try {
@@ -96,6 +103,8 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
 
       delete dataWithHours.billingRate;
       delete dataWithHours.costRate;
+      delete dataWithHours.commercialClassifiedBy;
+      delete dataWithHours.commercialClassifiedAt;
 
       console.log("[TIME_ENTRY] Data with hours (rates stripped):", dataWithHours);
 
@@ -112,21 +121,55 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
             type: 'INVALID_PROJECT'
           });
         }
+        const canManageCommercial = await canManageCommercialClassification(req, validatedData.projectId);
+        const commercialSelection = await validateCommercialSelection({
+          projectId: validatedData.projectId,
+          date: validatedData.date,
+          tenantId: req.user?.tenantId,
+          commercialBucketId: validatedData.commercialBucketId,
+          // Submitters cannot make an authoritative eligibility or approval
+          // decision. Their active-bucket selection is held for PM/billing
+          // review, which deliberately does not require an approval reference.
+          commercialEligibilityOutcome: canManageCommercial
+            ? validatedData.commercialEligibilityOutcome
+            : validatedData.commercialBucketId ? "pending_approval" : validatedData.commercialEligibilityOutcome,
+          commercialApprovalReference: canManageCommercial ? validatedData.commercialApprovalReference : undefined,
+        });
+        if (!canManageCommercial && validatedData.commercialBucketId) {
+          validatedData.commercialEligibilityOutcome = commercialSelection.outcome === "not_eligible"
+            ? "not_eligible"
+            : "pending_approval";
+          validatedData.commercialApprovalReference = undefined;
+        }
       }
 
-      const timeEntryDataWithTenant = {
-        ...validatedData,
-        tenantId: req.user?.tenantId || null
-      };
+      const {
+        commercialBucketId,
+        commercialEligibilityOutcome,
+        commercialApprovalReference,
+        ...entryData
+      } = validatedData;
+      // Create the operational entry first, then write its commercial
+      // classification together with its immutable audit record.
+      const timeEntryDataWithTenant = { ...entryData, tenantId: req.user?.tenantId || null };
 
-      const timeEntry = await storage.createTimeEntry(timeEntryDataWithTenant);
+      const classifiedEntry = await db.transaction(async (tx: any) => {
+        const timeEntry = await storage.createTimeEntry(timeEntryDataWithTenant, tx);
+        return commercialBucketId || commercialEligibilityOutcome
+          ? classifyCommercialTimeEntry(timeEntry, req.user!.id, req.user?.tenantId, {
+            commercialBucketId,
+            commercialEligibilityOutcome,
+            commercialApprovalReference,
+          }, tx)
+          : timeEntry;
+      });
       console.log("[TIME_ENTRY] Created successfully with rates:", {
-        id: timeEntry.id,
-        billingRate: timeEntry.billingRate,
-        costRate: timeEntry.costRate
+        id: classifiedEntry.id,
+        billingRate: classifiedEntry.billingRate,
+        costRate: classifiedEntry.costRate
       });
 
-      res.status(201).json(timeEntry);
+      res.status(201).json(classifiedEntry);
     } catch (error: any) {
       console.error("[TIME_ENTRY] Error creating time entry:", error);
 
@@ -144,6 +187,11 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
           type: 'RATE_NOT_CONFIGURED'
         });
       }
+      if (error.message?.includes("commercial") || error.message?.includes("bucket") ||
+          error.message?.includes("approval") || error.message?.includes("eligible") ||
+          error.message?.includes("effective period")) {
+        return res.status(400).json({ message: error.message });
+      }
 
       console.error("[TIME_ENTRY] Server error:", error.stack);
       res.status(500).json({ 
@@ -156,6 +204,11 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
 
   app.patch("/api/time-entries/:id", deps.requireAuth, async (req, res) => {
     try {
+      delete req.body.commercialClassifiedBy;
+      delete req.body.commercialClassifiedAt;
+      for (const field of ["commercialBucketId", "commercialEligibilityOutcome", "commercialApprovalReference"]) {
+        if (req.body[field] === "") delete req.body[field];
+      }
       const existingEntry = await storage.getTimeEntry(req.params.id);
 
       if (!existingEntry) {
@@ -193,7 +246,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         }
       }
 
-      const allowedFields = ['date', 'hours', 'description', 'billable', 'projectId', 'milestoneId', 'workstreamId', 'phase', 'allocationId', 'projectStageId'];
+      const allowedFields = ['date', 'hours', 'description', 'billable', 'projectId', 'milestoneId', 'workstreamId', 'phase', 'allocationId', 'projectStageId', 'commercialBucketId', 'commercialEligibilityOutcome', 'commercialApprovalReference'];
       const updateData: any = {};
 
       if ((isAdmin || (isPM && existingEntry.projectId)) && req.body.personId !== undefined) {
@@ -246,8 +299,43 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       delete updateData.billedFlag;
       delete updateData.statusReportedFlag;
 
-      const updatedEntry = await storage.updateTimeEntry(req.params.id, updateData);
-      res.json(updatedEntry);
+      const hasExplicitCommercialChange = "commercialBucketId" in req.body ||
+        "commercialEligibilityOutcome" in req.body ||
+        "commercialApprovalReference" in req.body;
+      const needsCommercialReview = hasExplicitCommercialChange ||
+        "date" in req.body || "hours" in req.body || "projectId" in req.body;
+      const proposedEntry = { ...existingEntry, ...updateData };
+      const commercialInput = {
+        commercialBucketId: proposedEntry.commercialBucketId,
+        commercialEligibilityOutcome: proposedEntry.commercialEligibilityOutcome,
+        commercialApprovalReference: proposedEntry.commercialApprovalReference,
+      };
+      if (needsCommercialReview) {
+        if (hasExplicitCommercialChange && !await canManageCommercialClassification(req, proposedEntry.projectId)) {
+          return res.status(403).json({ message: "Only the project's PM or billing administrators can classify time commercially." });
+        }
+        // Validate the merged, proposed state before changing the stored entry.
+        // This prevents a rejected request from persisting a cross-project
+        // bucket, an out-of-window date, or a missing approval reference.
+        await validateCommercialSelection({
+          projectId: proposedEntry.projectId,
+          date: proposedEntry.date,
+          tenantId: req.user?.tenantId,
+          ...commercialInput,
+        });
+      }
+      // Classification is updated with its audit row as an atomic operation by
+      // classifyCommercialTimeEntry; do not persist it separately first.
+      delete updateData.commercialBucketId;
+      delete updateData.commercialEligibilityOutcome;
+      delete updateData.commercialApprovalReference;
+      const updatedEntry = Object.keys(updateData).length
+        ? await storage.updateTimeEntry(req.params.id, updateData)
+        : existingEntry;
+      const classifiedEntry = (hasExplicitCommercialChange || (needsCommercialReview && (commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome)))
+        ? await classifyCommercialTimeEntry(updatedEntry, req.user!.id, req.user?.tenantId, commercialInput)
+        : updatedEntry;
+      res.json(classifiedEntry);
     } catch (error: any) {
       console.error("[ERROR] Failed to update time entry:", error);
 
@@ -259,6 +347,11 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
           message: error.message,
           type: 'RATE_NOT_CONFIGURED'
         });
+      }
+      if (error.message?.includes("commercial") || error.message?.includes("bucket") ||
+          error.message?.includes("approval") || error.message?.includes("eligible") ||
+          error.message?.includes("effective period")) {
+        return res.status(400).json({ message: error.message });
       }
 
       res.status(500).json({ message: "Failed to update time entry" });
@@ -691,6 +784,9 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
                 milestoneId,
                 personId: req.user!.id,
                 tenantId: tenantId || undefined,
+                commercialBucketId: String(row["Commercial Bucket ID"] || "").trim() || undefined,
+                commercialEligibilityOutcome: String(row["Commercial Eligibility"] || row["Commercial Eligibility Outcome"] || "").trim() || undefined,
+                commercialApprovalReference: String(row["Commercial Approval Reference"] || "").trim() || undefined,
               };
               // Round-trip: if an Id is supplied and refers to one of the
               // caller's editable (draft/rejected, unlocked) entries, update
@@ -707,12 +803,38 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
                   continue;
                 }
                 const validated = insertTimeEntrySchema.partial().parse(payload);
+                const proposed = { ...existing, ...validated };
+                const commercialInput = {
+                  commercialBucketId: proposed.commercialBucketId,
+                  commercialEligibilityOutcome: proposed.commercialBucketId ? "pending_approval" : proposed.commercialEligibilityOutcome,
+                  commercialApprovalReference: undefined,
+                };
+                await validateCommercialSelection({ projectId: proposed.projectId, date: proposed.date, tenantId, ...commercialInput });
+                delete (validated as any).commercialBucketId;
+                delete (validated as any).commercialEligibilityOutcome;
+                delete (validated as any).commercialApprovalReference;
                 const entry = await storage.updateTimeEntry(supplied, validated);
-                updated.push(entry);
+                updated.push(commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome
+                  ? await classifyCommercialTimeEntry(entry, req.user!.id, tenantId, commercialInput)
+                  : entry);
               } else {
                 const validated = insertTimeEntrySchema.parse(payload);
-                const entry = await storage.createTimeEntry(validated);
-                imported.push(entry);
+                const commercialInput = {
+                  commercialBucketId: validated.commercialBucketId,
+                  commercialEligibilityOutcome: validated.commercialBucketId ? "pending_approval" : validated.commercialEligibilityOutcome,
+                  commercialApprovalReference: undefined,
+                };
+                await validateCommercialSelection({
+                  projectId: validated.projectId,
+                  date: validated.date,
+                  tenantId,
+                  ...commercialInput,
+                });
+                const { commercialBucketId, commercialEligibilityOutcome, commercialApprovalReference, ...entryData } = validated;
+                const entry = await storage.createTimeEntry(entryData);
+                imported.push(commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome
+                  ? await classifyCommercialTimeEntry(entry, req.user!.id, tenantId, commercialInput)
+                  : entry);
               }
             } catch (e: any) {
               errors.push(`Row ${i + 2}: ${e?.message || "invalid data"}`);
@@ -945,12 +1067,32 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
                 hours: String(row.Hours || 0),
                 billable: billable,
                 phase: phase,
-                personId: personId
+                personId: personId,
+                commercialBucketId: String(row["Commercial Bucket ID"] || "").trim() || undefined,
+                commercialEligibilityOutcome: String(row["Commercial Eligibility"] || row["Commercial Eligibility Outcome"] || "").trim() || undefined,
+                commercialApprovalReference: String(row["Commercial Approval Reference"] || "").trim() || undefined,
               };
 
               const validatedData = insertTimeEntrySchema.parse(timeEntryData);
-              const timeEntry = await storage.createTimeEntry(validatedData);
-              importResults.push(timeEntry);
+              const canManageCommercial = await canManageCommercialClassification(req, validatedData.projectId);
+              const commercialInput = {
+                commercialBucketId: validatedData.commercialBucketId,
+                commercialEligibilityOutcome: canManageCommercial
+                  ? validatedData.commercialEligibilityOutcome
+                  : validatedData.commercialBucketId ? "pending_approval" : validatedData.commercialEligibilityOutcome,
+                commercialApprovalReference: canManageCommercial ? validatedData.commercialApprovalReference : undefined,
+              };
+              await validateCommercialSelection({
+                projectId: validatedData.projectId,
+                date: validatedData.date,
+                tenantId: req.user?.tenantId,
+                ...commercialInput,
+              });
+              const { commercialBucketId, commercialEligibilityOutcome, commercialApprovalReference, ...entryData } = validatedData;
+              const timeEntry = await storage.createTimeEntry(entryData);
+              importResults.push(commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome
+                ? await classifyCommercialTimeEntry(timeEntry, req.user!.id, req.user?.tenantId, commercialInput)
+                : timeEntry);
             } catch (error) {
               errors.push('Row ' + (i + 3) + ': ' + (error instanceof Error ? error.message : "Invalid data"));
             }

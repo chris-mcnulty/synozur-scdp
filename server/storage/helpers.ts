@@ -205,6 +205,8 @@ export function placeholderProject(id: string, clientId: string = 'unknown'): Pr
     startDate: null,
     endDate: null,
     commercialScheme: 'tm',
+    commercialBasis: null,
+    commercialBucketsRequired: false,
     retainerBalance: null,
     retainerTotal: null,
     baselineBudget: null,
@@ -228,6 +230,9 @@ export function placeholderProject(id: string, clientId: string = 'unknown'): Pr
     exchangeRate: null,
     exchangeRateLockedAt: null,
     exchangeRateSource: 'live',
+    lastPmNarrative: null,
+    executiveActionText: null,
+    executiveActionEnabled: false,
     createdAt: new Date(),
   };
 }

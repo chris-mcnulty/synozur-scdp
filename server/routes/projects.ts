@@ -4,7 +4,7 @@ import * as osNode from "os";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, projectDeliverables, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, type InvoiceBatch } from "@shared/schema";
+import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, projectDeliverables, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, commercialBuckets, commercialBucketAudit, type InvoiceBatch } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, desc, or } from "drizzle-orm";
 import { projectFiltersSchema } from "@shared/pagination";
 import { emailService } from "../services/email-notification.js";
@@ -12,6 +12,7 @@ import { SharePointFileStorage } from "../services/sharepoint-file-storage.js";
 import { generateRetainerPaymentMilestones } from "./estimates.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "../services/hubspot-client.js";
 import multer from "multer";
+import { classifyCommercialTimeEntry, validateCommercialSelection } from "../lib/commercial-buckets.js";
 
 interface ProjectRouteDeps {
   requireAuth: any;
@@ -553,6 +554,269 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       res.json(channel);
     } catch (error: any) {
       res.status(500).json({ message: "Failed to get project channel: " + error.message });
+    }
+  });
+
+  // Commercial buckets are deliberately separate from workstreams and payment
+  // milestones. They classify contractual treatment; neither operational field
+  // can implicitly make time eligible for recovery.
+  const commercialManagerRoles = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"];
+  const getCommercialProject = async (req: any, res: Response) => {
+    const project = await storage.getProject(req.params.projectId || req.params.id);
+    const tenantId = (req.user as any)?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
+    if (!project || (tenantId && project.tenantId && project.tenantId !== tenantId)) {
+      res.status(404).json({ message: "Project not found" });
+      return null;
+    }
+    return { project, tenantId: tenantId || null };
+  };
+  const requireCommercialProjectAccess = (req: any, res: Response, project: typeof projects.$inferSelect) => {
+    if (["admin", "billing-admin", "executive", "portfolio-manager"].includes(req.user?.role)) return true;
+    if (req.user?.role === "pm" && project.pm === req.user.id) return true;
+    res.status(403).json({ message: "You can only manage commercial classifications for projects you manage." });
+    return false;
+  };
+
+  app.get("/api/projects/:projectId/commercial-buckets", requireAuth, async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      const buckets = await db.select().from(commercialBuckets)
+        .where(eq(commercialBuckets.projectId, context.project.id))
+        .orderBy(commercialBuckets.createdAt);
+      const isCommercialManager = ["admin", "billing-admin", "executive", "portfolio-manager"].includes(req.user?.role ?? "") ||
+        (req.user?.role === "pm" && context.project.pm === (req.user?.id ?? ""));
+      // Contributors only need enough metadata to choose an active bucket.
+      // Contract values, archived buckets, and approval instructions remain
+      // visible only to the project commercial managers.
+      const visibleBuckets = isCommercialManager
+        ? buckets
+        : buckets.filter(bucket => bucket.isActive).map(bucket => ({
+          id: bucket.id,
+          projectId: bucket.projectId,
+          label: bucket.label,
+          basis: bucket.basis,
+          isActive: bucket.isActive,
+          defaultEligibilityOutcome: bucket.defaultEligibilityOutcome,
+          approvalRequired: bucket.approvalRequired,
+        }));
+      res.json({ projectBasis: context.project.commercialBasis, required: context.project.commercialBucketsRequired, buckets: visibleBuckets });
+    } catch (error) {
+      console.error("[COMMERCIAL_BUCKETS] Failed to fetch buckets:", error);
+      res.status(500).json({ message: "Failed to fetch commercial buckets" });
+    }
+  });
+
+  app.put("/api/projects/:projectId/commercial-buckets/settings", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      const parsed = z.object({
+        commercialBasis: z.string().trim().min(2).max(50).nullable(),
+        commercialBucketsRequired: z.boolean(),
+      }).parse(req.body);
+      const existing = await db.select({ basis: commercialBuckets.basis }).from(commercialBuckets)
+        .where(eq(commercialBuckets.projectId, context.project.id));
+      const [project] = await db.update(projects).set(parsed).where(eq(projects.id, context.project.id)).returning();
+      res.json(project);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Invalid commercial bucket settings" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/commercial-buckets", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      const optionalDate = z.preprocess(value => value === "" ? null : value, z.string().date().nullable().optional());
+      const optionalDecimal = z.preprocess(
+        value => value === "" ? null : value,
+        z.union([z.string().regex(/^\d+(\.\d+)?$/), z.number()]).nullable().optional(),
+      ).transform(value => value === undefined ? undefined : value == null ? null : String(value));
+      const data = z.object({
+        label: z.string().trim().min(1).max(250),
+        basis: z.string().trim().min(2).max(50),
+        contractReference: z.string().trim().max(1000).nullable().optional(),
+        effectiveStartDate: optionalDate,
+        effectiveEndDate: optionalDate,
+        rateBasis: z.string().trim().max(50).nullable().optional(),
+        rate: optionalDecimal,
+        valueBasis: optionalDecimal,
+        hoursCeiling: optionalDecimal,
+        dollarCeiling: optionalDecimal,
+        billingTreatment: z.string().trim().max(1000).nullable().optional(),
+        defaultEligibilityOutcome: z.enum(["eligible", "not_eligible"]).nullable().optional(),
+        approvalRequired: z.boolean().default(false),
+        approvalInstructions: z.string().trim().max(1000).nullable().optional(),
+      }).refine(value => !value.effectiveStartDate || !value.effectiveEndDate || value.effectiveStartDate <= value.effectiveEndDate,
+        { message: "Effective end date must be on or after the start date." }).parse(req.body);
+      const [bucket] = await db.insert(commercialBuckets).values({
+        ...data,
+        tenantId: context.tenantId,
+        projectId: context.project.id,
+        createdBy: req.user!.id,
+      }).returning();
+      res.status(201).json(bucket);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to create commercial bucket" });
+    }
+  });
+
+  app.patch("/api/projects/:projectId/commercial-buckets/:bucketId", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      const [bucket] = await db.select().from(commercialBuckets).where(and(
+        eq(commercialBuckets.id, req.params.bucketId),
+        eq(commercialBuckets.projectId, context.project.id),
+      ));
+      if (!bucket) return res.status(404).json({ message: "Commercial bucket not found" });
+      const optionalDate = z.preprocess(value => value === "" ? null : value, z.string().date().nullable().optional());
+      const optionalDecimal = z.preprocess(
+        value => value === "" ? null : value,
+        z.union([z.string().regex(/^\d+(\.\d+)?$/), z.number()]).nullable().optional(),
+      ).transform(value => value === undefined ? undefined : value == null ? null : String(value));
+      const updates = z.object({
+        label: z.string().trim().min(1).max(250).optional(),
+        effectiveStartDate: optionalDate,
+        effectiveEndDate: optionalDate,
+        rateBasis: z.string().trim().max(50).nullable().optional(),
+        rate: optionalDecimal,
+        valueBasis: optionalDecimal,
+        hoursCeiling: optionalDecimal,
+        dollarCeiling: optionalDecimal,
+        billingTreatment: z.string().trim().max(1000).nullable().optional(),
+        defaultEligibilityOutcome: z.enum(["eligible", "not_eligible"]).nullable().optional(),
+        approvalRequired: z.boolean().optional(),
+        approvalInstructions: z.string().trim().max(1000).nullable().optional(),
+        isActive: z.boolean().optional(),
+      }).parse(req.body);
+      const [updated] = await db.update(commercialBuckets).set({
+        ...updates,
+        archivedAt: updates.isActive === false ? new Date() : updates.isActive === true ? null : undefined,
+        updatedAt: new Date(),
+      }).where(eq(commercialBuckets.id, bucket.id)).returning();
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to update commercial bucket" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/commercial-reconciliation", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      const query = z.object({
+        startDate: z.string().date().optional(),
+        endDate: z.string().date().optional(),
+        status: z.enum(["all", "unclassified", "ineligible", "exceptions"]).default("all"),
+      }).parse(req.query);
+      const conditions: any[] = [eq(timeEntries.projectId, context.project.id)];
+      if (query.startDate) conditions.push(gte(timeEntries.date, query.startDate));
+      if (query.endDate) conditions.push(lte(timeEntries.date, query.endDate));
+      if (query.status === "unclassified") conditions.push(sql`${timeEntries.commercialBucketId} IS NULL AND (${timeEntries.commercialEligibilityOutcome} IS NULL OR ${timeEntries.commercialEligibilityOutcome} = 'pending_approval')`);
+      if (query.status === "ineligible") conditions.push(eq(timeEntries.commercialEligibilityOutcome, "not_eligible"));
+      if (query.status === "exceptions") conditions.push(sql`${timeEntries.commercialEligibilityOutcome} IN ('pending_approval', 'over_capacity', 'out_of_window')`);
+      const entries = await db.select({
+        entry: timeEntries, personName: users.name, workstreamName: projectWorkstreams.name,
+        milestoneName: projectMilestones.name, bucketLabel: commercialBuckets.label, bucketBasis: commercialBuckets.basis,
+      }).from(timeEntries)
+        .leftJoin(users, eq(timeEntries.personId, users.id))
+        .leftJoin(projectWorkstreams, eq(timeEntries.workstreamId, projectWorkstreams.id))
+        .leftJoin(projectMilestones, eq(timeEntries.coveredByMilestoneId, projectMilestones.id))
+        .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
+        .where(and(...conditions)).orderBy(desc(timeEntries.date));
+      const entryIds = entries.map(row => row.entry.id);
+      const audits = entryIds.length
+        ? await db.select().from(commercialBucketAudit).where(inArray(commercialBucketAudit.timeEntryId, entryIds)).orderBy(desc(commercialBucketAudit.classifiedAt))
+        : [];
+      const auditsByEntry = new Map<string, typeof audits>();
+      for (const audit of audits) {
+        auditsByEntry.set(audit.timeEntryId, [...(auditsByEntry.get(audit.timeEntryId) || []), audit]);
+      }
+      res.json(entries.map(row => ({
+        ...row.entry,
+        personName: row.personName,
+        workstreamName: row.workstreamName,
+        coveredByMilestoneName: row.milestoneName,
+        commercialBucketLabel: row.bucketLabel,
+        commercialBucketBasis: row.bucketBasis,
+        commercialAudit: auditsByEntry.get(row.entry.id) || [],
+      })));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to fetch reconciliation queue" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/commercial-reconciliation/classify", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      const parsed = z.object({
+        entryIds: z.array(z.string()).min(1).max(500),
+        commercialBucketId: z.string().nullable().optional(),
+        commercialEligibilityOutcome: z.enum(["eligible", "not_eligible", "pending_approval"]).default("eligible"),
+        commercialApprovalReference: z.string().trim().max(1000).nullable().optional(),
+        reason: z.string().trim().max(2000).nullable().optional(),
+      }).parse(req.body);
+      const entries = await db.select().from(timeEntries).where(and(
+        eq(timeEntries.projectId, context.project.id),
+        inArray(timeEntries.id, parsed.entryIds),
+      ));
+      if (entries.length !== parsed.entryIds.length) {
+        return res.status(400).json({ message: "Every selected entry must belong to this project." });
+      }
+      // Validate every selected entry before mutating any of them. The
+      // classification writes themselves execute in one transaction.
+      await Promise.all(entries.map(entry => validateCommercialSelection({
+        projectId: entry.projectId, date: entry.date, tenantId: context.tenantId, ...parsed,
+      })));
+      const results = await db.transaction(async (tx) => {
+        const classified = [];
+        for (const entry of entries) {
+          classified.push(await classifyCommercialTimeEntry(entry, req.user!.id, context.tenantId, parsed, tx));
+        }
+        return classified;
+      });
+      res.json({ classified: results.length, entries: results });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to classify time entries" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/commercial-buckets/summary", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      const buckets = await db.select().from(commercialBuckets).where(eq(commercialBuckets.projectId, context.project.id));
+      const rows = await db.select({
+        bucketId: timeEntries.commercialBucketId,
+        eligibleHours: sql<string>`COALESCE(SUM(CASE WHEN ${timeEntries.commercialEligibilityOutcome} = 'eligible' THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)`,
+        eligibleValue: sql<string>`COALESCE(SUM(CASE WHEN ${timeEntries.commercialEligibilityOutcome} = 'eligible' THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)`,
+        exceptions: sql<string>`COUNT(*) FILTER (WHERE ${timeEntries.commercialEligibilityOutcome} IN ('pending_approval', 'over_capacity', 'out_of_window'))`,
+      }).from(timeEntries).where(eq(timeEntries.projectId, context.project.id)).groupBy(timeEntries.commercialBucketId);
+      const byBucket = new Map(rows.map(row => [row.bucketId, row]));
+      res.json(buckets.map(bucket => {
+        const usage = byBucket.get(bucket.id);
+        const hours = Number(usage?.eligibleHours || 0);
+        const value = Number(usage?.eligibleValue || 0);
+        return {
+          ...bucket, eligibleHours: hours, eligibleValue: value, exceptions: Number(usage?.exceptions || 0),
+          remainingHours: bucket.hoursCeiling == null ? null : Math.max(0, Number(bucket.hoursCeiling) - hours),
+          remainingValue: bucket.dollarCeiling == null ? null : Math.max(0, Number(bucket.dollarCeiling) - value),
+          // Fixed-fee and retainer effort is utilization only; it is never reported as usage billing.
+          usageBillingValue: ["tm", "capped_tm"].includes(bucket.basis) ? value : 0,
+        };
+      }));
+    } catch (error) {
+      console.error("[COMMERCIAL_BUCKETS] Failed to summarize buckets:", error);
+      res.status(500).json({ message: "Failed to summarize commercial buckets" });
     }
   });
 

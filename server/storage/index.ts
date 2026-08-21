@@ -283,7 +283,7 @@ export interface IStorage {
   getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; search?: string; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }>;
   getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined>;
   getAcceptedCalendarEventIds(userId: string, date: string): Promise<Set<string>>;
-  createTimeEntry(timeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry>;
+  createTimeEntry(timeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>, executor?: any): Promise<TimeEntry>;
   updateTimeEntry(id: string, timeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry>;
   deleteTimeEntry(id: string): Promise<void>;
   lockTimeEntriesForBatch(batchId: string, entryIds: string[]): Promise<void>;

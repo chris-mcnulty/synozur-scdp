@@ -704,6 +704,8 @@ export const projects = pgTable("projects", {
   startDate: date("start_date"),
   endDate: date("end_date"), // Can be null for open-ended projects
   commercialScheme: text("commercial_scheme").notNull(), // retainer, milestone, tm
+  commercialBasis: varchar("commercial_basis", { length: 50 }), // project default; null for legacy/unconfigured or mixed engagements
+  commercialBucketsRequired: boolean("commercial_buckets_required").notNull().default(false),
   retainerBalance: decimal("retainer_balance", { precision: 10, scale: 2 }), // Current retainer balance
   retainerTotal: decimal("retainer_total", { precision: 10, scale: 2 }), // Total retainer value
   baselineBudget: decimal("baseline_budget", { precision: 10, scale: 2 }),
@@ -845,6 +847,43 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
+
+// Project-scoped contractual time classification. `basis` is intentionally text
+// so new commercial models can be introduced without a schema migration.
+export const commercialBuckets = pgTable("commercial_buckets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  basis: varchar("basis", { length: 50 }).notNull(), // fixed_fee, retainer, tm, capped_tm, future values
+  contractReference: text("contract_reference"),
+  effectiveStartDate: date("effective_start_date"),
+  effectiveEndDate: date("effective_end_date"),
+  rateBasis: varchar("rate_basis", { length: 50 }), // applicable_rate, fixed_value, retainer_rules, manual
+  rate: decimal("rate", { precision: 12, scale: 2 }),
+  valueBasis: decimal("value_basis", { precision: 12, scale: 2 }),
+  hoursCeiling: decimal("hours_ceiling", { precision: 12, scale: 2 }),
+  dollarCeiling: decimal("dollar_ceiling", { precision: 12, scale: 2 }),
+  billingTreatment: text("billing_treatment"),
+  defaultEligibilityOutcome: varchar("default_eligibility_outcome", { length: 50 }),
+  approvalRequired: boolean("approval_required").notNull().default(false),
+  approvalInstructions: text("approval_instructions"),
+  isActive: boolean("is_active").notNull().default(true),
+  archivedAt: timestamp("archived_at"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  projectIdx: index("idx_commercial_buckets_project").on(table.projectId),
+  tenantIdx: index("idx_commercial_buckets_tenant").on(table.tenantId),
+  projectLabelUnique: uniqueIndex("uq_commercial_buckets_project_label").on(table.projectId, table.label),
+}));
+
+export const commercialBucketBasisEnum = z.enum(["fixed_fee", "retainer", "tm", "capped_tm"]);
+export const commercialEligibilityEnum = z.enum(["eligible", "not_eligible", "pending_approval", "over_capacity", "out_of_window"]);
+export const insertCommercialBucketSchema = createInsertSchema(commercialBuckets).omit({ id: true, createdAt: true, updatedAt: true, archivedAt: true });
+export type CommercialBucket = typeof commercialBuckets.$inferSelect;
+export type InsertCommercialBucket = z.infer<typeof insertCommercialBucketSchema>;
 
 // Client Rate Overrides - Default rates for a client (applies to new estimates only)
 export const clientRateOverrides = pgTable("client_rate_overrides", {
@@ -1225,6 +1264,11 @@ export const timeEntries = pgTable("time_entries", {
   workstreamId: varchar("workstream_id").references(() => projectWorkstreams.id), // Optional workstream reference
   projectStageId: varchar("project_stage_id").references(() => projectStages.id),
   allocationId: varchar("allocation_id").references(() => projectAllocations.id), // Optional link to project allocation/assignment
+  commercialBucketId: varchar("commercial_bucket_id").references(() => commercialBuckets.id),
+  commercialEligibilityOutcome: varchar("commercial_eligibility_outcome", { length: 50 }),
+  commercialApprovalReference: text("commercial_approval_reference"),
+  commercialClassifiedBy: varchar("commercial_classified_by").references(() => users.id),
+  commercialClassifiedAt: timestamp("commercial_classified_at"),
   // Invoice batch locking fields
   invoiceBatchId: text("invoice_batch_id").references(() => invoiceBatches.batchId),
   locked: boolean("locked").notNull().default(false),
@@ -1244,6 +1288,20 @@ export const timeEntries = pgTable("time_entries", {
   tenantIdx: index("idx_time_entries_tenant").on(table.tenantId),
   submissionStatusIdx: index("idx_time_entries_submission_status").on(table.submissionStatus),
 }));
+
+export const commercialBucketAudit = pgTable("commercial_bucket_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  timeEntryId: varchar("time_entry_id").notNull().references(() => timeEntries.id, { onDelete: "cascade" }),
+  bucketId: varchar("bucket_id").references(() => commercialBuckets.id),
+  eligibilityOutcome: varchar("eligibility_outcome", { length: 50 }).notNull(),
+  approvalReference: text("approval_reference"),
+  reason: text("reason"),
+  classifiedBy: varchar("classified_by").notNull().references(() => users.id),
+  classifiedAt: timestamp("classified_at").notNull().default(sql`now()`),
+});
+export type CommercialBucketAudit = typeof commercialBucketAudit.$inferSelect;
 
 // Expenses
 export const expenses = pgTable("expenses", {
@@ -2732,6 +2790,8 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   approvedBy: true,
   approvedAt: true,
   rejectionNote: true,
+  commercialClassifiedBy: true,
+  commercialClassifiedAt: true,
 }).extend({
   // Ensure projectId is a non-empty string (required for foreign key)
   projectId: z.string().trim().min(1, "Project is required"),

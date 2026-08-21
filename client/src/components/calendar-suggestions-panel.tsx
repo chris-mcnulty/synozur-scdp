@@ -126,6 +126,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set());
   // Project chosen in the merge bar (overrides individual row project when merging mixed-project events).
   const [mergeProjectId, setMergeProjectId] = useState<string>("");
+  const [commercialEligibilityOutcome, setCommercialEligibilityOutcome] = useState<"not_eligible" | "pending_approval">("not_eligible");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -144,6 +145,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       items: Array<{ eventId: string; eventKey: string; hours: number; description: string; date: string; seriesMasterId?: string | null; subject?: string | null }>;
       projectId: string;
       date: string;
+      commercialEligibilityOutcome?: "not_eligible" | "pending_approval";
     }) =>
       apiRequest("/api/me/calendar-suggestions/merge", {
         method: "POST",
@@ -265,6 +267,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       date: string;
       seriesMasterId?: string | null;
       subject?: string | null;
+      commercialEligibilityOutcome?: "not_eligible" | "pending_approval";
     }>) => {
       const response = await apiRequest("/api/me/calendar-suggestions/accept", {
         method: "POST",
@@ -310,6 +313,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       date: suggestion.date,
       seriesMasterId: suggestion.seriesMasterId,
       subject: suggestion.subject,
+      commercialEligibilityOutcome,
     }]);
   };
 
@@ -325,6 +329,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
         date: s.date,
         seriesMasterId: s.seriesMasterId,
         subject: s.subject,
+        commercialEligibilityOutcome,
       }));
 
     if (toAccept.length === 0) {
@@ -367,6 +372,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       })),
       projectId: effectiveProjectId,
       date: viewDate,
+      commercialEligibilityOutcome,
     });
   };
 
@@ -446,6 +452,13 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                 <CardTitle className="text-sm font-semibold">
                   Suggestions from Calendar
                 </CardTitle>
+                <Select value={commercialEligibilityOutcome} onValueChange={(value: "not_eligible" | "pending_approval") => setCommercialEligibilityOutcome(value)}>
+                  <SelectTrigger className="h-7 w-40 text-xs" onClick={(event) => event.stopPropagation()}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_eligible">Not eligible</SelectItem>
+                    <SelectItem value="pending_approval">Pending review</SelectItem>
+                  </SelectContent>
+                </Select>
                 {daysBackLimit > 0 && (
                   <div
                     className="flex items-center gap-1 ml-1"

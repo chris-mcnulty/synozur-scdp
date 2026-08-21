@@ -6,6 +6,7 @@ import { Layout } from "@/components/layout/layout";
 import { RaiddLogTab } from "@/components/raidd-log-tab";
 import { DeliverablesTab } from "@/components/project/deliverables-tab";
 import { StatusReportsTab } from "@/components/project/status-reports-tab";
+import { CommercialBucketsPanel } from "@/components/project/commercial-buckets-panel";
 import { Button } from "@/components/ui/button";
 import { ToastAction } from "@/components/ui/toast";
 
@@ -1394,7 +1395,7 @@ export default function ProjectDetail() {
   const selectedContractsSubtab = useMemo(() => {
     const params = new URLSearchParams(searchString);
     const sub = params.get('subtab');
-    const valid = ['sows', 'budget-history', 'payment-milestones', 'sub-sow', 'rate-overrides', 'retainer', 'contractor-costs'];
+    const valid = ['sows', 'budget-history', 'payment-milestones', 'sub-sow', 'rate-overrides', 'retainer', 'contractor-costs', 'commercial-buckets'];
     return sub && valid.includes(sub) ? sub : 'sows';
   }, [searchString]);
 
@@ -5732,6 +5733,7 @@ export default function ProjectDetail() {
                 <TabsTrigger value="rate-overrides" data-testid="tab-contracts-rate-overrides">Rate Overrides</TabsTrigger>
                 <TabsTrigger value="retainer" data-testid="tab-contracts-retainer">Retainer</TabsTrigger>
                 <TabsTrigger value="contractor-costs" data-testid="tab-contracts-contractor-costs">Contractor Costs</TabsTrigger>
+                <TabsTrigger value="commercial-buckets" data-testid="tab-contracts-commercial-buckets">Commercial Buckets</TabsTrigger>
               </TabsList>
               
               <TabsContent value="sows" className="space-y-6">
@@ -6588,6 +6590,13 @@ export default function ProjectDetail() {
 
               <TabsContent value="contractor-costs" className="space-y-6">
                 <ProjectContractorCostsPanel projectId={id || ''} />
+              </TabsContent>
+
+              <TabsContent value="commercial-buckets" className="space-y-6">
+                <CommercialBucketsPanel
+                  projectId={id || ''}
+                  readOnly={embedReadonly || user?.role === 'client'}
+                />
               </TabsContent>
               
             </Tabs>

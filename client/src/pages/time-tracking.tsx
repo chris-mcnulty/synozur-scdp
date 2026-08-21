@@ -133,6 +133,9 @@ export default function TimeTracking() {
       workstreamId: "",
       projectStageId: "",
       allocationId: "",
+      commercialBucketId: "",
+      commercialEligibilityOutcome: "",
+      commercialApprovalReference: "",
     },
   });
 
@@ -149,6 +152,9 @@ export default function TimeTracking() {
       workstreamId: "",
       projectStageId: "",
       allocationId: "",
+      commercialBucketId: "",
+      commercialEligibilityOutcome: "",
+      commercialApprovalReference: "",
     },
   });
 
@@ -272,6 +278,16 @@ export default function TimeTracking() {
     }
   });
 
+  const { data: commercialBucketData } = useQuery<{ projectBasis: string | null; required: boolean; buckets: any[] }>({
+    queryKey: ["/api/projects", selectedProjectId, "commercial-buckets"],
+    enabled: !!selectedProjectId,
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${selectedProjectId}/commercial-buckets`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch commercial buckets");
+      return response.json();
+    },
+  });
+
   const { data: projectStages, isLoading: projectStagesLoading } = useQuery({
     queryKey: ["/api/projects", selectedProjectId, "stages"],
     enabled: !!selectedProjectId,
@@ -372,6 +388,16 @@ export default function TimeTracking() {
       if (!response.ok) throw new Error('Failed to fetch workstreams');
       return response.json();
     }
+  });
+
+  const { data: editCommercialBucketData } = useQuery<{ projectBasis: string | null; required: boolean; buckets: any[] }>({
+    queryKey: ["/api/projects", editProjectId, "commercial-buckets"],
+    enabled: !!editProjectId,
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${editProjectId}/commercial-buckets`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch commercial buckets");
+      return response.json();
+    },
   });
 
   const { data: editProjectStages } = useQuery({
@@ -516,6 +542,9 @@ export default function TimeTracking() {
         workstreamId: currentWorkstreamId,
         projectStageId: currentStageId,
         allocationId: currentAllocationId,
+        commercialBucketId: form.getValues("commercialBucketId"),
+        commercialEligibilityOutcome: form.getValues("commercialEligibilityOutcome"),
+        commercialApprovalReference: form.getValues("commercialApprovalReference"),
       });
       
       // Also ensure the selectedProjectId state stays in sync
@@ -620,6 +649,9 @@ export default function TimeTracking() {
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
       projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
       allocationId: data.allocationId === "" ? undefined : data.allocationId || undefined,
+      commercialBucketId: data.commercialBucketId === "" ? null : data.commercialBucketId || undefined,
+      commercialEligibilityOutcome: data.commercialEligibilityOutcome === "" ? undefined : data.commercialEligibilityOutcome || undefined,
+      commercialApprovalReference: data.commercialApprovalReference === "" ? undefined : data.commercialApprovalReference || undefined,
     };
     console.log('Sending cleaned data:', cleanedData);
     createTimeEntryMutation.mutate(cleanedData);
@@ -634,6 +666,9 @@ export default function TimeTracking() {
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
       projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
       allocationId: data.allocationId === "" ? undefined : data.allocationId || undefined,
+      commercialBucketId: data.commercialBucketId === "" ? null : data.commercialBucketId || undefined,
+      commercialEligibilityOutcome: data.commercialEligibilityOutcome === "" ? undefined : data.commercialEligibilityOutcome || undefined,
+      commercialApprovalReference: data.commercialApprovalReference === "" ? undefined : data.commercialApprovalReference || undefined,
       // description is a text field, doesn't need special handling
     };
     updateTimeEntryMutation.mutate({ id: editingEntry.id, data: cleanedData });
@@ -652,6 +687,9 @@ export default function TimeTracking() {
       workstreamId: entry.workstreamId || "",
       projectStageId: entry.projectStageId || "",
       allocationId: (entry as any).allocationId || "",
+      commercialBucketId: (entry as any).commercialBucketId || "",
+      commercialEligibilityOutcome: (entry as any).commercialEligibilityOutcome || "",
+      commercialApprovalReference: (entry as any).commercialApprovalReference || "",
     });
   };
 
@@ -1290,6 +1328,52 @@ export default function TimeTracking() {
                     )}
                   />
 
+                  {(commercialBucketData?.required || commercialBucketData?.buckets?.length) && (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="commercialBucketId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Commercial bucket {commercialBucketData.required ? "" : "(Optional)"}</FormLabel>
+                            <Select onValueChange={(value) => {
+                              const bucketId = value === "__none__" ? "" : value;
+                              field.onChange(bucketId);
+                              const bucket = commercialBucketData.buckets.find(bucket => bucket.id === bucketId);
+                              form.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
+                            }} value={field.value || undefined}>
+                              <FormControl><SelectTrigger data-testid="select-commercial-bucket"><SelectValue placeholder="Select contractual time classification" /></SelectTrigger></FormControl>
+                              <SelectContent>
+                                {!commercialBucketData.required && <SelectItem value="__none__">None</SelectItem>}
+                                {commercialBucketData.buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">This is separate from workstream and milestone coverage.</p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="commercialEligibilityOutcome"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Eligibility</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || "eligible"}>
+                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible for recovery</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem></SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="commercialApprovalReference"
+                        render={({ field }) => <FormItem><FormLabel>Approval reference (if required)</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Approval / change-order reference" /></FormControl><FormMessage /></FormItem>}
+                      />
+                    </>
+                  )}
+
                   <FormField
                     control={form.control}
                     name="allocationId"
@@ -1872,6 +1956,44 @@ export default function TimeTracking() {
                     </FormItem>
                   )}
                 />
+
+                  {(editCommercialBucketData?.required || editCommercialBucketData?.buckets?.length) && (
+                    <>
+                      <FormField
+                        control={editForm.control}
+                        name="commercialBucketId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Commercial bucket {editCommercialBucketData.required ? "" : "(Optional)"}</FormLabel>
+                            <Select onValueChange={(value) => {
+                              const bucketId = value === "__none__" ? "" : value;
+                              field.onChange(bucketId);
+                              const bucket = editCommercialBucketData.buckets.find(bucket => bucket.id === bucketId);
+                              editForm.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
+                            }} value={field.value || undefined}>
+                              <FormControl><SelectTrigger data-testid="select-edit-commercial-bucket"><SelectValue placeholder="Select contractual time classification" /></SelectTrigger></FormControl>
+                              <SelectContent>
+                                {!editCommercialBucketData.required && <SelectItem value="__none__">None</SelectItem>}
+                                {editCommercialBucketData.buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Commercial classification does not change milestone coverage.</p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={editForm.control}
+                        name="commercialEligibilityOutcome"
+                        render={({ field }) => <FormItem><FormLabel>Eligibility</FormLabel><Select onValueChange={field.onChange} value={field.value || "eligible"}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible for recovery</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem></SelectContent></Select></FormItem>}
+                      />
+                      <FormField
+                        control={editForm.control}
+                        name="commercialApprovalReference"
+                        render={({ field }) => <FormItem><FormLabel>Approval reference (if required)</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>}
+                      />
+                    </>
+                  )}
 
                 <FormField
                   control={editForm.control}

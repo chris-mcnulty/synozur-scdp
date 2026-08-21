@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
-import { storage } from "../storage";
+import { storage, db } from "../storage";
+import { classifyCommercialTimeEntry, validateCommercialSelection } from "../lib/commercial-buckets.js";
 import { getEventsForUser } from "../services/outlook-client";
 import {
   mapEventToProject,
@@ -171,6 +172,8 @@ export function registerCalendarSuggestionsRoutes(
             date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
             seriesMasterId: z.string().nullable().optional(),
             subject: z.string().nullable().optional(),
+            commercialBucketId: z.string().nullable().optional(),
+            commercialEligibilityOutcome: z.enum(["eligible", "not_eligible", "pending_approval"]).nullable().optional(),
           })
         )
         .min(1),
@@ -227,19 +230,33 @@ export function registerCalendarSuggestionsRoutes(
       }
 
       try {
-        const timeEntry = await storage.createTimeEntry({
-          personId: userId,
+        const commercialInput = {
+          commercialBucketId: item.commercialBucketId ?? undefined,
+          commercialEligibilityOutcome: item.commercialBucketId ? "pending_approval" : item.commercialEligibilityOutcome ?? undefined,
+        };
+        await validateCommercialSelection({
           projectId: item.projectId,
           date: item.date,
-          hours: String(item.hours),
-          description: item.description || "",
-          billable: true,
           tenantId,
-          fromCalendarSuggestion: true,
-          calendarEventId: item.eventId,
+          ...commercialInput,
         });
-
-        created.push(timeEntry);
+        const classifiedEntry = await db.transaction(async (tx: any) => {
+          const timeEntry = await storage.createTimeEntry({
+            personId: userId,
+            projectId: item.projectId,
+            date: item.date,
+            hours: String(item.hours),
+            description: item.description || "",
+            billable: true,
+            tenantId,
+            fromCalendarSuggestion: true,
+            calendarEventId: item.eventId,
+          }, tx);
+          return commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome
+            ? classifyCommercialTimeEntry(timeEntry, userId, tenantId, commercialInput, tx)
+            : timeEntry;
+        });
+        created.push(classifiedEntry);
 
         // Persist recurring event memory so future suggestions auto-match
         await storage.upsertCalendarMapping(
@@ -251,7 +268,7 @@ export function registerCalendarSuggestionsRoutes(
         );
 
         console.log(
-          `[CALENDAR_SUGGESTIONS] user=${userId} accepted eventId=${item.eventId} project=${item.projectId} entry=${timeEntry.id}`
+          `[CALENDAR_SUGGESTIONS] user=${userId} accepted eventId=${item.eventId} project=${item.projectId} entry=${classifiedEntry.id}`
         );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -297,6 +314,8 @@ export function registerCalendarSuggestionsRoutes(
       projectId: z.string(),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       description: z.string().optional(),
+      commercialBucketId: z.string().nullable().optional(),
+      commercialEligibilityOutcome: z.enum(["eligible", "not_eligible", "pending_approval"]).nullable().optional(),
     });
 
     const parsed = mergeSchema.safeParse(req.body);
@@ -304,7 +323,7 @@ export function registerCalendarSuggestionsRoutes(
       return res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
     }
 
-    const { items, projectId, date, description } = parsed.data;
+    const { items, projectId, date, description, commercialBucketId, commercialEligibilityOutcome } = parsed.data;
 
     // Authorise project against caller's tenant.
     const project = await storage.getProject(projectId);
@@ -327,16 +346,31 @@ export function registerCalendarSuggestionsRoutes(
         .join(" · ");
 
     try {
-      const timeEntry = await storage.createTimeEntry({
-        personId: userId,
+      const commercialInput = {
+        commercialBucketId: commercialBucketId ?? undefined,
+        commercialEligibilityOutcome: commercialBucketId ? "pending_approval" : commercialEligibilityOutcome ?? undefined,
+      };
+      await validateCommercialSelection({
         projectId,
         date,
-        hours: String(totalHours),
-        description: mergedDescription,
-        billable: true,
         tenantId,
-        fromCalendarSuggestion: true,
-        calendarEventId: items[0].eventId,
+        ...commercialInput,
+      });
+      const classifiedEntry = await db.transaction(async (tx: any) => {
+        const timeEntry = await storage.createTimeEntry({
+          personId: userId,
+          projectId,
+          date,
+          hours: String(totalHours),
+          description: mergedDescription,
+          billable: true,
+          tenantId,
+          fromCalendarSuggestion: true,
+          calendarEventId: items[0].eventId,
+        }, tx);
+        return commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome
+          ? classifyCommercialTimeEntry(timeEntry, userId, tenantId, commercialInput, tx)
+          : timeEntry;
       });
 
       // Persist mapping for every merged event so recurring ones auto-match next time.
@@ -351,9 +385,9 @@ export function registerCalendarSuggestionsRoutes(
       }
 
       console.log(
-        `[CALENDAR_SUGGESTIONS] user=${userId} merged ${items.length} events → entry=${timeEntry.id} (${totalHours}h)`
+        `[CALENDAR_SUGGESTIONS] user=${userId} merged ${items.length} events → entry=${classifiedEntry.id} (${totalHours}h)`
       );
-      return res.status(201).json({ created: 1, entryId: timeEntry.id });
+      return res.status(201).json({ created: 1, entryId: classifiedEntry.id });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[CALENDAR_SUGGESTIONS] Merge error:", message);

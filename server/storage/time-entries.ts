@@ -3,6 +3,7 @@ import {
   clients,
   projects,
   projectMilestones,
+  commercialBuckets,
   timeEntries,
   type User,
   type Client,
@@ -21,7 +22,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
-      .leftJoin(projectMilestones, eq(timeEntries.coveredByMilestoneId, projectMilestones.id));
+      .leftJoin(projectMilestones, eq(timeEntries.coveredByMilestoneId, projectMilestones.id))
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id));
 
     const conditions = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
@@ -44,6 +46,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       return {
         ...row.time_entries,
         coveredByMilestoneName: row.project_milestones?.name || null,
+        commercialBucket: row.commercial_buckets || null,
+        commercialBucketLabel: row.commercial_buckets?.label || null,
         person,
         // Add personName directly on the entry for backward compatibility
         personName: person.name,
@@ -81,6 +85,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .from(timeEntries)
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
       .where(whereClause);
     const total = Number(countResult[0]?.count || 0);
 
@@ -88,6 +93,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
       .where(whereClause)
       .orderBy(desc(timeEntries.date))
       .limit(filters.limit)
@@ -99,6 +105,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         ...row.time_entries,
         person,
         personName: person.name,
+        commercialBucket: row.commercial_buckets || null,
+        commercialBucketLabel: row.commercial_buckets?.label || null,
         project: { ...row.projects!, client: row.clients! }
       };
     });
@@ -111,6 +119,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
       .where(eq(timeEntries.id, id));
     
     if (rows.length === 0) return undefined;
@@ -129,7 +138,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     };
   },
 
-  async createTimeEntry(insertTimeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry> {
+  async createTimeEntry(insertTimeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>, executor: any = db): Promise<TimeEntry> {
     try {
       console.log("[STORAGE] Creating time entry for person:", insertTimeEntry.personId, "project:", insertTimeEntry.projectId);
       console.log("[DIAGNOSTIC] Full insertTimeEntry object:", {
@@ -207,7 +216,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       
       console.log("[STORAGE] Inserting time entry with rates - Billing:", finalBillingRate, "Cost:", finalCostRate);
       
-      const [timeEntry] = await db.insert(timeEntries).values(timeEntryData).returning();
+      const [timeEntry] = await executor.insert(timeEntries).values(timeEntryData).returning();
       
       console.log("[STORAGE] Time entry created successfully with rates:", {
         id: timeEntry.id,
@@ -452,7 +461,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     const baseQuery = db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
-      .leftJoin(clients, eq(projects.clientId, clients.id));
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id));
 
     const conditions = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
@@ -478,6 +488,8 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       return {
         ...row.time_entries,
         person,
+        commercialBucket: row.commercial_buckets || null,
+        commercialBucketLabel: row.commercial_buckets?.label || null,
         personName: person.name,
         project: {
           ...row.projects!,

@@ -81,6 +81,9 @@ const timeEntryFormSchema = z.object({
   milestoneId: z.string().optional(),
   workstreamId: z.string().optional(),
   phase: z.string().optional(),
+  commercialBucketId: z.string().optional(),
+  commercialEligibilityOutcome: z.string().optional(),
+  commercialApprovalReference: z.string().optional(),
 });
 
 type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
@@ -118,6 +121,11 @@ export function TimeEntryManagementDialog({
     enabled: isOpen && !!projectId,
   });
 
+  const { data: commercialBucketData } = useQuery<{ required: boolean; buckets: any[] }>({
+    queryKey: [`/api/projects/${projectId}/commercial-buckets`],
+    enabled: isOpen && !!projectId,
+  });
+
   const form = useForm<TimeEntryFormData>({
     resolver: zodResolver(timeEntryFormSchema),
     defaultValues: {
@@ -129,6 +137,9 @@ export function TimeEntryManagementDialog({
       milestoneId: "none",
       workstreamId: "none",
       phase: "none",
+      commercialBucketId: "",
+      commercialEligibilityOutcome: "",
+      commercialApprovalReference: "",
     },
   });
 
@@ -144,6 +155,9 @@ export function TimeEntryManagementDialog({
         milestoneId: timeEntry.milestoneId || "none",
         workstreamId: timeEntry.workstreamId || "none",
         phase: timeEntry.phase || "none",
+        commercialBucketId: timeEntry.commercialBucketId || "",
+        commercialEligibilityOutcome: timeEntry.commercialEligibilityOutcome || "",
+        commercialApprovalReference: timeEntry.commercialApprovalReference || "",
       });
     }
   }, [timeEntry, isOpen, form]);
@@ -157,6 +171,9 @@ export function TimeEntryManagementDialog({
           milestoneId: data.milestoneId === "" || data.milestoneId === "none" ? undefined : data.milestoneId,
           workstreamId: data.workstreamId === "" || data.workstreamId === "none" ? undefined : data.workstreamId,
           phase: data.phase === "" || data.phase === "none" ? undefined : data.phase,
+          commercialBucketId: data.commercialBucketId?.trim() || null,
+          commercialEligibilityOutcome: data.commercialEligibilityOutcome?.trim() || undefined,
+          commercialApprovalReference: data.commercialApprovalReference?.trim() || undefined,
         }),
       });
       return response;
@@ -416,6 +433,43 @@ export function TimeEntryManagementDialog({
                   </FormItem>
                 )}
               />
+            )}
+
+            {(commercialBucketData?.required || commercialBucketData?.buckets?.length) && (
+              <>
+                <FormField
+                  control={form.control}
+                  name="commercialBucketId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Commercial bucket {commercialBucketData.required ? "" : "(Optional)"}</FormLabel>
+                      <Select onValueChange={(value) => {
+                        const bucketId = value === "none" ? "" : value;
+                        field.onChange(bucketId);
+                        const bucket = commercialBucketData.buckets.find(bucket => bucket.id === bucketId);
+                        form.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
+                      }} value={field.value || undefined}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Select contractual classification" /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {!commercialBucketData.required && <SelectItem value="none">None</SelectItem>}
+                          {commercialBucketData.buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">This does not change milestone coverage.</p>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="commercialEligibilityOutcome"
+                  render={({ field }) => <FormItem><FormLabel>Eligibility</FormLabel><Select onValueChange={field.onChange} value={field.value || "eligible"}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible for recovery</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem></SelectContent></Select></FormItem>}
+                />
+                <FormField
+                  control={form.control}
+                  name="commercialApprovalReference"
+                  render={({ field }) => <FormItem><FormLabel>Approval reference</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl></FormItem>}
+                />
+              </>
             )}
 
             <FormField

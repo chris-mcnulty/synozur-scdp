@@ -27,6 +27,7 @@ type TimeEntryWithRelations = TimeEntry & {
   project: ProjectWithClient;
   person?: User;
   milestone?: ProjectMilestone;
+  commercialBucketLabel?: string | null;
 };
 
 export function TimeEntryManagement() {
@@ -408,6 +409,7 @@ export function TimeEntryManagement() {
                     <TableHead>Hours</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Milestone</TableHead>
+                    <TableHead>Commercial bucket</TableHead>
                     <TableHead className="text-center">Billable</TableHead>
                     <TableHead className="text-center">Billed</TableHead>
                     <TableHead className="text-center">Locked</TableHead>
@@ -438,6 +440,14 @@ export function TimeEntryManagement() {
                       </TableCell>
                       <TableCell className="text-sm">
                         {(entry.milestoneId && milestoneMap.get(entry.milestoneId)) || '-'}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {entry.commercialBucketLabel ? (
+                          <div className="space-y-1">
+                            <Badge variant={entry.commercialEligibilityOutcome === 'eligible' ? 'outline' : 'secondary'}>{entry.commercialBucketLabel}</Badge>
+                            <p className="text-xs text-muted-foreground">{entry.commercialEligibilityOutcome || 'unclassified'}</p>
+                          </div>
+                        ) : <span className="text-muted-foreground">Unclassified</span>}
                       </TableCell>
                       <TableCell className="text-center">
                         {entry.billable ? (
