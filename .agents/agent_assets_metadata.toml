@@ -6,3 +6,17 @@ id = "pcWIdv3zhLrKVtBHqjaSv"
 uri = "file://public/downloads/constellation-mcp-swagger.yaml"
 type = "unspecified"
 title = "Constellation MCP Swagger (v1.1.0 — 25 operations)"
+
+[[outputs]]
+id = "Zb5E4BgfvaEbEuzX5-eTu"
+uri = "file://attached_assets/constellation-architecture-conference-brief.docx"
+type = "word_document"
+title = "Constellation Architecture Conference Brief"
+description = "Editable Word source document for the 70-minute Ship It Like Microsoft presentation. Covers tenancy, Entra identity, service plans, MCP adapters, governed agent writes, multi-agent patterns, operations, scenarios, timing, diagrams, claims guidance, and code references."
+
+[[outputs]]
+id = "xm4eepTk9UiiUummeAiXH"
+uri = "file://attached_assets/constellation-architecture-conference-brief.md"
+type = "text"
+title = "Constellation Architecture Brief — Markdown Source"
+description = "Markdown source for easy reuse by the PowerPoint-development workflow or other AI tools."
