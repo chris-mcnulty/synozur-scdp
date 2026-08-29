@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db.js";
 import {
@@ -11,6 +11,7 @@ import {
   projects,
   timeEntries,
   expenses,
+  contractorSowCeilings,
   type VendorInvoiceUpload,
   type InsertVendorInvoiceUpload,
   type VendorInvoice,
@@ -25,6 +26,8 @@ import {
   type Project,
   type TimeEntry,
   type Expense,
+  type ContractorSowCeiling,
+  type InsertContractorSowCeiling,
 } from "@shared/schema";
 
 // --------------------------------------------------------------------------
@@ -40,11 +43,58 @@ export interface VendorInvoiceListRow extends VendorInvoice {
     variance: number;
     unmatched: number;
   };
+  reconciliationFlags: VendorInvoiceReconciliationFlags;
 }
 
 export interface VendorInvoiceLineWithMatches extends VendorInvoiceLine {
   project: Pick<Project, "id" | "name" | "code"> | null;
   matches: EnrichedVendorInvoiceLineMatch[];
+  unlinkedServiceLine: boolean;
+  rateVariance: RateVariance | null;
+}
+
+export interface CeilingUsage {
+  used: number;
+  remaining: number;
+  percentUsed: number;
+  warning: "amber" | "red" | null;
+}
+
+export interface ContractorSowCeilingWithUsage extends ContractorSowCeiling {
+  contractor: Pick<User, "id" | "name" | "contractorBusinessName"> | null;
+  usage: CeilingUsage;
+}
+
+export interface RateVariance {
+  agreedRate: number;
+  invoicedRate: number;
+  variancePercent: number;
+  exceedsFivePercent: boolean;
+  ceilingId: string;
+}
+
+export interface VendorInvoiceReconciliationFlags {
+  missingPdf: boolean;
+  hasUnlinkedServiceLines: boolean;
+  hasRateVariance: boolean;
+  ceilingWarnings: Array<{
+    ceilingId: string;
+    projectId: string;
+    ceilingType: string;
+    engagementLabel: string;
+    usage: CeilingUsage;
+  }>;
+}
+
+export interface InvoiceHoursReconciliation {
+  contractorUserId: string;
+  projectId: string;
+  dateStart: string;
+  dateEnd: string;
+  invoicedHours: number;
+  loggedHours: number;
+  linkedHours: number;
+  gapHours: number;
 }
 
 export interface EnrichedVendorInvoiceLineMatch extends VendorInvoiceLineMatch {
@@ -73,6 +123,8 @@ export interface VendorInvoiceDetail extends VendorInvoice {
   upload: Pick<VendorInvoiceUpload, "id" | "fileName" | "mimeType" | "speWebUrl"> | null;
   approver: Pick<User, "id" | "name"> | null;
   lines: VendorInvoiceLineWithMatches[];
+  reconciliationFlags: VendorInvoiceReconciliationFlags;
+  hoursReconciliation: InvoiceHoursReconciliation[];
 }
 
 export interface CandidateTimeEntry extends TimeEntry {
@@ -84,6 +136,109 @@ export interface CandidateTimeEntry extends TimeEntry {
 // --------------------------------------------------------------------------
 
 export const vendorInvoicesMethods = {
+  // ------- Contractor SOW ceilings -------
+
+  async listContractorSowCeilings(
+    tenantId: string,
+    projectId: string,
+  ): Promise<ContractorSowCeilingWithUsage[]> {
+    const rows = await db
+      .select({
+        ceiling: contractorSowCeilings,
+        contractor: {
+          id: users.id,
+          name: users.name,
+          contractorBusinessName: users.contractorBusinessName,
+        },
+      })
+      .from(contractorSowCeilings)
+      .leftJoin(users, eq(contractorSowCeilings.contractorUserId, users.id))
+      .where(and(
+        eq(contractorSowCeilings.tenantId, tenantId),
+        eq(contractorSowCeilings.projectId, projectId),
+      ))
+      .orderBy(desc(contractorSowCeilings.effectiveDate), asc(contractorSowCeilings.engagementLabel));
+
+    return Promise.all(rows.map(async ({ ceiling, contractor }) => ({
+      ...ceiling,
+      contractor: contractor?.id ? contractor : null,
+      usage: await this.getContractorSowCeilingUsage(ceiling),
+    })));
+  },
+
+  async getContractorSowCeiling(
+    tenantId: string,
+    projectId: string,
+    id: string,
+  ): Promise<ContractorSowCeilingWithUsage | undefined> {
+    const rows = await this.listContractorSowCeilings(tenantId, projectId);
+    return rows.find((row: ContractorSowCeilingWithUsage) => row.id === id);
+  },
+
+  async getContractorSowCeilingUsage(ceiling: ContractorSowCeiling): Promise<CeilingUsage> {
+    const [row] = await db
+      .select({
+        hours: sql<string>`coalesce(sum(case when lower(${vendorInvoiceLines.unit}) = 'hours' then ${vendorInvoiceLines.quantity} else 0 end), 0)`,
+        dollars: sql<string>`coalesce(sum(${vendorInvoiceLines.lineAmount}), 0)`,
+      })
+      .from(vendorInvoiceLines)
+      .innerJoin(vendorInvoices, eq(vendorInvoiceLines.vendorInvoiceId, vendorInvoices.id))
+      .where(and(
+        eq(vendorInvoiceLines.tenantId, ceiling.tenantId),
+        eq(vendorInvoiceLines.projectId, ceiling.projectId),
+        eq(vendorInvoiceLines.kind, "service"),
+        eq(vendorInvoices.vendorUserId, ceiling.contractorUserId),
+        gte(vendorInvoices.invoiceDate, ceiling.effectiveDate),
+        ne(vendorInvoices.status, "void"),
+      ));
+    const used = Number(ceiling.ceilingType === "hours" ? row?.hours : row?.dollars) || 0;
+    const amount = Number(ceiling.amount);
+    const percentUsed = amount > 0 ? (used / amount) * 100 : 0;
+    return {
+      used,
+      remaining: amount - used,
+      percentUsed,
+      warning: percentUsed >= 100 ? "red" : percentUsed >= 80 ? "amber" : null,
+    };
+  },
+
+  async createContractorSowCeiling(
+    input: InsertContractorSowCeiling,
+  ): Promise<ContractorSowCeiling> {
+    const [row] = await db.insert(contractorSowCeilings).values(input).returning();
+    return row;
+  },
+
+  async updateContractorSowCeiling(
+    tenantId: string,
+    projectId: string,
+    id: string,
+    patch: Partial<InsertContractorSowCeiling>,
+  ): Promise<ContractorSowCeiling | undefined> {
+    const [row] = await db.update(contractorSowCeilings)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(and(
+        eq(contractorSowCeilings.id, id),
+        eq(contractorSowCeilings.tenantId, tenantId),
+        eq(contractorSowCeilings.projectId, projectId),
+      ))
+      .returning();
+    return row;
+  },
+
+  async deleteContractorSowCeiling(
+    tenantId: string,
+    projectId: string,
+    id: string,
+  ): Promise<boolean> {
+    const rows = await db.delete(contractorSowCeilings).where(and(
+      eq(contractorSowCeilings.id, id),
+      eq(contractorSowCeilings.tenantId, tenantId),
+      eq(contractorSowCeilings.projectId, projectId),
+    )).returning({ id: contractorSowCeilings.id });
+    return rows.length > 0;
+  },
+
   // ------- Uploads -------
 
   async createVendorInvoiceUpload(
@@ -154,7 +309,10 @@ export const vendorInvoicesMethods = {
     const conds = [eq(vendorInvoices.tenantId, filters.tenantId)];
     if (filters.status) conds.push(eq(vendorInvoices.status, filters.status));
     if (filters.vendorUserId) conds.push(eq(vendorInvoices.vendorUserId, filters.vendorUserId));
-    if (filters.projectId) conds.push(eq(vendorInvoices.projectId, filters.projectId));
+    if (filters.projectId) conds.push(or(
+      eq(vendorInvoices.projectId, filters.projectId),
+      sql`exists (select 1 from ${vendorInvoiceLines} vil where vil.vendor_invoice_id = ${vendorInvoices.id} and vil.project_id = ${filters.projectId})`,
+    )!);
 
     const rows = await db
       .select({
@@ -193,8 +351,9 @@ export const vendorInvoicesMethods = {
       .groupBy(vendorInvoiceLines.vendorInvoiceId);
     const summaryMap = new Map(summaryRows.map(s => [s.invoiceId, s]));
 
-    return rows.map(r => {
+    return Promise.all(rows.map(async r => {
       const s = summaryMap.get(r.invoice.id);
+      const insights = await this.getVendorInvoiceReconciliation(r.invoice.id, filters.tenantId);
       return {
         ...r.invoice,
         vendor: r.vendor?.id ? r.vendor : null,
@@ -205,8 +364,9 @@ export const vendorInvoicesMethods = {
           variance: Number(s?.variance ?? 0),
           unmatched: Number(s?.unmatched ?? 0),
         },
+        reconciliationFlags: insights.flags,
       };
-    });
+    }));
   },
 
   async getVendorInvoice(
@@ -248,6 +408,7 @@ export const vendorInvoicesMethods = {
     if (!row) return undefined;
 
     const lines = await this.getVendorInvoiceLines(row.invoice.id);
+    const insights = await this.getVendorInvoiceReconciliation(row.invoice.id, row.invoice.tenantId, lines);
 
     return {
       ...row.invoice,
@@ -256,6 +417,95 @@ export const vendorInvoicesMethods = {
       upload: row.upload?.id ? row.upload : null,
       approver: row.approver?.id ? row.approver : null,
       lines,
+      reconciliationFlags: insights.flags,
+      hoursReconciliation: insights.hours,
+    };
+  },
+
+  async getVendorInvoiceReconciliation(
+    invoiceId: string,
+    tenantId: string,
+    providedLines?: VendorInvoiceLineWithMatches[],
+  ): Promise<{ flags: VendorInvoiceReconciliationFlags; hours: InvoiceHoursReconciliation[] }> {
+    const invoice = await this.getVendorInvoiceShallow(invoiceId, tenantId);
+    if (!invoice) throw new Error("Vendor invoice not found");
+    const lines = providedLines ?? await this.getVendorInvoiceLines(invoiceId);
+    const upload = invoice.uploadId
+      ? await this.getVendorInvoiceUpload(invoice.uploadId, tenantId)
+      : undefined;
+    const projectIds = [...new Set(lines.filter((l: VendorInvoiceLineWithMatches) => l.kind === "service" && l.projectId).map((l: VendorInvoiceLineWithMatches) => l.projectId!))];
+    const allCeilings = (await Promise.all(projectIds.map((id: string) =>
+      this.listContractorSowCeilings(tenantId, id)
+    ))).flat().filter((c: ContractorSowCeilingWithUsage) =>
+      c.contractorUserId === invoice.vendorUserId && c.effectiveDate <= invoice.invoiceDate
+    );
+
+    let hasRateVariance = false;
+    for (const line of lines) {
+      line.unlinkedServiceLine = line.kind === "service" && line.matches.length === 0;
+      line.rateVariance = null;
+      if (line.kind === "service" && line.projectId && line.unitAmount) {
+        const ceiling = allCeilings
+          .filter((c: ContractorSowCeilingWithUsage) => c.projectId === line.projectId && c.agreedRate)
+          .sort((a: ContractorSowCeilingWithUsage, b: ContractorSowCeilingWithUsage) => b.effectiveDate.localeCompare(a.effectiveDate))[0];
+        if (ceiling?.agreedRate) {
+          const agreedRate = Number(ceiling.agreedRate);
+          const invoicedRate = Number(line.unitAmount);
+          const variancePercent = agreedRate ? ((invoicedRate - agreedRate) / agreedRate) * 100 : 0;
+          line.rateVariance = {
+            agreedRate, invoicedRate, variancePercent,
+            exceedsFivePercent: Math.abs(variancePercent) > 5,
+            ceilingId: ceiling.id,
+          };
+          hasRateVariance ||= line.rateVariance.exceedsFivePercent;
+        }
+      }
+    }
+
+    const hours: InvoiceHoursReconciliation[] = [];
+    for (const projectId of projectIds) {
+      const serviceLines = lines.filter((l: VendorInvoiceLineWithMatches) => l.kind === "service" && l.projectId === projectId);
+      const starts = serviceLines.map((l: VendorInvoiceLineWithMatches) => l.periodStart ?? invoice.invoiceDate);
+      const ends = serviceLines.map((l: VendorInvoiceLineWithMatches) => l.periodEnd ?? l.periodStart ?? invoice.invoiceDate);
+      const dateStart = starts.sort()[0];
+      const dateEnd = ends.sort().at(-1)!;
+      const invoicedHours = serviceLines
+        .filter((l: VendorInvoiceLineWithMatches) => l.unit?.toLowerCase() === "hours")
+        .reduce((sum: number, l: VendorInvoiceLineWithMatches) => sum + Number(l.quantity ?? 0), 0);
+      const linkedHours = serviceLines.reduce((sum: number, l: VendorInvoiceLineWithMatches) =>
+        sum + l.matches.filter(m => m.sourceType === "time_entry")
+          .reduce((matched: number, m) => matched + Number(m.allocatedQuantity ?? 0), 0), 0);
+      const [logged] = await db.select({
+        value: sql<string>`coalesce(sum(${timeEntries.hours}), 0)`,
+      }).from(timeEntries).where(and(
+        eq(timeEntries.tenantId, tenantId),
+        eq(timeEntries.personId, invoice.vendorUserId),
+        eq(timeEntries.projectId, projectId),
+        gte(timeEntries.date, dateStart),
+        lte(timeEntries.date, dateEnd),
+      ));
+      const loggedHours = Number(logged?.value ?? 0);
+      hours.push({
+        contractorUserId: invoice.vendorUserId, projectId, dateStart, dateEnd,
+        invoicedHours, loggedHours, linkedHours,
+        gapHours: invoicedHours - loggedHours,
+      });
+    }
+
+    return {
+      flags: {
+        missingPdf: !upload || !upload.mimeType.toLowerCase().includes("pdf"),
+        hasUnlinkedServiceLines: lines.some((l: VendorInvoiceLineWithMatches) => l.unlinkedServiceLine),
+        hasRateVariance,
+        ceilingWarnings: allCeilings.filter((c: ContractorSowCeilingWithUsage) => c.usage.warning).map((c: ContractorSowCeilingWithUsage) => ({
+          ceilingId: c.id,
+          projectId: c.projectId,
+          ceilingType: c.ceilingType,
+          engagementLabel: c.engagementLabel,
+          usage: c.usage,
+        })),
+      },
+      hours,
     };
   },
 
@@ -323,6 +573,8 @@ export const vendorInvoicesMethods = {
       ...r.line,
       project: r.project?.id ? r.project : null,
       matches: matchesByLine.get(r.line.id) ?? [],
+      unlinkedServiceLine: r.line.kind === "service" && (matchesByLine.get(r.line.id)?.length ?? 0) === 0,
+      rateVariance: null,
     }));
   },
 

@@ -1,13 +1,17 @@
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { storage, db } from "../storage/index.js";
 import {
   insertVendorInvoiceLineMatchSchema,
+  insertContractorSowCeilingSchema,
   vendorInvoiceLineKindEnum,
   timeEntries,
   expenses,
+  projects,
+  users,
+  tenantUsers,
 } from "@shared/schema";
 import { extractVendorInvoice } from "../services/vendor-invoice-extractor.js";
 import {
@@ -50,6 +54,166 @@ export function registerVendorInvoiceRoutes(
   app: Express,
   deps: VendorInvoiceRouteDeps,
 ) {
+  const ceilingBodySchema = insertContractorSowCeilingSchema.omit({
+    tenantId: true,
+    projectId: true,
+  });
+  const ceilingPatchSchema = ceilingBodySchema.partial().refine(
+    body => Object.keys(body).length > 0,
+    "At least one field is required",
+  );
+
+  async function projectBelongsToTenant(projectId: string, tenantId: string) {
+    const [project] = await db.select({ id: projects.id }).from(projects).where(and(
+      eq(projects.id, projectId),
+      eq(projects.tenantId, tenantId),
+    )).limit(1);
+    return !!project;
+  }
+
+  async function contractorBelongsToTenant(contractorUserId: string, tenantId: string) {
+    const [user] = await db.select({ id: users.id }).from(users)
+      .leftJoin(tenantUsers, and(
+        eq(tenantUsers.userId, users.id),
+        eq(tenantUsers.tenantId, tenantId),
+      ))
+      .where(and(
+        eq(users.id, contractorUserId),
+        or(eq(users.primaryTenantId, tenantId), eq(tenantUsers.tenantId, tenantId)),
+      ))
+      .limit(1);
+    return !!user;
+  }
+
+  // -----------------------------------------------------------------------
+  // Contractor SOW ceilings — tenant-scoped CRUD nested under projects
+  // -----------------------------------------------------------------------
+  app.get(
+    "/api/projects/:projectId/contractor-sow-ceilings",
+    deps.requireAuth,
+    deps.requireRole(REVIEWER_ROLES),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) return res.status(403).json({ message: "No tenant context" });
+        if (!await projectBelongsToTenant(req.params.projectId, tenantId)) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+        res.json(await storage.listContractorSowCeilings(tenantId, req.params.projectId));
+      } catch (err: any) {
+        res.status(500).json({ message: err.message || "Failed to list contractor SOW ceilings" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/projects/:projectId/contractor-sow-ceilings/:ceilingId",
+    deps.requireAuth,
+    deps.requireRole(REVIEWER_ROLES),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) return res.status(403).json({ message: "No tenant context" });
+        if (!await projectBelongsToTenant(req.params.projectId, tenantId)) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+        const ceiling = await storage.getContractorSowCeiling(
+          tenantId, req.params.projectId, req.params.ceilingId,
+        );
+        if (!ceiling) return res.status(404).json({ message: "Contractor SOW ceiling not found" });
+        res.json(ceiling);
+      } catch (err: any) {
+        res.status(500).json({ message: err.message || "Failed to fetch contractor SOW ceiling" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/projects/:projectId/contractor-sow-ceilings",
+    deps.requireAuth,
+    deps.requireRole(REVIEWER_ROLES),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) return res.status(403).json({ message: "No tenant context" });
+        if (!await projectBelongsToTenant(req.params.projectId, tenantId)) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+        const parsed = ceilingBodySchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+        }
+        if (!await contractorBelongsToTenant(parsed.data.contractorUserId, tenantId)) {
+          return res.status(400).json({ message: "Contractor does not belong to this tenant" });
+        }
+        const created = await storage.createContractorSowCeiling({
+          ...parsed.data,
+          tenantId,
+          projectId: req.params.projectId,
+        });
+        res.status(201).json(await storage.getContractorSowCeiling(tenantId, req.params.projectId, created.id));
+      } catch (err: any) {
+        res.status(err?.code === "23505" ? 409 : 500).json({
+          message: err?.code === "23505" ? "This ceiling already exists" : err.message || "Failed to create contractor SOW ceiling",
+        });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/projects/:projectId/contractor-sow-ceilings/:ceilingId",
+    deps.requireAuth,
+    deps.requireRole(REVIEWER_ROLES),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) return res.status(403).json({ message: "No tenant context" });
+        if (!await projectBelongsToTenant(req.params.projectId, tenantId)) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+        const parsed = ceilingPatchSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+        }
+        if (parsed.data.contractorUserId &&
+            !await contractorBelongsToTenant(parsed.data.contractorUserId, tenantId)) {
+          return res.status(400).json({ message: "Contractor does not belong to this tenant" });
+        }
+        const updated = await storage.updateContractorSowCeiling(
+          tenantId, req.params.projectId, req.params.ceilingId, parsed.data,
+        );
+        if (!updated) return res.status(404).json({ message: "Contractor SOW ceiling not found" });
+        res.json(await storage.getContractorSowCeiling(tenantId, req.params.projectId, updated.id));
+      } catch (err: any) {
+        res.status(err?.code === "23505" ? 409 : 500).json({
+          message: err?.code === "23505" ? "This ceiling already exists" : err.message || "Failed to update contractor SOW ceiling",
+        });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/projects/:projectId/contractor-sow-ceilings/:ceilingId",
+    deps.requireAuth,
+    deps.requireRole(REVIEWER_ROLES),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) return res.status(403).json({ message: "No tenant context" });
+        if (!await projectBelongsToTenant(req.params.projectId, tenantId)) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+        const deleted = await storage.deleteContractorSowCeiling(
+          tenantId, req.params.projectId, req.params.ceilingId,
+        );
+        if (!deleted) return res.status(404).json({ message: "Contractor SOW ceiling not found" });
+        res.status(204).end();
+      } catch (err: any) {
+        res.status(500).json({ message: err.message || "Failed to delete contractor SOW ceiling" });
+      }
+    },
+  );
+
   // -----------------------------------------------------------------------
   // GET /api/my-vendor-invoices — read-only list for the vendor themselves
   // (any authenticated user; results scoped to vendorUserId = current user)
@@ -451,6 +615,30 @@ export function registerVendorInvoiceRoutes(
         }
 
         const body = parsed.data;
+        if (
+          (body.sourceType === "time_entry" && line.kind !== "service") ||
+          (body.sourceType === "expense" && line.kind !== "expense")
+        ) {
+          return res.status(400).json({
+            message: body.sourceType === "time_entry"
+              ? "Time entries can only be linked to service lines."
+              : "Expenses can only be linked to expense lines.",
+          });
+        }
+
+        const existingMatches = await storage.getVendorInvoiceLineMatchesByLineIds([line.id]);
+        const remainingLineAmount = Math.max(
+          0,
+          Number(line.lineAmount) -
+            existingMatches.reduce((sum, match) => sum + Number(match.allocatedAmount), 0),
+        );
+        const remainingLineQuantity = line.quantity == null
+          ? null
+          : Math.max(
+              0,
+              Number(line.quantity) -
+                existingMatches.reduce((sum, match) => sum + Number(match.allocatedQuantity ?? 0), 0),
+            );
 
         // Verify the referenced source row exists, belongs to this tenant, and
         // is billed by the same vendor the invoice is from. This prevents
@@ -459,6 +647,13 @@ export function registerVendorInvoiceRoutes(
         let defaultAllocatedAmount = line.lineAmount;
         let defaultAllocatedQuantity: string | null = line.quantity ?? null;
         if (body.sourceType === "time_entry") {
+          if (!line.projectId) {
+            return res.status(400).json({
+              message: "Assign a project to this service line before linking time entries.",
+            });
+          }
+          const eligibleStart = line.periodStart ?? invoice.invoiceDate;
+          const eligibleEnd = line.periodEnd ?? line.periodStart ?? invoice.invoiceDate;
           const [te] = await db
             .select()
             .from(timeEntries)
@@ -467,22 +662,49 @@ export function registerVendorInvoiceRoutes(
                 eq(timeEntries.id, body.sourceId),
                 eq(timeEntries.tenantId, tenantId),
                 eq(timeEntries.personId, invoice.vendorUserId),
+                eq(timeEntries.projectId, line.projectId),
+                gte(timeEntries.date, eligibleStart),
+                lte(timeEntries.date, eligibleEnd),
               ),
             )
             .limit(1);
           if (!te) {
             return res.status(400).json({
-              message: "Time entry not found or not eligible for this invoice (wrong tenant/vendor).",
+              message: "Time entry not found or outside this invoice line's tenant, vendor, project, or service period.",
             });
           }
           // Default allocation = this entry's hours × line unit rate. Avoids
           // crediting the whole line to a single entry when a service line is
           // built from several entries.
-          defaultAllocatedQuantity = te.hours;
+          const availableHours = Math.min(
+            Number(te.hours),
+            remainingLineQuantity ?? Number(te.hours),
+          );
+          defaultAllocatedQuantity = availableHours.toFixed(2);
           if (line.unitAmount) {
-            defaultAllocatedAmount = (parseFloat(te.hours) * parseFloat(line.unitAmount)).toFixed(2);
+            defaultAllocatedAmount = (availableHours * parseFloat(line.unitAmount)).toFixed(2);
           } else if (te.costRate) {
-            defaultAllocatedAmount = (parseFloat(te.hours) * parseFloat(te.costRate)).toFixed(2);
+            defaultAllocatedAmount = (availableHours * parseFloat(te.costRate)).toFixed(2);
+          }
+          defaultAllocatedAmount = Math.min(
+            Number(defaultAllocatedAmount),
+            remainingLineAmount,
+          ).toFixed(2);
+          const allocatedQuantity = Number(body.allocatedQuantity ?? defaultAllocatedQuantity);
+          const allocatedAmount = Number(body.allocatedAmount ?? defaultAllocatedAmount);
+          const maxQuantity = Math.min(Number(te.hours), remainingLineQuantity ?? Number(te.hours));
+          const maxAmount = Math.min(Number(defaultAllocatedAmount), remainingLineAmount);
+          if (
+            !Number.isFinite(allocatedQuantity) ||
+            !Number.isFinite(allocatedAmount) ||
+            allocatedQuantity <= 0 ||
+            allocatedAmount <= 0 ||
+            allocatedQuantity > maxQuantity + 0.001 ||
+            allocatedAmount > maxAmount + 0.01
+          ) {
+            return res.status(400).json({
+              message: "Allocation exceeds the available time-entry hours or remaining invoice-line amount.",
+            });
           }
         } else if (body.sourceType === "expense") {
           const [exp] = await db
@@ -501,8 +723,22 @@ export function registerVendorInvoiceRoutes(
               message: "Expense not found or not eligible for this invoice (wrong tenant/vendor).",
             });
           }
-          defaultAllocatedAmount = exp.amount;
+          defaultAllocatedAmount = Math.min(
+            Number(exp.amount),
+            remainingLineAmount,
+          ).toFixed(2);
           defaultAllocatedQuantity = null;
+          const allocatedAmount = Number(body.allocatedAmount ?? defaultAllocatedAmount);
+          const maxAmount = Math.min(Number(exp.amount), remainingLineAmount);
+          if (
+            !Number.isFinite(allocatedAmount) ||
+            allocatedAmount <= 0 ||
+            allocatedAmount > maxAmount + 0.01
+          ) {
+            return res.status(400).json({
+              message: "Allocation exceeds the available expense amount or remaining invoice-line amount.",
+            });
+          }
         }
 
         const matchInput = {
@@ -554,6 +790,11 @@ export function registerVendorInvoiceRoutes(
 
         const invoice = await storage.getVendorInvoiceShallow(req.params.id, tenantId);
         if (!invoice) return res.status(404).json({ message: "Vendor invoice not found" });
+
+        const line = await storage.getVendorInvoiceLine(req.params.lineId);
+        if (!line || line.vendorInvoiceId !== invoice.id) {
+          return res.status(404).json({ message: "Line not found on this invoice" });
+        }
 
         const match = await storage.getVendorInvoiceLineMatch(req.params.matchId);
         if (!match || match.vendorInvoiceLineId !== req.params.lineId) {

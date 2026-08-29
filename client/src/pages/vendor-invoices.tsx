@@ -15,7 +15,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { formatBusinessDate } from "@/lib/date-utils";
 import {
   Loader2, Upload, FileInput, Search, AlertCircle, CheckCircle2,
-  CircleDashed, Inbox, Eye,
+  CircleDashed, Inbox, Eye, AlertTriangle,
 } from "lucide-react";
 
 // Response shape (server enriches the row with vendor / project joins).
@@ -37,6 +37,20 @@ interface VendorInvoiceRow {
     variance: number;
     unmatched: number;
   };
+  flags?: string[];
+  reconciliationFlags?: {
+    missingPdf: boolean;
+    hasUnlinkedServiceLines: boolean;
+    hasRateVariance: boolean;
+    ceilingWarnings: Array<{
+      usage: { percentUsed: string | number; warning?: "amber" | "red" | null };
+    }>;
+  };
+  ceilingUsage?: {
+    usagePercent: string | number;
+    remainingAmount?: string | number;
+    ceilingType?: "hours" | "dollars";
+  } | null;
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -103,12 +117,48 @@ function ReconcileIndicator({ summary }: { summary: VendorInvoiceRow["lineSummar
   );
 }
 
+const FLAG_LABELS: Record<string, string> = {
+  ceiling_warning: "SOW ceiling ≥80%",
+  ceiling_exceeded: "SOW ceiling exceeded",
+  rate_variance: "Rate variance",
+  unlinked_service_line: "Unlinked service line",
+  unlinked_service_lines: "Unlinked service lines",
+  missing_pdf: "Missing PDF",
+};
+
+function InvoiceFlags({ invoice }: { invoice: VendorInvoiceRow }) {
+  const flags = [...(invoice.flags ?? [])];
+  if (invoice.reconciliationFlags?.missingPdf) flags.push("missing_pdf");
+  if (invoice.reconciliationFlags?.hasUnlinkedServiceLines) flags.push("unlinked_service_lines");
+  if (invoice.reconciliationFlags?.hasRateVariance) flags.push("rate_variance");
+  const backendCeilingPercent = Math.max(0, ...(invoice.reconciliationFlags?.ceilingWarnings.map((warning) => Number(warning.usage.percentUsed)) ?? []));
+  const usagePercent = Number(invoice.ceilingUsage?.usagePercent ?? 0);
+  const effectiveUsagePercent = Math.max(usagePercent, backendCeilingPercent);
+  if (effectiveUsagePercent >= 100 && !flags.includes("ceiling_exceeded")) flags.unshift("ceiling_exceeded");
+  else if (effectiveUsagePercent >= 80 && !flags.some((flag) => flag.startsWith("ceiling_"))) flags.unshift("ceiling_warning");
+  if (flags.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {flags.map((flag, index) => {
+        const critical = flag === "ceiling_exceeded";
+        return (
+          <span key={`${flag}-${index}`} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${critical ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300" : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"}`}>
+            <AlertTriangle className="h-3 w-3" />
+            {FLAG_LABELS[flag] ?? flag.replace(/_/g, " ")}
+            {flag.startsWith("ceiling_") && effectiveUsagePercent > 0 ? ` · ${effectiveUsagePercent.toFixed(0)}%` : ""}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function VendorInvoicesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [tab, setTab] = useState<"review" | "all">("review");
+  const [tab, setTab] = useState<"review" | "flags" | "all">("review");
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const { data: invoices = [], isLoading } = useQuery<VendorInvoiceRow[]>({
@@ -118,6 +168,14 @@ export default function VendorInvoicesPage() {
   const filtered = useMemo(() => {
     return invoices.filter((inv) => {
       if (tab === "review" && !REVIEW_STATUSES.has(inv.status)) return false;
+      if (tab === "flags" && !(
+        inv.flags?.length ||
+        Number(inv.ceilingUsage?.usagePercent ?? 0) >= 80 ||
+        inv.reconciliationFlags?.missingPdf ||
+        inv.reconciliationFlags?.hasUnlinkedServiceLines ||
+        inv.reconciliationFlags?.hasRateVariance ||
+        inv.reconciliationFlags?.ceilingWarnings.length
+      )) return false;
       if (statusFilter !== "all" && inv.status !== statusFilter) return false;
       if (search) {
         const q = search.toLowerCase();
@@ -135,6 +193,14 @@ export default function VendorInvoicesPage() {
   }, [invoices, tab, statusFilter, search]);
 
   const reviewCount = invoices.filter((i) => REVIEW_STATUSES.has(i.status)).length;
+  const flagsCount = invoices.filter((i) =>
+    i.flags?.length ||
+    Number(i.ceilingUsage?.usagePercent ?? 0) >= 80 ||
+    i.reconciliationFlags?.missingPdf ||
+    i.reconciliationFlags?.hasUnlinkedServiceLines ||
+    i.reconciliationFlags?.hasRateVariance ||
+    i.reconciliationFlags?.ceilingWarnings.length
+  ).length;
 
   return (
     <Layout>
@@ -155,13 +221,21 @@ export default function VendorInvoicesPage() {
           </Button>
         </div>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as "review" | "all")}>
-          <TabsList>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as "review" | "flags" | "all")}>
+          <TabsList className="max-w-full overflow-x-auto justify-start">
             <TabsTrigger value="review" data-testid="tab-review">
               Needs Review
               {reviewCount > 0 && (
                 <span className="ml-2 inline-flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] min-w-[1.25rem] h-5 px-1.5">
                   {reviewCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="flags" data-testid="tab-flags">
+              Flags &amp; Open Items
+              {flagsCount > 0 && (
+                <span className="ml-2 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] min-w-[1.25rem] h-5 px-1.5">
+                  {flagsCount}
                 </span>
               )}
             </TabsTrigger>
@@ -173,8 +247,8 @@ export default function VendorInvoicesPage() {
           <TabsContent value={tab} className="mt-4">
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center gap-3">
-                  <div className="relative flex-1 max-w-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="relative flex-1 sm:max-w-sm">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       placeholder="Search invoice #, vendor, or project code"
@@ -185,7 +259,7 @@ export default function VendorInvoicesPage() {
                     />
                   </div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-44" data-testid="select-status">
+                    <SelectTrigger className="w-full sm:w-44" data-testid="select-status">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -210,7 +284,7 @@ export default function VendorInvoicesPage() {
                 ) : filtered.length === 0 ? (
                   <EmptyState
                     onUpload={() => setUploadOpen(true)}
-                    isReview={tab === "review"}
+                    isReview={tab !== "all"}
                   />
                 ) : (
                   <div className="rounded-md border">
@@ -223,6 +297,7 @@ export default function VendorInvoicesPage() {
                           <TableHead>Project</TableHead>
                           <TableHead className="text-right">Total</TableHead>
                           <TableHead>Reconcile</TableHead>
+                           <TableHead>Flags / Open items</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="w-16"></TableHead>
                         </TableRow>
@@ -262,6 +337,9 @@ export default function VendorInvoicesPage() {
                               <TableCell>
                                 <ReconcileIndicator summary={inv.lineSummary} />
                               </TableCell>
+                               <TableCell className="min-w-48">
+                                 <InvoiceFlags invoice={inv} />
+                               </TableCell>
                               <TableCell>
                                 <StatusBadge status={inv.status} />
                               </TableCell>

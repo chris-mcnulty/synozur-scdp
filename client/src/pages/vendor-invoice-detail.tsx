@@ -96,6 +96,47 @@ interface VendorInvoiceDetail {
   upload: { id: string; fileName: string; mimeType: string; speWebUrl: string | null } | null;
   lines: VendorInvoiceLineRow[];
   approver?: { id: string; name: string } | null;
+  ceilingUsage?: {
+    ceilingType: "hours" | "dollars";
+    ceilingAmount: string | number;
+    usedAmount?: string | number;
+    usageAmount?: string | number;
+    remainingAmount: string | number;
+    usagePercent: string | number;
+    engagementLabel?: string | null;
+  } | null;
+  reconciliation?: {
+    invoicedHours: string | number;
+    loggedHours: string | number;
+    linkedHours: string | number;
+    gapHours: string | number;
+  } | null;
+  reconciliationFlags?: {
+    missingPdf: boolean;
+    hasUnlinkedServiceLines: boolean;
+    hasRateVariance: boolean;
+    ceilingWarnings: Array<{
+      ceilingId: string;
+      projectId: string;
+      ceilingType: "hours" | "dollars";
+      engagementLabel: string;
+      usage: {
+        used: string | number;
+        remaining: string | number;
+        percentUsed: string | number;
+      };
+    }>;
+  };
+  hoursReconciliation?: Array<{
+    contractorUserId: string;
+    projectId: string;
+    dateStart: string;
+    dateEnd: string;
+    invoicedHours: string | number;
+    loggedHours: string | number;
+    linkedHours: string | number;
+    gapHours: string | number;
+  }>;
 }
 
 interface VendorInvoiceLineRow {
@@ -118,6 +159,15 @@ interface VendorInvoiceLineRow {
   varianceReason: string | null;
   aiConfidence: string | null;
   matches: VendorInvoiceLineMatchRow[];
+  rateVariance?: {
+    invoicedRate: string | number;
+    agreedRate: string | number;
+    varianceAmount?: string | number;
+    variancePercent?: string | number;
+    exceedsFivePercent?: boolean;
+    ceilingId?: string;
+  } | null;
+  rateVarianceFlag?: boolean;
 }
 
 interface VendorInvoiceLineMatchRow {
@@ -282,7 +332,7 @@ export default function VendorInvoiceDetailPage() {
     <Layout>
       <div className="p-6 space-y-4">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
           <div className="space-y-1">
             <Link href="/vendor-invoices">
               <Button variant="ghost" size="sm" className="h-7 px-2 -ml-2 text-muted-foreground">
@@ -319,7 +369,7 @@ export default function VendorInvoiceDetailPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {canApprove && (
               <Button
                 onClick={() => approve.mutate()}
@@ -403,12 +453,37 @@ export default function VendorInvoiceDetailPage() {
           </div>
         )}
 
+        {invoice.ceilingUsage && Number(invoice.ceilingUsage.usagePercent) >= 80 && (
+          <CeilingWarning usage={invoice.ceilingUsage} currency={invoice.currency} />
+        )}
+        {invoice.reconciliationFlags?.ceilingWarnings.map((warning) => (
+          <CeilingWarning
+            key={warning.ceilingId}
+            usage={{
+              ceilingType: warning.ceilingType,
+              ceilingAmount: Number(warning.usage.used) + Number(warning.usage.remaining),
+              usedAmount: warning.usage.used,
+              remainingAmount: warning.usage.remaining,
+              usagePercent: warning.usage.percentUsed,
+              engagementLabel: warning.engagementLabel,
+            }}
+            currency={invoice.currency}
+          />
+        ))}
+
         {/* Split layout: 2/5 document preview, 3/5 invoice + lines */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <DocumentPanel invoice={invoice} />
 
           <div className="lg:col-span-3 space-y-4">
             <InvoiceHeaderCard invoice={invoice} />
+            {invoice.reconciliation && <HoursReconciliationCard reconciliation={invoice.reconciliation} />}
+            {invoice.hoursReconciliation?.map((reconciliation, index) => (
+              <HoursReconciliationCard
+                key={`${reconciliation.projectId}-${reconciliation.dateStart}-${index}`}
+                reconciliation={reconciliation}
+              />
+            ))}
             <LinesCard invoice={invoice} onMutate={invalidate} />
             <ActivityCard invoice={invoice} reconcileSummary={reconcileSummary} />
           </div>
@@ -497,6 +572,74 @@ export default function VendorInvoiceDetailPage() {
         </DialogContent>
       </Dialog>
     </Layout>
+  );
+}
+
+function CeilingWarning({
+  usage,
+  currency,
+}: {
+  usage: NonNullable<VendorInvoiceDetail["ceilingUsage"]>;
+  currency: string;
+}) {
+  const percent = Number(usage.usagePercent);
+  const critical = percent >= 100;
+  const format = (value: string | number) =>
+    usage.ceilingType === "hours" ? `${Number(value).toLocaleString()}h` : fmtMoney(String(value), currency);
+  return (
+    <div className={`rounded-md border px-4 py-3 text-sm ${critical ? "border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"}`}>
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          <div className="font-medium">
+            {critical ? "SOW ceiling exceeded" : "SOW ceiling nearing limit"} · {percent.toFixed(0)}% used
+          </div>
+          <div className="text-xs mt-0.5 opacity-90">
+            {usage.engagementLabel && <>{usage.engagementLabel} · </>}
+            {format(usage.usedAmount ?? usage.usageAmount ?? 0)} used of {format(usage.ceilingAmount)} · {format(usage.remainingAmount)} remaining
+          </div>
+          <div className="mt-2 h-1.5 max-w-md overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+            <div className={`h-full ${critical ? "bg-red-600" : "bg-amber-500"}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HoursReconciliationCard({
+  reconciliation,
+}: {
+  reconciliation: NonNullable<VendorInvoiceDetail["reconciliation"]>;
+}) {
+  const gap = Number(reconciliation.gapHours);
+  const values = [
+    { label: "Invoiced", value: reconciliation.invoicedHours },
+    { label: "Logged", value: reconciliation.loggedHours },
+    { label: "Linked", value: reconciliation.linkedHours },
+  ];
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Hours Reconciliation</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {values.map((item) => (
+            <div key={item.label} className="rounded-md border p-3">
+              <div className="text-xs uppercase text-muted-foreground">{item.label} hours</div>
+              <div className="mt-1 text-xl font-semibold tabular-nums">{Number(item.value).toLocaleString(undefined, { maximumFractionDigits: 2 })}h</div>
+            </div>
+          ))}
+          <div className={`rounded-md border p-3 ${Math.abs(gap) > 0.01 ? "border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30" : "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30"}`}>
+            <div className="text-xs uppercase text-muted-foreground">Gap</div>
+            <div className={`mt-1 text-xl font-semibold tabular-nums ${Math.abs(gap) > 0.01 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
+              {gap > 0 ? "+" : ""}{gap.toLocaleString(undefined, { maximumFractionDigits: 2 })}h
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -763,6 +906,11 @@ function LineRow({
             <span className="text-sm font-semibold tabular-nums">
               {fmtMoney(line.lineAmount, currency)}
             </span>
+            {(line.rateVariance || line.rateVarianceFlag) && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                <AlertTriangle className="h-3 w-3" /> Rate
+              </span>
+            )}
             <ReconcileBadge status={line.reconcileStatus} />
             {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
           </div>
@@ -786,6 +934,23 @@ function LineRow({
                 {line.varianceAmount && (
                   <> ({fmtMoney(line.varianceAmount, currency)})</>
                 )}
+              </span>
+            </div>
+          )}
+
+          {(line.rateVariance || line.rateVarianceFlag) && (
+            <div className="text-xs rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 px-2 py-1.5 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5" />
+              <span>
+                <strong>Rate variance:</strong>{" "}
+                {line.rateVariance ? (
+                  <>
+                    invoiced {fmtMoney(String(line.rateVariance.invoicedRate), currency)} vs agreed{" "}
+                    {fmtMoney(String(line.rateVariance.agreedRate), currency)}
+                    {line.rateVariance.varianceAmount != null && <> · {fmtMoney(String(line.rateVariance.varianceAmount), currency)} difference</>}
+                    {line.rateVariance.variancePercent != null && <> ({Number(line.rateVariance.variancePercent).toFixed(1)}%)</>}
+                  </>
+                ) : "The invoiced hourly rate differs from the agreed SOW rate."}
               </span>
             </div>
           )}

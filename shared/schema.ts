@@ -56,6 +56,9 @@ export type VendorInvoiceLineMatchSource = z.infer<typeof vendorInvoiceLineMatch
 export const projectCostPostingSourceEnum = z.enum(['vendor_invoice', 'manual_adjustment', 'payroll']);
 export type ProjectCostPostingSource = z.infer<typeof projectCostPostingSourceEnum>;
 
+export const contractorSowCeilingTypeEnum = z.enum(['hours', 'dollars']);
+export type ContractorSowCeilingType = z.infer<typeof contractorSowCeilingTypeEnum>;
+
 // TenantBranding type for jsonb field
 export type TenantBranding = {
   primaryColor?: string;
@@ -1553,6 +1556,32 @@ export const contractorInvoices = pgTable("contractor_invoices", {
 // VENDOR INVOICES (INBOUND AP) - Contractor invoice ingestion + reconciliation
 // ============================================================================
 
+// Agreed contractor SOW limit for a project–contractor pairing. A pairing has
+// one editable record so the same billed usage cannot be counted against
+// overlapping ceiling versions.
+export const contractorSowCeilings = pgTable("contractor_sow_ceilings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  contractorUserId: varchar("contractor_user_id").notNull().references(() => users.id),
+  engagementLabel: text("engagement_label").notNull(),
+  ceilingType: text("ceiling_type").notNull(), // hours, dollars
+  amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  agreedRate: decimal("agreed_rate", { precision: 12, scale: 2 }).notNull(),
+  effectiveDate: date("effective_date").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantProjectIdx: index("idx_contractor_sow_ceilings_tenant_project")
+    .on(table.tenantId, table.projectId),
+  contractorIdx: index("idx_contractor_sow_ceilings_contractor")
+    .on(table.tenantId, table.contractorUserId),
+  effectiveDateIdx: index("idx_contractor_sow_ceilings_effective_date").on(table.effectiveDate),
+  uniqueProjectContractor: uniqueIndex("idx_contractor_sow_ceilings_pairing_unique")
+    .on(table.tenantId, table.projectId, table.contractorUserId),
+}));
+
 // Vendor Invoice Uploads - Raw ingested artifacts (PDF / image / email attachment)
 // staged before LLM extraction. One upload can yield zero or one vendorInvoices row.
 export const vendorInvoiceUploads = pgTable("vendor_invoice_uploads", {
@@ -2944,6 +2973,19 @@ export const insertProjectCostPostingSchema = createInsertSchema(projectCostPost
   sourceType: projectCostPostingSourceEnum,
 });
 
+export const insertContractorSowCeilingSchema = createInsertSchema(contractorSowCeilings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  engagementLabel: z.string().trim().min(1, "Engagement label is required").max(200),
+  ceilingType: contractorSowCeilingTypeEnum,
+  amount: z.coerce.number().positive("Ceiling amount must be positive").transform(String),
+  agreedRate: z.coerce.number().positive("Agreed rate must be positive").transform(String),
+  effectiveDate: z.string().date(),
+  notes: z.string().trim().max(5000).nullable().optional(),
+});
+
 // Shape returned by the LLM vendor-invoice extractor; used by the ingestion
 // pipeline to validate raw model output before persisting lines.
 export const vendorInvoiceExtractionSchema = z.object({
@@ -3140,6 +3182,9 @@ export type ContractorInvoice = typeof contractorInvoices.$inferSelect;
 export type InsertContractorInvoice = z.infer<typeof insertContractorInvoiceSchema>;
 
 // Vendor Invoice (Inbound AP) types
+export type ContractorSowCeiling = typeof contractorSowCeilings.$inferSelect;
+export type InsertContractorSowCeiling = z.infer<typeof insertContractorSowCeilingSchema>;
+
 export type VendorInvoiceUpload = typeof vendorInvoiceUploads.$inferSelect;
 export type InsertVendorInvoiceUpload = z.infer<typeof insertVendorInvoiceUploadSchema>;
 

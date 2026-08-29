@@ -1,12 +1,20 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Loader2, FileText, ExternalLink, ArrowRight } from "lucide-react";
+import { Loader2, FileText, ExternalLink, ArrowRight, Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
 import { formatBusinessDate } from "@/lib/date-utils";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface Invoice {
   id: string;
@@ -26,6 +34,51 @@ interface Summary {
   totalPaid: string;
   invoiceCount: number;
 }
+
+interface Contractor {
+  id: string;
+  name: string;
+  contractorBusinessName: string | null;
+}
+
+interface SowCeiling {
+  id: string;
+  contractorUserId?: string;
+  contractorId?: string;
+  contractor?: Contractor | null;
+  engagementLabel: string;
+  ceilingType: "hours" | "dollars";
+  amount: string | number;
+  agreedRate: string | number | null;
+  effectiveDate: string;
+  notes: string | null;
+  usage?: {
+    used: string | number;
+    remaining: string | number;
+    percentUsed: string | number;
+    warning?: "amber" | "red" | null;
+  };
+}
+
+interface CeilingForm {
+  contractorUserId: string;
+  engagementLabel: string;
+  ceilingType: "hours" | "dollars";
+  ceilingAmount: string;
+  agreedRate: string;
+  effectiveDate: string;
+  notes: string;
+}
+
+const EMPTY_CEILING: CeilingForm = {
+  contractorUserId: "",
+  engagementLabel: "",
+  ceilingType: "hours",
+  ceilingAmount: "",
+  agreedRate: "",
+  effectiveDate: "",
+  notes: "",
+};
 
 const STATUS_TONE: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
@@ -54,10 +107,82 @@ function fmt(value: string | number | undefined) {
 }
 
 export function ProjectContractorCostsPanel({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState<SowCeiling | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState<CeilingForm>(EMPTY_CEILING);
   const { data, isLoading } = useQuery<{ invoices: Invoice[]; summary: Summary }>({
     queryKey: [`/api/projects/${projectId}/contractor-cost-invoices`],
     enabled: !!projectId,
   });
+  const { data: ceilingResponse, isLoading: ceilingsLoading } = useQuery<SowCeiling[] | { ceilings: SowCeiling[] }>({
+    queryKey: [`/api/projects/${projectId}/contractor-sow-ceilings`],
+    enabled: !!projectId,
+  });
+  const { data: contractors = [] } = useQuery<Contractor[]>({
+    queryKey: ["/api/users", { isContractor: true }],
+    queryFn: () => apiRequest("/api/users?isContractor=true"),
+    enabled: formOpen,
+  });
+  const ceilings = Array.isArray(ceilingResponse) ? ceilingResponse : ceilingResponse?.ceilings ?? [];
+  const ceilingKey = [`/api/projects/${projectId}/contractor-sow-ceilings`];
+
+  const saveCeiling = useMutation({
+    mutationFn: () => apiRequest(
+      editing
+        ? `/api/projects/${projectId}/contractor-sow-ceilings/${editing.id}`
+        : `/api/projects/${projectId}/contractor-sow-ceilings`,
+      {
+        method: editing ? "PATCH" : "POST",
+        body: JSON.stringify({
+          contractorUserId: form.contractorUserId,
+          engagementLabel: form.engagementLabel.trim(),
+          ceilingType: form.ceilingType,
+          amount: Number(form.ceilingAmount),
+          agreedRate: Number(form.agreedRate),
+          effectiveDate: form.effectiveDate,
+          notes: form.notes.trim() || null,
+        }),
+      },
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ceilingKey });
+      setFormOpen(false);
+      setEditing(null);
+      setForm(EMPTY_CEILING);
+      toast({ title: editing ? "SOW ceiling updated" : "SOW ceiling created" });
+    },
+    onError: (e: any) => toast({ title: "Could not save SOW ceiling", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteCeiling = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/projects/${projectId}/contractor-sow-ceilings/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ceilingKey });
+      toast({ title: "SOW ceiling deleted" });
+    },
+    onError: (e: any) => toast({ title: "Could not delete SOW ceiling", description: e.message, variant: "destructive" }),
+  });
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_CEILING);
+    setFormOpen(true);
+  };
+  const openEdit = (ceiling: SowCeiling) => {
+    setEditing(ceiling);
+    setForm({
+      contractorUserId: ceiling.contractorUserId || ceiling.contractorId || ceiling.contractor?.id || "",
+      engagementLabel: ceiling.engagementLabel || "",
+      ceilingType: ceiling.ceilingType,
+      ceilingAmount: String(ceiling.amount),
+      agreedRate: ceiling.agreedRate == null ? "" : String(ceiling.agreedRate),
+      effectiveDate: ceiling.effectiveDate?.slice(0, 10) || "",
+      notes: ceiling.notes || "",
+    });
+    setFormOpen(true);
+  };
 
   const invoices = data?.invoices ?? [];
   const summary = data?.summary;
@@ -65,7 +190,7 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
   return (
     <div className="space-y-4">
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Invoiced</p>
@@ -86,6 +211,90 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle>SOW Ceilings</CardTitle>
+              <CardDescription>Track agreed contractor limits and consumption by engagement</CardDescription>
+            </div>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="mr-1.5 h-4 w-4" /> Add ceiling
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {ceilingsLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : ceilings.length === 0 ? (
+            <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">
+              No SOW ceilings have been configured for this project.
+            </div>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Contractor / Engagement</TableHead>
+                    <TableHead>Effective</TableHead>
+                    <TableHead className="text-right">Ceiling</TableHead>
+                    <TableHead className="text-right">Used</TableHead>
+                    <TableHead className="text-right">Remaining</TableHead>
+                    <TableHead>Usage</TableHead>
+                    <TableHead className="w-20" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ceilings.map((ceiling) => {
+                    const amount = Number(ceiling.amount) || 0;
+                    const used = Number(ceiling.usage?.used ?? 0);
+                    const remaining = Number(ceiling.usage?.remaining ?? amount - used);
+                    const percent = Number(ceiling.usage?.percentUsed ?? (amount ? used / amount * 100 : 0));
+                    const isCritical = percent >= 100;
+                    const isWarning = percent >= 80;
+                    const unit = ceiling.ceilingType === "hours" ? "h" : "$";
+                    const display = (value: number) => ceiling.ceilingType === "hours"
+                      ? `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}h`
+                      : fmt(value);
+                    return (
+                      <TableRow key={ceiling.id} className={isCritical ? "bg-red-50/60 dark:bg-red-950/20" : isWarning ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}>
+                        <TableCell>
+                          <div className="font-medium">{ceiling.contractor?.contractorBusinessName || ceiling.contractor?.name || "Contractor"}</div>
+                          <div className="text-xs text-muted-foreground">{ceiling.engagementLabel}</div>
+                          {ceiling.agreedRate != null && <div className="text-xs text-muted-foreground">{fmt(ceiling.agreedRate)}/hour agreed rate</div>}
+                        </TableCell>
+                        <TableCell className="text-sm">{formatBusinessDate(ceiling.effectiveDate)}</TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">{display(amount)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{display(used)}</TableCell>
+                        <TableCell className={`text-right tabular-nums ${isCritical ? "text-red-700 dark:text-red-400" : ""}`}>{display(remaining)}</TableCell>
+                        <TableCell>
+                          <div className={`flex items-center gap-1.5 text-sm font-medium ${isCritical ? "text-red-700 dark:text-red-400" : isWarning ? "text-amber-700 dark:text-amber-400" : ""}`}>
+                            {(isWarning || isCritical) && <AlertTriangle className="h-4 w-4" />}
+                            {percent.toFixed(0)}%
+                          </div>
+                          <div className="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+                            <div className={`h-full ${isCritical ? "bg-red-500" : isWarning ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+                          </div>
+                          <span className="sr-only">{unit} ceiling usage</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex">
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(ceiling)} aria-label="Edit ceiling"><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => {
+                              if (window.confirm("Delete this SOW ceiling?")) deleteCeiling.mutate(ceiling.id);
+                            }} aria-label="Delete ceiling"><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
@@ -164,6 +373,60 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit SOW ceiling" : "Add SOW ceiling"}</DialogTitle>
+            <DialogDescription>Define the agreed limit and rate for a contractor engagement.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+            <div className="sm:col-span-2">
+              <Label>Contractor</Label>
+              <Select value={form.contractorUserId} onValueChange={(value) => setForm((f) => ({ ...f, contractorUserId: value }))}>
+                <SelectTrigger><SelectValue placeholder="Select contractor" /></SelectTrigger>
+                <SelectContent>
+                  {contractors.map((contractor) => <SelectItem key={contractor.id} value={contractor.id}>{contractor.contractorBusinessName || contractor.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="sow-engagement">Engagement label</Label>
+              <Input id="sow-engagement" value={form.engagementLabel} onChange={(e) => setForm((f) => ({ ...f, engagementLabel: e.target.value }))} placeholder="e.g. Discovery and implementation" />
+            </div>
+            <div>
+              <Label>Ceiling type</Label>
+              <Select value={form.ceilingType} onValueChange={(value: "hours" | "dollars") => setForm((f) => ({ ...f, ceilingType: value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="hours">Hours</SelectItem><SelectItem value="dollars">Dollars</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="sow-amount">Ceiling amount</Label>
+              <Input id="sow-amount" type="number" min="0" step="0.01" value={form.ceilingAmount} onChange={(e) => setForm((f) => ({ ...f, ceilingAmount: e.target.value }))} />
+            </div>
+            <div>
+              <Label htmlFor="sow-rate">Agreed hourly rate</Label>
+              <Input id="sow-rate" type="number" min="0" step="0.01" value={form.agreedRate} onChange={(e) => setForm((f) => ({ ...f, agreedRate: e.target.value }))} />
+            </div>
+            <div>
+              <Label htmlFor="sow-effective">Effective date</Label>
+              <Input id="sow-effective" type="date" value={form.effectiveDate} onChange={(e) => setForm((f) => ({ ...f, effectiveDate: e.target.value }))} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="sow-notes">Notes</Label>
+              <Textarea id="sow-notes" rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Scope assumptions or approval reference" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
+            <Button onClick={() => saveCeiling.mutate()} disabled={!form.contractorUserId || !form.engagementLabel.trim() || !form.ceilingAmount || !form.agreedRate || !form.effectiveDate || saveCeiling.isPending}>
+              {saveCeiling.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {editing ? "Save changes" : "Add ceiling"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
