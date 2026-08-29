@@ -15,7 +15,12 @@ import { describe, expect, it } from "./_harness.js";
 import { db } from "../server/db.js";
 import { storage } from "../server/storage/index.js";
 import { registerVendorInvoiceRoutes } from "../server/routes/vendor-invoices.js";
-import { expenses, timeEntries } from "@shared/schema";
+import {
+  expenses,
+  timeEntries,
+  vendorInvoiceLineMatches,
+  vendorInvoiceLines,
+} from "@shared/schema";
 
 type Row = Record<string, any>;
 
@@ -56,6 +61,7 @@ function ceiling(ceilingType: "hours" | "dollars", amount: string): Row {
     engagementLabel: "Test engagement",
     ceilingType,
     amount,
+    currency: "USD",
     agreedRate: "100.00",
     effectiveDate: "2026-01-01",
   };
@@ -590,6 +596,420 @@ describe("vendor invoice unlink guards", () => {
       expect(h.matches.length).toBe(1);
     } finally {
       await h.close();
+    }
+  });
+});
+
+/**
+ * A small database-query fixture for the two storage paths. It returns rows
+ * from each successive select while retaining the real Drizzle method calls
+ * in listVendorInvoices/getVendorInvoiceReconciliation. That makes the
+ * assertions sensitive to query batching and to the shape of both paths,
+ * without writing shared billing fixtures into the development database.
+ */
+function installDbSelectSequence(rowsByCall: Row[][]): {
+  restore: () => void;
+  count: () => number;
+} {
+  const original = (db as any).select;
+  let calls = 0;
+  (db as any).select = () => {
+    const rows = rowsByCall[calls++] ?? [];
+    const query: any = Promise.resolve(rows);
+    for (const method of ["from", "innerJoin", "leftJoin", "where", "groupBy", "orderBy"]) {
+      query[method] = () => query;
+    }
+    query.limit = () => query;
+    return query;
+  };
+  return {
+    restore: () => { (db as any).select = original; },
+    count: () => calls,
+  };
+}
+
+interface InvoiceParityFixture {
+  invoices: Row[];
+  listRows: Row[];
+  lineAggregates: Row[];
+  ceilingAggregates: Row[];
+  detailLines: Map<string, Row[]>;
+  ceilingsByProject: Map<string, Row[]>;
+  uploads: Map<string, Row>;
+}
+
+function parityFixture(): InvoiceParityFixture {
+  const projectB = "project-b";
+  const invoiceMulti = {
+    id: "invoice-multi-project",
+    tenantId,
+    vendorUserId,
+    uploadId: "upload-pdf",
+    vendorInvoiceNumber: "M-001",
+    invoiceDate: "2026-06-30",
+    currency: "USD",
+    exchangeRate: null,
+    total: "1800",
+    status: "received",
+  };
+  const invoiceMissing = {
+    id: "invoice-missing-pdf",
+    tenantId,
+    vendorUserId,
+    uploadId: null,
+    vendorInvoiceNumber: "M-002",
+    invoiceDate: "2026-06-30",
+    currency: "USD",
+    exchangeRate: null,
+    total: "800",
+    status: "received",
+  };
+  const invoiceImage = {
+    id: "invoice-image-cross-tenant",
+    tenantId,
+    vendorUserId,
+    uploadId: "upload-image",
+    vendorInvoiceNumber: "M-003",
+    invoiceDate: "2026-06-30",
+    currency: "USD",
+    exchangeRate: null,
+    total: "0",
+    status: "received",
+  };
+
+  const lineMultiA = {
+    id: "line-multi-a",
+    tenantId,
+    vendorInvoiceId: invoiceMulti.id,
+    lineNumber: 1,
+    kind: "service",
+    projectId,
+    quantity: "80",
+    unit: "hours",
+    unitAmount: "95",
+    lineAmount: "800",
+    currency: "USD",
+    exchangeRate: null,
+    reconcileStatus: "matched",
+  };
+  const lineMultiB = {
+    id: "line-multi-b",
+    tenantId,
+    vendorInvoiceId: invoiceMulti.id,
+    lineNumber: 2,
+    kind: "service",
+    projectId: projectB,
+    quantity: "1",
+    unit: "each",
+    unitAmount: "106",
+    lineAmount: "1000",
+    currency: "EUR",
+    exchangeRate: null,
+    reconcileStatus: "matched",
+  };
+  const lineMissing = {
+    id: "line-missing",
+    tenantId,
+    vendorInvoiceId: invoiceMissing.id,
+    lineNumber: 1,
+    kind: "service",
+    projectId,
+    quantity: "80",
+    unit: "hours",
+    unitAmount: "100",
+    lineAmount: "800",
+    currency: "USD",
+    exchangeRate: null,
+    reconcileStatus: "unmatched",
+  };
+  const lineImage = {
+    id: "line-image",
+    tenantId,
+    vendorInvoiceId: invoiceImage.id,
+    lineNumber: 1,
+    kind: "service",
+    projectId,
+    quantity: "0",
+    unit: "hours",
+    unitAmount: "100",
+    lineAmount: "0",
+    currency: "USD",
+    exchangeRate: null,
+    reconcileStatus: "unmatched",
+  };
+
+  const ceilingA = {
+    id: "ceiling-project-a",
+    tenantId,
+    projectId,
+    contractorUserId: vendorUserId,
+    engagementLabel: "Project A services",
+    ceilingType: "hours",
+    amount: "200",
+    currency: "USD",
+    agreedRate: "100",
+    effectiveDate: "2026-01-01",
+  };
+  const ceilingB = {
+    id: "ceiling-project-b",
+    tenantId,
+    projectId: projectB,
+    contractorUserId: vendorUserId,
+    engagementLabel: "Project B services",
+    ceilingType: "dollars",
+    amount: "1000",
+    currency: "EUR",
+    agreedRate: "100",
+    effectiveDate: "2026-01-01",
+  };
+  const usageA = { used: 160, remaining: 40, percentUsed: 80, warning: "amber" };
+  const usageB = { used: 1000, remaining: 0, percentUsed: 100, warning: "red" };
+
+  const linkedTimeMatch = (lineId: string, id: string) => ({
+    id,
+    tenantId,
+    vendorInvoiceLineId: lineId,
+    sourceType: "time_entry",
+    allocatedQuantity: lineId === lineMultiA.id ? "80" : "1",
+    allocatedAmount: lineId === lineMultiA.id ? "800" : "1000",
+  });
+  const detailLines = new Map<string, Row[]>([
+    [invoiceMulti.id, [
+      {
+        ...lineMultiA,
+        matches: [linkedTimeMatch(lineMultiA.id, "match-multi-a")],
+        unlinkedServiceLine: false,
+        rateVariance: null,
+      },
+      {
+        ...lineMultiB,
+        matches: [linkedTimeMatch(lineMultiB.id, "match-multi-b")],
+        unlinkedServiceLine: false,
+        rateVariance: null,
+      },
+    ]],
+    [invoiceMissing.id, [{
+      ...lineMissing,
+      matches: [],
+      unlinkedServiceLine: true,
+      rateVariance: null,
+    }]],
+    // The only match for this line is a malformed tenant-b link. The
+    // tenant-scoped detail query must not return it.
+    [invoiceImage.id, [{
+      ...lineImage,
+      matches: [],
+      unlinkedServiceLine: true,
+      rateVariance: null,
+    }]],
+  ]);
+
+  return {
+    invoices: [invoiceMulti, invoiceMissing, invoiceImage],
+    listRows: [invoiceMulti, invoiceMissing, invoiceImage].map(invoice => ({
+      invoice,
+      vendor: null,
+      project: null,
+      upload: invoice.uploadId === "upload-pdf"
+        ? { id: "upload-pdf", mimeType: "application/pdf" }
+        : invoice.uploadId === "upload-image"
+          ? { id: "upload-image", mimeType: "image/png" }
+          : null,
+    })),
+    lineAggregates: [
+      {
+        invoiceId: invoiceMulti.id,
+        lineNumber: lineMultiA.lineNumber,
+        kind: lineMultiA.kind,
+        projectId: lineMultiA.projectId,
+        unitAmount: lineMultiA.unitAmount,
+        reconcileStatus: lineMultiA.reconcileStatus,
+        matchCount: 1,
+      },
+      {
+        invoiceId: invoiceMulti.id,
+        lineNumber: lineMultiB.lineNumber,
+        kind: lineMultiB.kind,
+        projectId: lineMultiB.projectId,
+        unitAmount: lineMultiB.unitAmount,
+        reconcileStatus: lineMultiB.reconcileStatus,
+        matchCount: 1,
+      },
+      {
+        invoiceId: invoiceMissing.id,
+        lineNumber: lineMissing.lineNumber,
+        kind: lineMissing.kind,
+        projectId: lineMissing.projectId,
+        unitAmount: lineMissing.unitAmount,
+        reconcileStatus: lineMissing.reconcileStatus,
+        matchCount: 0,
+      },
+      // A tenant-b match is intentionally absent from the tenant-a count.
+      {
+        invoiceId: invoiceImage.id,
+        lineNumber: lineImage.lineNumber,
+        kind: lineImage.kind,
+        projectId: lineImage.projectId,
+        unitAmount: lineImage.unitAmount,
+        reconcileStatus: lineImage.reconcileStatus,
+        matchCount: 0,
+      },
+    ],
+    ceilingAggregates: [
+      { ceiling: ceilingA, hours: "160", dollars: "0" },
+      { ceiling: ceilingB, hours: "0", dollars: "1000" },
+    ],
+    detailLines,
+    ceilingsByProject: new Map([
+      [projectId, [{ ...ceilingA, usage: usageA }]],
+      [projectB, [{ ...ceilingB, usage: usageB }]],
+    ]),
+    uploads: new Map([
+      ["upload-pdf", { id: "upload-pdf", mimeType: "application/pdf" }],
+      ["upload-image", { id: "upload-image", mimeType: "image/png" }],
+    ]),
+  };
+}
+
+async function getDetailFlagsFromFixture(
+  fixture: InvoiceParityFixture,
+  invoice: Row,
+): Promise<Row> {
+  const lines = fixture.detailLines.get(invoice.id)!;
+  const restore = installDbSelectSequence(
+    [...new Set(lines.filter(line => line.kind === "service" && line.projectId).map(line => line.projectId))]
+      .map(() => [{ value: "80" }]),
+  );
+  try {
+    const context = {
+      getVendorInvoiceShallow: async () => invoice,
+      getVendorInvoiceUpload: async (id: string) => fixture.uploads.get(id),
+      listContractorSowCeilings: async (_requestedTenant: string, requestedProject: string) =>
+        fixture.ceilingsByProject.get(requestedProject) ?? [],
+    };
+    return (await (storage as any).getVendorInvoiceReconciliation.call(
+      context,
+      invoice.id,
+      tenantId,
+      lines,
+    )).flags;
+  } finally {
+    restore.restore();
+  }
+}
+
+describe("vendor invoice list/detail reconciliation parity", () => {
+  it("keeps warning flags identical for PDFs, missing uploads, matches, rates, ceilings, and multiple projects", async () => {
+    const fixture = parityFixture();
+    const listDb = installDbSelectSequence([
+      fixture.listRows,
+      fixture.lineAggregates,
+      fixture.ceilingAggregates,
+    ]);
+    let listed: Row[];
+    try {
+      listed = await (storage as any).listVendorInvoices({ tenantId });
+    } finally {
+      listDb.restore();
+    }
+
+    for (const invoice of fixture.invoices) {
+      const listRow = listed.find(row => row.id === invoice.id);
+      const detailFlags = await getDetailFlagsFromFixture(fixture, invoice);
+      expect(listRow?.reconciliationFlags).toEqual(detailFlags);
+    }
+
+    const multiFlags = listed.find(row => row.id === "invoice-multi-project")!.reconciliationFlags;
+    expect(multiFlags.missingPdf).toBe(false);
+    expect(multiFlags.hasUnlinkedServiceLines).toBe(false);
+    expect(multiFlags.hasRateVariance).toBe(true);
+    expect(multiFlags.ceilingWarnings.map((warning: Row) => warning.warning ?? warning.usage.warning))
+      .toEqual(["amber", "red"]);
+    expect(multiFlags.ceilingWarnings[1].currency).toBe("EUR");
+
+    const missingFlags = listed.find(row => row.id === "invoice-missing-pdf")!.reconciliationFlags;
+    expect(missingFlags.missingPdf).toBe(true);
+    expect(missingFlags.hasUnlinkedServiceLines).toBe(true);
+
+    const imageFlags = listed.find(row => row.id === "invoice-image-cross-tenant")!.reconciliationFlags;
+    expect(imageFlags.missingPdf).toBe(true);
+    expect(imageFlags.hasUnlinkedServiceLines).toBe(true);
+  });
+
+  it("keeps list query count fixed as returned invoice count grows", async () => {
+    const fixture = parityFixture();
+    const runList = async (invoices: Row[]) => {
+      const ids = new Set(invoices.map(invoice => invoice.id));
+      const dbFixture = installDbSelectSequence([
+        fixture.listRows.filter(row => ids.has(row.invoice.id)),
+        fixture.lineAggregates.filter(line => ids.has(line.invoiceId)),
+        fixture.ceilingAggregates,
+      ]);
+      try {
+        await (storage as any).listVendorInvoices({ tenantId });
+        return dbFixture.count();
+      } finally {
+        dbFixture.restore();
+      }
+    };
+
+    expect(await runList([fixture.invoices[0]])).toBe(3);
+    expect(await runList(fixture.invoices)).toBe(3);
+  });
+});
+
+describe("vendor invoice cross-tenant reconciliation isolation", () => {
+  it("does not treat a malformed tenant-b match as linked in the tenant-a detail path", async () => {
+    const line = {
+      ...parityFixture().detailLines.get("invoice-image-cross-tenant")![0],
+      matches: undefined,
+    };
+    const foreignMatch = {
+      id: "match-tenant-b",
+      tenantId: "tenant-b",
+      vendorInvoiceLineId: line.id,
+      sourceType: "time_entry",
+      allocatedQuantity: "1",
+      allocatedAmount: "100",
+    };
+    const original = (db as any).select;
+    (db as any).select = () => {
+      let table: any;
+      let rows: Row[] = [];
+      const query: any = {
+        from(value: any) {
+          table = value;
+          return query;
+        },
+        leftJoin() { return query; },
+        where(condition: any) {
+          if (table === vendorInvoiceLines) {
+            rows = [{ line, project: null }];
+          } else if (table === vendorInvoiceLineMatches) {
+            // This assertion makes the fixture fail if the detail query
+            // loses its tenant predicate in a future refactor.
+            const hasTenantScope = columnNames(condition).has("tenant_id");
+            expect(hasTenantScope).toBe(true);
+            rows = hasTenantScope
+              ? []
+              : [{ match: foreignMatch, timeEntry: null, timeEntryUser: null, expense: null }];
+          }
+          return query;
+        },
+        orderBy() { return query; },
+        then(resolve: any, reject: any) {
+          return Promise.resolve(rows).then(resolve, reject);
+        },
+      };
+      return query;
+    };
+    try {
+      const lines = await (storage as any).getVendorInvoiceLines(line.vendorInvoiceId, tenantId);
+      expect(lines.length).toBe(1);
+      expect(lines[0].matches).toEqual([]);
+      expect(lines[0].unlinkedServiceLine).toBe(true);
+    } finally {
+      (db as any).select = original;
     }
   });
 });

@@ -630,7 +630,19 @@ export const vendorInvoicesMethods = {
         .select({
           ceiling: contractorSowCeilings,
           hours: sql<string>`coalesce(sum(case when lower(${vendorInvoiceLines.unit}) = 'hours' then ${vendorInvoiceLines.quantity} else 0 end), 0)`,
-          dollars: sql<string>`coalesce(sum(${vendorInvoiceLines.lineAmount}), 0)`,
+          dollars: sql<string>`
+            coalesce(sum(
+              case
+                when upper(coalesce(${vendorInvoiceLines.currency}, ${vendorInvoices.currency}, 'USD')) =
+                     upper(${contractorSowCeilings.currency})
+                  then ${vendorInvoiceLines.lineAmount}
+                when coalesce(${vendorInvoiceLines.exchangeRate}, ${vendorInvoices.exchangeRate}) is not null
+                  then ${vendorInvoiceLines.lineAmount} *
+                       coalesce(${vendorInvoiceLines.exchangeRate}, ${vendorInvoices.exchangeRate})
+                else 0
+              end
+            ), 0)
+          `,
         })
         .from(contractorSowCeilings)
         .leftJoin(
