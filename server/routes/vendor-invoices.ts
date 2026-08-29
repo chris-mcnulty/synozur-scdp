@@ -626,7 +626,7 @@ export function registerVendorInvoiceRoutes(
           });
         }
 
-        const existingMatches = await storage.getVendorInvoiceLineMatchesByLineIds([line.id]);
+        const existingMatches = await storage.getVendorInvoiceLineMatchesByLineIds([line.id], tenantId);
         const remainingLineAmount = Math.max(
           0,
           Number(line.lineAmount) -
@@ -1013,7 +1013,7 @@ async function refreshLineReconcileStatus(lineId: string): Promise<void> {
   if (!line) return;
   if (line.reconcileStatus === "overridden") return; // reviewer override sticks
 
-  const matches = await storage.getVendorInvoiceLineMatchesByLineIds([lineId]);
+  const matches = await storage.getVendorInvoiceLineMatchesByLineIds([lineId], line.tenantId);
   if (matches.length === 0) {
     await storage.updateVendorInvoiceLine(lineId, {
       reconcileStatus: "unmatched",

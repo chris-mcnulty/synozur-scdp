@@ -131,6 +131,61 @@ export interface CandidateTimeEntry extends TimeEntry {
   userName: string;
 }
 
+interface VendorInvoiceListLineAggregate {
+  invoiceId: string;
+  lineNumber: number;
+  kind: string;
+  projectId: string | null;
+  unitAmount: string | null;
+  reconcileStatus: string;
+  matchCount: number;
+}
+
+interface VendorInvoiceListAggregate {
+  lineSummary: VendorInvoiceListRow["lineSummary"];
+  reconciliationFlags: VendorInvoiceReconciliationFlags;
+}
+
+function ceilingUsageFromTotals(
+  ceiling: ContractorSowCeiling,
+  totals: { hours: string | number | null | undefined; dollars: string | number | null | undefined },
+): CeilingUsage {
+  const used = Number(ceiling.ceilingType === "hours" ? totals.hours : totals.dollars) || 0;
+  const amount = Number(ceiling.amount);
+  const percentUsed = amount > 0 ? (used / amount) * 100 : 0;
+  return {
+    used,
+    remaining: amount - used,
+    percentUsed,
+    warning: percentUsed >= 100 ? "red" : percentUsed >= 80 ? "amber" : null,
+  };
+}
+
+function getRateVariance(
+  line: Pick<VendorInvoiceLine, "kind" | "projectId" | "unitAmount">,
+  ceilings: ContractorSowCeiling[],
+): RateVariance | null {
+  if (line.kind !== "service" || !line.projectId || !line.unitAmount) return null;
+
+  const ceiling = ceilings
+    .filter(candidate => candidate.projectId === line.projectId && candidate.agreedRate)
+    .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))[0];
+  if (!ceiling?.agreedRate) return null;
+
+  const agreedRate = Number(ceiling.agreedRate);
+  const invoicedRate = Number(line.unitAmount);
+  const variancePercent = agreedRate
+    ? ((invoicedRate - agreedRate) / agreedRate) * 100
+    : 0;
+  return {
+    agreedRate,
+    invoicedRate,
+    variancePercent,
+    exceedsFivePercent: Math.abs(variancePercent) > 5,
+    ceilingId: ceiling.id,
+  };
+}
+
 // --------------------------------------------------------------------------
 // Methods (merged into IStorage at server/storage/index.ts)
 // --------------------------------------------------------------------------
@@ -191,15 +246,7 @@ export const vendorInvoicesMethods = {
         gte(vendorInvoices.invoiceDate, ceiling.effectiveDate),
         ne(vendorInvoices.status, "void"),
       ));
-    const used = Number(ceiling.ceilingType === "hours" ? row?.hours : row?.dollars) || 0;
-    const amount = Number(ceiling.amount);
-    const percentUsed = amount > 0 ? (used / amount) * 100 : 0;
-    return {
-      used,
-      remaining: amount - used,
-      percentUsed,
-      warning: percentUsed >= 100 ? "red" : percentUsed >= 80 ? "amber" : null,
-    };
+    return ceilingUsageFromTotals(ceiling, row ?? {});
   },
 
   async createContractorSowCeiling(
@@ -327,46 +374,214 @@ export const vendorInvoicesMethods = {
           name: projects.name,
           code: projects.code,
         },
+        upload: {
+          id: vendorInvoiceUploads.id,
+          mimeType: vendorInvoiceUploads.mimeType,
+        },
       })
       .from(vendorInvoices)
       .leftJoin(users, eq(vendorInvoices.vendorUserId, users.id))
       .leftJoin(projects, eq(vendorInvoices.projectId, projects.id))
+      .leftJoin(
+        vendorInvoiceUploads,
+        and(
+          eq(vendorInvoices.uploadId, vendorInvoiceUploads.id),
+          eq(vendorInvoiceUploads.tenantId, filters.tenantId),
+        ),
+      )
       .where(and(...conds))
       .orderBy(desc(vendorInvoices.invoiceDate), desc(vendorInvoices.createdAt));
 
     if (rows.length === 0) return [];
 
-    const invoiceIds = rows.map(r => r.invoice.id);
-    // One round-trip to aggregate per-invoice reconcile state across all lines.
-    const summaryRows = await db
-      .select({
-        invoiceId: vendorInvoiceLines.vendorInvoiceId,
-        total: sql<number>`count(*) filter (where ${vendorInvoiceLines.kind} in ('service','expense'))`,
-        matched: sql<number>`count(*) filter (where ${vendorInvoiceLines.reconcileStatus} in ('matched','overridden'))`,
-        variance: sql<number>`count(*) filter (where ${vendorInvoiceLines.reconcileStatus} in ('variance','partial'))`,
-        unmatched: sql<number>`count(*) filter (where ${vendorInvoiceLines.reconcileStatus} = 'unmatched')`,
-      })
-      .from(vendorInvoiceLines)
-      .where(inArray(vendorInvoiceLines.vendorInvoiceId, invoiceIds))
-      .groupBy(vendorInvoiceLines.vendorInvoiceId);
-    const summaryMap = new Map(summaryRows.map(s => [s.invoiceId, s]));
+    const aggregateMap = await this.getVendorInvoiceListAggregates(
+      rows.map(r => ({
+        invoice: r.invoice,
+        upload: r.upload?.id ? r.upload : null,
+      })),
+      filters.tenantId,
+    );
 
-    return Promise.all(rows.map(async r => {
-      const s = summaryMap.get(r.invoice.id);
-      const insights = await this.getVendorInvoiceReconciliation(r.invoice.id, filters.tenantId);
+    return rows.map(r => {
+      const aggregate = aggregateMap.get(r.invoice.id)!;
       return {
         ...r.invoice,
         vendor: r.vendor?.id ? r.vendor : null,
         project: r.project?.id ? r.project : null,
-        lineSummary: {
-          total: Number(s?.total ?? 0),
-          matched: Number(s?.matched ?? 0),
-          variance: Number(s?.variance ?? 0),
-          unmatched: Number(s?.unmatched ?? 0),
-        },
-        reconciliationFlags: insights.flags,
+        lineSummary: aggregate.lineSummary,
+        reconciliationFlags: aggregate.reconciliationFlags,
       };
+    });
+  },
+
+  /**
+   * Build the flags and line summary needed by the invoice inbox in batches.
+   *
+   * The detail reconciliation path intentionally remains separate because it
+   * needs every line, match, and hours-reconciliation record. The inbox only
+   * needs aggregate information, so loading those aggregates here keeps query
+   * count independent of the number of invoices being displayed.
+   */
+  async getVendorInvoiceListAggregates(
+    invoiceRows: Array<{
+      invoice: VendorInvoice;
+      upload: Pick<VendorInvoiceUpload, "id" | "mimeType"> | null;
+    }>,
+    tenantId: string,
+  ): Promise<Map<string, VendorInvoiceListAggregate>> {
+    const invoiceIds = invoiceRows.map(row => row.invoice.id);
+    const lineRows: VendorInvoiceListLineAggregate[] = invoiceIds.length === 0
+      ? []
+      : await db
+        .select({
+          invoiceId: vendorInvoiceLines.vendorInvoiceId,
+          lineNumber: vendorInvoiceLines.lineNumber,
+          kind: vendorInvoiceLines.kind,
+          projectId: vendorInvoiceLines.projectId,
+          unitAmount: vendorInvoiceLines.unitAmount,
+          reconcileStatus: vendorInvoiceLines.reconcileStatus,
+          matchCount: sql<number>`count(${vendorInvoiceLineMatches.id})`,
+        })
+        .from(vendorInvoiceLines)
+        .leftJoin(
+          vendorInvoiceLineMatches,
+          and(
+            eq(vendorInvoiceLineMatches.vendorInvoiceLineId, vendorInvoiceLines.id),
+            eq(vendorInvoiceLineMatches.tenantId, tenantId),
+          ),
+        )
+        .where(and(
+          eq(vendorInvoiceLines.tenantId, tenantId),
+          inArray(vendorInvoiceLines.vendorInvoiceId, invoiceIds),
+        ))
+        .groupBy(
+          vendorInvoiceLines.id,
+          vendorInvoiceLines.vendorInvoiceId,
+          vendorInvoiceLines.lineNumber,
+          vendorInvoiceLines.kind,
+          vendorInvoiceLines.projectId,
+          vendorInvoiceLines.unitAmount,
+          vendorInvoiceLines.reconcileStatus,
+        )
+        .orderBy(
+          asc(vendorInvoiceLines.vendorInvoiceId),
+          asc(vendorInvoiceLines.lineNumber),
+        );
+
+    const lineProjectsByInvoice = new Map<string, Set<string>>();
+    const linesByInvoice = new Map<string, VendorInvoiceListLineAggregate[]>();
+    const summaries = new Map<string, VendorInvoiceListRow["lineSummary"]>();
+    for (const invoice of invoiceRows) {
+      summaries.set(invoice.invoice.id, { total: 0, matched: 0, variance: 0, unmatched: 0 });
+    }
+
+    for (const line of lineRows) {
+      const summary = summaries.get(line.invoiceId);
+      if (!summary) continue;
+      if (!linesByInvoice.has(line.invoiceId)) linesByInvoice.set(line.invoiceId, []);
+      linesByInvoice.get(line.invoiceId)!.push(line);
+
+      if (line.kind === "service" || line.kind === "expense") {
+        summary.total++;
+        if (line.reconcileStatus === "matched" || line.reconcileStatus === "overridden") {
+          summary.matched++;
+        } else if (line.reconcileStatus === "variance" || line.reconcileStatus === "partial") {
+          summary.variance++;
+        } else if (line.reconcileStatus === "unmatched") {
+          summary.unmatched++;
+        }
+      }
+
+      if (line.kind === "service" && line.projectId) {
+        if (!lineProjectsByInvoice.has(line.invoiceId)) {
+          lineProjectsByInvoice.set(line.invoiceId, new Set());
+        }
+        lineProjectsByInvoice.get(line.invoiceId)!.add(line.projectId);
+      }
+    }
+
+    const projectIds = [...new Set(
+      [...lineProjectsByInvoice.values()].flatMap(projects => [...projects]),
+    )];
+    const ceilingRows = projectIds.length === 0
+      ? []
+      : await db
+        .select({
+          ceiling: contractorSowCeilings,
+          hours: sql<string>`coalesce(sum(case when lower(${vendorInvoiceLines.unit}) = 'hours' then ${vendorInvoiceLines.quantity} else 0 end), 0)`,
+          dollars: sql<string>`coalesce(sum(${vendorInvoiceLines.lineAmount}), 0)`,
+        })
+        .from(contractorSowCeilings)
+        .leftJoin(
+          vendorInvoices,
+          and(
+            eq(vendorInvoices.tenantId, contractorSowCeilings.tenantId),
+            eq(vendorInvoices.vendorUserId, contractorSowCeilings.contractorUserId),
+            gte(vendorInvoices.invoiceDate, contractorSowCeilings.effectiveDate),
+            ne(vendorInvoices.status, "void"),
+          ),
+        )
+        .leftJoin(
+          vendorInvoiceLines,
+          and(
+            eq(vendorInvoiceLines.vendorInvoiceId, vendorInvoices.id),
+            eq(vendorInvoiceLines.tenantId, contractorSowCeilings.tenantId),
+            eq(vendorInvoiceLines.projectId, contractorSowCeilings.projectId),
+            eq(vendorInvoiceLines.kind, "service"),
+          ),
+        )
+        .where(and(
+          eq(contractorSowCeilings.tenantId, tenantId),
+          inArray(contractorSowCeilings.projectId, projectIds),
+        ))
+        .groupBy(contractorSowCeilings.id);
+
+    const ceilings = ceilingRows.map(({ ceiling, hours, dollars }) => ({
+      ...ceiling,
+      usage: ceilingUsageFromTotals(ceiling, { hours, dollars }),
     }));
+    const aggregates = new Map<string, VendorInvoiceListAggregate>();
+
+    for (const { invoice, upload } of invoiceRows) {
+      const invoiceLines = linesByInvoice.get(invoice.id) ?? [];
+      const eligibleCeilings = [...(lineProjectsByInvoice.get(invoice.id) ?? [])]
+        .flatMap(projectId => ceilings
+          .filter(ceiling =>
+            ceiling.projectId === projectId &&
+            ceiling.contractorUserId === invoice.vendorUserId &&
+            ceiling.effectiveDate <= invoice.invoiceDate,
+          )
+          .sort((a, b) =>
+            b.effectiveDate.localeCompare(a.effectiveDate) ||
+            a.engagementLabel.localeCompare(b.engagementLabel),
+          ));
+
+      const hasRateVariance = invoiceLines.some(line =>
+        getRateVariance(line, eligibleCeilings)?.exceedsFivePercent,
+      );
+
+      aggregates.set(invoice.id, {
+        lineSummary: summaries.get(invoice.id)!,
+        reconciliationFlags: {
+          missingPdf: !upload || !upload.mimeType.toLowerCase().includes("pdf"),
+          hasUnlinkedServiceLines: invoiceLines.some(line =>
+            line.kind === "service" && Number(line.matchCount) === 0,
+          ),
+          hasRateVariance,
+          ceilingWarnings: eligibleCeilings
+            .filter(ceiling => ceiling.usage.warning)
+            .map(ceiling => ({
+              ceilingId: ceiling.id,
+              projectId: ceiling.projectId,
+              ceilingType: ceiling.ceilingType,
+              engagementLabel: ceiling.engagementLabel,
+              usage: ceiling.usage,
+            })),
+        },
+      });
+    }
+
+    return aggregates;
   },
 
   async getVendorInvoice(
@@ -407,7 +622,7 @@ export const vendorInvoicesMethods = {
 
     if (!row) return undefined;
 
-    const lines = await this.getVendorInvoiceLines(row.invoice.id);
+    const lines = await this.getVendorInvoiceLines(row.invoice.id, row.invoice.tenantId);
     const insights = await this.getVendorInvoiceReconciliation(row.invoice.id, row.invoice.tenantId, lines);
 
     return {
@@ -429,7 +644,7 @@ export const vendorInvoicesMethods = {
   ): Promise<{ flags: VendorInvoiceReconciliationFlags; hours: InvoiceHoursReconciliation[] }> {
     const invoice = await this.getVendorInvoiceShallow(invoiceId, tenantId);
     if (!invoice) throw new Error("Vendor invoice not found");
-    const lines = providedLines ?? await this.getVendorInvoiceLines(invoiceId);
+    const lines = providedLines ?? await this.getVendorInvoiceLines(invoiceId, tenantId);
     const upload = invoice.uploadId
       ? await this.getVendorInvoiceUpload(invoice.uploadId, tenantId)
       : undefined;
@@ -443,23 +658,8 @@ export const vendorInvoicesMethods = {
     let hasRateVariance = false;
     for (const line of lines) {
       line.unlinkedServiceLine = line.kind === "service" && line.matches.length === 0;
-      line.rateVariance = null;
-      if (line.kind === "service" && line.projectId && line.unitAmount) {
-        const ceiling = allCeilings
-          .filter((c: ContractorSowCeilingWithUsage) => c.projectId === line.projectId && c.agreedRate)
-          .sort((a: ContractorSowCeilingWithUsage, b: ContractorSowCeilingWithUsage) => b.effectiveDate.localeCompare(a.effectiveDate))[0];
-        if (ceiling?.agreedRate) {
-          const agreedRate = Number(ceiling.agreedRate);
-          const invoicedRate = Number(line.unitAmount);
-          const variancePercent = agreedRate ? ((invoicedRate - agreedRate) / agreedRate) * 100 : 0;
-          line.rateVariance = {
-            agreedRate, invoicedRate, variancePercent,
-            exceedsFivePercent: Math.abs(variancePercent) > 5,
-            ceilingId: ceiling.id,
-          };
-          hasRateVariance ||= line.rateVariance.exceedsFivePercent;
-        }
-      }
+      line.rateVariance = getRateVariance(line, allCeilings);
+      hasRateVariance ||= line.rateVariance?.exceedsFivePercent ?? false;
     }
 
     const hours: InvoiceHoursReconciliation[] = [];
@@ -542,7 +742,10 @@ export const vendorInvoicesMethods = {
 
   async getVendorInvoiceLines(
     invoiceId: string,
+    tenantId?: string,
   ): Promise<VendorInvoiceLineWithMatches[]> {
+    const conds = [eq(vendorInvoiceLines.vendorInvoiceId, invoiceId)];
+    if (tenantId) conds.push(eq(vendorInvoiceLines.tenantId, tenantId));
     const rows = await db
       .select({
         line: vendorInvoiceLines,
@@ -554,13 +757,13 @@ export const vendorInvoicesMethods = {
       })
       .from(vendorInvoiceLines)
       .leftJoin(projects, eq(vendorInvoiceLines.projectId, projects.id))
-      .where(eq(vendorInvoiceLines.vendorInvoiceId, invoiceId))
+      .where(and(...conds))
       .orderBy(asc(vendorInvoiceLines.lineNumber));
 
     if (rows.length === 0) return [];
 
     const lineIds = rows.map(r => r.line.id);
-    const allMatches = await this.getVendorInvoiceLineMatchesByLineIds(lineIds);
+    const allMatches = await this.getVendorInvoiceLineMatchesByLineIds(lineIds, tenantId);
     const matchesByLine = new Map<string, EnrichedVendorInvoiceLineMatch[]>();
     for (const m of allMatches) {
       if (!matchesByLine.has(m.vendorInvoiceLineId)) {
@@ -627,9 +830,24 @@ export const vendorInvoicesMethods = {
 
   async getVendorInvoiceLineMatchesByLineIds(
     lineIds: string[],
+    tenantId?: string,
   ): Promise<EnrichedVendorInvoiceLineMatch[]> {
     if (lineIds.length === 0) return [];
 
+    const conds = [inArray(vendorInvoiceLineMatches.vendorInvoiceLineId, lineIds)];
+    if (tenantId) conds.push(eq(vendorInvoiceLineMatches.tenantId, tenantId));
+    const timeEntryJoin = tenantId
+      ? and(
+          eq(vendorInvoiceLineMatches.sourceTimeEntryId, timeEntries.id),
+          eq(timeEntries.tenantId, tenantId),
+        )
+      : eq(vendorInvoiceLineMatches.sourceTimeEntryId, timeEntries.id);
+    const expenseJoin = tenantId
+      ? and(
+          eq(vendorInvoiceLineMatches.sourceExpenseId, expenses.id),
+          eq(expenses.tenantId, tenantId),
+        )
+      : eq(vendorInvoiceLineMatches.sourceExpenseId, expenses.id);
     const matchRows = await db
       .select({
         match: vendorInvoiceLineMatches,
@@ -638,10 +856,10 @@ export const vendorInvoicesMethods = {
         expense: expenses,
       })
       .from(vendorInvoiceLineMatches)
-      .leftJoin(timeEntries, eq(vendorInvoiceLineMatches.sourceTimeEntryId, timeEntries.id))
+      .leftJoin(timeEntries, timeEntryJoin)
       .leftJoin(users, eq(timeEntries.personId, users.id))
-      .leftJoin(expenses, eq(vendorInvoiceLineMatches.sourceExpenseId, expenses.id))
-      .where(inArray(vendorInvoiceLineMatches.vendorInvoiceLineId, lineIds));
+      .leftJoin(expenses, expenseJoin)
+      .where(and(...conds));
 
     return matchRows.map(row => {
       let source: EnrichedVendorInvoiceLineMatch["source"] = null;
