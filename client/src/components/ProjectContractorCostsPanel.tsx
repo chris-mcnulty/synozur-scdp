@@ -49,6 +49,7 @@ interface SowCeiling {
   engagementLabel: string;
   ceilingType: "hours" | "dollars";
   amount: string | number;
+  currency: string;
   agreedRate: string | number | null;
   effectiveDate: string;
   notes: string | null;
@@ -65,6 +66,7 @@ interface CeilingForm {
   engagementLabel: string;
   ceilingType: "hours" | "dollars";
   ceilingAmount: string;
+  currency: string;
   agreedRate: string;
   effectiveDate: string;
   notes: string;
@@ -75,6 +77,7 @@ const EMPTY_CEILING: CeilingForm = {
   engagementLabel: "",
   ceilingType: "hours",
   ceilingAmount: "",
+  currency: "USD",
   agreedRate: "",
   effectiveDate: "",
   notes: "",
@@ -104,6 +107,11 @@ function StatusBadge({ status }: { status: string }) {
 function fmt(value: string | number | undefined) {
   if (value == null) return "$0.00";
   return `$${parseFloat(String(value)).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+}
+
+function fmtComparisonCurrency(value: string | number | undefined, currency: string) {
+  const amount = value == null ? 0 : parseFloat(String(value));
+  return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function ProjectContractorCostsPanel({ projectId }: { projectId: string }) {
@@ -140,6 +148,7 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
           engagementLabel: form.engagementLabel.trim(),
           ceilingType: form.ceilingType,
           amount: Number(form.ceilingAmount),
+          currency: form.currency.trim().toUpperCase(),
           agreedRate: Number(form.agreedRate),
           effectiveDate: form.effectiveDate,
           notes: form.notes.trim() || null,
@@ -177,6 +186,7 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
       engagementLabel: ceiling.engagementLabel || "",
       ceilingType: ceiling.ceilingType,
       ceilingAmount: String(ceiling.amount),
+      currency: ceiling.currency || "USD",
       agreedRate: ceiling.agreedRate == null ? "" : String(ceiling.agreedRate),
       effectiveDate: ceiling.effectiveDate?.slice(0, 10) || "",
       notes: ceiling.notes || "",
@@ -253,16 +263,15 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
                     const percent = Number(ceiling.usage?.percentUsed ?? (amount ? used / amount * 100 : 0));
                     const isCritical = percent >= 100;
                     const isWarning = percent >= 80;
-                    const unit = ceiling.ceilingType === "hours" ? "h" : "$";
                     const display = (value: number) => ceiling.ceilingType === "hours"
                       ? `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}h`
-                      : fmt(value);
+                      : fmtComparisonCurrency(value, ceiling.currency);
                     return (
                       <TableRow key={ceiling.id} className={isCritical ? "bg-red-50/60 dark:bg-red-950/20" : isWarning ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}>
                         <TableCell>
                           <div className="font-medium">{ceiling.contractor?.contractorBusinessName || ceiling.contractor?.name || "Contractor"}</div>
                           <div className="text-xs text-muted-foreground">{ceiling.engagementLabel}</div>
-                          {ceiling.agreedRate != null && <div className="text-xs text-muted-foreground">{fmt(ceiling.agreedRate)}/hour agreed rate</div>}
+                          {ceiling.agreedRate != null && <div className="text-xs text-muted-foreground">{fmtComparisonCurrency(ceiling.agreedRate, ceiling.currency)}/hour agreed rate</div>}
                         </TableCell>
                         <TableCell className="text-sm">{formatBusinessDate(ceiling.effectiveDate)}</TableCell>
                         <TableCell className="text-right tabular-nums font-medium">{display(amount)}</TableCell>
@@ -276,7 +285,7 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
                           <div className="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-muted">
                             <div className={`h-full ${isCritical ? "bg-red-500" : isWarning ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${Math.min(percent, 100)}%` }} />
                           </div>
-                          <span className="sr-only">{unit} ceiling usage</span>
+                          <span className="sr-only">{ceiling.ceilingType === "hours" ? "Hour" : ceiling.currency} ceiling usage</span>
                         </TableCell>
                         <TableCell>
                           <div className="flex">
@@ -406,7 +415,20 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
               <Input id="sow-amount" type="number" min="0" step="0.01" value={form.ceilingAmount} onChange={(e) => setForm((f) => ({ ...f, ceilingAmount: e.target.value }))} />
             </div>
             <div>
-              <Label htmlFor="sow-rate">Agreed hourly rate</Label>
+              <Label htmlFor="sow-currency">Comparison currency</Label>
+              <Input
+                id="sow-currency"
+                value={form.currency}
+                onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value.toUpperCase().slice(0, 3) }))}
+                maxLength={3}
+                placeholder="USD"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Invoice usage is converted into this currency using its recorded exchange rate.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="sow-rate">Agreed hourly rate ({form.currency || "currency"})</Label>
               <Input id="sow-rate" type="number" min="0" step="0.01" value={form.agreedRate} onChange={(e) => setForm((f) => ({ ...f, agreedRate: e.target.value }))} />
             </div>
             <div>
@@ -420,7 +442,7 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={() => saveCeiling.mutate()} disabled={!form.contractorUserId || !form.engagementLabel.trim() || !form.ceilingAmount || !form.agreedRate || !form.effectiveDate || saveCeiling.isPending}>
+            <Button onClick={() => saveCeiling.mutate()} disabled={!form.contractorUserId || !form.engagementLabel.trim() || !form.ceilingAmount || form.currency.trim().length !== 3 || !form.agreedRate || !form.effectiveDate || saveCeiling.isPending}>
               {saveCeiling.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editing ? "Save changes" : "Add ceiling"}
             </Button>

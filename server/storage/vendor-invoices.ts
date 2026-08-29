@@ -81,6 +81,7 @@ export interface VendorInvoiceReconciliationFlags {
     ceilingId: string;
     projectId: string;
     ceilingType: string;
+    currency: string;
     engagementLabel: string;
     usage: CeilingUsage;
   }>;
@@ -231,10 +232,21 @@ export const vendorInvoicesMethods = {
   },
 
   async getContractorSowCeilingUsage(ceiling: ContractorSowCeiling): Promise<CeilingUsage> {
+    const comparisonCurrency = ceiling.currency.toUpperCase();
     const [row] = await db
       .select({
         hours: sql<string>`coalesce(sum(case when lower(${vendorInvoiceLines.unit}) = 'hours' then ${vendorInvoiceLines.quantity} else 0 end), 0)`,
-        dollars: sql<string>`coalesce(sum(${vendorInvoiceLines.lineAmount}), 0)`,
+        dollars: sql<string>`
+          coalesce(sum(
+            case
+              when upper(coalesce(${vendorInvoiceLines.currency}, ${vendorInvoices.currency}, 'USD')) = ${comparisonCurrency}
+                then ${vendorInvoiceLines.lineAmount}
+              when coalesce(${vendorInvoiceLines.exchangeRate}, ${vendorInvoices.exchangeRate}) is not null
+                then ${vendorInvoiceLines.lineAmount} * coalesce(${vendorInvoiceLines.exchangeRate}, ${vendorInvoices.exchangeRate})
+              else 0
+            end
+          ), 0)
+        `,
       })
       .from(vendorInvoiceLines)
       .innerJoin(vendorInvoices, eq(vendorInvoiceLines.vendorInvoiceId, vendorInvoices.id))
@@ -701,6 +713,7 @@ export const vendorInvoicesMethods = {
           ceilingId: c.id,
           projectId: c.projectId,
           ceilingType: c.ceilingType,
+          currency: c.currency,
           engagementLabel: c.engagementLabel,
           usage: c.usage,
         })),

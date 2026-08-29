@@ -1567,6 +1567,7 @@ export const contractorSowCeilings = pgTable("contractor_sow_ceilings", {
   engagementLabel: text("engagement_label").notNull(),
   ceilingType: text("ceiling_type").notNull(), // hours, dollars
   amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("USD"),
   agreedRate: decimal("agreed_rate", { precision: 12, scale: 2 }).notNull(),
   effectiveDate: date("effective_date").notNull(),
   notes: text("notes"),
@@ -2981,6 +2982,7 @@ export const insertContractorSowCeilingSchema = createInsertSchema(contractorSow
   engagementLabel: z.string().trim().min(1, "Engagement label is required").max(200),
   ceilingType: contractorSowCeilingTypeEnum,
   amount: z.coerce.number().positive("Ceiling amount must be positive").transform(String),
+  currency: z.string().trim().length(3, "Currency must be a 3-letter ISO code").transform(value => value.toUpperCase()).default("USD"),
   agreedRate: z.coerce.number().positive("Agreed rate must be positive").transform(String),
   effectiveDate: z.string().date(),
   notes: z.string().trim().max(5000).nullable().optional(),

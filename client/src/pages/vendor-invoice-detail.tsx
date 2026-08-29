@@ -98,6 +98,7 @@ interface VendorInvoiceDetail {
   approver?: { id: string; name: string } | null;
   ceilingUsage?: {
     ceilingType: "hours" | "dollars";
+    currency?: string;
     ceilingAmount: string | number;
     usedAmount?: string | number;
     usageAmount?: string | number;
@@ -119,6 +120,7 @@ interface VendorInvoiceDetail {
       ceilingId: string;
       projectId: string;
       ceilingType: "hours" | "dollars";
+      currency: string;
       engagementLabel: string;
       usage: {
         used: string | number;
@@ -454,20 +456,21 @@ export default function VendorInvoiceDetailPage() {
         )}
 
         {invoice.ceilingUsage && Number(invoice.ceilingUsage.usagePercent) >= 80 && (
-          <CeilingWarning usage={invoice.ceilingUsage} currency={invoice.currency} />
+          <CeilingWarning usage={invoice.ceilingUsage} currency={invoice.ceilingUsage.currency || invoice.currency} />
         )}
         {invoice.reconciliationFlags?.ceilingWarnings.map((warning) => (
           <CeilingWarning
             key={warning.ceilingId}
             usage={{
               ceilingType: warning.ceilingType,
+              currency: warning.currency,
               ceilingAmount: Number(warning.usage.used) + Number(warning.usage.remaining),
               usedAmount: warning.usage.used,
               remainingAmount: warning.usage.remaining,
               usagePercent: warning.usage.percentUsed,
               engagementLabel: warning.engagementLabel,
             }}
-            currency={invoice.currency}
+            currency={warning.currency}
           />
         ))}
 
@@ -597,6 +600,7 @@ function CeilingWarning({
           <div className="text-xs mt-0.5 opacity-90">
             {usage.engagementLabel && <>{usage.engagementLabel} · </>}
             {format(usage.usedAmount ?? usage.usageAmount ?? 0)} used of {format(usage.ceilingAmount)} · {format(usage.remainingAmount)} remaining
+            {usage.ceilingType === "dollars" && <> · compared in {currency}</>}
           </div>
           <div className="mt-2 h-1.5 max-w-md overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
             <div className={`h-full ${critical ? "bg-red-600" : "bg-amber-500"}`} style={{ width: `${Math.min(percent, 100)}%` }} />
