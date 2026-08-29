@@ -657,10 +657,20 @@ export default function ContractorCostInvoicesPage() {
               Track inbound contractor invoices per project — fees, expenses, and reimbursables.
             </p>
           </div>
-          <Button onClick={handleAdd}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Invoice
-          </Button>
+          <div className="flex gap-2">
+            {isApprover && (
+              <Link href="/contractor-payments">
+                <Button variant="outline">
+                  <DollarSign className="mr-2 h-4 w-4" />
+                  Record Payment
+                </Button>
+              </Link>
+            )}
+            <Button onClick={handleAdd}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Invoice
+            </Button>
+          </div>
         </div>
 
         <Card>

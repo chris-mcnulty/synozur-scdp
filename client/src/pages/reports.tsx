@@ -26,7 +26,9 @@ function Reports() {
   const [selectedClient, setSelectedClient] = useState<string>("all");
   const [expandedNarrative, setExpandedNarrative] = useState<string | null>(null);
   
-  const { hasAnyRole, canViewPricing } = useAuth();
+  const { hasAnyRole, canViewPricing, isPlatformAdmin } = useAuth();
+  const canViewContractorAp =
+    isPlatformAdmin || hasAnyRole(['admin', 'executive', 'billing-admin']);
   
   // Calculate date filters based on selected range
   const getDateFilters = () => {
@@ -145,6 +147,17 @@ function Reports() {
       });
       if (!invoiceResponse.ok) throw new Error("Failed to fetch invoice data");
       const invoiceData = await invoiceResponse.json();
+
+      let contractorAp: any[] = [];
+      if (canViewContractorAp) {
+        const apResponse = await fetch(`/api/contractor-payments/ap-summary`, {
+          headers: {
+            'x-session-id': localStorage.getItem('sessionId') || ''
+          }
+        });
+        if (!apResponse.ok) throw new Error("Failed to fetch contractor AP data");
+        contractorAp = await apResponse.json();
+      }
       
       // Filter for unpaid and partially paid invoices that are finalized
       let unpaidInvoices = invoiceData.filter((batch: any) => 
@@ -179,7 +192,12 @@ function Reports() {
         ),
         fullyUnpaidInvoices: unpaidInvoices.filter((batch: any) => 
           batch.paymentStatus === 'unpaid'
-        )
+        ),
+        contractorAp,
+        totalOutstandingAp: contractorAp.reduce(
+          (sum: number, row: any) => sum + Math.max(0, Number(row.outstandingBalance) || 0),
+          0,
+        ),
       };
     },
     enabled: reportType === "finance"
@@ -793,7 +811,7 @@ function Reports() {
   // Render Finance Report
   const renderFinanceReport = () => {
     // Check if user has access to finance reports
-    if (!hasAnyRole(['admin', 'executive', 'billing-admin'])) {
+    if (!canViewContractorAp) {
       return (
         <Card>
           <CardContent className="p-8 text-center">
@@ -822,13 +840,15 @@ function Reports() {
       unpaidInvoices: [], 
       totalUnpaidAmount: 0,
       partiallyPaidInvoices: [],
-      fullyUnpaidInvoices: []
+      fullyUnpaidInvoices: [],
+      contractorAp: [],
+      totalOutstandingAp: 0,
     };
 
     return (
       <div className="space-y-6">
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Unbilled Hours</CardTitle>
@@ -892,10 +912,73 @@ function Reports() {
               </p>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Outstanding AP</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {canViewPricing ? `$${data.totalOutstandingAp.toLocaleString()}` : '***'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Due across {data.contractorAp.length} contractors
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Unbilled Items and Unpaid Invoices */}
         <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Contractor AP by Contractor
+              </CardTitle>
+              <CardDescription>Invoices issued, payments recorded, and current amount due</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {data.contractorAp.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No contractor payables on record.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Contractor</TableHead>
+                      <TableHead className="text-right">Invoiced</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Due</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.contractorAp
+                      .slice()
+                      .sort((a: any, b: any) => b.outstandingBalance - a.outstandingBalance)
+                      .map((row: any) => (
+                        <TableRow key={row.contractorUserId}>
+                          <TableCell>
+                            <div className="font-medium">{row.businessName || row.contractorName}</div>
+                            {row.businessName && row.contractorName && (
+                              <div className="text-xs text-muted-foreground">{row.contractorName}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {canViewPricing ? `$${row.totalInvoiced.toLocaleString()}` : '***'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {canViewPricing ? `$${row.totalPaid.toLocaleString()}` : '***'}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {canViewPricing ? `$${Math.max(0, row.outstandingBalance).toLocaleString()}` : '***'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
           {/* Unbilled Items Summary */}
           <Card>
             <CardHeader>
@@ -1498,7 +1581,7 @@ function Reports() {
           <TabsTrigger 
             value="finance" 
             data-testid="tab-finance"
-            disabled={!hasAnyRole(['admin', 'executive', 'billing-admin'])}
+            disabled={!canViewContractorAp}
           >
             Finance
           </TabsTrigger>

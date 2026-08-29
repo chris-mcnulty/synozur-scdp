@@ -338,7 +338,14 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Register contractor payment tracking routes
-  registerContractorPaymentRoutes(app, requireAuth);
+  registerContractorPaymentRoutes(app, {
+    requireAuth,
+    requireRole,
+    smartFileStorage: {
+      storeFile: smartFileStorage.storeFile.bind(smartFileStorage),
+      downloadFileDirect: smartFileStorage.downloadFileDirect.bind(smartFileStorage),
+    },
+  });
 
   // Register revenue recognition routes
   registerRevenueRoutes(app, { requireAuth, requireRole });

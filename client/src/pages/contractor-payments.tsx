@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -17,11 +17,11 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getSessionId } from "@/lib/queryClient";
 import { format } from "date-fns";
 import {
   Plus, DollarSign, AlertCircle, CheckCircle2, ChevronsRight, Loader2, Trash2,
-  ArrowRight, BarChart3,
+  ArrowRight, BarChart3, Paperclip, Download,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -42,6 +42,8 @@ interface ContractorPayment {
   amount: string;
   reference: string | null;
   notes: string | null;
+  evidenceFileId: string | null;
+  evidenceFileName: string | null;
   unmatchedAmount: string;
   status: "unmatched" | "partial" | "matched";
   createdAt: string;
@@ -149,6 +151,7 @@ function RecordPaymentDialog({ open, onClose, contractors }: RecordPaymentDialog
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
 
   // Step 2 state
   const [createdPaymentId, setCreatedPaymentId] = useState<string | null>(null);
@@ -165,11 +168,44 @@ function RecordPaymentDialog({ open, onClose, contractors }: RecordPaymentDialog
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiRequest("/api/contractor-payments", {
+    mutationFn: async () => {
+      let evidenceFileId: string | null = null;
+      let evidenceFileName: string | null = null;
+      let evidenceUploadToken: string | null = null;
+      if (evidenceFile) {
+        const form = new FormData();
+        form.append("file", evidenceFile);
+        const uploadResponse = await fetch("/api/contractor-payments/evidence", {
+          method: "POST",
+          headers: getSessionId() ? { "x-session-id": getSessionId()! } : undefined,
+          credentials: "include",
+          body: form,
+        });
+        if (!uploadResponse.ok) {
+          const error = await uploadResponse.json().catch(() => ({ message: "Evidence upload failed" }));
+          throw new Error(error.message || "Evidence upload failed");
+        }
+        const uploaded = await uploadResponse.json();
+        evidenceFileId = uploaded.fileId;
+        evidenceFileName = uploaded.fileName;
+        evidenceUploadToken = uploaded.uploadToken;
+      }
+      return apiRequest("/api/contractor-payments", {
         method: "POST",
-        body: JSON.stringify({ contractorUserId, payeeEntityName, paymentDate, paymentMethod, amount: parseFloat(amount), reference, notes }),
-      }),
+        body: JSON.stringify({
+          contractorUserId,
+          payeeEntityName,
+          paymentDate,
+          paymentMethod,
+          amount: parseFloat(amount),
+          reference,
+          notes,
+          evidenceFileId,
+          evidenceFileName,
+          evidenceUploadToken,
+        }),
+      });
+    },
     onSuccess: (data: any) => {
       setCreatedPaymentId(data.id);
       setStep(2);
@@ -200,7 +236,7 @@ function RecordPaymentDialog({ open, onClose, contractors }: RecordPaymentDialog
   function handleClose() {
     setStep(1);
     setContractorUserId(""); setPayeeEntityName(""); setPaymentDate(new Date().toISOString().slice(0, 10));
-    setPaymentMethod("ach"); setAmount(""); setReference(""); setNotes("");
+    setPaymentMethod("ach"); setAmount(""); setReference(""); setNotes(""); setEvidenceFile(null);
     setCreatedPaymentId(null); setAllocs({});
     onClose();
   }
@@ -266,6 +302,18 @@ function RecordPaymentDialog({ open, onClose, contractors }: RecordPaymentDialog
               <div className="space-y-1 col-span-2">
                 <Label>Notes</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label htmlFor="payment-evidence">Payment evidence (optional)</Label>
+                <Input
+                  id="payment-evidence"
+                  type="file"
+                  accept="application/pdf,image/*"
+                  onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  PDF or image, up to 25 MB. Bank confirmations and screenshots are accepted.
+                </p>
               </div>
             </div>
           </div>
@@ -375,13 +423,13 @@ function AllocateDialog({ payment, onClose }: AllocateDialogProps) {
   });
 
   // Pre-populate existing allocations
-  useState(() => {
+  useEffect(() => {
     if (detail?.allocations) {
       const m: Record<string, string> = {};
       for (const a of detail.allocations) m[a.invoiceId] = a.allocatedAmount;
       setAllocs(m);
     }
-  });
+  }, [detail]);
 
   const paymentAmt = parseFloat(payment.amount);
   const totalAllocated = Object.values(allocs).reduce((s, v) => s + (parseFloat(v) || 0), 0);
@@ -569,9 +617,22 @@ export default function ContractorPaymentsPage() {
     queryFn: () => apiRequest("/api/contractor-payments/ap-summary"),
   });
 
+  const { data: tenantContractors = [] } = useQuery<ContractorOption[]>({
+    queryKey: ["/api/users", { isContractor: true }],
+    queryFn: async () => {
+      const result = await apiRequest("/api/users?isContractor=true");
+      return (Array.isArray(result) ? result : result.items ?? []).map((contractor: any) => ({
+        id: contractor.id,
+        name: contractor.name ?? null,
+        contractorBusinessName: contractor.contractorBusinessName ?? null,
+      }));
+    },
+  });
+
   // Build contractor list from payments + AP summary for the record dialog
   const contractors = useMemo<ContractorOption[]>(() => {
     const map = new Map<string, ContractorOption>();
+    for (const contractor of tenantContractors) map.set(contractor.id, contractor);
     for (const p of payments) {
       if (p.contractor) map.set(p.contractorUserId, p.contractor);
     }
@@ -585,7 +646,7 @@ export default function ContractorPaymentsPage() {
       }
     }
     return [...map.values()].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-  }, [payments, apSummary]);
+  }, [payments, apSummary, tenantContractors]);
 
   const filteredPayments = useMemo(
     () =>
@@ -605,9 +666,14 @@ export default function ContractorPaymentsPage() {
     onError: (e: any) => toast({ title: "Cannot delete", description: e.message, variant: "destructive" }),
   });
 
-  const totalOutstanding = apSummary.reduce((s, r) => s + r.outstandingBalance, 0);
-  const totalPaid = apSummary.reduce((s, r) => s + r.totalPaid, 0);
+  const totalOutstanding = apSummary.reduce((s, r) => s + Math.max(0, r.outstandingBalance), 0);
+  const totalPaid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const unmatchedCount = payments.filter((p) => p.status !== "matched").length;
+  const overdueUnmatched = payments.filter((payment) => {
+    if (parseFloat(payment.unmatchedAmount) <= 0) return false;
+    const ageMs = Date.now() - new Date(`${payment.paymentDate}T00:00:00`).getTime();
+    return ageMs > 7 * 24 * 60 * 60 * 1000;
+  });
 
   return (
     <Layout>
@@ -626,7 +692,7 @@ export default function ContractorPaymentsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Total Paid (YTD)</CardTitle>
+              <CardTitle className="text-sm font-medium">Total Paid</CardTitle>
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
@@ -672,6 +738,30 @@ export default function ContractorPaymentsPage() {
 
           {/* ── Payments tab ── */}
           <TabsContent value="payments" className="mt-4">
+            {overdueUnmatched.length > 0 && (
+              <Card className="mb-4 border-amber-300 bg-amber-50/50 dark:bg-amber-950/10">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                    Flags &amp; Open Items
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {overdueUnmatched.map((payment) => (
+                    <div key={payment.id} className="flex items-center justify-between text-sm">
+                      <span>
+                        {payment.contractor?.name ?? "Contractor"} payment from{" "}
+                        {format(new Date(payment.paymentDate), "MMM d, yyyy")} still has{" "}
+                        <strong>{fmt(payment.unmatchedAmount)}</strong> unmatched after 7 days.
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => setAllocateTarget(payment)}>
+                        Match now
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
@@ -716,6 +806,17 @@ export default function ContractorPaymentsPage() {
                           <TableCell>
                             <div className="font-medium text-sm">{p.contractor?.name ?? p.contractorUserId}</div>
                             {p.payeeEntityName && <div className="text-xs text-muted-foreground">{p.payeeEntityName}</div>}
+                            {p.evidenceFileName && (
+                              <a
+                                href={`/api/contractor-payments/${p.id}/evidence`}
+                                className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <Paperclip className="h-3 w-3" />
+                                {p.evidenceFileName}
+                                <Download className="h-3 w-3" />
+                              </a>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm">{METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod}</TableCell>
                           <TableCell className="text-sm font-mono text-muted-foreground">{p.reference || "—"}</TableCell>

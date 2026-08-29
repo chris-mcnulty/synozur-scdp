@@ -330,9 +330,11 @@ function Router() {
         {user ? <MyContractorInvoices /> : <Redirect to="/login" />}
       </Route>
       <Route path="/contractor-payments">
-        {user && (user.role === "admin" || user.role === "billing_admin")
-          ? <ContractorPayments />
-          : <Redirect to="/login" />}
+        {user ? (
+          <PermissionGuard allowedRoles={['admin', 'billing-admin']}>
+            <ContractorPayments />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/contractor-cost-invoices">
         {user ? (
