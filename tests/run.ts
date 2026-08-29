@@ -19,6 +19,7 @@ import "./quickbooks-mapping.spec.js";
 import "./mcp-bearer-audience.spec.js";
 import "./mcp-bearer-azp.spec.js";
 import "./commercial-buckets.spec.js";
+import "./vendor-invoices.spec.js";
 import { run } from "./_harness.js";
 
 await run();
