@@ -46,6 +46,29 @@ export interface VendorInvoiceListRow extends VendorInvoice {
   reconciliationFlags: VendorInvoiceReconciliationFlags;
 }
 
+export interface VendorInvoiceListPage {
+  items: VendorInvoiceListRow[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+}
+
+export interface VendorInvoiceListFilters {
+  tenantId: string;
+  status?: string;
+  statuses?: string[];
+  vendorUserId?: string;
+  projectId?: string;
+  search?: string;
+  flaggedOnly?: boolean;
+}
+
+export interface VendorInvoiceListPagination {
+  limit: number;
+  offset: number;
+}
+
 export interface VendorInvoiceLineWithMatches extends VendorInvoiceLine {
   project: Pick<Project, "id" | "name" | "code"> | null;
   matches: EnrichedVendorInvoiceLineMatch[];
@@ -232,7 +255,7 @@ export const vendorInvoicesMethods = {
   },
 
   async getContractorSowCeilingUsage(ceiling: ContractorSowCeiling): Promise<CeilingUsage> {
-    const comparisonCurrency = ceiling.currency.toUpperCase();
+    const comparisonCurrency = (ceiling.currency || "USD").toUpperCase();
     const [row] = await db
       .select({
         hours: sql<string>`coalesce(sum(case when lower(${vendorInvoiceLines.unit}) = 'hours' then ${vendorInvoiceLines.quantity} else 0 end), 0)`,
@@ -359,19 +382,84 @@ export const vendorInvoicesMethods = {
     return row;
   },
 
-  async listVendorInvoices(filters: {
-    tenantId: string;
-    status?: string;
-    vendorUserId?: string;
-    projectId?: string;
-  }): Promise<VendorInvoiceListRow[]> {
+  async listVendorInvoices(filters: VendorInvoiceListFilters): Promise<VendorInvoiceListRow[]> {
+    const result = await this.listVendorInvoicesPaginated(filters, {
+      limit: Number.MAX_SAFE_INTEGER,
+      offset: 0,
+    });
+    return result.items;
+  },
+
+  async listVendorInvoicesPaginated(
+    filters: VendorInvoiceListFilters,
+    pagination: VendorInvoiceListPagination,
+  ): Promise<VendorInvoiceListPage> {
     const conds = [eq(vendorInvoices.tenantId, filters.tenantId)];
     if (filters.status) conds.push(eq(vendorInvoices.status, filters.status));
+    if (filters.statuses?.length) conds.push(inArray(vendorInvoices.status, filters.statuses));
     if (filters.vendorUserId) conds.push(eq(vendorInvoices.vendorUserId, filters.vendorUserId));
     if (filters.projectId) conds.push(or(
       eq(vendorInvoices.projectId, filters.projectId),
       sql`exists (select 1 from ${vendorInvoiceLines} vil where vil.vendor_invoice_id = ${vendorInvoices.id} and vil.project_id = ${filters.projectId})`,
     )!);
+    if (filters.search?.trim()) {
+      const term = `%${filters.search.trim()}%`;
+      conds.push(or(
+        sql`${vendorInvoices.vendorInvoiceNumber} ILIKE ${term}`,
+        sql`${users.name} ILIKE ${term}`,
+        sql`${users.contractorBusinessName} ILIKE ${term}`,
+        sql`${projects.code} ILIKE ${term}`,
+      )!);
+    }
+    if (filters.flaggedOnly) {
+      conds.push(or(
+        isNull(vendorInvoices.uploadId),
+        sql`exists (
+          select 1
+          from ${vendorInvoiceLines} flag_line
+          where flag_line.vendor_invoice_id = ${vendorInvoices.id}
+            and flag_line.tenant_id = ${filters.tenantId}
+            and flag_line.kind = 'service'
+            and not exists (
+              select 1
+              from ${vendorInvoiceLineMatches} flag_match
+              where flag_match.vendor_invoice_line_id = flag_line.id
+                and flag_match.tenant_id = ${filters.tenantId}
+            )
+        )`,
+        sql`exists (
+          select 1
+          from ${vendorInvoiceUploads} flag_upload
+          where flag_upload.id = ${vendorInvoices.uploadId}
+            and flag_upload.tenant_id = ${filters.tenantId}
+            and lower(flag_upload.mime_type) not like '%pdf%'
+        )`,
+        sql`exists (
+          select 1
+          from ${vendorInvoiceLines} rate_line
+          inner join ${contractorSowCeilings} rate_ceiling
+            on rate_ceiling.tenant_id = ${filters.tenantId}
+            and rate_ceiling.project_id = rate_line.project_id
+            and rate_ceiling.contractor_user_id = ${vendorInvoices.vendorUserId}
+            and rate_ceiling.effective_date <= ${vendorInvoices.invoiceDate}
+            and rate_ceiling.agreed_rate is not null
+          where rate_line.vendor_invoice_id = ${vendorInvoices.id}
+            and rate_line.tenant_id = ${filters.tenantId}
+            and rate_line.kind = 'service'
+            and rate_line.unit_amount is not null
+            and abs((rate_line.unit_amount - rate_ceiling.agreed_rate) / nullif(rate_ceiling.agreed_rate, 0)) > 0.05
+        )`,
+      )!);
+    }
+
+    const whereClause = and(...conds);
+    const countRows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(vendorInvoices)
+      .leftJoin(users, eq(vendorInvoices.vendorUserId, users.id))
+      .leftJoin(projects, eq(vendorInvoices.projectId, projects.id))
+      .where(whereClause);
+    const total = Number(countRows[0]?.count ?? 0);
 
     const rows = await db
       .select({
@@ -401,10 +489,24 @@ export const vendorInvoicesMethods = {
           eq(vendorInvoiceUploads.tenantId, filters.tenantId),
         ),
       )
-      .where(and(...conds))
-      .orderBy(desc(vendorInvoices.invoiceDate), desc(vendorInvoices.createdAt));
+      .where(whereClause)
+      .orderBy(
+        desc(vendorInvoices.invoiceDate),
+        desc(vendorInvoices.createdAt),
+        desc(vendorInvoices.id),
+      )
+      .limit(pagination.limit)
+      .offset(pagination.offset);
 
-    if (rows.length === 0) return [];
+    if (rows.length === 0) {
+      return {
+        items: [],
+        total,
+        hasMore: pagination.offset < total,
+        limit: pagination.limit,
+        offset: pagination.offset,
+      };
+    }
 
     const aggregateMap = await this.getVendorInvoiceListAggregates(
       rows.map(r => ({
@@ -414,7 +516,7 @@ export const vendorInvoicesMethods = {
       filters.tenantId,
     );
 
-    return rows.map(r => {
+    const items = rows.map(r => {
       const aggregate = aggregateMap.get(r.invoice.id)!;
       return {
         ...r.invoice,
@@ -424,6 +526,13 @@ export const vendorInvoicesMethods = {
         reconciliationFlags: aggregate.reconciliationFlags,
       };
     });
+    return {
+      items,
+      total,
+      hasMore: pagination.offset + items.length < total,
+      limit: pagination.limit,
+      offset: pagination.offset,
+    };
   },
 
   /**
@@ -586,6 +695,7 @@ export const vendorInvoicesMethods = {
               ceilingId: ceiling.id,
               projectId: ceiling.projectId,
               ceilingType: ceiling.ceilingType,
+              currency: ceiling.currency,
               engagementLabel: ceiling.engagementLabel,
               usage: ceiling.usage,
             })),

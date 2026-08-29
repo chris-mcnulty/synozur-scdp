@@ -356,6 +356,99 @@ async function postMatch(harness: { origin: string }, body: Row) {
   return { response, body: await response.json() };
 }
 
+async function startListHarness() {
+  const calls: Array<{ filters: Row; pagination: Row }> = [];
+  const original = {
+    listVendorInvoices: (storage as any).listVendorInvoices,
+    listVendorInvoicesPaginated: (storage as any).listVendorInvoicesPaginated,
+  };
+  (storage as any).listVendorInvoices = async () => [];
+  (storage as any).listVendorInvoicesPaginated = async (filters: Row, pagination: Row) => {
+    calls.push({ filters, pagination });
+    return {
+      items: [{ id: "invoice-page-item" }],
+      total: 101,
+      hasMore: true,
+      limit: pagination.limit,
+      offset: pagination.offset,
+    };
+  };
+
+  const app = express();
+  registerVendorInvoiceRoutes(app, {
+    requireAuth: (req: any, _res: any, next: any) => {
+      req.user = { id: "reviewer", tenantId, role: "billing-admin" };
+      next();
+    },
+    requireRole: () => (_req: any, _res: any, next: any) => next(),
+    smartFileStorage: {
+      storeFile: async () => undefined,
+      downloadFileDirect: async () => null,
+    },
+  });
+
+  const server = http.createServer(app);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as any;
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    calls,
+    close: async () => {
+      Object.assign(storage as any, original);
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    },
+  };
+}
+
+describe("vendor invoice list pagination", () => {
+  it("forwards page, filters, and flagged tab without dropping them", async () => {
+    const h = await startListHarness();
+    try {
+      const response = await fetch(
+        `${h.origin}/api/vendor-invoices?page=2&limit=25&status=approved&vendorUserId=vendor-b&projectId=project-b&search=Acme&tab=flags`,
+      );
+      expect(response.status).toBe(200);
+      expect(h.calls.length).toBe(1);
+      expect(h.calls[0].pagination).toEqual({ limit: 25, offset: 50 });
+      expect(h.calls[0].filters).toEqual({
+        tenantId,
+        status: "approved",
+        vendorUserId: "vendor-b",
+        projectId: "project-b",
+        search: "Acme",
+        statuses: undefined,
+        flaggedOnly: true,
+      });
+      expect(await response.json()).toEqual({
+        items: [{ id: "invoice-page-item" }],
+        total: 101,
+        hasMore: true,
+        limit: 25,
+        offset: 50,
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it("caps page size and scopes the self-service endpoint to the current vendor", async () => {
+    const h = await startListHarness();
+    try {
+      const response = await fetch(`${h.origin}/api/my-vendor-invoices?page=1&limit=1000&status=paid`);
+      expect(response.status).toBe(200);
+      expect(h.calls.length).toBe(1);
+      expect(h.calls[0].pagination).toEqual({ limit: 100, offset: 100 });
+      expect(h.calls[0].filters).toEqual({
+        tenantId,
+        vendorUserId: "reviewer",
+        status: "paid",
+      });
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 const validTimeEntry = {
   id: "time-valid",
   tenantId,

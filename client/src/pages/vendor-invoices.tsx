@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { formatBusinessDate } from "@/lib/date-utils";
+import { PaginationControls, type PaginationState, type PaginationMeta } from "@/components/ui/paginated-table";
 import {
   Loader2, Upload, FileInput, Search, AlertCircle, CheckCircle2,
   CircleDashed, Inbox, Eye, AlertTriangle,
@@ -53,6 +54,14 @@ interface VendorInvoiceRow {
   } | null;
 }
 
+interface VendorInvoiceListPage {
+  items: VendorInvoiceRow[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+}
+
 const STATUS_TONE: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
   extracted: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
@@ -76,8 +85,6 @@ const STATUS_LABEL: Record<string, string> = {
   disputed: "Disputed",
   void: "Void",
 };
-
-const REVIEW_STATUSES = new Set(["extracted", "in_review", "reconciled"]);
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -160,47 +167,61 @@ export default function VendorInvoicesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tab, setTab] = useState<"review" | "flags" | "all">("review");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [pagination, setPagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
 
-  const { data: invoices = [], isLoading } = useQuery<VendorInvoiceRow[]>({
-    queryKey: ["/api/vendor-invoices"],
+  const { data: invoicePage, isLoading } = useQuery<VendorInvoiceListPage>({
+    queryKey: [
+      "/api/vendor-invoices",
+      pagination.page,
+      pagination.pageSize,
+      tab,
+      statusFilter,
+      search.trim(),
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        page: String(pagination.page),
+        limit: String(pagination.pageSize),
+        tab,
+      });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search.trim()) params.set("search", search.trim());
+      return apiRequest(`/api/vendor-invoices?${params.toString()}`);
+    },
   });
 
-  const filtered = useMemo(() => {
-    return invoices.filter((inv) => {
-      if (tab === "review" && !REVIEW_STATUSES.has(inv.status)) return false;
-      if (tab === "flags" && !(
-        inv.flags?.length ||
-        Number(inv.ceilingUsage?.usagePercent ?? 0) >= 80 ||
-        inv.reconciliationFlags?.missingPdf ||
-        inv.reconciliationFlags?.hasUnlinkedServiceLines ||
-        inv.reconciliationFlags?.hasRateVariance ||
-        inv.reconciliationFlags?.ceilingWarnings.length
-      )) return false;
-      if (statusFilter !== "all" && inv.status !== statusFilter) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        const vendorName = inv.vendor?.contractorBusinessName || inv.vendor?.name || "";
-        if (
-          !inv.vendorInvoiceNumber.toLowerCase().includes(q) &&
-          !vendorName.toLowerCase().includes(q) &&
-          !(inv.project?.code || "").toLowerCase().includes(q)
-        ) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [invoices, tab, statusFilter, search]);
+  const invoices = invoicePage?.items ?? [];
+  const paginationMeta: PaginationMeta | null = invoicePage
+    ? {
+      total: invoicePage.total,
+      hasMore: invoicePage.hasMore,
+      limit: invoicePage.limit,
+      offset: invoicePage.offset,
+    }
+    : null;
+  const reviewCount = tab === "review" ? invoicePage?.total ?? 0 : 0;
+  const flagsCount = tab === "flags" ? invoicePage?.total ?? 0 : 0;
 
-  const reviewCount = invoices.filter((i) => REVIEW_STATUSES.has(i.status)).length;
-  const flagsCount = invoices.filter((i) =>
-    i.flags?.length ||
-    Number(i.ceilingUsage?.usagePercent ?? 0) >= 80 ||
-    i.reconciliationFlags?.missingPdf ||
-    i.reconciliationFlags?.hasUnlinkedServiceLines ||
-    i.reconciliationFlags?.hasRateVariance ||
-    i.reconciliationFlags?.ceilingWarnings.length
-  ).length;
+  useEffect(() => {
+    if (!invoicePage || invoicePage.total === 0) {
+      if (pagination.page !== 0) setPagination(current => ({ ...current, page: 0 }));
+      return;
+    }
+    const lastPage = Math.max(Math.ceil(invoicePage.total / pagination.pageSize) - 1, 0);
+    if (pagination.page > lastPage) {
+      setPagination(current => ({ ...current, page: lastPage }));
+    }
+  }, [invoicePage, pagination.page, pagination.pageSize]);
+
+  const handleTabChange = (value: string) => {
+    setTab(value as "review" | "flags" | "all");
+    setPagination(current => ({ ...current, page: 0 }));
+  };
+
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value);
+    setPagination(current => ({ ...current, page: 0 }));
+  };
 
   return (
     <Layout>
@@ -221,7 +242,7 @@ export default function VendorInvoicesPage() {
           </Button>
         </div>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as "review" | "flags" | "all")}>
+        <Tabs value={tab} onValueChange={handleTabChange}>
           <TabsList className="max-w-full overflow-x-auto justify-start">
             <TabsTrigger value="review" data-testid="tab-review">
               Needs Review
@@ -253,12 +274,15 @@ export default function VendorInvoicesPage() {
                     <Input
                       placeholder="Search invoice #, vendor, or project code"
                       value={search}
-                      onChange={(e) => setSearch(e.target.value)}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPagination(current => ({ ...current, page: 0 }));
+                      }}
                       className="pl-9"
                       data-testid="input-search"
                     />
                   </div>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <Select value={statusFilter} onValueChange={handleStatusChange}>
                     <SelectTrigger className="w-full sm:w-44" data-testid="select-status">
                       <SelectValue />
                     </SelectTrigger>
@@ -281,7 +305,7 @@ export default function VendorInvoicesPage() {
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
-                ) : filtered.length === 0 ? (
+                ) : invoices.length === 0 ? (
                   <EmptyState
                     onUpload={() => setUploadOpen(true)}
                     isReview={tab !== "all"}
@@ -303,7 +327,7 @@ export default function VendorInvoicesPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filtered.map((inv) => {
+                        {invoices.map((inv) => {
                           const vendorName =
                             inv.vendor?.contractorBusinessName ||
                             inv.vendor?.name ||
@@ -360,6 +384,15 @@ export default function VendorInvoicesPage() {
                       </TableBody>
                     </Table>
                   </div>
+                )}
+                {paginationMeta && (
+                  <PaginationControls
+                    pagination={pagination}
+                    meta={paginationMeta}
+                    onPageChange={(page) => setPagination(current => ({ ...current, page }))}
+                    onPageSizeChange={(pageSize) => setPagination({ page: 0, pageSize })}
+                    isLoading={isLoading}
+                  />
                 )}
               </CardContent>
             </Card>

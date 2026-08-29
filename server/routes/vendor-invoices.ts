@@ -50,6 +50,23 @@ function getUserId(req: Request): string | undefined {
   return (req as any).user?.id;
 }
 
+function parseInvoiceListPagination(query: Request["query"]): { limit: number; offset: number } {
+  const rawLimit = Number(query.limit ?? query.pageSize ?? 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.floor(rawLimit), 1), 100)
+    : 50;
+  const rawOffset = query.offset === undefined
+    ? undefined
+    : Number(query.offset);
+  if (rawOffset !== undefined && Number.isFinite(rawOffset)) {
+    return { limit, offset: Math.max(Math.floor(rawOffset), 0) };
+  }
+
+  const rawPage = Number(query.page ?? 0);
+  const page = Number.isFinite(rawPage) ? Math.max(Math.floor(rawPage), 0) : 0;
+  return { limit, offset: page * limit };
+}
+
 export function registerVendorInvoiceRoutes(
   app: Express,
   deps: VendorInvoiceRouteDeps,
@@ -227,7 +244,18 @@ export function registerVendorInvoiceRoutes(
         const userId = getUserId(req);
         if (!tenantId || !userId)
           return res.status(403).json({ message: "No tenant context" });
-        const rows = await storage.listVendorInvoices({
+        const paginationRequested =
+          req.query.page !== undefined ||
+          req.query.limit !== undefined ||
+          req.query.pageSize !== undefined ||
+          req.query.offset !== undefined;
+        const rows = paginationRequested
+          ? await storage.listVendorInvoicesPaginated({
+            tenantId,
+            vendorUserId: userId,
+            status: typeof req.query.status === "string" ? req.query.status : undefined,
+          }, parseInvoiceListPagination(req.query))
+          : await storage.listVendorInvoices({
           tenantId,
           vendorUserId: userId,
         });
@@ -276,14 +304,19 @@ export function registerVendorInvoiceRoutes(
         const tenantId = getTenantId(req);
         if (!tenantId) return res.status(403).json({ message: "No tenant context" });
 
-        const { status, vendorUserId, projectId } = req.query as Record<string, string | undefined>;
-        const rows = await storage.listVendorInvoices({
+        const { status, vendorUserId, projectId, search, tab } =
+          req.query as Record<string, string | undefined>;
+        const pagination = parseInvoiceListPagination(req.query);
+        const page = await storage.listVendorInvoicesPaginated({
           tenantId,
           status: status || undefined,
           vendorUserId: vendorUserId || undefined,
           projectId: projectId || undefined,
-        });
-        res.json(rows);
+          search: search || undefined,
+          statuses: tab === "review" ? ["extracted", "in_review", "reconciled"] : undefined,
+          flaggedOnly: tab === "flags",
+        }, pagination);
+        res.json(page);
       } catch (err: any) {
         console.error("[VENDOR_INVOICES] list failed:", err);
         res.status(500).json({ message: err.message || "Failed to list vendor invoices" });
