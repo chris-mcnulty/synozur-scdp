@@ -219,6 +219,7 @@ export async function syncProjectToPlanner(
             let conflict = resolveTaskConflict(
               {
                 lastEditedAt: (allocation as any).lastEditedAt ?? null,
+                lastSyncedAt: syncRecord.lastSyncedAt ?? null,
                 status: allocation.status,
                 plannedStartDate: allocation.plannedStartDate,
                 plannedEndDate: allocation.plannedEndDate,
@@ -276,6 +277,7 @@ export async function syncProjectToPlanner(
                   const reConflict = resolveTaskConflict(
                     {
                       lastEditedAt: (allocation as any).lastEditedAt ?? null,
+                      lastSyncedAt: syncRecord.lastSyncedAt ?? null,
                       status: allocation.status,
                       plannedStartDate: allocation.plannedStartDate,
                       plannedEndDate: allocation.plannedEndDate,
@@ -744,6 +746,7 @@ export async function pullPlannerTask(
   const conflict = resolveTaskConflict(
     {
       lastEditedAt: (allocation as any).lastEditedAt ?? null,
+      lastSyncedAt: sync.lastSyncedAt ?? null,
       status: allocation.status,
       plannedStartDate: allocation.plannedStartDate,
       plannedEndDate: allocation.plannedEndDate,

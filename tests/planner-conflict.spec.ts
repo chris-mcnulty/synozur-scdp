@@ -91,6 +91,34 @@ describe('resolveTaskConflict — REGRESSION: completed→in_progress bug', () =
     expect(r.winner).toBe('local');
     expect(r.reason).toBe('remote_missing_timestamp');
   });
+
+  it('remote completion wins without a timestamp when local was not edited since the last sync', () => {
+    const r = resolveTaskConflict(
+      {
+        lastEditedAt: '2026-06-29T21:39:20Z',
+        lastSyncedAt: '2026-08-31T17:34:12Z',
+        status: 'in_progress',
+      },
+      { lastModifiedDateTime: null, percentComplete: 100 }
+    );
+    expect(r.winner).toBe('remote');
+    expect(r.reason).toBe('remote_state_newer_than_last_sync');
+    expect(shouldSendOutboundPlannerUpdate(r)).toBe(false);
+  });
+
+  it('allows a fresh local edit to push when Planner omits its timestamp', () => {
+    const r = resolveTaskConflict(
+      {
+        lastEditedAt: '2026-08-31T17:35:00Z',
+        lastSyncedAt: '2026-08-31T17:34:12Z',
+        status: 'in_progress',
+      },
+      { lastModifiedDateTime: null, percentComplete: 100 }
+    );
+    expect(r.winner).toBe('local');
+    expect(r.reason).toBe('local_edited_since_last_sync');
+    expect(shouldSendOutboundPlannerUpdate(r)).toBe(true);
+  });
 });
 
 describe('withEtagRetry — Planner completion race', () => {

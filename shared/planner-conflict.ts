@@ -16,6 +16,8 @@ export type ConflictWinner = 'local' | 'remote' | 'equal';
 export interface AllocationLikeLocal {
   /** Last human edit to this allocation in Constellation. Null = never edited. */
   lastEditedAt: Date | string | null | undefined;
+  /** Last time this task pair was successfully synchronized. */
+  lastSyncedAt?: Date | string | null;
   /** Local-derived status (open/in_progress/completed/cancelled). */
   status?: string | null;
   plannedStartDate?: string | null;
@@ -52,6 +54,8 @@ export function shouldSendOutboundPlannerUpdate(conflict: ConflictResolution): b
 
 const LOCAL_NEVER_EDITED_REASON = 'local_never_edited';
 const REMOTE_MISSING_TIMESTAMP_REASON = 'remote_missing_timestamp';
+const REMOTE_STATE_NEWER_THAN_LAST_SYNC_REASON = 'remote_state_newer_than_last_sync';
+const LOCAL_EDITED_SINCE_LAST_SYNC_REASON = 'local_edited_since_last_sync';
 const REMOTE_NEWER_REASON = 'remote_newer_than_local';
 const LOCAL_NEWER_REASON = 'local_newer_than_remote';
 const EQUAL_REASON = 'timestamps_equal_remote_wins_by_default';
@@ -101,6 +105,7 @@ export function resolveTaskConflict(
   remote: PlannerTaskLikeRemote
 ): ConflictResolution {
   const localEdited = toDate(local.lastEditedAt);
+  const lastSynced = toDate(local.lastSyncedAt);
   const remoteModified = toDate(remote.lastModifiedDateTime);
 
   const fields: string[] = [];
@@ -124,6 +129,19 @@ export function resolveTaskConflict(
     return { winner: 'remote', reason: LOCAL_NEVER_EDITED_REASON, ...base };
   }
   if (!remoteModified) {
+    // Planner tasks do not reliably include lastModifiedDateTime. When the
+    // current remote state differs from the state we last synchronized, use
+    // lastSyncedAt as the causal boundary:
+    //   - a human local edit after the sync may push outbound;
+    //   - otherwise the local value is stale and the remote state must win.
+    // This prevents an old local 50% value from reopening a task that a user
+    // just completed in Planner.
+    if (lastSynced && fields.length > 0) {
+      if (localEdited.getTime() > lastSynced.getTime()) {
+        return { winner: 'local', reason: LOCAL_EDITED_SINCE_LAST_SYNC_REASON, ...base };
+      }
+      return { winner: 'remote', reason: REMOTE_STATE_NEWER_THAN_LAST_SYNC_REASON, ...base };
+    }
     return { winner: 'local', reason: REMOTE_MISSING_TIMESTAMP_REASON, ...base };
   }
 
