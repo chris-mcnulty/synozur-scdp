@@ -33,7 +33,7 @@ export function CommercialBucketsPanel({ projectId, readOnly = false }: { projec
 
   const bucketQuery = useQuery<{ projectBasis: string | null; required: boolean; buckets: any[] }>({
     queryKey: ["/api/projects", projectId, "commercial-buckets"],
-    queryFn: async () => (await fetch(`/api/projects/${projectId}/commercial-buckets`, { credentials: "include" })).json(),
+    queryFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets`),
   });
   useEffect(() => {
     if (!bucketQuery.data) return;
@@ -42,15 +42,13 @@ export function CommercialBucketsPanel({ projectId, readOnly = false }: { projec
   }, [projectId, bucketQuery.data?.projectBasis, bucketQuery.data?.required]);
   const summaryQuery = useQuery<any[]>({
     queryKey: ["/api/projects", projectId, "commercial-buckets", "summary"],
-    queryFn: async () => (await fetch(`/api/projects/${projectId}/commercial-buckets/summary`, { credentials: "include" })).json(),
+    queryFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets/summary`),
   });
   const reconciliationQuery = useQuery<any[]>({
     queryKey: ["/api/projects", projectId, "commercial-reconciliation", range],
     queryFn: async () => {
       const params = new URLSearchParams(Object.entries(range).filter(([, value]) => value).map(([key, value]) => [key, value]));
-      const response = await fetch(`/api/projects/${projectId}/commercial-reconciliation?${params}`, { credentials: "include" });
-      if (!response.ok) throw new Error("Unable to load reconciliation queue");
-      return response.json();
+      return apiRequest(`/api/projects/${projectId}/commercial-reconciliation?${params}`);
     },
   });
   const refresh = () => {

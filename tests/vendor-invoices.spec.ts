@@ -620,6 +620,7 @@ function installDbSelectSequence(rowsByCall: Row[][]): {
       query[method] = () => query;
     }
     query.limit = () => query;
+    query.offset = () => query;
     return query;
   };
   return {
@@ -902,6 +903,7 @@ describe("vendor invoice list/detail reconciliation parity", () => {
   it("keeps warning flags identical for PDFs, missing uploads, matches, rates, ceilings, and multiple projects", async () => {
     const fixture = parityFixture();
     const listDb = installDbSelectSequence([
+        [{ count: fixture.listRows.length }],
       fixture.listRows,
       fixture.lineAggregates,
       fixture.ceilingAggregates,
@@ -941,6 +943,7 @@ describe("vendor invoice list/detail reconciliation parity", () => {
     const runList = async (invoices: Row[]) => {
       const ids = new Set(invoices.map(invoice => invoice.id));
       const dbFixture = installDbSelectSequence([
+        [{ count: invoices.length }],
         fixture.listRows.filter(row => ids.has(row.invoice.id)),
         fixture.lineAggregates.filter(line => ids.has(line.invoiceId)),
         fixture.ceilingAggregates,
@@ -953,8 +956,8 @@ describe("vendor invoice list/detail reconciliation parity", () => {
       }
     };
 
-    expect(await runList([fixture.invoices[0]])).toBe(3);
-    expect(await runList(fixture.invoices)).toBe(3);
+    expect(await runList([fixture.invoices[0]])).toBe(4);
+    expect(await runList(fixture.invoices)).toBe(4);
   });
 });
 
