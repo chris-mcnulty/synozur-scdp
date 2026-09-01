@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useAIStatus, useRewriteTimeEntryDescription } from "@/lib/ai";
@@ -35,6 +36,9 @@ interface DraftRow {
   serverId?: string;     // present once row exists on server
   date: string;
   projectId: string;
+  commercialBucketId: string;
+  commercialEligibilityOutcome: string;
+  commercialApprovalReference: string;
   allocationId: string;
   description: string;
   hours: string;
@@ -47,11 +51,13 @@ interface DraftRow {
   saveError?: string;
 }
 
-type ColKey = "date" | "projectId" | "allocationId" | "description" | "hours" | "billable" | "milestoneId";
+type ColKey = "date" | "projectId" | "commercialBucketId" | "commercialApprovalReference" | "allocationId" | "description" | "hours" | "billable" | "milestoneId";
 
 const COLUMNS: { key: ColKey; label: string; width: string }[] = [
   { key: "date", label: "Date", width: "w-[120px]" },
   { key: "projectId", label: "Project", width: "w-[200px]" },
+  { key: "commercialBucketId", label: "Commercial bucket", width: "w-[220px]" },
+  { key: "commercialApprovalReference", label: "Approval ref.", width: "w-[160px]" },
   { key: "allocationId", label: "Task", width: "w-[180px]" },
   { key: "description", label: "Description", width: "w-[280px]" },
   { key: "hours", label: "Hours", width: "w-[80px]" },
@@ -59,7 +65,7 @@ const COLUMNS: { key: ColKey; label: string; width: string }[] = [
   { key: "milestoneId", label: "Milestone", width: "w-[160px]" },
 ];
 
-const HEADER_ROW = ["Date", "Project", "Task", "Description", "Hours", "Billable", "Milestone"];
+const HEADER_ROW = ["Date", "Project", "Commercial Bucket", "Approval Reference", "Task", "Description", "Hours", "Billable", "Milestone"];
 
 function uid() {
   return "tmp_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -75,6 +81,9 @@ function emptyDraft(date = todayLocal()): DraftRow {
     id: uid(),
     date,
     projectId: "",
+    commercialBucketId: "",
+    commercialEligibilityOutcome: "",
+    commercialApprovalReference: "",
     allocationId: "",
     description: "",
     hours: "",
@@ -95,6 +104,9 @@ function entryToDraft(entry: TimeEntryRow): DraftRow {
     serverId: entry.id,
     date: entry.date,
     projectId: entry.projectId || "",
+    commercialBucketId: entry.commercialBucketId || "",
+    commercialEligibilityOutcome: entry.commercialEligibilityOutcome || "",
+    commercialApprovalReference: entry.commercialApprovalReference || "",
     allocationId: entry.allocationId || "",
     description: entry.description || "",
     hours: entry.hours || "",
@@ -332,11 +344,29 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   const updateCell = (rowIdx: number, col: ColKey, value: unknown) => {
     setDrafts((prev) => {
       const next = prev.slice();
-      let row: DraftRow = { ...next[rowIdx], [col]: value } as DraftRow;
+      let row: DraftRow;
+      if (col === "commercialBucketId" && typeof value === "object" && value !== null) {
+        const selection = value as {
+          bucketId: string;
+          eligibilityOutcome: string;
+          approvalReference?: string;
+        };
+        row = {
+          ...next[rowIdx],
+          commercialBucketId: selection.bucketId,
+          commercialEligibilityOutcome: selection.eligibilityOutcome,
+          commercialApprovalReference: selection.approvalReference ?? next[rowIdx].commercialApprovalReference,
+        };
+      } else {
+        row = { ...next[rowIdx], [col]: value } as DraftRow;
+      }
       // Reset dependent fields if project changed
       if (col === "projectId") {
         row.allocationId = "";
         row.milestoneId = "";
+        row.commercialBucketId = "";
+        row.commercialEligibilityOutcome = "";
+        row.commercialApprovalReference = "";
       }
       row.errors = validateRow(row);
       row = markDirty(row);
@@ -363,6 +393,9 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
         description: row.description || "",
         milestoneId: row.milestoneId || undefined,
         allocationId: row.allocationId || undefined,
+        commercialBucketId: row.commercialBucketId || null,
+        commercialEligibilityOutcome: row.commercialEligibilityOutcome || undefined,
+        commercialApprovalReference: row.commercialApprovalReference || undefined,
         personId: currentUser.id,
       };
       if (row.serverId) {
@@ -795,6 +828,8 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     switch (col) {
       case "date": return row.date;
       case "projectId": return row.projectId;
+      case "commercialBucketId": return row.commercialBucketId;
+      case "commercialApprovalReference": return row.commercialApprovalReference;
       case "allocationId": return row.allocationId;
       case "description": return row.description;
       case "hours": return row.hours;
@@ -950,13 +985,16 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     // Including the entry Id as the last column lets the server-side
     // self-import update the matching draft instead of creating duplicates
     // when re-uploading a previously-downloaded file.
-    const headerRow = ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", "Phase", "Milestone", "Id"];
+    const headerRow = ["Date", "Project Name", "Commercial Bucket ID", "Commercial Eligibility", "Commercial Approval Reference", "Resource Name", "Description", "Hours", "Billable", "Phase", "Milestone", "Id"];
     const rows: string[][] = [headerRow];
     visibleRows.forEach((r) => {
       const proj = projects.find((p) => p.id === r.projectId);
       rows.push([
         r.date,
         proj?.name || "",
+        r.commercialBucketId || "",
+        r.commercialEligibilityOutcome || "",
+        r.commercialApprovalReference || "",
         currentUser.name || currentUser.email || "",
         r.description || "",
         r.hours,
@@ -1626,6 +1664,14 @@ function CellContent(props: {
     if (col === "projectId") {
       const p = projects.find((p) => p.id === value);
       display = p ? (p.code ? `${formatProjectLabel(p)} (${p.code})` : formatProjectLabel(p)) : <span className="text-muted-foreground italic">—</span>;
+    } else if (col === "commercialBucketId") {
+      display = (
+        <CommercialBucketLabel
+          projectId={row.projectId}
+          bucketId={row.commercialBucketId}
+          eligibilityOutcome={row.commercialEligibilityOutcome}
+        />
+      );
     } else if (col === "allocationId") {
       display = value ? <AllocationLabel allocationId={String(value)} projectId={row.projectId} personId={personId} /> : <span className="text-muted-foreground italic">—</span>;
     } else if (col === "milestoneId") {
@@ -1653,6 +1699,34 @@ function CellContent(props: {
   }
   if (col === "hours") {
     return <HoursEditor value={strValue} onCommit={(v) => { updateCell(rowIndex, "hours", v); close(); }} onCancel={close} />;
+  }
+  if (col === "commercialBucketId") {
+    return (
+      <CommercialBucketEditor
+        projectId={row.projectId}
+        bucketId={row.commercialBucketId}
+        eligibilityOutcome={row.commercialEligibilityOutcome}
+        approvalReference={row.commercialApprovalReference}
+        onCommit={(selection) => {
+          updateCell(rowIndex, "commercialBucketId", selection);
+          close();
+        }}
+        onCancel={close}
+      />
+    );
+  }
+  if (col === "commercialApprovalReference") {
+    return (
+      <TextCellEditor
+        value={strValue}
+        placeholder="Approval reference"
+        onCommit={(v) => {
+          updateCell(rowIndex, "commercialApprovalReference", v);
+          close();
+        }}
+        onCancel={close}
+      />
+    );
   }
   if (col === "description") {
     return <DescriptionEditor row={row} rowIndex={rowIndex} updateCell={updateCell} onCommit={close} onCancel={close} />;
@@ -1749,13 +1823,14 @@ function HoursEditor({ value, onCommit, onCancel }: { value: string; onCommit: (
   const [text, setText] = useState(value || "");
   return (
     <Input
-      type="number"
-      step="0.25"
-      min="0.01"
-      max="24"
+      type="text"
+      inputMode="decimal"
       autoFocus
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => {
+        const next = e.target.value;
+        if (/^\d*(?:\.\d{0,2})?$/.test(next)) setText(next);
+      }}
       onBlur={() => onCommit(text)}
       onKeyDown={(e) => {
         if (e.key === "Enter") { e.preventDefault(); onCommit(text); }
@@ -1766,10 +1841,173 @@ function HoursEditor({ value, onCommit, onCancel }: { value: string; onCommit: (
   );
 }
 
+function TextCellEditor({
+  value,
+  placeholder,
+  onCommit,
+  onCancel,
+}: {
+  value: string;
+  placeholder?: string;
+  onCommit: (v: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(value || "");
+  return (
+    <Input
+      type="text"
+      autoFocus
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => onCommit(text.trim())}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onCommit(text.trim());
+        }
+        if (e.key === "Escape") onCancel();
+      }}
+      className="h-8 px-2 border-0 rounded-none"
+    />
+  );
+}
+
+interface CommercialBucketOption {
+  id: string;
+  label: string;
+  basis: string;
+  isActive: boolean;
+  approvalRequired?: boolean;
+  defaultEligibilityOutcome?: string | null;
+}
+
+interface CommercialBucketResponse {
+  required: boolean;
+  buckets?: CommercialBucketOption[];
+}
+
+function useProjectCommercialBuckets(projectId: string) {
+  return useQuery<CommercialBucketResponse>({
+    queryKey: ["/api/projects", projectId, "commercial-buckets"],
+    enabled: !!projectId,
+    queryFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets`),
+  });
+}
+
+function CommercialBucketLabel({
+  projectId,
+  bucketId,
+  eligibilityOutcome,
+}: {
+  projectId: string;
+  bucketId: string;
+  eligibilityOutcome: string;
+}) {
+  const { data, isLoading } = useProjectCommercialBuckets(projectId);
+  if (!projectId) return <span className="text-muted-foreground italic">Select project first</span>;
+  if (bucketId) {
+    const bucket = (data?.buckets ?? []).find((item) => item.id === bucketId);
+    if (bucket) return <span>{bucket.label}</span>;
+    if (isLoading) return <span className="text-muted-foreground">Loading…</span>;
+    return <span className="text-muted-foreground">Unavailable bucket</span>;
+  }
+  if (eligibilityOutcome === "not_eligible") return <span>Not eligible</span>;
+  if (eligibilityOutcome === "pending_approval") return <span>Commercial review</span>;
+  if (data?.required) return <span className="text-destructive font-medium">Required</span>;
+  return <span className="text-muted-foreground italic">—</span>;
+}
+
+function CommercialBucketEditor({
+  projectId,
+  bucketId,
+  eligibilityOutcome,
+  approvalReference,
+  onCommit,
+  onCancel,
+}: {
+  projectId: string;
+  bucketId: string;
+  eligibilityOutcome: string;
+  approvalReference: string;
+  onCommit: (selection: {
+    bucketId: string;
+    eligibilityOutcome: string;
+    approvalReference?: string;
+  }) => void;
+  onCancel: () => void;
+}) {
+  const { data, isLoading, isError } = useProjectCommercialBuckets(projectId);
+  const buckets = (data?.buckets ?? []).filter((bucket) => bucket.isActive);
+  const currentValue = bucketId
+    ? bucketId
+    : eligibilityOutcome === "not_eligible"
+      ? "__not_eligible__"
+      : eligibilityOutcome === "pending_approval"
+        ? "__pending_approval__"
+        : data?.required
+          ? undefined
+          : "__none__";
+
+  if (!projectId) {
+    return <div className="px-2 py-1.5 text-xs text-muted-foreground">Select project first</div>;
+  }
+
+  return (
+    <Select
+      open
+      value={currentValue}
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+      onValueChange={(value) => {
+        if (value === "__none__") {
+          onCommit({ bucketId: "", eligibilityOutcome: "", approvalReference: "" });
+          return;
+        }
+        if (value === "__not_eligible__") {
+          onCommit({ bucketId: "", eligibilityOutcome: "not_eligible", approvalReference: "" });
+          return;
+        }
+        if (value === "__pending_approval__") {
+          onCommit({ bucketId: "", eligibilityOutcome: "pending_approval", approvalReference });
+          return;
+        }
+        const bucket = buckets.find((item) => item.id === value);
+        onCommit({
+          bucketId: value,
+          eligibilityOutcome: bucket?.defaultEligibilityOutcome || "eligible",
+          approvalReference,
+        });
+      }}
+    >
+      <SelectTrigger className="h-8 border-0 rounded-none" data-testid="select-grid-commercial-bucket">
+        <SelectValue placeholder={isLoading ? "Loading…" : isError ? "Unable to load" : "Select bucket"} />
+      </SelectTrigger>
+      <SelectContent>
+        {!data?.required && <SelectItem value="__none__">None</SelectItem>}
+        {buckets.map((bucket) => (
+          <SelectItem key={bucket.id} value={bucket.id}>
+            {bucket.label} · {bucket.basis}{bucket.approvalRequired ? " · approval required" : ""}
+          </SelectItem>
+        ))}
+        {data?.required && (
+          <>
+            <SelectItem value="__not_eligible__">Not eligible for recovery</SelectItem>
+            <SelectItem value="__pending_approval__">Submit for commercial review</SelectItem>
+          </>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function readCell(row: DraftRow, col: ColKey): string | boolean | undefined {
   switch (col) {
     case "date": return row.date;
     case "projectId": return row.projectId;
+    case "commercialBucketId": return row.commercialBucketId;
+    case "commercialApprovalReference": return row.commercialApprovalReference;
     case "allocationId": return row.allocationId;
     case "description": return row.description;
     case "hours": return row.hours;

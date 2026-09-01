@@ -281,11 +281,7 @@ export default function TimeTracking() {
   const { data: commercialBucketData } = useQuery<{ projectBasis: string | null; required: boolean; buckets: any[] }>({
     queryKey: ["/api/projects", selectedProjectId, "commercial-buckets"],
     enabled: !!selectedProjectId,
-    queryFn: async () => {
-      const response = await fetch(`/api/projects/${selectedProjectId}/commercial-buckets`, { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch commercial buckets");
-      return response.json();
-    },
+    queryFn: () => apiRequest(`/api/projects/${selectedProjectId}/commercial-buckets`),
   });
 
   const { data: projectStages, isLoading: projectStagesLoading } = useQuery({
@@ -361,6 +357,9 @@ export default function TimeTracking() {
     return [...allocations].sort((a: any, b: any) => (a.taskDescription || '').localeCompare(b.taskDescription || ''));
   }, [allocations]);
 
+  const addCommercialBuckets = commercialBucketData?.buckets ?? [];
+  const addCommercialBucketsRequired = !!commercialBucketData?.required;
+
   // Fetch milestones and workstreams for edit form
   const { data: editMilestones } = useQuery({
     queryKey: ["/api/projects", editProjectId, "milestones"],
@@ -393,11 +392,7 @@ export default function TimeTracking() {
   const { data: editCommercialBucketData } = useQuery<{ projectBasis: string | null; required: boolean; buckets: any[] }>({
     queryKey: ["/api/projects", editProjectId, "commercial-buckets"],
     enabled: !!editProjectId,
-    queryFn: async () => {
-      const response = await fetch(`/api/projects/${editProjectId}/commercial-buckets`, { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch commercial buckets");
-      return response.json();
-    },
+    queryFn: () => apiRequest(`/api/projects/${editProjectId}/commercial-buckets`),
   });
 
   const { data: editProjectStages } = useQuery({
@@ -470,6 +465,9 @@ export default function TimeTracking() {
     if (!editAllocations) return [];
     return [...editAllocations].sort((a: any, b: any) => (a.taskDescription || '').localeCompare(b.taskDescription || ''));
   }, [editAllocations]);
+
+  const editCommercialBuckets = editCommercialBucketData?.buckets ?? [];
+  const editCommercialBucketsRequired = !!editCommercialBucketData?.required;
 
   const [tePagination, setTePagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
 
@@ -1177,6 +1175,9 @@ export default function TimeTracking() {
                             // Clear milestone and workstream when project changes
                             form.setValue('milestoneId', '');
                             form.setValue('workstreamId', '');
+                            form.setValue('commercialBucketId', '');
+                            form.setValue('commercialEligibilityOutcome', '');
+                            form.setValue('commercialApprovalReference', '');
                           }} 
                           value={field.value || undefined}
                         >
@@ -1206,14 +1207,15 @@ export default function TimeTracking() {
                         <FormLabel>Hours</FormLabel>
                         <FormControl>
                           <Input
-                            type="number"
-                            step="0.25"
-                            min="0.01"
-                            max="24"
+                            type="text"
+                            inputMode="decimal"
                             placeholder="Enter hours (e.g., 8 or 8.5)"
                             {...field}
                             value={field.value || ''}
-                            onChange={(e) => field.onChange(e.target.value)}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              if (/^\d*(?:\.\d{0,2})?$/.test(next)) field.onChange(next);
+                            }}
                             data-testid="input-hours"
                           />
                         </FormControl>
@@ -1328,24 +1330,24 @@ export default function TimeTracking() {
                     )}
                   />
 
-                  {(commercialBucketData?.required || commercialBucketData?.buckets?.length) && (
+                  {(addCommercialBucketsRequired || addCommercialBuckets.length > 0) && (
                     <>
                       <FormField
                         control={form.control}
                         name="commercialBucketId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Commercial bucket {commercialBucketData.required ? "" : "(Optional)"}</FormLabel>
+                            <FormLabel>Commercial bucket {addCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
                             <Select onValueChange={(value) => {
                               const bucketId = value === "__none__" ? "" : value;
                               field.onChange(bucketId);
-                              const bucket = commercialBucketData.buckets.find(bucket => bucket.id === bucketId);
+                              const bucket = addCommercialBuckets.find(bucket => bucket.id === bucketId);
                               form.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
                             }} value={field.value || undefined}>
                               <FormControl><SelectTrigger data-testid="select-commercial-bucket"><SelectValue placeholder="Select contractual time classification" /></SelectTrigger></FormControl>
                               <SelectContent>
-                                {!commercialBucketData.required && <SelectItem value="__none__">None</SelectItem>}
-                                {commercialBucketData.buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
+                                {!addCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
+                                {addCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
                               </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">This is separate from workstream and milestone coverage.</p>
@@ -1822,6 +1824,9 @@ export default function TimeTracking() {
                           setEditProjectId(value);
                           editForm.setValue('milestoneId', '');
                           editForm.setValue('workstreamId', '');
+                          editForm.setValue('commercialBucketId', '');
+                          editForm.setValue('commercialEligibilityOutcome', '');
+                          editForm.setValue('commercialApprovalReference', '');
                         }} 
                         value={field.value || undefined}
                       >
@@ -1851,14 +1856,15 @@ export default function TimeTracking() {
                       <FormLabel>Hours</FormLabel>
                       <FormControl>
                         <Input
-                          type="number"
-                          step="0.25"
-                          min="0.01"
-                          max="24"
+                          type="text"
+                          inputMode="decimal"
                           placeholder="Enter hours (e.g., 8 or 8.5)"
                           {...field}
                           value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value)}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            if (/^\d*(?:\.\d{0,2})?$/.test(next)) field.onChange(next);
+                          }}
                           data-testid="input-edit-hours"
                         />
                       </FormControl>
@@ -1957,24 +1963,24 @@ export default function TimeTracking() {
                   )}
                 />
 
-                  {(editCommercialBucketData?.required || editCommercialBucketData?.buckets?.length) && (
+                  {(editCommercialBucketsRequired || editCommercialBuckets.length > 0) && (
                     <>
                       <FormField
                         control={editForm.control}
                         name="commercialBucketId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Commercial bucket {editCommercialBucketData.required ? "" : "(Optional)"}</FormLabel>
+                            <FormLabel>Commercial bucket {editCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
                             <Select onValueChange={(value) => {
                               const bucketId = value === "__none__" ? "" : value;
                               field.onChange(bucketId);
-                              const bucket = editCommercialBucketData.buckets.find(bucket => bucket.id === bucketId);
+                              const bucket = editCommercialBuckets.find(bucket => bucket.id === bucketId);
                               editForm.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
                             }} value={field.value || undefined}>
                               <FormControl><SelectTrigger data-testid="select-edit-commercial-bucket"><SelectValue placeholder="Select contractual time classification" /></SelectTrigger></FormControl>
                               <SelectContent>
-                                {!editCommercialBucketData.required && <SelectItem value="__none__">None</SelectItem>}
-                                {editCommercialBucketData.buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
+                                {!editCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
+                                {editCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
                               </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">Commercial classification does not change milestone coverage.</p>
