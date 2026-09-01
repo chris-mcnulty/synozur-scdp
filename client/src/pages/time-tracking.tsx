@@ -1351,15 +1351,20 @@ export default function TimeTracking() {
                           <FormItem>
                             <FormLabel>Work classification {addCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
                             <Select onValueChange={(value) => {
-                              const bucketId = value === "__none__" ? "" : value;
+                              const bucketId = ["__none__", "__baseline__"].includes(value) ? "" : value;
                               field.onChange(bucketId);
                               const bucket = addCommercialBuckets.find(bucket => bucket.id === bucketId);
-                              form.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
+                              form.setValue("commercialEligibilityOutcome", value === "__baseline__"
+                                ? "not_eligible"
+                                : value === "__none__"
+                                  ? ""
+                                  : bucket?.defaultEligibilityOutcome || "eligible");
                               if (!bucket?.approvalRequired) form.setValue("commercialApprovalReference", "");
-                            }} value={field.value || undefined}>
+                            }} value={field.value || (form.watch("commercialEligibilityOutcome") === "not_eligible" ? "__baseline__" : undefined)}>
                               <FormControl><SelectTrigger data-testid="select-commercial-bucket"><SelectValue placeholder="Baseline SOW or change-order bucket" /></SelectTrigger></FormControl>
                               <SelectContent>
                                 {!addCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
+                                <SelectItem value="__baseline__">Baseline SOW</SelectItem>
                                 {addCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{commercialClassificationLabel(bucket)}</SelectItem>)}
                               </SelectContent>
                             </Select>
@@ -1974,15 +1979,20 @@ export default function TimeTracking() {
                           <FormItem>
                             <FormLabel>Work classification {editCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
                             <Select onValueChange={(value) => {
-                              const bucketId = value === "__none__" ? "" : value;
+                              const bucketId = ["__none__", "__baseline__"].includes(value) ? "" : value;
                               field.onChange(bucketId);
                               const bucket = editCommercialBuckets.find(bucket => bucket.id === bucketId);
-                              editForm.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
+                              editForm.setValue("commercialEligibilityOutcome", value === "__baseline__"
+                                ? "not_eligible"
+                                : value === "__none__"
+                                  ? ""
+                                  : bucket?.defaultEligibilityOutcome || "eligible");
                               if (!bucket?.approvalRequired) editForm.setValue("commercialApprovalReference", "");
-                            }} value={field.value || undefined}>
+                            }} value={field.value || (editForm.watch("commercialEligibilityOutcome") === "not_eligible" ? "__baseline__" : undefined)}>
                               <FormControl><SelectTrigger data-testid="select-edit-commercial-bucket"><SelectValue placeholder="Baseline SOW or change-order bucket" /></SelectTrigger></FormControl>
                               <SelectContent>
                                 {!editCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
+                                <SelectItem value="__baseline__">Baseline SOW</SelectItem>
                                 {editCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{commercialClassificationLabel(bucket)}</SelectItem>)}
                               </SelectContent>
                             </Select>

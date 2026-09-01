@@ -1669,6 +1669,7 @@ function CellContent(props: {
         <CommercialBucketLabel
           projectId={row.projectId}
           bucketId={row.commercialBucketId}
+          eligibilityOutcome={row.commercialEligibilityOutcome}
         />
       );
     } else if (col === "allocationId") {
@@ -1704,6 +1705,7 @@ function CellContent(props: {
       <CommercialBucketEditor
         projectId={row.projectId}
         bucketId={row.commercialBucketId}
+        eligibilityOutcome={row.commercialEligibilityOutcome}
         approvalReference={row.commercialApprovalReference}
         onCommit={(selection) => {
           updateCell(rowIndex, "commercialBucketId", selection);
@@ -1903,9 +1905,11 @@ function useProjectCommercialBuckets(projectId: string) {
 function CommercialBucketLabel({
   projectId,
   bucketId,
+  eligibilityOutcome,
 }: {
   projectId: string;
   bucketId: string;
+  eligibilityOutcome: string;
 }) {
   const { data, isLoading } = useProjectCommercialBuckets(projectId);
   if (!projectId) return <span className="text-muted-foreground italic">Select project first</span>;
@@ -1915,6 +1919,7 @@ function CommercialBucketLabel({
     if (isLoading) return <span className="text-muted-foreground">Loading…</span>;
     return <span className="text-muted-foreground">Unavailable bucket</span>;
   }
+  if (eligibilityOutcome === "not_eligible") return <span>Baseline SOW</span>;
   if (data?.required) return <span className="text-muted-foreground italic">Choose classification</span>;
   return <span className="text-muted-foreground italic">—</span>;
 }
@@ -1922,12 +1927,14 @@ function CommercialBucketLabel({
 function CommercialBucketEditor({
   projectId,
   bucketId,
+  eligibilityOutcome,
   approvalReference,
   onCommit,
   onCancel,
 }: {
   projectId: string;
   bucketId: string;
+  eligibilityOutcome: string;
   approvalReference: string;
   onCommit: (selection: {
     bucketId: string;
@@ -1938,7 +1945,9 @@ function CommercialBucketEditor({
 }) {
   const { data, isLoading, isError } = useProjectCommercialBuckets(projectId);
   const buckets = (data?.buckets ?? []).filter((bucket) => bucket.isActive);
-  const currentValue = bucketId || (data?.required ? undefined : "__none__");
+  const currentValue = bucketId || (eligibilityOutcome === "not_eligible"
+    ? "__baseline__"
+    : data?.required ? undefined : "__none__");
 
   if (!projectId) {
     return <div className="px-2 py-1.5 text-xs text-muted-foreground">Select project first</div>;
@@ -1956,6 +1965,10 @@ function CommercialBucketEditor({
           onCommit({ bucketId: "", eligibilityOutcome: "", approvalReference: "" });
           return;
         }
+        if (value === "__baseline__") {
+          onCommit({ bucketId: "", eligibilityOutcome: "not_eligible", approvalReference: "" });
+          return;
+        }
         const bucket = buckets.find((item) => item.id === value);
         onCommit({
           bucketId: value,
@@ -1969,6 +1982,7 @@ function CommercialBucketEditor({
       </SelectTrigger>
       <SelectContent>
         {!data?.required && <SelectItem value="__none__">None</SelectItem>}
+        <SelectItem value="__baseline__">Baseline SOW</SelectItem>
         {buckets.map((bucket) => (
           <SelectItem key={bucket.id} value={bucket.id}>
             {commercialClassificationLabel(bucket)}
