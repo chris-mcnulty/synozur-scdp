@@ -56,8 +56,8 @@ type ColKey = "date" | "projectId" | "commercialBucketId" | "commercialApprovalR
 const COLUMNS: { key: ColKey; label: string; width: string }[] = [
   { key: "date", label: "Date", width: "w-[120px]" },
   { key: "projectId", label: "Project", width: "w-[200px]" },
-  { key: "commercialBucketId", label: "Commercial bucket", width: "w-[220px]" },
-  { key: "commercialApprovalReference", label: "Approval ref.", width: "w-[160px]" },
+  { key: "commercialBucketId", label: "Work classification", width: "w-[260px]" },
+  { key: "commercialApprovalReference", label: "Approval ref. (M3)", width: "w-[160px]" },
   { key: "allocationId", label: "Task", width: "w-[180px]" },
   { key: "description", label: "Description", width: "w-[280px]" },
   { key: "hours", label: "Hours", width: "w-[80px]" },
@@ -65,7 +65,7 @@ const COLUMNS: { key: ColKey; label: string; width: string }[] = [
   { key: "milestoneId", label: "Milestone", width: "w-[160px]" },
 ];
 
-const HEADER_ROW = ["Date", "Project", "Commercial Bucket", "Approval Reference", "Task", "Description", "Hours", "Billable", "Milestone"];
+const HEADER_ROW = ["Date", "Project", "Work Classification", "Approval Reference", "Task", "Description", "Hours", "Billable", "Milestone"];
 
 function uid() {
   return "tmp_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -985,7 +985,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     // Including the entry Id as the last column lets the server-side
     // self-import update the matching draft instead of creating duplicates
     // when re-uploading a previously-downloaded file.
-    const headerRow = ["Date", "Project Name", "Commercial Bucket ID", "Commercial Eligibility", "Commercial Approval Reference", "Resource Name", "Description", "Hours", "Billable", "Phase", "Milestone", "Id"];
+    const headerRow = ["Date", "Project Name", "Work Classification ID", "Commercial Eligibility", "Commercial Approval Reference", "Resource Name", "Description", "Hours", "Billable", "Phase", "Milestone", "Id"];
     const rows: string[][] = [headerRow];
     visibleRows.forEach((r) => {
       const proj = projects.find((p) => p.id === r.projectId);
@@ -1669,7 +1669,6 @@ function CellContent(props: {
         <CommercialBucketLabel
           projectId={row.projectId}
           bucketId={row.commercialBucketId}
-          eligibilityOutcome={row.commercialEligibilityOutcome}
         />
       );
     } else if (col === "allocationId") {
@@ -1705,7 +1704,6 @@ function CellContent(props: {
       <CommercialBucketEditor
         projectId={row.projectId}
         bucketId={row.commercialBucketId}
-        eligibilityOutcome={row.commercialEligibilityOutcome}
         approvalReference={row.commercialApprovalReference}
         onCommit={(selection) => {
           updateCell(rowIndex, "commercialBucketId", selection);
@@ -1877,6 +1875,7 @@ interface CommercialBucketOption {
   id: string;
   label: string;
   basis: string;
+  contractReference?: string | null;
   isActive: boolean;
   approvalRequired?: boolean;
   defaultEligibilityOutcome?: string | null;
@@ -1885,6 +1884,12 @@ interface CommercialBucketOption {
 interface CommercialBucketResponse {
   required: boolean;
   buckets?: CommercialBucketOption[];
+}
+
+function commercialClassificationLabel(bucket: CommercialBucketOption) {
+  if (bucket.label === "Original SOW") return "Baseline SOW";
+  const milestone = bucket.contractReference?.match(/\bM[1-3]\b/i)?.[0]?.toUpperCase();
+  return milestone ? `Change Order ${milestone} — ${bucket.label}` : bucket.label;
 }
 
 function useProjectCommercialBuckets(projectId: string) {
@@ -1898,37 +1903,31 @@ function useProjectCommercialBuckets(projectId: string) {
 function CommercialBucketLabel({
   projectId,
   bucketId,
-  eligibilityOutcome,
 }: {
   projectId: string;
   bucketId: string;
-  eligibilityOutcome: string;
 }) {
   const { data, isLoading } = useProjectCommercialBuckets(projectId);
   if (!projectId) return <span className="text-muted-foreground italic">Select project first</span>;
   if (bucketId) {
     const bucket = (data?.buckets ?? []).find((item) => item.id === bucketId);
-    if (bucket) return <span>{bucket.label}</span>;
+    if (bucket) return <span>{commercialClassificationLabel(bucket)}</span>;
     if (isLoading) return <span className="text-muted-foreground">Loading…</span>;
     return <span className="text-muted-foreground">Unavailable bucket</span>;
   }
-  if (eligibilityOutcome === "not_eligible") return <span>Not eligible</span>;
-  if (eligibilityOutcome === "pending_approval") return <span>Commercial review</span>;
-  if (data?.required) return <span className="text-destructive font-medium">Required</span>;
+  if (data?.required) return <span className="text-muted-foreground italic">Choose classification</span>;
   return <span className="text-muted-foreground italic">—</span>;
 }
 
 function CommercialBucketEditor({
   projectId,
   bucketId,
-  eligibilityOutcome,
   approvalReference,
   onCommit,
   onCancel,
 }: {
   projectId: string;
   bucketId: string;
-  eligibilityOutcome: string;
   approvalReference: string;
   onCommit: (selection: {
     bucketId: string;
@@ -1939,15 +1938,7 @@ function CommercialBucketEditor({
 }) {
   const { data, isLoading, isError } = useProjectCommercialBuckets(projectId);
   const buckets = (data?.buckets ?? []).filter((bucket) => bucket.isActive);
-  const currentValue = bucketId
-    ? bucketId
-    : eligibilityOutcome === "not_eligible"
-      ? "__not_eligible__"
-      : eligibilityOutcome === "pending_approval"
-        ? "__pending_approval__"
-        : data?.required
-          ? undefined
-          : "__none__";
+  const currentValue = bucketId || (data?.required ? undefined : "__none__");
 
   if (!projectId) {
     return <div className="px-2 py-1.5 text-xs text-muted-foreground">Select project first</div>;
@@ -1965,38 +1956,24 @@ function CommercialBucketEditor({
           onCommit({ bucketId: "", eligibilityOutcome: "", approvalReference: "" });
           return;
         }
-        if (value === "__not_eligible__") {
-          onCommit({ bucketId: "", eligibilityOutcome: "not_eligible", approvalReference: "" });
-          return;
-        }
-        if (value === "__pending_approval__") {
-          onCommit({ bucketId: "", eligibilityOutcome: "pending_approval", approvalReference });
-          return;
-        }
         const bucket = buckets.find((item) => item.id === value);
         onCommit({
           bucketId: value,
           eligibilityOutcome: bucket?.defaultEligibilityOutcome || "eligible",
-          approvalReference,
+          approvalReference: bucket?.approvalRequired ? approvalReference : "",
         });
       }}
     >
       <SelectTrigger className="h-8 border-0 rounded-none" data-testid="select-grid-commercial-bucket">
-        <SelectValue placeholder={isLoading ? "Loading…" : isError ? "Unable to load" : "Select bucket"} />
+        <SelectValue placeholder={isLoading ? "Loading…" : isError ? "Unable to load" : "Baseline SOW or change-order bucket"} />
       </SelectTrigger>
       <SelectContent>
         {!data?.required && <SelectItem value="__none__">None</SelectItem>}
         {buckets.map((bucket) => (
           <SelectItem key={bucket.id} value={bucket.id}>
-            {bucket.label} · {bucket.basis}{bucket.approvalRequired ? " · approval required" : ""}
+            {commercialClassificationLabel(bucket)}
           </SelectItem>
         ))}
-        {data?.required && (
-          <>
-            <SelectItem value="__not_eligible__">Not eligible for recovery</SelectItem>
-            <SelectItem value="__pending_approval__">Submit for commercial review</SelectItem>
-          </>
-        )}
       </SelectContent>
     </Select>
   );

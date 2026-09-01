@@ -305,14 +305,23 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       const needsCommercialReview = hasExplicitCommercialChange ||
         "date" in req.body || "hours" in req.body || "projectId" in req.body;
       const proposedEntry = { ...existingEntry, ...updateData };
-      const commercialInput = {
+      let commercialInput = {
         commercialBucketId: proposedEntry.commercialBucketId,
         commercialEligibilityOutcome: proposedEntry.commercialEligibilityOutcome,
         commercialApprovalReference: proposedEntry.commercialApprovalReference,
       };
       if (needsCommercialReview) {
-        if (hasExplicitCommercialChange && !await canManageCommercialClassification(req, proposedEntry.projectId)) {
-          return res.status(403).json({ message: "Only the project's PM or billing administrators can classify time commercially." });
+        const canManageCommercial = await canManageCommercialClassification(req, proposedEntry.projectId);
+        if (hasExplicitCommercialChange && !canManageCommercial) {
+          // Contributors may classify their own draft time by choosing one of
+          // the project's active work classifications. As on create, their
+          // selection is held for review unless the bucket itself is the
+          // baseline classification with a not-eligible default.
+          commercialInput = {
+            commercialBucketId: proposedEntry.commercialBucketId,
+            commercialEligibilityOutcome: proposedEntry.commercialBucketId ? "pending_approval" : undefined,
+            commercialApprovalReference: undefined,
+          };
         }
         // Validate the merged, proposed state before changing the stored entry.
         // This prevents a rejected request from persisting a cross-project

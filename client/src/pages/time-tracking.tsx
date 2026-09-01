@@ -57,6 +57,12 @@ const timeEntryFormSchema = insertTimeEntrySchema.omit({
 
 type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
 
+function commercialClassificationLabel(bucket: any) {
+  if (bucket.label === "Original SOW") return "Baseline SOW";
+  const milestone = bucket.contractReference?.match(/\bM[1-3]\b/i)?.[0]?.toUpperCase();
+  return milestone ? `Change Order ${milestone} — ${bucket.label}` : bucket.label;
+}
+
 // Helper function to parse date string without timezone issues
 function parseLocalDate(dateStr: string): Date {
   // Split the date string and create a date in local timezone
@@ -359,6 +365,9 @@ export default function TimeTracking() {
 
   const addCommercialBuckets = commercialBucketData?.buckets ?? [];
   const addCommercialBucketsRequired = !!commercialBucketData?.required;
+  const selectedAddCommercialBucket = addCommercialBuckets.find(
+    (bucket: any) => bucket.id === form.watch("commercialBucketId"),
+  );
 
   // Fetch milestones and workstreams for edit form
   const { data: editMilestones } = useQuery({
@@ -468,6 +477,9 @@ export default function TimeTracking() {
 
   const editCommercialBuckets = editCommercialBucketData?.buckets ?? [];
   const editCommercialBucketsRequired = !!editCommercialBucketData?.required;
+  const selectedEditCommercialBucket = editCommercialBuckets.find(
+    (bucket: any) => bucket.id === editForm.watch("commercialBucketId"),
+  );
 
   const [tePagination, setTePagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
 
@@ -1337,42 +1349,32 @@ export default function TimeTracking() {
                         name="commercialBucketId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Commercial bucket {addCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
+                            <FormLabel>Work classification {addCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
                             <Select onValueChange={(value) => {
                               const bucketId = value === "__none__" ? "" : value;
                               field.onChange(bucketId);
                               const bucket = addCommercialBuckets.find(bucket => bucket.id === bucketId);
                               form.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
+                              if (!bucket?.approvalRequired) form.setValue("commercialApprovalReference", "");
                             }} value={field.value || undefined}>
-                              <FormControl><SelectTrigger data-testid="select-commercial-bucket"><SelectValue placeholder="Select contractual time classification" /></SelectTrigger></FormControl>
+                              <FormControl><SelectTrigger data-testid="select-commercial-bucket"><SelectValue placeholder="Baseline SOW or change-order bucket" /></SelectTrigger></FormControl>
                               <SelectContent>
                                 {!addCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
-                                {addCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
+                                {addCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{commercialClassificationLabel(bucket)}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">This is separate from workstream and milestone coverage.</p>
+                            <p className="text-xs text-muted-foreground">Choose whether this task was baseline SOW work or one of the change-order classifications.</p>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={form.control}
-                        name="commercialEligibilityOutcome"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Eligibility</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || "eligible"}>
-                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                              <SelectContent><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible for recovery</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem></SelectContent>
-                            </Select>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="commercialApprovalReference"
-                        render={({ field }) => <FormItem><FormLabel>Approval reference (if required)</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Approval / change-order reference" /></FormControl><FormMessage /></FormItem>}
-                      />
+                      {selectedAddCommercialBucket?.approvalRequired && (
+                        <FormField
+                          control={form.control}
+                          name="commercialApprovalReference"
+                          render={({ field }) => <FormItem><FormLabel>Approval reference for {commercialClassificationLabel(selectedAddCommercialBucket)}</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Enter the prior approval reference" /></FormControl><FormMessage /></FormItem>}
+                        />
+                      )}
                     </>
                   )}
 
@@ -1970,34 +1972,32 @@ export default function TimeTracking() {
                         name="commercialBucketId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Commercial bucket {editCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
+                            <FormLabel>Work classification {editCommercialBucketsRequired ? "" : "(Optional)"}</FormLabel>
                             <Select onValueChange={(value) => {
                               const bucketId = value === "__none__" ? "" : value;
                               field.onChange(bucketId);
                               const bucket = editCommercialBuckets.find(bucket => bucket.id === bucketId);
                               editForm.setValue("commercialEligibilityOutcome", bucketId ? bucket?.defaultEligibilityOutcome || "eligible" : "not_eligible");
+                              if (!bucket?.approvalRequired) editForm.setValue("commercialApprovalReference", "");
                             }} value={field.value || undefined}>
-                              <FormControl><SelectTrigger data-testid="select-edit-commercial-bucket"><SelectValue placeholder="Select contractual time classification" /></SelectTrigger></FormControl>
+                              <FormControl><SelectTrigger data-testid="select-edit-commercial-bucket"><SelectValue placeholder="Baseline SOW or change-order bucket" /></SelectTrigger></FormControl>
                               <SelectContent>
                                 {!editCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
-                                {editCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
+                                {editCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{commercialClassificationLabel(bucket)}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">Commercial classification does not change milestone coverage.</p>
+                            <p className="text-xs text-muted-foreground">Choose whether this task was baseline SOW work or one of the change-order classifications.</p>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={editForm.control}
-                        name="commercialEligibilityOutcome"
-                        render={({ field }) => <FormItem><FormLabel>Eligibility</FormLabel><Select onValueChange={field.onChange} value={field.value || "eligible"}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible for recovery</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem></SelectContent></Select></FormItem>}
-                      />
-                      <FormField
-                        control={editForm.control}
-                        name="commercialApprovalReference"
-                        render={({ field }) => <FormItem><FormLabel>Approval reference (if required)</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>}
-                      />
+                      {selectedEditCommercialBucket?.approvalRequired && (
+                        <FormField
+                          control={editForm.control}
+                          name="commercialApprovalReference"
+                          render={({ field }) => <FormItem><FormLabel>Approval reference for {commercialClassificationLabel(selectedEditCommercialBucket)}</FormLabel><FormControl><Input {...field} value={field.value || ""} placeholder="Enter the prior approval reference" /></FormControl><FormMessage /></FormItem>}
+                        />
+                      )}
                     </>
                   )}
 

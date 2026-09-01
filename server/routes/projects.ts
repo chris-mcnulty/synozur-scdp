@@ -596,6 +596,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
           projectId: bucket.projectId,
           label: bucket.label,
           basis: bucket.basis,
+           contractReference: bucket.contractReference,
           isActive: bucket.isActive,
           defaultEligibilityOutcome: bucket.defaultEligibilityOutcome,
           approvalRequired: bucket.approvalRequired,
