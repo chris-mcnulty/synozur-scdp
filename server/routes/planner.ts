@@ -238,6 +238,26 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         return res.status(400).json({ message: "Team name is required" });
       }
 
+      const callerTenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || (req.user as any)?.tenantId;
+      let targetClient: any = null;
+      if (clientId) {
+        targetClient = await storage.getClient(clientId);
+        if (!targetClient || (callerTenantId && targetClient.tenantId !== callerTenantId)) {
+          return res.status(404).json({ message: "Client not found in the active tenant" });
+        }
+        const [existingLink] = await db.select().from(clientTeams)
+          .where(and(eq(clientTeams.clientId, clientId), eq(clientTeams.tenantId, callerTenantId)))
+          .limit(1);
+        if (existingLink) {
+          return res.json({
+            id: existingLink.teamId,
+            displayName: existingLink.teamName,
+            webUrl: existingLink.teamWebUrl,
+            alreadyLinked: true,
+          });
+        }
+      }
+
       let resolvedOwnerIds: string[] | undefined = ownerIds;
       if (!resolvedOwnerIds || resolvedOwnerIds.length === 0) {
         const callerEmail = (req.user as any)?.email;
@@ -261,14 +281,14 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       });
       
       if (clientId && team.id) {
-        const callerTenantId = (req.user as any)?.activeTenantId || (req.user as any)?.primaryTenantId || (req.user as any)?.tenantId;
-        const targetClient = await storage.getClient(clientId);
-        if (!targetClient) {
-          return res.status(404).json({ message: "Client not found" });
-        }
-        if (callerTenantId && targetClient.tenantId && targetClient.tenantId !== callerTenantId) {
-          return res.status(403).json({ message: "Access denied: client belongs to a different tenant" });
-        }
+        await db.insert(clientTeams).values({
+          clientId,
+          tenantId: callerTenantId || null,
+          teamId: team.id,
+          teamName: team.displayName || displayName,
+          teamWebUrl: team.webUrl || null,
+          createdBy: (req.user as any)?.id || null,
+        }).onConflictDoNothing({ target: clientTeams.clientId });
         await storage.updateClient(clientId, {
           microsoftTeamId: team.id,
           microsoftTeamName: team.displayName || displayName,
@@ -1084,8 +1104,8 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       if (!tenantId) return res.status(400).json({ message: "No tenant context" });
 
       const { projectId } = req.params;
-      const { teamId, channelId, channelName, channelWebUrl } = req.body;
-      if (!channelId) return res.status(400).json({ message: "channelId is required" });
+      const { teamId, channelId } = req.body;
+      if (!teamId || !channelId) return res.status(400).json({ message: "teamId and channelId are required" });
 
       const [project] = await db.select({ id: projects.id })
         .from(projects)
@@ -1093,25 +1113,32 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         .limit(1);
       if (!project) return res.status(404).json({ message: "Project not found" });
 
+      const { plannerService } = await import('../services/planner-service');
+      const graphChannel = (await plannerService.listChannels(teamId))
+        .find((candidate: any) => candidate.id === channelId);
+      if (!graphChannel) {
+        return res.status(400).json({ message: "The selected channel does not belong to the selected Team" });
+      }
+
       await db.insert(projectChannels).values({
         projectId,
         tenantId,
         channelId,
-        channelName: channelName || null,
-        channelWebUrl: channelWebUrl || null,
+        channelName: graphChannel.displayName || null,
+        channelWebUrl: graphChannel.webUrl || null,
         createdBy: user?.id || null,
       }).onConflictDoUpdate({
         target: projectChannels.projectId,
         set: {
           channelId,
-          channelName: channelName || null,
-          channelWebUrl: channelWebUrl || null,
+          channelName: graphChannel.displayName || null,
+          channelWebUrl: graphChannel.webUrl || null,
           updatedAt: sql`now()`,
         },
       });
 
       console.log(`[PLANNER] Linked existing channel ${channelId} to project ${projectId}`);
-      res.json({ success: true, projectId, channelId, channelName });
+      res.json({ success: true, projectId, channelId, channelName: graphChannel.displayName });
     } catch (error: any) {
       console.error("[PLANNER] Failed to link project channel:", error);
       res.status(500).json({ message: "Failed to link project channel: " + error.message });

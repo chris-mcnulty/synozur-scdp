@@ -4,7 +4,7 @@ import * as osNode from "os";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, projectDeliverables, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, commercialBuckets, commercialBucketAudit, type InvoiceBatch } from "@shared/schema";
+import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, clientTeams, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, projectDeliverables, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, commercialBuckets, commercialBucketAudit, type InvoiceBatch } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, desc, or } from "drizzle-orm";
 import { projectFiltersSchema } from "@shared/pagination";
 import { emailService } from "../services/email-notification.js";
@@ -24,8 +24,10 @@ interface ProjectRouteDeps {
 interface ProjectM365ProvisioningOptions {
   projectId: string;
   projectName: string;
+  clientId: string;
   tenantId: string | null;
-  teamsTeamId: string;
+  teamsMode: "new-team" | "new-channel" | "existing-channel";
+  teamsTeamId: string | null;
   teamsTeamName: string | null;
   teamsChannelName: string;
   teamsExistingChannelId: string | null;
@@ -34,11 +36,21 @@ interface ProjectM365ProvisioningOptions {
   createPlannerPlan: boolean;
   autoAddMembers: boolean;
   inviteGuests: boolean;
+  retryWarnings?: string[];
+  provisioningRequest?: Record<string, any>;
+  startedAt?: string;
 }
 
-// Non-blocking Teams channel + Planner provisioning for a freshly created project.
-// Mirrors the pattern shipped for estimates (fireTeamsProvisioning in estimates.ts).
-function fireProjectM365Provisioning(req: Request, opts: ProjectM365ProvisioningOptions) {
+type ProjectM365ProvisioningResult = {
+  status: "succeeded" | "partial" | "failed";
+  message: string;
+  warnings?: string[];
+  request?: Record<string, unknown>;
+};
+
+// Provision after the local project exists. Failures are returned to the caller
+// instead of failing or rolling back project creation.
+async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365ProvisioningOptions): Promise<ProjectM365ProvisioningResult> {
   const requestUser = (req.user ?? {}) as {
     id?: string;
     ssoRefreshToken?: string;
@@ -50,28 +62,166 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
   // row would otherwise be unreachable from /api/projects/:id/channel,
   // which is tenant-scoped.
   if (!tenantId) {
-    console.warn(
-      `[PROJECTS] Skipping M365 provisioning for project ${opts.projectId}: missing tenant context`,
-    );
-    return;
+    return { status: "failed", message: "Project created, but Microsoft 365 setup needs a tenant context. Retry from the project page." };
   }
 
-  setImmediate(async () => {
-    let channelId: string | null = null;
-    let channelName: string | null = null;
-    let channelWebUrl: string | null = null;
+  let channelId: string | null = null;
+  let channelName: string | null = null;
+  let channelWebUrl: string | null = null;
 
-    try {
-      const { plannerService } = await import('../services/planner-service.js');
+  try {
+    const { plannerService } = await import('../services/planner-service.js');
+    const warnings: string[] = [];
+    const provisioningRequest = opts.provisioningRequest || {};
+    const creationMarker = provisioningRequest.scratchCreationKey
+      ? `Constellation setup ${provisioningRequest.scratchCreationKey}`
+      : `Constellation project ${opts.projectId}`;
+    const persistRemoteCheckpoint = async (patch: Record<string, unknown>) => {
+      Object.assign(provisioningRequest, patch);
+      await db.update(projects).set({
+        m365Provisioning: {
+          status: "running",
+          message: "Microsoft setup is in progress.",
+          startedAt: opts.startedAt,
+          request: provisioningRequest,
+        },
+      } as any).where(and(eq(projects.id, opts.projectId), eq(projects.tenantId, tenantId)));
+    };
+    const [existingProjectChannel] = await db.select()
+      .from(projectChannels)
+      .where(and(eq(projectChannels.projectId, opts.projectId), eq(projectChannels.tenantId, tenantId)))
+      .limit(1);
 
-      if (opts.teamsExistingChannelId) {
+    let resolvedTeamId = opts.teamsTeamId;
+    let resolvedTeamName = opts.teamsTeamName;
+    let resolvedTeamWebUrl: string | null = provisioningRequest.createdTeamWebUrl || null;
+
+    if (opts.teamsMode === "new-team") {
+      const [existingLink] = await db.select()
+        .from(clientTeams)
+        .where(and(eq(clientTeams.clientId, opts.clientId), eq(clientTeams.tenantId, tenantId)))
+        .limit(1);
+
+      if (existingLink) {
+        resolvedTeamId = existingLink.teamId;
+        resolvedTeamName = existingLink.teamName;
+        resolvedTeamWebUrl = existingLink.teamWebUrl;
+      } else if (provisioningRequest.createdTeamId) {
+        resolvedTeamId = provisioningRequest.createdTeamId;
+        resolvedTeamName = provisioningRequest.createdTeamName || opts.teamsTeamName;
+      } else {
+        const discoverableTeams = await plannerService.searchGroups(opts.teamsTeamName || opts.projectName, 100);
+        const recoveredTeam = discoverableTeams.find((candidate: any) => candidate.description === creationMarker);
+        let team = recoveredTeam;
+        if (!team) {
+          const callerEmail = (req.user as any)?.email;
+          if (!callerEmail) {
+            throw new Error("Your account needs an email address before it can own a new Microsoft Team.");
+          }
+          const owner = await plannerService.lookupUserByEmail(callerEmail);
+          if (!owner?.id) {
+            throw new Error("Your Microsoft account could not be resolved as the owner of the new Team.");
+          }
+          team = await plannerService.createTeam({
+            displayName: opts.teamsTeamName || opts.projectName,
+            description: creationMarker,
+            ownerIds: [owner.id],
+          });
+        }
+        resolvedTeamId = team.id;
+        resolvedTeamName = team.displayName || opts.teamsTeamName;
+        resolvedTeamWebUrl = (team as any).webUrl || null;
+        await persistRemoteCheckpoint({
+          createdTeamId: team.id,
+          createdTeamName: resolvedTeamName,
+          createdTeamWebUrl: (team as any).webUrl || null,
+        });
+      }
+
+      await db.insert(clientTeams).values({
+        clientId: opts.clientId,
+        tenantId,
+        teamId: resolvedTeamId!,
+        teamName: resolvedTeamName,
+        teamWebUrl: resolvedTeamWebUrl,
+        createdBy: userId,
+      }).onConflictDoUpdate({
+        target: clientTeams.clientId,
+        set: {
+          tenantId,
+          teamId: resolvedTeamId!,
+          teamName: resolvedTeamName,
+          teamWebUrl: resolvedTeamWebUrl,
+          updatedAt: sql`now()`,
+        },
+      });
+      await storage.updateClient(opts.clientId, {
+        microsoftTeamId: resolvedTeamId!,
+        microsoftTeamName: resolvedTeamName,
+        microsoftTeamWebUrl: resolvedTeamWebUrl,
+      });
+    }
+
+    if (!resolvedTeamId) {
+      throw new Error("No Microsoft Team was selected or created.");
+    }
+
+    if (opts.teamsMode !== "new-team") {
+      const [existingClientTeam] = await db.select()
+        .from(clientTeams)
+        .where(and(eq(clientTeams.clientId, opts.clientId), eq(clientTeams.tenantId, tenantId)))
+        .limit(1);
+      if (existingClientTeam && existingClientTeam.teamId !== resolvedTeamId) {
+        throw new Error(`This client is already linked to ${existingClientTeam.teamName || "another Microsoft Team"}. Choose that Team or create the project without Microsoft setup.`);
+      }
+      await db.insert(clientTeams).values({
+        clientId: opts.clientId,
+        tenantId,
+        teamId: resolvedTeamId,
+        teamName: resolvedTeamName,
+        teamWebUrl: null,
+        createdBy: userId,
+      }).onConflictDoNothing({ target: clientTeams.clientId });
+    }
+
+      if (existingProjectChannel) {
+        channelId = existingProjectChannel.channelId;
+        channelName = existingProjectChannel.channelName;
+        channelWebUrl = existingProjectChannel.channelWebUrl;
+        if (opts.retryWarnings?.some((warning) => warning.startsWith("Project tab:"))) {
+          try {
+            await plannerService.createConstellationTab(resolvedTeamId, channelId, {
+              entityType: "project",
+              entityId: opts.projectId,
+              entityName: opts.projectName,
+              ssoRefreshToken: requestUser.ssoRefreshToken,
+            });
+          } catch (tabErr: any) {
+            warnings.push(`Project tab: ${tabErr.message}`);
+          }
+        }
+      } else if (provisioningRequest.createdChannelId) {
+        channelId = provisioningRequest.createdChannelId;
+        channelName = provisioningRequest.createdChannelName || opts.teamsChannelName;
+        channelWebUrl = provisioningRequest.createdChannelWebUrl || null;
+      } else if (opts.teamsExistingChannelId) {
         // Link to existing channel
+        const channels = await plannerService.listChannels(resolvedTeamId);
+        const existingChannel = channels.find((candidate: any) => candidate.id === opts.teamsExistingChannelId);
+        if (!existingChannel) {
+          throw new Error("The selected channel does not belong to the selected Microsoft Team.");
+        }
         channelId = opts.teamsExistingChannelId;
-        channelName = opts.teamsExistingChannelName;
-        channelWebUrl = opts.teamsExistingChannelWebUrl;
+        channelName = existingChannel.displayName || opts.teamsExistingChannelName;
+        channelWebUrl = existingChannel.webUrl || opts.teamsExistingChannelWebUrl;
+        await persistRemoteCheckpoint({
+          createdChannelId: channelId,
+          createdChannelName: channelName,
+          createdChannelWebUrl: channelWebUrl,
+        });
 
         try {
-          await plannerService.createConstellationTab(opts.teamsTeamId, channelId, {
+          await plannerService.createConstellationTab(resolvedTeamId, channelId, {
             entityType: 'project',
             entityId: opts.projectId,
             entityName: opts.projectName,
@@ -79,19 +229,28 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
           });
         } catch (tabErr: any) {
           console.warn('[PROJECTS] Constellation tab failed for existing channel (non-blocking):', tabErr.message);
+          warnings.push(`Project tab: ${tabErr.message}`);
         }
         console.log(`[PROJECTS] Linked existing channel ${channelId} to project ${opts.projectId}`);
       } else {
         // Create a new channel
-        const channel = await plannerService.createChannel(opts.teamsTeamId, {
+        const discoverableChannels = await plannerService.listChannels(resolvedTeamId);
+        const recoveredChannel = discoverableChannels.find((candidate: any) => candidate.description === creationMarker);
+        const channel = recoveredChannel || await plannerService.createChannel(resolvedTeamId, {
           displayName: opts.teamsChannelName,
+          description: creationMarker,
         });
         channelId = channel.id;
         channelName = channel.displayName;
         channelWebUrl = channel.webUrl || null;
+        await persistRemoteCheckpoint({
+          createdChannelId: channelId,
+          createdChannelName: channelName,
+          createdChannelWebUrl: channelWebUrl,
+        });
 
         try {
-          await plannerService.createConstellationTab(opts.teamsTeamId, channel.id, {
+          await plannerService.createConstellationTab(resolvedTeamId, channel.id, {
             entityType: 'project',
             entityId: opts.projectId,
             entityName: opts.projectName,
@@ -100,6 +259,7 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
           });
         } catch (tabErr: any) {
           console.warn('[PROJECTS] Constellation tab failed (non-blocking):', tabErr.message);
+          warnings.push(`Project tab: ${tabErr.message}`);
         }
         console.log(`[PROJECTS] Created channel ${channel.id} for project ${opts.projectId}`);
       }
@@ -109,19 +269,37 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
       let plannerPlanWebUrl: string | null = null;
       if (opts.createPlannerPlan && channelId) {
         try {
-          const plan = await plannerService.createPlan(opts.teamsTeamId, opts.projectName);
+          const existingPlannerConnection = await storage.getProjectPlannerConnection(opts.projectId);
+          const checkpointPlanId = provisioningRequest.createdPlanId || existingProjectChannel?.plannerPlanId;
+          const planTitle = provisioningRequest.scratchCreationKey
+            ? `${opts.projectName} · ${String(provisioningRequest.scratchCreationKey).slice(0, 8)}`
+            : opts.projectName;
+          const recoveredPlan = !existingPlannerConnection && !checkpointPlanId
+            ? (await plannerService.listPlansForGroup(resolvedTeamId)).find((candidate: any) => candidate.title === planTitle)
+            : null;
+          const plan = existingPlannerConnection
+            ? { id: existingPlannerConnection.planId, webUrl: existingPlannerConnection.planWebUrl }
+            : checkpointPlanId
+              ? { id: checkpointPlanId, webUrl: provisioningRequest.createdPlanWebUrl || existingProjectChannel?.plannerPlanWebUrl || null }
+              : recoveredPlan || await plannerService.createPlan(resolvedTeamId, planTitle);
           plannerPlanId = plan.id;
           plannerPlanWebUrl = (plan as any).webUrl || null;
+          if (!checkpointPlanId && !existingPlannerConnection) {
+            await persistRemoteCheckpoint({
+              createdPlanId: plannerPlanId,
+              createdPlanWebUrl: plannerPlanWebUrl,
+            });
+          }
 
           // Persist the Planner connection so sync infrastructure picks it up.
-          try {
+          if (!existingPlannerConnection) try {
             await storage.createProjectPlannerConnection({
               projectId: opts.projectId,
               planId: plan.id,
               planTitle: opts.projectName,
               planWebUrl: plannerPlanWebUrl,
-              groupId: opts.teamsTeamId,
-              groupName: opts.teamsTeamName,
+              groupId: resolvedTeamId,
+              groupName: resolvedTeamName,
               channelId,
               channelName,
               syncEnabled: true,
@@ -131,37 +309,36 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
             } as any);
           } catch (connErr: any) {
             console.warn('[PROJECTS] Planner connection persistence failed (non-blocking):', connErr.message);
+            warnings.push(`Planner connection: ${connErr.message}`);
           }
         } catch (planErr: any) {
           console.warn('[PROJECTS] Planner plan creation failed (non-blocking):', planErr.message);
+          warnings.push(`Planner plan: ${planErr.message}`);
         }
       }
 
-      // Persist project_channels row
-      try {
-        await db.insert(projectChannels).values({
-          projectId: opts.projectId,
-          tenantId,
+      // Persist project_channels row. This local link is required for setup to
+      // count as successful and uses the project uniqueness constraint for retries.
+      await db.insert(projectChannels).values({
+        projectId: opts.projectId,
+        tenantId,
+        channelId: channelId!,
+        channelName: channelName,
+        channelWebUrl: channelWebUrl,
+        plannerPlanId,
+        plannerPlanWebUrl,
+        createdBy: userId,
+      } as any).onConflictDoUpdate({
+        target: projectChannels.projectId,
+        set: {
           channelId: channelId!,
-          channelName: channelName,
-          channelWebUrl: channelWebUrl,
+          channelName,
+          channelWebUrl,
           plannerPlanId,
           plannerPlanWebUrl,
-          createdBy: userId,
-        } as any).onConflictDoUpdate({
-          target: projectChannels.projectId,
-          set: {
-            channelId: channelId!,
-            channelName,
-            channelWebUrl,
-            plannerPlanId,
-            plannerPlanWebUrl,
-            updatedAt: sql`now()`,
-          },
-        });
-      } catch (rowErr: any) {
-        console.warn('[PROJECTS] project_channels persistence failed (non-blocking):', rowErr.message);
-      }
+          updatedAt: sql`now()`,
+        },
+      });
 
       // Optionally sync project members → Team (and invite guests)
       if (opts.autoAddMembers && userId) {
@@ -169,7 +346,7 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
           const { teamsAutomationService } = await import('../services/teams-automation-service.js');
           await teamsAutomationService.syncProjectMembers(
             opts.projectId,
-            opts.teamsTeamId,
+            resolvedTeamId,
             {
               autoAdd: true,
               autoRemove: false,
@@ -180,11 +357,24 @@ function fireProjectM365Provisioning(req: Request, opts: ProjectM365Provisioning
           );
         } catch (memberErr: any) {
           console.warn('[PROJECTS] Member sync failed (non-blocking):', memberErr.message);
+          warnings.push(`Member automation: ${memberErr.message}`);
         }
       }
-    } catch (err: any) {
-      console.error('[PROJECTS] M365 provisioning failed (non-blocking):', err.message);
-    }
+    return warnings.length > 0
+      ? { status: "partial", message: "The Team and channel were linked, but some optional Microsoft setup did not finish. Review the project integrations and retry the affected option.", warnings }
+      : { status: "succeeded", message: "Microsoft Team and channel setup completed." };
+  } catch (err: any) {
+    console.error('[PROJECTS] M365 provisioning failed (project remains created):', err.message);
+    return { status: "failed", message: `${err.message || "Microsoft provisioning failed"}. Retry setup from the project page.` };
+  }
+}
+
+// PostgreSQL advisory locks serialize all provisioning attempts for one project,
+// including retries arriving while the original HTTP request is still running.
+async function provisionProjectM365(req: Request, opts: ProjectM365ProvisioningOptions): Promise<ProjectM365ProvisioningResult> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`project-m365:${opts.projectId}`}))`);
+    return provisionProjectM365Unlocked(req, opts);
   });
 }
 
@@ -453,6 +643,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       // Pull off the M365 integration options before schema validation;
       // they are dialog-only fields, not part of the project schema.
       const {
+        teamsMode,
         teamsTeamId,
         teamsTeamName,
         teamsChannelName,
@@ -465,26 +656,61 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         ...projectFields
       } = req.body || {};
 
+      const effectiveTeamsMode = teamsMode || (teamsTeamId
+        ? (teamsExistingChannelId ? "existing-channel" : "new-channel")
+        : undefined);
+      if (effectiveTeamsMode && !["new-team", "new-channel", "existing-channel", "skip"].includes(effectiveTeamsMode)) {
+        return res.status(400).json({ message: "Invalid Microsoft 365 setup mode" });
+      }
       const validatedData = insertProjectSchema.parse(projectFields);
+      const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId || null;
+      if (validatedData.scratchCreationKey && tenantId) {
+        const [existingProject] = await db.select().from(projects)
+          .where(and(
+            eq(projects.tenantId, tenantId),
+            eq(projects.scratchCreationKey, validatedData.scratchCreationKey),
+          ))
+          .limit(1);
+        if (existingProject) {
+          return res.status(200).json(existingProject);
+        }
+      }
+      const targetClient = await storage.getClient(validatedData.clientId);
+      if (!targetClient || (tenantId && targetClient.tenantId !== tenantId)) {
+        return res.status(404).json({ message: "Client not found in the active tenant" });
+      }
       // Include tenant context in the project data (dual-write)
       const projectDataWithTenant = {
         ...validatedData,
-        tenantId: req.user?.tenantId || null
+        tenantId
       };
       console.log("[DEBUG] Validated project data with tenant:", projectDataWithTenant);
-      const project = await storage.createProject(projectDataWithTenant);
+      let project;
+      try {
+        project = await storage.createProject(projectDataWithTenant);
+      } catch (createError: any) {
+        // Concurrent requests with the same scratch key can both miss the
+        // pre-check. The unique index arbitrates; the loser returns the winner.
+        if (createError?.code === "23505" && validatedData.scratchCreationKey && tenantId) {
+          const [existingProject] = await db.select().from(projects)
+            .where(and(
+              eq(projects.tenantId, tenantId),
+              eq(projects.scratchCreationKey, validatedData.scratchCreationKey),
+            ))
+            .limit(1);
+          if (existingProject) return res.status(200).json(existingProject);
+        }
+        throw createError;
+      }
       console.log("[DEBUG] Created project:", project.id, "tenantId:", project.tenantId);
 
-      // Fire non-blocking M365 provisioning when the create dialog opted in.
-      // The provisioning helper inherits the project's tenantId so the
-      // project_channels row stays in sync with the project itself; flags
-      // default to false so non-dialog API callers must opt in explicitly.
-      if (teamsTeamId) {
-        fireProjectM365Provisioning(req, {
-          projectId: project.id,
-          projectName: project.name,
-          tenantId: project.tenantId || null,
-          teamsTeamId,
+      let m365Provisioning: ProjectM365ProvisioningResult | null = null;
+      if (effectiveTeamsMode && effectiveTeamsMode !== "skip") {
+        const provisioningStartedAt = new Date().toISOString();
+        const provisioningRequest = {
+          scratchCreationKey: validatedData.scratchCreationKey || project.id,
+          teamsMode: effectiveTeamsMode,
+          teamsTeamId: teamsTeamId || null,
           teamsTeamName: teamsTeamName || null,
           teamsChannelName: teamsChannelName || project.name,
           teamsExistingChannelId: teamsExistingChannelId || null,
@@ -493,10 +719,42 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
           createPlannerPlan: createPlannerPlan === true,
           autoAddMembers: autoAddMembers === true,
           inviteGuests: inviteGuests === true,
+        };
+        await db.update(projects)
+          .set({
+            m365Provisioning: {
+              status: "running",
+              message: "Microsoft setup is in progress.",
+              startedAt: provisioningStartedAt,
+              request: provisioningRequest,
+            },
+          } as any)
+          .where(eq(projects.id, project.id));
+        m365Provisioning = await provisionProjectM365(req, {
+          projectId: project.id,
+          projectName: project.name,
+          clientId: project.clientId,
+          tenantId: project.tenantId || null,
+          teamsMode: effectiveTeamsMode,
+          teamsTeamId: teamsTeamId || null,
+          teamsTeamName: teamsTeamName || null,
+          teamsChannelName: teamsChannelName || project.name,
+          teamsExistingChannelId: teamsExistingChannelId || null,
+          teamsExistingChannelName: teamsExistingChannelName || null,
+          teamsExistingChannelWebUrl: teamsExistingChannelWebUrl || null,
+          createPlannerPlan: createPlannerPlan === true,
+          autoAddMembers: autoAddMembers === true,
+          inviteGuests: inviteGuests === true,
+          provisioningRequest,
+          startedAt: provisioningStartedAt,
         });
+        m365Provisioning = { ...m365Provisioning, request: provisioningRequest };
+        await db.update(projects)
+          .set({ m365Provisioning } as any)
+          .where(eq(projects.id, project.id));
       }
 
-      res.status(201).json(project);
+      res.status(201).json({ ...project, m365Provisioning });
     } catch (error: any) {
       console.error("[ERROR] Failed to create project:", error);
       if (error instanceof z.ZodError) {
@@ -507,6 +765,61 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         message: "Failed to create project",
         details: error.message || "Unknown error"
       });
+    }
+  });
+
+  app.post("/api/projects/:id/m365-retry", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
+      const [project] = await db.select().from(projects)
+        .where(and(eq(projects.id, req.params.id), eq(projects.tenantId, tenantId)))
+        .limit(1);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const state = project.m365Provisioning as any;
+      if (!state?.request) return res.status(400).json({ message: "No Microsoft setup request is available to retry" });
+      if (state.status === "running") {
+        const startedAt = Date.parse(state.startedAt || "");
+        const leaseIsActive = Number.isFinite(startedAt) && Date.now() - startedAt < 5 * 60 * 1000;
+        if (leaseIsActive) {
+          return res.status(202).json(state);
+        }
+      }
+      const request = state.request;
+      const retryStartedAt = new Date().toISOString();
+      await db.update(projects).set({
+        m365Provisioning: {
+          ...state,
+          status: "running",
+          message: "Microsoft setup retry is in progress.",
+          startedAt: retryStartedAt,
+        },
+      } as any).where(and(eq(projects.id, project.id), eq(projects.tenantId, tenantId)));
+      const result = await provisionProjectM365(req, {
+        projectId: project.id,
+        projectName: project.name,
+        clientId: project.clientId,
+        tenantId: project.tenantId,
+        teamsMode: request.teamsMode,
+        teamsTeamId: request.teamsTeamId,
+        teamsTeamName: request.teamsTeamName,
+        teamsChannelName: request.teamsChannelName || project.name,
+        teamsExistingChannelId: request.teamsExistingChannelId,
+        teamsExistingChannelName: request.teamsExistingChannelName,
+        teamsExistingChannelWebUrl: request.teamsExistingChannelWebUrl,
+        createPlannerPlan: request.createPlannerPlan === true,
+        autoAddMembers: request.autoAddMembers === true,
+        inviteGuests: request.inviteGuests === true,
+        retryWarnings: state.warnings || [],
+        provisioningRequest: request,
+        startedAt: retryStartedAt,
+      });
+      const nextState = { ...result, request };
+      await db.update(projects).set({ m365Provisioning: nextState } as any)
+        .where(and(eq(projects.id, project.id), eq(projects.tenantId, tenantId)));
+      res.json(nextState);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to retry Microsoft setup: " + error.message });
     }
   });
 

@@ -434,6 +434,7 @@ function TeamsChannelPanel({
   projectCode,
   clientName,
   projectTenantId,
+  m365Provisioning,
 }: {
   projectId: string;
   clientTeamId?: string | null;
@@ -442,6 +443,11 @@ function TeamsChannelPanel({
   projectCode?: string;
   clientName?: string;
   projectTenantId?: string | null;
+  m365Provisioning?: {
+    status: "running" | "succeeded" | "partial" | "failed";
+    message: string;
+    warnings?: string[];
+  } | null;
 }) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -456,6 +462,47 @@ function TeamsChannelPanel({
   const [newTeamName, setNewTeamName] = useState("");
   const [selectedExistingChannel, setSelectedExistingChannel] = useState<{ id: string; displayName: string; webUrl?: string | null } | null>(null);
   const [provisioning, setProvisioning] = useState(false);
+
+  const retryProvisioningMutation = useMutation({
+    mutationFn: () => apiRequest(`/api/projects/${projectId}/m365-retry`, { method: "POST" }),
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "channel"] });
+      toast({
+        title: result.status === "succeeded" ? "Microsoft setup completed" : "Microsoft setup still needs attention",
+        description: [result.message, ...(result.warnings || [])].join(" "),
+        variant: result.status === "succeeded" ? "default" : "destructive",
+      });
+    },
+    onError: (error: Error) => toast({
+      title: "Microsoft setup retry failed",
+      description: error.message,
+      variant: "destructive",
+    }),
+  });
+
+  const retryNotice = m365Provisioning && m365Provisioning.status !== "succeeded" ? (
+    <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 space-y-2">
+      <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+        {m365Provisioning.status === "running" ? "Microsoft setup is still running" : "Microsoft setup needs attention"}
+      </p>
+      <p className="text-xs text-amber-800 dark:text-amber-300">{m365Provisioning.message}</p>
+      {!!m365Provisioning.warnings?.length && (
+        <ul className="text-xs text-amber-800 dark:text-amber-300 list-disc pl-4">
+          {m365Provisioning.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+        </ul>
+      )}
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => retryProvisioningMutation.mutate()}
+        disabled={retryProvisioningMutation.isPending || isCrossTenant || m365Provisioning.status === "running"}
+      >
+        {retryProvisioningMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+        {m365Provisioning.status === "running" ? "Setup in progress" : "Retry Microsoft Setup"}
+      </Button>
+    </div>
+  ) : null;
 
   // Debounce the team search so we hit the server-side ?search filter rather than
   // depending on a 50-row first-page snapshot (the picker used to silently miss
@@ -639,6 +686,7 @@ function TeamsChannelPanel({
           <CardDescription>No Teams channel is linked to this project yet.</CardDescription>
         </CardHeader>
         <CardContent>
+          {retryNotice}
           {isCrossTenant ? (
             <div className="rounded-lg border p-3 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
               <p className="text-sm text-amber-800 dark:text-amber-300">
@@ -834,6 +882,7 @@ function TeamsChannelPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {retryNotice}
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <p className="text-sm font-medium">{channel.channelName}</p>
@@ -4857,6 +4906,7 @@ export default function ProjectDetail() {
               projectCode={analytics?.project?.code}
               clientName={analytics?.project?.client?.name}
               projectTenantId={analytics?.project?.tenantId}
+              m365Provisioning={analytics?.project?.m365Provisioning}
             />
 
             {/* SharePoint Status Report History */}

@@ -126,13 +126,15 @@ export default function Projects() {
   // M365 integration state for project creation dialog
   const [createDialogClientId, setCreateDialogClientId] = useState<string>("");
   const [teamsExpanded, setTeamsExpanded] = useState(false);
-  const [teamsMode, setTeamsMode] = useState<'new' | 'existing' | 'skip'>('new');
+  const [teamsMode, setTeamsMode] = useState<'new-team' | 'new-channel' | 'existing-channel' | 'skip'>('new-channel');
+  const [newTeamName, setNewTeamName] = useState('');
   const [teamSearch, setTeamSearch] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; displayName: string } | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<{ id: string; displayName: string; webUrl?: string } | null>(null);
   const [createPlannerPlan, setCreatePlannerPlan] = useState(true);
   const [autoAddMembers, setAutoAddMembers] = useState(true);
   const [inviteGuests, setInviteGuests] = useState(false);
+  const [scratchCreationKey, setScratchCreationKey] = useState(() => crypto.randomUUID());
 
   const { toast } = useToast();
 
@@ -272,7 +274,7 @@ export default function Projects() {
   const { data: channelsData, isLoading: channelsLoading } = useQuery<{ id: string; displayName: string; webUrl?: string; membershipType?: string }[]>({
     queryKey: ["/api/planner/teams", selectedTeam?.id, "channels"],
     queryFn: () => apiRequest(`/api/planner/teams/${selectedTeam!.id}/channels`),
-    enabled: createDialogOpen && teamsMode === 'existing' && !!selectedTeam?.id,
+    enabled: createDialogOpen && teamsMode === 'existing-channel' && !!selectedTeam?.id,
     retry: false,
   });
 
@@ -298,13 +300,15 @@ export default function Projects() {
     if (!createDialogOpen) {
       setCreateDialogClientId("");
       setTeamsExpanded(false);
-      setTeamsMode('new');
+      setTeamsMode('new-channel');
+      setNewTeamName('');
       setTeamSearch('');
       setSelectedTeam(null);
       setSelectedChannel(null);
       setCreatePlannerPlan(true);
       setAutoAddMembers(true);
       setInviteGuests(false);
+      setScratchCreationKey(crypto.randomUUID());
     }
   }, [createDialogOpen]);
 
@@ -313,13 +317,27 @@ export default function Projects() {
       method: "POST",
       body: JSON.stringify(data),
     }),
-    onSuccess: () => {
+    onSuccess: (project: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setCreateDialogOpen(false);
-      toast({
-        title: "Success",
-        description: "Project created successfully",
-      });
+      if (project.m365Provisioning && project.m365Provisioning.status !== "succeeded") {
+        toast({
+          title: project.m365Provisioning.status === "partial"
+            ? "Project created; Microsoft setup completed with warnings"
+            : "Project created; Microsoft setup needs attention",
+          description: [
+            project.m365Provisioning.message,
+            ...(project.m365Provisioning.warnings || []),
+          ].join(" "),
+          variant: "destructive",
+        });
+        navigate(`/projects/${project.id}`);
+      } else {
+        toast({
+          title: "Project created from scratch",
+          description: project.m365Provisioning?.message || "The project was created without estimate scope or assignments.",
+        });
+      }
     },
     onError: (error: any) => {
       console.error("Project creation error:", error);
@@ -462,7 +480,7 @@ export default function Projects() {
             </Button>
             <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-new-project">
               <Plus className="w-4 h-4 mr-2" />
-              New Project
+              Project from Scratch
             </Button>
           </div>
         </div>
@@ -591,7 +609,7 @@ export default function Projects() {
                 </div>
                 <Button className="mt-4" onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-project">
                   <Plus className="w-4 h-4 mr-2" />
-                  Create Project
+                  Create Project from Scratch
                 </Button>
               </CardContent>
             </Card>
@@ -1003,7 +1021,8 @@ export default function Projects() {
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Create New Project</DialogTitle>
+              <DialogTitle>Create Project from Scratch</DialogTitle>
+              <p className="text-sm text-muted-foreground">Create independent project terms and structure. Nothing is copied or linked from an estimate.</p>
             </DialogHeader>
             <form name="create-project-form" onSubmit={(e) => {
               e.preventDefault();
@@ -1015,7 +1034,7 @@ export default function Projects() {
 
               // Validate Teams selection when M365 is configured and a non-skip mode is active.
               if (plannerStatus?.connected && teamsMode !== 'skip') {
-                if (!selectedTeam) {
+                if (teamsMode !== 'new-team' && !selectedTeam) {
                   toast({
                     title: "Team Required",
                     description: "Please pick a Microsoft Teams team or choose Skip.",
@@ -1023,7 +1042,7 @@ export default function Projects() {
                   });
                   return;
                 }
-                if (teamsMode === 'existing' && !selectedChannel) {
+                if (teamsMode === 'existing-channel' && !selectedChannel) {
                   toast({
                     title: "Teams Channel Required",
                     description: "Please select an existing channel or choose a different Teams option.",
@@ -1042,19 +1061,30 @@ export default function Projects() {
                 startDate: formData.get('startDate') || undefined,
                 endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
                 commercialScheme: formData.get('commercialScheme'),
+                commercialBasis: formData.get('commercialBasis'),
+                hasSow: formData.get('hasSow') === 'true',
+                sowDate: formData.get('sowDate') || null,
+                sowValue: formData.get('sowValue') || null,
                 status: 'active',
+                scratchCreationKey,
               };
 
               // Attach M365 integration options
-              if (plannerStatus?.connected && teamsMode !== 'skip' && selectedTeam) {
+              if (plannerStatus?.connected && teamsMode !== 'skip') {
                 const clientName = clients.find((c: any) => c.id === clientId)?.name;
-                payload.teamsTeamId = selectedTeam.id;
-                payload.teamsTeamName = selectedTeam.displayName;
-                if (teamsMode === 'new') {
+                payload.teamsMode = teamsMode;
+                if (teamsMode === 'new-team') {
+                  payload.teamsTeamName = newTeamName.trim() || clientName || projectName;
+                  payload.teamsChannelName = projectName;
+                } else if (selectedTeam) {
+                  payload.teamsTeamId = selectedTeam.id;
+                  payload.teamsTeamName = selectedTeam.displayName;
+                }
+                if (teamsMode === 'new-channel') {
                   payload.teamsChannelName = clientName
                     ? `${clientName} – ${projectName}`
                     : projectName;
-                } else if (teamsMode === 'existing' && selectedChannel) {
+                } else if (teamsMode === 'existing-channel' && selectedChannel) {
                   payload.teamsExistingChannelId = selectedChannel.id;
                   payload.teamsExistingChannelName = selectedChannel.displayName;
                   payload.teamsExistingChannelWebUrl = selectedChannel.webUrl || null;
@@ -1062,6 +1092,8 @@ export default function Projects() {
                 payload.createPlannerPlan = createPlannerPlan;
                 payload.autoAddMembers = autoAddMembers;
                 payload.inviteGuests = inviteGuests;
+              } else {
+                payload.teamsMode = 'skip';
               }
 
               createProject.mutate(payload);
@@ -1141,6 +1173,21 @@ export default function Projects() {
                 </div>
 
                 <div className="grid gap-2">
+                  <Label htmlFor="commercialBasis">Commercial Basis</Label>
+                  <Select name="commercialBasis" required>
+                    <SelectTrigger data-testid="select-commercial-basis">
+                      <SelectValue placeholder="Select the project's commercial basis" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed_fee">Fixed Fee</SelectItem>
+                      <SelectItem value="retainer">Retainer</SelectItem>
+                      <SelectItem value="tm">Time & Materials</SelectItem>
+                      <SelectItem value="capped_tm">Capped T&M</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
                   <Label htmlFor="pm">Project Manager</Label>
                   <Select name="pm">
                     <SelectTrigger id="pm" data-testid="select-pm">
@@ -1195,7 +1242,7 @@ export default function Projects() {
                         <span className="text-sm font-medium">Microsoft 365 Integration</span>
                         {teamsMode !== 'skip' && selectedTeam && (
                           <span className="text-xs text-muted-foreground">
-                            ({teamsMode === 'existing' ? 'Existing channel' : 'New channel'} in {selectedTeam.displayName})
+                            ({teamsMode === 'existing-channel' ? 'Existing channel' : 'New channel'} in {selectedTeam.displayName})
                           </span>
                         )}
                         {teamsMode === 'skip' && (
@@ -1208,26 +1255,34 @@ export default function Projects() {
                     {teamsExpanded && (
                       <div className="p-3 pt-0 space-y-3 border-t">
                         {/* Mode selector */}
-                        <div className="flex rounded-md border overflow-hidden text-xs">
+                        <div className="grid grid-cols-2 rounded-md border overflow-hidden text-xs">
                           <button
                             type="button"
-                            className={`flex-1 px-2 py-1.5 ${teamsMode === 'new' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
-                            onClick={() => setTeamsMode('new')}
+                            className={`px-2 py-1.5 ${teamsMode === 'new-team' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => { setTeamsMode('new-team'); setSelectedTeam(null); setSelectedChannel(null); }}
+                            data-testid="button-teams-mode-new-team"
+                          >
+                            New Team + Channel
+                          </button>
+                          <button
+                            type="button"
+                            className={`px-2 py-1.5 border-l ${teamsMode === 'new-channel' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('new-channel')}
                             data-testid="button-teams-mode-new"
                           >
-                            New Channel
+                            Existing Team + New Channel
                           </button>
                           <button
                             type="button"
-                            className={`flex-1 px-2 py-1.5 border-l ${teamsMode === 'existing' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
-                            onClick={() => setTeamsMode('existing')}
+                            className={`px-2 py-1.5 border-t ${teamsMode === 'existing-channel' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            onClick={() => setTeamsMode('existing-channel')}
                             data-testid="button-teams-mode-existing"
                           >
-                            Existing Channel
+                            Link Existing Channel
                           </button>
                           <button
                             type="button"
-                            className={`flex-1 px-2 py-1.5 border-l ${teamsMode === 'skip' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
+                            className={`px-2 py-1.5 border-l border-t ${teamsMode === 'skip' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'}`}
                             onClick={() => setTeamsMode('skip')}
                             data-testid="button-teams-mode-skip"
                           >
@@ -1237,8 +1292,20 @@ export default function Projects() {
 
                         {teamsMode !== 'skip' && (
                           <>
+                            {teamsMode === 'new-team' && (
+                              <div className="space-y-1">
+                                <Label className="text-xs">New client Team name</Label>
+                                <Input
+                                  value={newTeamName || clients.find((c: any) => c.id === createDialogClientId)?.name || ''}
+                                  onChange={(e) => setNewTeamName(e.target.value)}
+                                  placeholder="Client name"
+                                  data-testid="input-new-team-name"
+                                />
+                                <p className="text-xs text-muted-foreground">This Team will be linked to the selected client, then a project channel will be created inside it.</p>
+                              </div>
+                            )}
                             {/* Smart detection: default team hint */}
-                            {defaultTeam && (
+                            {teamsMode !== 'new-team' && defaultTeam && (
                               <div className="rounded-md border p-2 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
                                 <p className="text-xs text-blue-800 dark:text-blue-300">
                                   {defaultTeam.source === 'client'
@@ -1247,7 +1314,7 @@ export default function Projects() {
                                 </p>
                               </div>
                             )}
-                            {!defaultTeam && createDialogClientId && (
+                            {teamsMode !== 'new-team' && !defaultTeam && createDialogClientId && (
                               <div className="rounded-md border p-2 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
                                 <p className="text-xs text-amber-800 dark:text-amber-300">
                                   First project for this client. Pick the team that should host the new channel.
@@ -1256,7 +1323,7 @@ export default function Projects() {
                             )}
 
                             {/* Team picker */}
-                            <div className="space-y-1">
+                            {teamsMode !== 'new-team' && <div className="space-y-1">
                               <Label className="text-xs">Team</Label>
                               <div className="relative">
                                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -1268,9 +1335,9 @@ export default function Projects() {
                                   data-testid="input-team-search"
                                 />
                               </div>
-                            </div>
+                            </div>}
 
-                            {teamsLoading ? (
+                            {teamsMode !== 'new-team' && (teamsLoading ? (
                               <div className="flex items-center justify-center py-3">
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               </div>
@@ -1294,10 +1361,10 @@ export default function Projects() {
                                   <p className="text-xs text-muted-foreground p-2 text-center">No teams found</p>
                                 )}
                               </div>
-                            )}
+                            ))}
 
                             {/* Channel picker (existing mode) */}
-                            {teamsMode === 'existing' && selectedTeam && (
+                            {teamsMode === 'existing-channel' && selectedTeam && (
                               <div className="space-y-1">
                                 <Label className="text-xs">Channel</Label>
                                 {channelsLoading ? (
@@ -1328,7 +1395,7 @@ export default function Projects() {
                             )}
 
                             {/* M365 resource options */}
-                            {selectedTeam && (
+                            {(selectedTeam || teamsMode === 'new-team') && (
                               <div className="space-y-2 pt-2 border-t">
                                 <Label className="text-xs">Also create / manage</Label>
                                 <div className="space-y-1.5">
@@ -1361,24 +1428,26 @@ export default function Projects() {
                             )}
 
                             {/* Visual preview of resources */}
-                            {selectedTeam && (
+                            {(selectedTeam || teamsMode === 'new-team') && (
                               <div className="rounded-md border p-3 bg-muted/30 space-y-1.5" data-testid="m365-preview">
                                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Will provision</p>
                                 <ul className="text-sm space-y-1">
                                   <li className="flex items-start gap-2">
                                     <span className="text-green-600 dark:text-green-400">●</span>
-                                    {teamsMode === 'new' ? (
+                                    {teamsMode === 'new-team' ? (
+                                      <span>New Team <strong>{newTeamName || clients.find((c: any) => c.id === createDialogClientId)?.name || '[client name]'}</strong>, then new channel <strong>[project name]</strong></span>
+                                    ) : teamsMode === 'new-channel' ? (
                                       <span>
                                         New channel <strong>
                                           {(() => {
                                             const clientName = clients.find((c: any) => c.id === createDialogClientId)?.name;
                                             return clientName ? `${clientName} – [project name]` : '[project name]';
                                           })()}
-                                        </strong> in <strong>{selectedTeam.displayName}</strong>
+                                        </strong> in <strong>{selectedTeam?.displayName}</strong>
                                       </span>
                                     ) : selectedChannel ? (
                                       <span>
-                                        Link to existing channel <strong>{selectedChannel.displayName}</strong> in <strong>{selectedTeam.displayName}</strong>
+                                        Link to existing channel <strong>{selectedChannel.displayName}</strong> in <strong>{selectedTeam?.displayName}</strong>
                                       </span>
                                     ) : (
                                       <span className="text-muted-foreground">Select a channel above</span>
@@ -1456,7 +1525,11 @@ export default function Projects() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createProject.isPending} data-testid="button-create-project">
-                  {createProject.isPending ? "Creating..." : "Create Project"}
+                  {createProject.isPending
+                    ? teamsMode === "skip" || !plannerStatus?.connected
+                      ? "Creating project..."
+                      : "Creating project & setting up Microsoft 365..."
+                    : "Create Project from Scratch"}
                 </Button>
               </DialogFooter>
             </form>

@@ -709,6 +709,8 @@ export const projects = pgTable("projects", {
   commercialScheme: text("commercial_scheme").notNull(), // retainer, milestone, tm
   commercialBasis: varchar("commercial_basis", { length: 50 }), // project default; null for legacy/unconfigured or mixed engagements
   commercialBucketsRequired: boolean("commercial_buckets_required").notNull().default(false),
+  scratchCreationKey: varchar("scratch_creation_key", { length: 100 }),
+  m365Provisioning: jsonb("m365_provisioning").$type<Record<string, unknown>>(),
   retainerBalance: decimal("retainer_balance", { precision: 10, scale: 2 }), // Current retainer balance
   retainerTotal: decimal("retainer_total", { precision: 10, scale: 2 }), // Total retainer value
   baselineBudget: decimal("baseline_budget", { precision: 10, scale: 2 }),
@@ -742,6 +744,9 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_projects_tenant").on(table.tenantId),
+  scratchCreationKeyIdx: uniqueIndex("uq_projects_tenant_scratch_creation_key")
+    .on(table.tenantId, table.scratchCreationKey)
+    .where(sql`${table.scratchCreationKey} is not null`),
 }));
 
 // Estimates

@@ -743,13 +743,14 @@ Block estimates are ideal for:
 
 **Benefit:** Maintains traceability from estimate to delivery.
 
-##### Option 2: Manual Project Creation
+##### Option 2: Project from Scratch
 
 ![Create Project Manually](screenshots/10-project-create.png)  
 *Figure 37: Manual project creation form*
 
-1. Navigate to **Projects** → **Create Project**
-2. Enter project details:
+1. Navigate to **Projects** → **New Project** → **Create Project from Scratch**
+2. Use this path when the engagement's scope, pricing, assignments, and commercial terms must be independent of every estimate. The form does not copy or link estimate data.
+3. Enter project details:
    - **Client:** Select from dropdown
    - **Project Name:** Descriptive name
    - **Project Code:** Unique identifier (auto-generated or custom)
@@ -760,7 +761,17 @@ Block estimates are ideal for:
      - **Retainer:** Monthly ongoing fee
      - **Milestone:** Payment tied to deliverables
      - **Time & Materials (T&M):** Bill for actual hours
+    - **Commercial Basis:** Fixed Fee, Retainer, T&M, or Capped T&M
+    - **SOW status, signed date, and value**
    - **Status:** Active, On-Hold, or Completed
+
+4. Choose one Microsoft 365 outcome:
+   - **New Team + Channel:** Review the client-based Team name, create and link that Team to the client, then create the project channel.
+   - **Existing Team + New Channel:** Create the project channel in a selected Team.
+   - **Link Existing Channel:** Link a selected channel without creating a new one.
+   - **Skip:** Create the project without Microsoft 365 setup.
+
+The project is saved before Microsoft provisioning starts. If Microsoft setup fails, the project remains available and the result directs you to retry from the project's **Microsoft Teams Channel** panel.
 
 **Project Structure:**
 

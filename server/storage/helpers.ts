@@ -207,6 +207,8 @@ export function placeholderProject(id: string, clientId: string = 'unknown'): Pr
     commercialScheme: 'tm',
     commercialBasis: null,
     commercialBucketsRequired: false,
+    scratchCreationKey: null,
+    m365Provisioning: null,
     retainerBalance: null,
     retainerTotal: null,
     baselineBudget: null,
