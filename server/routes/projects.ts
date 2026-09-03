@@ -41,6 +41,12 @@ interface ProjectM365ProvisioningOptions {
   startedAt?: string;
 }
 
+interface ProjectM365ProvisioningDeps {
+  plannerService: any;
+  db: any;
+  storage: any;
+}
+
 type ProjectM365ProvisioningResult = {
   status: "succeeded" | "partial" | "failed";
   message: string;
@@ -48,9 +54,43 @@ type ProjectM365ProvisioningResult = {
   request?: Record<string, unknown>;
 };
 
+export async function resolveCheckpointedRemote<T extends { id: string }>(options: {
+  checkpointId?: string | null;
+  fromCheckpoint: (id: string) => T;
+  discover: () => Promise<T | undefined>;
+  create: () => Promise<T>;
+  persistCheckpoint: (resource: T) => Promise<void>;
+}): Promise<T> {
+  if (options.checkpointId) return options.fromCheckpoint(options.checkpointId);
+  const resource = (await options.discover()) || (await options.create());
+  await options.persistCheckpoint(resource);
+  return resource;
+}
+
+export async function findTenantScratchProject(
+  tenantId: string,
+  scratchCreationKey: string,
+  database: any = db,
+) {
+  if (typeof database.findProjectByTenantScratchKey === "function") {
+    return (await database.findProjectByTenantScratchKey(tenantId, scratchCreationKey)) || null;
+  }
+  const [existingProject] = await database.select().from(projects)
+    .where(and(
+      eq(projects.tenantId, tenantId),
+      eq(projects.scratchCreationKey, scratchCreationKey),
+    ))
+    .limit(1);
+  return existingProject || null;
+}
+
 // Provision after the local project exists. Failures are returned to the caller
 // instead of failing or rolling back project creation.
-async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365ProvisioningOptions): Promise<ProjectM365ProvisioningResult> {
+export async function provisionProjectM365Unlocked(
+  req: Request,
+  opts: ProjectM365ProvisioningOptions,
+  injectedDeps?: ProjectM365ProvisioningDeps,
+): Promise<ProjectM365ProvisioningResult> {
   const requestUser = (req.user ?? {}) as {
     id?: string;
     ssoRefreshToken?: string;
@@ -70,7 +110,10 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
   let channelWebUrl: string | null = null;
 
   try {
-    const { plannerService } = await import('../services/planner-service.js');
+    const plannerService = injectedDeps?.plannerService
+      || (await import('../services/planner-service.js')).plannerService;
+    const provisioningDb = injectedDeps?.db || db;
+    const provisioningStorage = injectedDeps?.storage || storage;
     const warnings: string[] = [];
     const provisioningRequest = opts.provisioningRequest || {};
     const creationMarker = provisioningRequest.scratchCreationKey
@@ -78,7 +121,7 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
       : `Constellation project ${opts.projectId}`;
     const persistRemoteCheckpoint = async (patch: Record<string, unknown>) => {
       Object.assign(provisioningRequest, patch);
-      await db.update(projects).set({
+      await provisioningDb.update(projects).set({
         m365Provisioning: {
           status: "running",
           message: "Microsoft setup is in progress.",
@@ -87,7 +130,7 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
         },
       } as any).where(and(eq(projects.id, opts.projectId), eq(projects.tenantId, tenantId)));
     };
-    const [existingProjectChannel] = await db.select()
+    const [existingProjectChannel] = await provisioningDb.select()
       .from(projectChannels)
       .where(and(eq(projectChannels.projectId, opts.projectId), eq(projectChannels.tenantId, tenantId)))
       .limit(1);
@@ -97,7 +140,7 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
     let resolvedTeamWebUrl: string | null = provisioningRequest.createdTeamWebUrl || null;
 
     if (opts.teamsMode === "new-team") {
-      const [existingLink] = await db.select()
+      const [existingLink] = await provisioningDb.select()
         .from(clientTeams)
         .where(and(eq(clientTeams.clientId, opts.clientId), eq(clientTeams.tenantId, tenantId)))
         .limit(1);
@@ -110,35 +153,44 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
         resolvedTeamId = provisioningRequest.createdTeamId;
         resolvedTeamName = provisioningRequest.createdTeamName || opts.teamsTeamName;
       } else {
-        const discoverableTeams = await plannerService.searchGroups(opts.teamsTeamName || opts.projectName, 100);
-        const recoveredTeam = discoverableTeams.find((candidate: any) => candidate.description === creationMarker);
-        let team = recoveredTeam;
-        if (!team) {
-          const callerEmail = (req.user as any)?.email;
-          if (!callerEmail) {
-            throw new Error("Your account needs an email address before it can own a new Microsoft Team.");
-          }
-          const owner = await plannerService.lookupUserByEmail(callerEmail);
-          if (!owner?.id) {
-            throw new Error("Your Microsoft account could not be resolved as the owner of the new Team.");
-          }
-          team = await plannerService.createTeam({
-            displayName: opts.teamsTeamName || opts.projectName,
-            description: creationMarker,
-            ownerIds: [owner.id],
-          });
-        }
+        const team = await resolveCheckpointedRemote<any>({
+          checkpointId: provisioningRequest.createdTeamId,
+          fromCheckpoint: (id) => ({
+            id,
+            displayName: provisioningRequest.createdTeamName || opts.teamsTeamName,
+            webUrl: provisioningRequest.createdTeamWebUrl || null,
+          }),
+          discover: async () => {
+            const discoverableTeams = await plannerService.searchGroups(opts.teamsTeamName || opts.projectName, 100);
+            return discoverableTeams.find((candidate: any) => candidate.description === creationMarker);
+          },
+          create: async () => {
+            const callerEmail = (req.user as any)?.email;
+            if (!callerEmail) {
+              throw new Error("Your account needs an email address before it can own a new Microsoft Team.");
+            }
+            const owner = await plannerService.lookupUserByEmail(callerEmail);
+            if (!owner?.id) {
+              throw new Error("Your Microsoft account could not be resolved as the owner of the new Team.");
+            }
+            return plannerService.createTeam({
+              displayName: opts.teamsTeamName || opts.projectName,
+              description: creationMarker,
+              ownerIds: [owner.id],
+            });
+          },
+          persistCheckpoint: async (createdTeam) => persistRemoteCheckpoint({
+            createdTeamId: createdTeam.id,
+            createdTeamName: createdTeam.displayName || opts.teamsTeamName,
+            createdTeamWebUrl: createdTeam.webUrl || null,
+          }),
+        });
         resolvedTeamId = team.id;
         resolvedTeamName = team.displayName || opts.teamsTeamName;
         resolvedTeamWebUrl = (team as any).webUrl || null;
-        await persistRemoteCheckpoint({
-          createdTeamId: team.id,
-          createdTeamName: resolvedTeamName,
-          createdTeamWebUrl: (team as any).webUrl || null,
-        });
       }
 
-      await db.insert(clientTeams).values({
+      await provisioningDb.insert(clientTeams).values({
         clientId: opts.clientId,
         tenantId,
         teamId: resolvedTeamId!,
@@ -155,7 +207,7 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
           updatedAt: sql`now()`,
         },
       });
-      await storage.updateClient(opts.clientId, {
+      await provisioningStorage.updateClient(opts.clientId, {
         microsoftTeamId: resolvedTeamId!,
         microsoftTeamName: resolvedTeamName,
         microsoftTeamWebUrl: resolvedTeamWebUrl,
@@ -167,14 +219,14 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
     }
 
     if (opts.teamsMode !== "new-team") {
-      const [existingClientTeam] = await db.select()
+      const [existingClientTeam] = await provisioningDb.select()
         .from(clientTeams)
         .where(and(eq(clientTeams.clientId, opts.clientId), eq(clientTeams.tenantId, tenantId)))
         .limit(1);
       if (existingClientTeam && existingClientTeam.teamId !== resolvedTeamId) {
         throw new Error(`This client is already linked to ${existingClientTeam.teamName || "another Microsoft Team"}. Choose that Team or create the project without Microsoft setup.`);
       }
-      await db.insert(clientTeams).values({
+      await provisioningDb.insert(clientTeams).values({
         clientId: opts.clientId,
         tenantId,
         teamId: resolvedTeamId,
@@ -234,20 +286,30 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
         console.log(`[PROJECTS] Linked existing channel ${channelId} to project ${opts.projectId}`);
       } else {
         // Create a new channel
-        const discoverableChannels = await plannerService.listChannels(resolvedTeamId);
-        const recoveredChannel = discoverableChannels.find((candidate: any) => candidate.description === creationMarker);
-        const channel = recoveredChannel || await plannerService.createChannel(resolvedTeamId, {
-          displayName: opts.teamsChannelName,
-          description: creationMarker,
+        const channel = await resolveCheckpointedRemote<any>({
+          checkpointId: provisioningRequest.createdChannelId,
+          fromCheckpoint: (id) => ({
+            id,
+            displayName: provisioningRequest.createdChannelName || opts.teamsChannelName,
+            webUrl: provisioningRequest.createdChannelWebUrl || null,
+          }),
+          discover: async () => {
+            const discoverableChannels = await plannerService.listChannels(resolvedTeamId);
+            return discoverableChannels.find((candidate: any) => candidate.description === creationMarker);
+          },
+          create: () => plannerService.createChannel(resolvedTeamId, {
+            displayName: opts.teamsChannelName,
+            description: creationMarker,
+          }),
+          persistCheckpoint: async (createdChannel) => persistRemoteCheckpoint({
+            createdChannelId: createdChannel.id,
+            createdChannelName: createdChannel.displayName,
+            createdChannelWebUrl: createdChannel.webUrl || null,
+          }),
         });
         channelId = channel.id;
         channelName = channel.displayName;
         channelWebUrl = channel.webUrl || null;
-        await persistRemoteCheckpoint({
-          createdChannelId: channelId,
-          createdChannelName: channelName,
-          createdChannelWebUrl: channelWebUrl,
-        });
 
         try {
           await plannerService.createConstellationTab(resolvedTeamId, channel.id, {
@@ -269,31 +331,33 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
       let plannerPlanWebUrl: string | null = null;
       if (opts.createPlannerPlan && channelId) {
         try {
-          const existingPlannerConnection = await storage.getProjectPlannerConnection(opts.projectId);
+          const existingPlannerConnection = await provisioningStorage.getProjectPlannerConnection(opts.projectId);
           const checkpointPlanId = provisioningRequest.createdPlanId || existingProjectChannel?.plannerPlanId;
           const planTitle = provisioningRequest.scratchCreationKey
             ? `${opts.projectName} · ${String(provisioningRequest.scratchCreationKey).slice(0, 8)}`
             : opts.projectName;
-          const recoveredPlan = !existingPlannerConnection && !checkpointPlanId
-            ? (await plannerService.listPlansForGroup(resolvedTeamId)).find((candidate: any) => candidate.title === planTitle)
-            : null;
           const plan = existingPlannerConnection
             ? { id: existingPlannerConnection.planId, webUrl: existingPlannerConnection.planWebUrl }
-            : checkpointPlanId
-              ? { id: checkpointPlanId, webUrl: provisioningRequest.createdPlanWebUrl || existingProjectChannel?.plannerPlanWebUrl || null }
-              : recoveredPlan || await plannerService.createPlan(resolvedTeamId, planTitle);
+            : await resolveCheckpointedRemote<any>({
+              checkpointId: checkpointPlanId,
+              fromCheckpoint: (id) => ({
+                id,
+                webUrl: provisioningRequest.createdPlanWebUrl || existingProjectChannel?.plannerPlanWebUrl || null,
+              }),
+              discover: async () => (await plannerService.listPlansForGroup(resolvedTeamId))
+                .find((candidate: any) => candidate.title === planTitle),
+              create: () => plannerService.createPlan(resolvedTeamId, planTitle),
+              persistCheckpoint: async (createdPlan) => persistRemoteCheckpoint({
+                createdPlanId: createdPlan.id,
+                createdPlanWebUrl: createdPlan.webUrl || null,
+              }),
+            });
           plannerPlanId = plan.id;
           plannerPlanWebUrl = (plan as any).webUrl || null;
-          if (!checkpointPlanId && !existingPlannerConnection) {
-            await persistRemoteCheckpoint({
-              createdPlanId: plannerPlanId,
-              createdPlanWebUrl: plannerPlanWebUrl,
-            });
-          }
 
           // Persist the Planner connection so sync infrastructure picks it up.
           if (!existingPlannerConnection) try {
-            await storage.createProjectPlannerConnection({
+            await provisioningStorage.createProjectPlannerConnection({
               projectId: opts.projectId,
               planId: plan.id,
               planTitle: opts.projectName,
@@ -319,7 +383,7 @@ async function provisionProjectM365Unlocked(req: Request, opts: ProjectM365Provi
 
       // Persist project_channels row. This local link is required for setup to
       // count as successful and uses the project uniqueness constraint for retries.
-      await db.insert(projectChannels).values({
+      await provisioningDb.insert(projectChannels).values({
         projectId: opts.projectId,
         tenantId,
         channelId: channelId!,
@@ -665,12 +729,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       const validatedData = insertProjectSchema.parse(projectFields);
       const tenantId = req.user?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId || null;
       if (validatedData.scratchCreationKey && tenantId) {
-        const [existingProject] = await db.select().from(projects)
-          .where(and(
-            eq(projects.tenantId, tenantId),
-            eq(projects.scratchCreationKey, validatedData.scratchCreationKey),
-          ))
-          .limit(1);
+        const existingProject = await findTenantScratchProject(tenantId, validatedData.scratchCreationKey);
         if (existingProject) {
           return res.status(200).json(existingProject);
         }
@@ -692,12 +751,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         // Concurrent requests with the same scratch key can both miss the
         // pre-check. The unique index arbitrates; the loser returns the winner.
         if (createError?.code === "23505" && validatedData.scratchCreationKey && tenantId) {
-          const [existingProject] = await db.select().from(projects)
-            .where(and(
-              eq(projects.tenantId, tenantId),
-              eq(projects.scratchCreationKey, validatedData.scratchCreationKey),
-            ))
-            .limit(1);
+          const existingProject = await findTenantScratchProject(tenantId, validatedData.scratchCreationKey);
           if (existingProject) return res.status(200).json(existingProject);
         }
         throw createError;
