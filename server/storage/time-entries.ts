@@ -51,6 +51,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         coveredByMilestoneName: row.project_milestones?.name || null,
         commercialBucket: row.commercial_buckets || null,
         commercialBucketLabel: row.commercial_buckets?.label || null,
+        commercialBucketBasis: row.commercial_buckets?.basis || null,
         person,
         // Add personName directly on the entry for backward compatibility
         personName: person.name,

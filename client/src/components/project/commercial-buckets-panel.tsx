@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Plus, Save, Tags } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Edit3, Plus, Save, Tags } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,175 +12,119 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 
-const BASIS = [
-  { value: "fixed_fee", label: "Fixed Fee" },
-  { value: "retainer", label: "Retainer" },
-  { value: "tm", label: "T&M" },
-  { value: "capped_tm", label: "Capped T&M" },
-];
-
+const BASIS = [{ value: "fixed_fee", label: "Fixed Fee" }, { value: "retainer", label: "Retainer" }, { value: "tm", label: "T&M" }, { value: "capped_tm", label: "Capped T&M" }];
 const basisLabel = (basis?: string | null) => BASIS.find(item => item.value === basis)?.label || basis || "Not configured";
+const emptyBucket = () => ({ label: "", basis: "", contractReference: "", effectiveStartDate: "", effectiveEndDate: "", hoursCeiling: "", dollarCeiling: "", valueBasis: "", approvalRequired: false, defaultEligibilityOutcome: "eligible", billingTreatment: "", approvalInstructions: "" });
+const dateValue = (value?: string | null) => value ? value.slice(0, 10) : "";
+const numberValue = (value?: string | number | null) => value == null ? "" : String(value);
 
 export function CommercialBucketsPanel({ projectId, readOnly = false }: { projectId: string; readOnly?: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [basis, setBasis] = useState<string>("");
+  const [basis, setBasis] = useState("");
   const [required, setRequired] = useState(false);
-  const [newBucket, setNewBucket] = useState({ label: "", basis: "", contractReference: "", effectiveStartDate: "", effectiveEndDate: "", hoursCeiling: "", dollarCeiling: "", approvalRequired: false, defaultEligibilityOutcome: "eligible", billingTreatment: "" });
-  const [range, setRange] = useState({ startDate: "", endDate: "", status: "all" });
+  const [newBucket, setNewBucket] = useState(emptyBucket);
+  const [editingBucket, setEditingBucket] = useState<any | null>(null);
+  const [filters, setFilters] = useState({ startDate: "", cutoffDate: "", contractorId: "all", submissionStatus: "all", classification: "all", invoiceCoverage: "all" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [classification, setClassification] = useState({ commercialBucketId: "", commercialEligibilityOutcome: "eligible", commercialApprovalReference: "" });
+  const [allMatchingSelected, setAllMatchingSelected] = useState(false);
+  const [page, setPage] = useState(0);
+  const [classification, setClassification] = useState({ commercialBucketId: "", commercialEligibilityOutcome: "eligible", commercialApprovalReference: "", reason: "" });
 
-  const bucketQuery = useQuery<{ projectBasis: string | null; required: boolean; buckets: any[] }>({
-    queryKey: ["/api/projects", projectId, "commercial-buckets"],
-    queryFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets`),
+  const bucketQuery = useQuery<{ projectBasis: string | null; required: boolean; buckets: any[] }>({ queryKey: ["/api/projects", projectId, "commercial-buckets"], queryFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets`) });
+  const summaryQuery = useQuery<any[]>({ queryKey: ["/api/projects", projectId, "commercial-buckets", "summary"], queryFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets/summary`) });
+  const contractorQuery = useQuery<{ items: { id: string; name: string }[] }>({
+    queryKey: ["/api/projects", projectId, "commercial-reconciliation", "contractors", filters.startDate, filters.cutoffDate],
+    queryFn: () => {
+      const params = new URLSearchParams(Object.entries({ startDate: filters.startDate, cutoffDate: filters.cutoffDate }).filter(([, value]) => value));
+      return apiRequest(`/api/projects/${projectId}/commercial-reconciliation/contractors?${params}`);
+    },
   });
-  useEffect(() => {
-    if (!bucketQuery.data) return;
-    setBasis(bucketQuery.data.projectBasis || "");
-    setRequired(bucketQuery.data.required);
-  }, [projectId, bucketQuery.data?.projectBasis, bucketQuery.data?.required]);
-  const summaryQuery = useQuery<any[]>({
-    queryKey: ["/api/projects", projectId, "commercial-buckets", "summary"],
-    queryFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets/summary`),
-  });
-  const reconciliationQuery = useQuery<any[]>({
-    queryKey: ["/api/projects", projectId, "commercial-reconciliation", range],
-    queryFn: async () => {
-      const params = new URLSearchParams(Object.entries(range).filter(([, value]) => value).map(([key, value]) => [key, value]));
+  const reconciliationQuery = useQuery<{ items: any[]; total: number; eligibleTotal: number; reviewableTotal: number; limit: number; offset: number; hasMore: boolean }>({
+    queryKey: ["/api/projects", projectId, "commercial-reconciliation", filters, page],
+    queryFn: () => {
+      const params = new URLSearchParams(Object.entries({ ...filters, contractorId: filters.contractorId === "all" ? "" : filters.contractorId, limit: String(25), offset: String(page * 25) }).filter(([, value]) => value && value !== "all"));
       return apiRequest(`/api/projects/${projectId}/commercial-reconciliation?${params}`);
     },
   });
+  useEffect(() => {
+    if (bucketQuery.data) { setBasis(bucketQuery.data.projectBasis || ""); setRequired(bucketQuery.data.required); }
+  }, [projectId, bucketQuery.data?.projectBasis, bucketQuery.data?.required]);
+  useEffect(() => { setPage(0); setSelected(new Set()); setAllMatchingSelected(false); }, [filters]);
+
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "commercial-buckets"] });
     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "commercial-reconciliation"] });
   };
-
   const settingsMutation = useMutation({
     mutationFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets/settings`, { method: "PUT", body: JSON.stringify({ commercialBasis: basis || bucketQuery.data?.projectBasis || null, commercialBucketsRequired: required }) }),
     onSuccess: () => { refresh(); toast({ title: "Commercial settings saved" }); },
     onError: (error: Error) => toast({ title: "Unable to save settings", description: error.message, variant: "destructive" }),
   });
   const createMutation = useMutation({
-    mutationFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets`, {
-      method: "POST",
-      body: JSON.stringify({
-        ...newBucket,
-        basis: newBucket.basis || basis,
-        contractReference: newBucket.contractReference || null,
-        effectiveStartDate: newBucket.effectiveStartDate || null,
-        effectiveEndDate: newBucket.effectiveEndDate || null,
-        hoursCeiling: newBucket.hoursCeiling || null,
-        dollarCeiling: newBucket.dollarCeiling || null,
-        billingTreatment: newBucket.billingTreatment || null,
-        rateBasis: (newBucket.basis || basis) === "tm" || (newBucket.basis || basis) === "capped_tm" ? "applicable_rate" : "fixed_value",
-      }),
-    }),
-    onSuccess: () => {
-      setNewBucket({ label: "", basis: "", contractReference: "", effectiveStartDate: "", effectiveEndDate: "", hoursCeiling: "", dollarCeiling: "", approvalRequired: false, defaultEligibilityOutcome: "eligible", billingTreatment: "" });
-      refresh(); toast({ title: "Commercial bucket created" });
-    },
+    mutationFn: () => apiRequest(`/api/projects/${projectId}/commercial-buckets`, { method: "POST", body: JSON.stringify({ ...newBucket, basis: newBucket.basis || basis, contractReference: newBucket.contractReference || null, effectiveStartDate: newBucket.effectiveStartDate || null, effectiveEndDate: newBucket.effectiveEndDate || null, hoursCeiling: newBucket.hoursCeiling || null, dollarCeiling: newBucket.dollarCeiling || null, valueBasis: newBucket.valueBasis || null, billingTreatment: newBucket.billingTreatment || null, approvalInstructions: newBucket.approvalInstructions || null, rateBasis: ["tm", "capped_tm"].includes(newBucket.basis || basis) ? "applicable_rate" : "fixed_value" }) }),
+    onSuccess: () => { setNewBucket(emptyBucket()); refresh(); toast({ title: "Commercial bucket created" }); },
     onError: (error: Error) => toast({ title: "Unable to create bucket", description: error.message, variant: "destructive" }),
   });
-  const classifyMutation = useMutation({
-    mutationFn: (entryIds: string[]) => apiRequest(`/api/projects/${projectId}/commercial-reconciliation/classify`, {
-      method: "POST",
-      body: JSON.stringify({
-        entryIds,
-        commercialBucketId: classification.commercialBucketId || null,
-        commercialEligibilityOutcome: classification.commercialEligibilityOutcome,
-        commercialApprovalReference: classification.commercialApprovalReference || null,
-      }),
+  const updateMutation = useMutation({
+    mutationFn: (bucket: any) => apiRequest(`/api/projects/${projectId}/commercial-buckets/${bucket.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ label: bucket.label, basis: bucket.basis, contractReference: bucket.contractReference || null, effectiveStartDate: bucket.effectiveStartDate || null, effectiveEndDate: bucket.effectiveEndDate || null, hoursCeiling: bucket.hoursCeiling || null, dollarCeiling: bucket.dollarCeiling || null, valueBasis: bucket.valueBasis || null, billingTreatment: bucket.billingTreatment || null, approvalRequired: bucket.approvalRequired, approvalInstructions: bucket.approvalInstructions || null, defaultEligibilityOutcome: bucket.defaultEligibilityOutcome, isActive: bucket.isActive }),
     }),
-    onSuccess: (result: any) => { setSelected(new Set()); refresh(); toast({ title: `${result.classified} time entries classified` }); },
+    onSuccess: () => { setEditingBucket(null); refresh(); toast({ title: "Commercial bucket updated" }); },
+    onError: (error: Error) => toast({ title: "Unable to update bucket", description: error.message, variant: "destructive" }),
+  });
+  const classifyMutation = useMutation({
+    mutationFn: () => apiRequest(`/api/projects/${projectId}/commercial-reconciliation/classify`, { method: "POST", body: JSON.stringify({ ...(allMatchingSelected ? { allMatching: true, filters: { ...filters, contractorId: filters.contractorId === "all" ? undefined : filters.contractorId } } : { entryIds: Array.from(selected) }), commercialBucketId: classification.commercialBucketId || null, commercialEligibilityOutcome: classification.commercialEligibilityOutcome, baselineSow: !classification.commercialBucketId && classification.commercialEligibilityOutcome === "not_eligible", commercialApprovalReference: classification.commercialApprovalReference || null, reason: classification.reason || null }) }),
+    onSuccess: (result: any) => { setSelected(new Set()); setAllMatchingSelected(false); refresh(); toast({ title: `${result.classified} time entries classified` }); },
     onError: (error: Error) => toast({ title: "Classification failed", description: error.message, variant: "destructive" }),
   });
 
   const buckets = bucketQuery.data?.buckets || [];
-  const summaries = summaryQuery.data || [];
+  const reconciliation = reconciliationQuery.data?.items || [];
+  const contractors = useMemo(() => {
+    const options = contractorQuery.data?.items || [];
+    if (filters.contractorId === "all" || options.some(option => option.id === filters.contractorId)) return options;
+    const current = reconciliation.find(entry => entry.personId === filters.contractorId);
+    return [...options, { id: filters.contractorId, name: current?.personName || `Selected contractor (${filters.contractorId})` }];
+  }, [contractorQuery.data?.items, filters.contractorId, reconciliation]);
+  const total = reconciliationQuery.data?.total || 0;
+  const pageSize = reconciliationQuery.data?.limit || 25;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const visible = reconciliation;
+  const selectionReason = (entry: any) => entry.classificationChangeAllowed === false ? entry.classificationChangeNote || "This entry cannot be reclassified." : null;
+  const eligibleVisible = visible.filter(entry => !selectionReason(entry));
+  const reviewableTotal = reconciliationQuery.data?.reviewableTotal || 0;
+  const selectedCount = allMatchingSelected ? reviewableTotal : selected.size;
+  const toggle = (id: string, checked: boolean) => {
+    if (allMatchingSelected) { setAllMatchingSelected(false); setSelected(new Set(eligibleVisible.map(entry => entry.id))); }
+    setSelected(prev => { const next = new Set(prev); checked ? next.add(id) : next.delete(id); return next; });
+  };
+  const selectEntries = (entries: any[], checked: boolean) => { setAllMatchingSelected(false); setSelected(prev => { const next = new Set(prev); entries.filter(entry => !selectionReason(entry)).forEach(entry => checked ? next.add(entry.id) : next.delete(entry.id)); return next; }); };
   const currentBasis = bucketQuery.data?.projectBasis || basis;
-  const reconciliation = reconciliationQuery.data || [];
-  const selectedCount = selected.size;
-  const selectedEntries = useMemo(() => reconciliation.filter(entry => selected.has(entry.id)), [reconciliation, selected]);
+  const editDateInvalid = !!editingBucket?.effectiveStartDate && !!editingBucket?.effectiveEndDate && editingBucket.effectiveStartDate > editingBucket.effectiveEndDate;
 
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Tags className="h-5 w-5" /> Commercial time classification</CardTitle>
-          <CardDescription>Commercial buckets are contractual classifications. Workstreams and milestone coverage remain independent.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-          <div className="space-y-2">
-            <Label>Project commercial basis</Label>
-            <Select value={basis} onValueChange={setBasis} disabled={readOnly}>
-              <SelectTrigger><SelectValue placeholder="Choose one commercial basis" /></SelectTrigger>
-              <SelectContent>{BASIS.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-2 pb-2">
-            <Checkbox id="buckets-required" checked={required} onCheckedChange={(value) => setRequired(value === true)} disabled={readOnly} />
-            <Label htmlFor="buckets-required">Require an active bucket on all new or submitted time</Label>
-          </div>
-          {!readOnly && <Button onClick={() => settingsMutation.mutate()} disabled={!basis && !bucketQuery.data?.projectBasis || settingsMutation.isPending}><Save className="mr-2 h-4 w-4" /> Save settings</Button>}
-        </CardContent>
-      </Card>
+  return <div className="space-y-6">
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Tags className="h-5 w-5" />Commercial time classification</CardTitle><CardDescription>Commercial attribution is audited separately from milestone coverage and client billing.</CardDescription></CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end"><div className="space-y-2"><Label>Project commercial basis</Label><Select value={basis} onValueChange={setBasis} disabled={readOnly}><SelectTrigger><SelectValue placeholder="Choose one commercial basis" /></SelectTrigger><SelectContent>{BASIS.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></div><div className="flex items-center gap-2 pb-2"><Checkbox id="buckets-required" checked={required} onCheckedChange={value => setRequired(value === true)} disabled={readOnly} /><Label htmlFor="buckets-required">Require an active bucket on new or submitted time</Label></div>{!readOnly && <Button onClick={() => settingsMutation.mutate()} disabled={(!basis && !bucketQuery.data?.projectBasis) || settingsMutation.isPending}><Save className="mr-2 h-4 w-4" />Save settings</Button>}</CardContent>
+    </Card>
 
-      {!readOnly && currentBasis && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">Add commercial bucket</CardTitle><CardDescription>The project default is {basisLabel(currentBasis)}. Use another basis only when the contract has mixed treatment, such as a change order.</CardDescription></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <Input placeholder="Business label" value={newBucket.label} onChange={event => setNewBucket({ ...newBucket, label: event.target.value })} />
-            <Select value={newBucket.basis || currentBasis} onValueChange={value => setNewBucket({ ...newBucket, basis: value })}><SelectTrigger><SelectValue placeholder="Commercial basis" /></SelectTrigger><SelectContent>{BASIS.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select>
-            <Input placeholder="SOW / change order reference" value={newBucket.contractReference} onChange={event => setNewBucket({ ...newBucket, contractReference: event.target.value })} />
-            <Input type="date" aria-label="Effective start" value={newBucket.effectiveStartDate} onChange={event => setNewBucket({ ...newBucket, effectiveStartDate: event.target.value })} />
-            <Input type="date" aria-label="Effective end" value={newBucket.effectiveEndDate} onChange={event => setNewBucket({ ...newBucket, effectiveEndDate: event.target.value })} />
-            <Input type="number" min="0" placeholder="Hours ceiling (optional)" value={newBucket.hoursCeiling} onChange={event => setNewBucket({ ...newBucket, hoursCeiling: event.target.value })} />
-            <Input type="number" min="0" placeholder="Dollar ceiling (optional)" value={newBucket.dollarCeiling} onChange={event => setNewBucket({ ...newBucket, dollarCeiling: event.target.value })} />
-            <Select value={newBucket.defaultEligibilityOutcome} onValueChange={value => setNewBucket({ ...newBucket, defaultEligibilityOutcome: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="eligible">Normally eligible</SelectItem><SelectItem value="not_eligible">Not eligible for recovery</SelectItem></SelectContent></Select>
-            <Input placeholder="Billing treatment / notes" value={newBucket.billingTreatment} onChange={event => setNewBucket({ ...newBucket, billingTreatment: event.target.value })} />
-            <div className="flex items-center gap-2"><Checkbox id="approval-required" checked={newBucket.approvalRequired} onCheckedChange={value => setNewBucket({ ...newBucket, approvalRequired: value === true })} /><Label htmlFor="approval-required">Approval reference required</Label></div>
-            <Button className="lg:col-span-4 justify-self-start" onClick={() => createMutation.mutate()} disabled={!newBucket.label || createMutation.isPending}><Plus className="mr-2 h-4 w-4" /> Add bucket</Button>
-          </CardContent>
-        </Card>
-      )}
+    {!readOnly && currentBasis && <Card><CardHeader><CardTitle className="text-base">Add commercial bucket</CardTitle><CardDescription>Use a different basis only for a mixed-treatment contract or change order.</CardDescription></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+      <Input placeholder="Business label" value={newBucket.label} onChange={e => setNewBucket({ ...newBucket, label: e.target.value })} /><Select value={newBucket.basis || currentBasis} onValueChange={value => setNewBucket({ ...newBucket, basis: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{BASIS.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select><Input placeholder="SOW / change order reference" value={newBucket.contractReference} onChange={e => setNewBucket({ ...newBucket, contractReference: e.target.value })} /><Input type="date" aria-label="Effective start" value={newBucket.effectiveStartDate} onChange={e => setNewBucket({ ...newBucket, effectiveStartDate: e.target.value })} /><Input type="date" aria-label="Effective end" value={newBucket.effectiveEndDate} onChange={e => setNewBucket({ ...newBucket, effectiveEndDate: e.target.value })} /><Input type="number" min="0" placeholder="Effort hours ceiling" value={newBucket.hoursCeiling} onChange={e => setNewBucket({ ...newBucket, hoursCeiling: e.target.value })} /><Input type="number" min="0" placeholder="Recovery dollar cap" value={newBucket.dollarCeiling} onChange={e => setNewBucket({ ...newBucket, dollarCeiling: e.target.value })} /><Input type="number" min="0" placeholder="Fixed contract value" value={newBucket.valueBasis} onChange={e => setNewBucket({ ...newBucket, valueBasis: e.target.value })} /><Input placeholder="Billing treatment / notes" value={newBucket.billingTreatment} onChange={e => setNewBucket({ ...newBucket, billingTreatment: e.target.value })} /><Input className="lg:col-span-2" placeholder="Approval instructions" value={newBucket.approvalInstructions} onChange={e => setNewBucket({ ...newBucket, approvalInstructions: e.target.value })} /><div className="flex items-center gap-2"><Checkbox id="approval-required" checked={newBucket.approvalRequired} onCheckedChange={value => setNewBucket({ ...newBucket, approvalRequired: value === true })} /><Label htmlFor="approval-required">Approval reference required</Label></div><Button onClick={() => createMutation.mutate()} disabled={!newBucket.label || (!!newBucket.effectiveStartDate && !!newBucket.effectiveEndDate && newBucket.effectiveStartDate > newBucket.effectiveEndDate) || createMutation.isPending}><Plus className="mr-2 h-4 w-4" />Add bucket</Button>
+    </CardContent></Card>}
 
-      <Card>
-        <CardHeader><CardTitle className="text-base">Commercial burn and exceptions</CardTitle><CardDescription>Fixed-fee and retainer hours are tracked for realization, not usage billing.</CardDescription></CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {summaries.map(bucket => <div key={bucket.id} className="rounded-md border p-3 space-y-1">
-            <div className="flex justify-between gap-2"><span className="font-medium text-sm">{bucket.label}</span><Badge variant="outline">{basisLabel(bucket.basis)}</Badge></div>
-            <p className="text-sm">{bucket.eligibleHours.toFixed(2)} hrs · ${bucket.eligibleValue.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">{bucket.remainingHours != null ? `${bucket.remainingHours.toFixed(2)} hrs remaining` : bucket.remainingValue != null ? `$${bucket.remainingValue.toLocaleString()} remaining` : "No configured ceiling"}</p>
-            {bucket.exceptions > 0 && <p className="text-xs text-amber-700">{bucket.exceptions} exception{bucket.exceptions === 1 ? "" : "s"}</p>}
-          </div>)}
-          {!summaries.length && <p className="text-sm text-muted-foreground">No commercial buckets have been configured.</p>}
-        </CardContent>
-      </Card>
+    <Card><CardHeader><CardTitle className="text-base">Commercial burn, ceilings, and configuration</CardTitle><CardDescription>Fixed-fee and retainer assignments track effort only; they do not create additional client billing.</CardDescription></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {(summaryQuery.data || []).map(bucket => { const semantics = bucket.ceilingSemantics; const capacity = bucket.capacity; const over = bucket.exceptions > 0 && semantics?.kind === "recoverable_tm_cap"; return <div key={bucket.id} className={`rounded-md border p-3 space-y-2 ${over ? "border-amber-500 bg-amber-50/50" : ""}`}><div className="flex justify-between gap-2"><span className="font-medium text-sm">{bucket.label}</span><Badge variant="outline">{basisLabel(bucket.basis)}</Badge></div><p className="text-sm">{Number(bucket.eligibleHours).toFixed(2)} hrs · ${Number(bucket.eligibleValue).toLocaleString()}</p>{semantics?.kind === "fixed_contract_value" ? <p className="text-xs text-muted-foreground">{semantics.value == null ? "Fixed contract value is not configured." : `Fixed contract value: $${Number(semantics.value).toLocaleString()}`} · effort is tracked, not recovered again.</p> : semantics?.kind === "recoverable_tm_cap" ? <div className="text-xs text-muted-foreground space-y-1">{capacity?.hours && <p>{Number(capacity.hours.used).toFixed(2)} of {Number(capacity.hours.ceiling).toFixed(2)} hrs used · {Number(capacity.hours.remaining).toFixed(2)} hrs remaining</p>}{capacity?.dollars && <p>${Number(capacity.dollars.used).toLocaleString()} of ${Number(capacity.dollars.ceiling).toLocaleString()} used · ${Number(capacity.dollars.remaining).toLocaleString()} remaining</p>}{!capacity?.hours && !capacity?.dollars && <p>No recoverable T&M cap configured.</p>}</div> : <p className="text-xs text-muted-foreground">Time-and-materials usage is billed at the applicable rate.</p>}{over && <p className="text-xs font-medium text-amber-800">Over-capacity exceptions require review before recovery.</p>}{!readOnly && <Button size="sm" variant="outline" onClick={() => setEditingBucket({ ...bucket, effectiveStartDate: dateValue(bucket.effectiveStartDate), effectiveEndDate: dateValue(bucket.effectiveEndDate), hoursCeiling: numberValue(bucket.hoursCeiling), dollarCeiling: numberValue(bucket.dollarCeiling), valueBasis: numberValue(bucket.valueBasis), approvalInstructions: bucket.approvalInstructions || "" })}><Edit3 className="mr-1 h-3 w-3" />Edit</Button>}</div>; })}
+      {!summaryQuery.data?.length && <p className="text-sm text-muted-foreground">No commercial buckets have been configured.</p>}
+    </CardContent></Card>
 
-      <Card>
-        <CardHeader><CardTitle className="text-base">Time reconciliation queue</CardTitle><CardDescription>Review first; this queue never infers historical eligibility from a description.</CardDescription></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2 items-end">
-            <label className="text-sm">From<Input type="date" value={range.startDate} onChange={event => setRange({ ...range, startDate: event.target.value })} /></label>
-            <label className="text-sm">To<Input type="date" value={range.endDate} onChange={event => setRange({ ...range, endDate: event.target.value })} /></label>
-            <Select value={range.status} onValueChange={status => setRange({ ...range, status })}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All entries</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem><SelectItem value="ineligible">Not eligible</SelectItem><SelectItem value="exceptions">Exceptions</SelectItem></SelectContent></Select>
-            <Button variant="outline" onClick={() => setRange({ startDate: `${new Date().getFullYear()}-05-01`, endDate: `${new Date().getFullYear()}-08-31`, status: "all" })}>May–August</Button>
-          </div>
-          {!readOnly && <div className="rounded-md bg-muted p-3 flex flex-wrap gap-2 items-center">
-            <Select value={classification.commercialBucketId || "__none__"} onValueChange={value => setClassification({ ...classification, commercialBucketId: value === "__none__" ? "" : value })}><SelectTrigger className="w-56"><SelectValue placeholder="Select bucket" /></SelectTrigger><SelectContent><SelectItem value="__none__">No bucket / not eligible</SelectItem>{buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label}</SelectItem>)}</SelectContent></Select>
-            <Select value={classification.commercialEligibilityOutcome} onValueChange={value => setClassification({ ...classification, commercialEligibilityOutcome: value })}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem></SelectContent></Select>
-            <Input className="w-56" placeholder="Approval reference" value={classification.commercialApprovalReference} onChange={event => setClassification({ ...classification, commercialApprovalReference: event.target.value })} />
-            <Button disabled={!selectedCount || classifyMutation.isPending} onClick={() => classifyMutation.mutate(Array.from(selected))}><CheckCircle2 className="mr-2 h-4 w-4" /> Classify {selectedCount || ""}</Button>
-          </div>}
-          <div className="border rounded-md overflow-auto max-h-[440px]">
-            <Table><TableHeader><TableRow>{!readOnly && <TableHead />}<TableHead>Date</TableHead><TableHead>Resource</TableHead><TableHead>Description</TableHead><TableHead>Workstream</TableHead><TableHead>Milestone coverage</TableHead><TableHead>Commercial classification</TableHead></TableRow></TableHeader>
-              <TableBody>{reconciliation.map(entry => <TableRow key={entry.id}>{!readOnly && <TableCell><Checkbox checked={selected.has(entry.id)} onCheckedChange={checked => setSelected(prev => { const next = new Set(prev); checked ? next.add(entry.id) : next.delete(entry.id); return next; })} /></TableCell>}<TableCell>{entry.date}</TableCell><TableCell>{entry.personName}</TableCell><TableCell className="max-w-72 truncate">{entry.description || "—"}</TableCell><TableCell>{entry.workstreamName || "—"}</TableCell><TableCell>{entry.coveredByMilestoneName || "Not covered"}</TableCell><TableCell>{entry.commercialBucketLabel ? <><Badge variant={entry.commercialEligibilityOutcome === "eligible" ? "default" : "secondary"}>{entry.commercialBucketLabel} · {entry.commercialEligibilityOutcome}</Badge>{entry.commercialAudit?.length > 0 && <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer">Audit trail ({entry.commercialAudit.length})</summary>{entry.commercialAudit.map((audit: any) => <p key={audit.id}>{new Date(audit.classifiedAt).toLocaleString()}: {audit.eligibilityOutcome}{audit.approvalReference ? ` · ${audit.approvalReference}` : ""}</p>)}</details>}</> : entry.commercialEligibilityOutcome === "not_eligible" ? <Badge variant="secondary">Not eligible for recovery</Badge> : <span className="text-amber-700 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Unclassified</span>}</TableCell></TableRow>)}{!reconciliation.length && <TableRow><TableCell colSpan={readOnly ? 6 : 7} className="text-center text-muted-foreground">No time entries match these filters.</TableCell></TableRow>}</TableBody>
-            </Table>
-          </div>
-          {selectedEntries.length > 0 && <p className="text-xs text-muted-foreground">{selectedEntries.length} entries selected for an audited classification update.</p>}
-        </CardContent>
-      </Card>
-    </div>
-  );
+    {editingBucket && <Card><CardHeader><CardTitle className="text-base">Edit {editingBucket.label}</CardTitle><CardDescription>Changes apply to the bucket configuration going forward; existing classifications and their audit records are preserved.</CardDescription></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4"><Input value={editingBucket.label} onChange={e => setEditingBucket({ ...editingBucket, label: e.target.value })} /><Select value={editingBucket.basis} onValueChange={basis => setEditingBucket({ ...editingBucket, basis })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{BASIS.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select><Input placeholder="SOW / change order reference" value={editingBucket.contractReference || ""} onChange={e => setEditingBucket({ ...editingBucket, contractReference: e.target.value })} /><Input type="date" value={editingBucket.effectiveStartDate} onChange={e => setEditingBucket({ ...editingBucket, effectiveStartDate: e.target.value })} /><Input type="date" value={editingBucket.effectiveEndDate} onChange={e => setEditingBucket({ ...editingBucket, effectiveEndDate: e.target.value })} /><Input type="number" min="0" placeholder="Effort hours ceiling" value={editingBucket.hoursCeiling} onChange={e => setEditingBucket({ ...editingBucket, hoursCeiling: e.target.value })} /><Input type="number" min="0" placeholder="Recovery dollar cap" value={editingBucket.dollarCeiling} onChange={e => setEditingBucket({ ...editingBucket, dollarCeiling: e.target.value })} /><Input type="number" min="0" placeholder="Fixed contract value" value={editingBucket.valueBasis || ""} onChange={e => setEditingBucket({ ...editingBucket, valueBasis: e.target.value })} /><Input placeholder="Billing treatment" value={editingBucket.billingTreatment || ""} onChange={e => setEditingBucket({ ...editingBucket, billingTreatment: e.target.value })} /><Input placeholder="Approval instructions" value={editingBucket.approvalInstructions} onChange={e => setEditingBucket({ ...editingBucket, approvalInstructions: e.target.value })} /><div className="flex items-center gap-2"><Checkbox id="edit-active" checked={editingBucket.isActive} onCheckedChange={value => setEditingBucket({ ...editingBucket, isActive: value === true })} /><Label htmlFor="edit-active">Active</Label></div><div className="flex items-center gap-2"><Checkbox id="edit-approval" checked={editingBucket.approvalRequired} onCheckedChange={value => setEditingBucket({ ...editingBucket, approvalRequired: value === true })} /><Label htmlFor="edit-approval">Approval required</Label></div>{editDateInvalid && <p className="text-sm text-destructive lg:col-span-2">Effective end date must be on or after the start date.</p>}<div className="flex gap-2"><Button onClick={() => updateMutation.mutate(editingBucket)} disabled={!editingBucket.label || editDateInvalid || updateMutation.isPending}><Save className="mr-2 h-4 w-4" />Save changes</Button><Button variant="outline" onClick={() => setEditingBucket(null)}>Cancel</Button></div></CardContent></Card>}
+
+    <Card><CardHeader><CardTitle className="text-base">Time reconciliation queue</CardTitle><CardDescription>Classify historical submitted, approved, and invoiced time. Invoice and coverage facts remain visible; classifications are auditable attribution changes.</CardDescription></CardHeader><CardContent className="space-y-4">
+      <div className="flex flex-wrap gap-2 items-end"><label className="text-sm">From<Input type="date" value={filters.startDate} onChange={e => setFilters({ ...filters, startDate: e.target.value })} /></label><label className="text-sm">Cutoff / to<Input type="date" value={filters.cutoffDate} onChange={e => setFilters({ ...filters, cutoffDate: e.target.value })} /></label><Select value={filters.contractorId} onValueChange={contractorId => setFilters({ ...filters, contractorId })}><SelectTrigger className="w-40"><SelectValue placeholder="Contractor" /></SelectTrigger><SelectContent><SelectItem value="all">All contractors</SelectItem>{contractors.map(({ id, name }) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select><Select value={filters.submissionStatus} onValueChange={submissionStatus => setFilters({ ...filters, submissionStatus })}><SelectTrigger className="w-40"><SelectValue placeholder="Submission" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="submitted">Submitted</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select><Select value={filters.classification} onValueChange={classification => setFilters({ ...filters, classification })}><SelectTrigger className="w-44"><SelectValue placeholder="Classification" /></SelectTrigger><SelectContent><SelectItem value="all">All classifications</SelectItem><SelectItem value="unclassified">Unclassified</SelectItem><SelectItem value="baseline_sow">Baseline SOW</SelectItem><SelectItem value="bucketed">Bucketed</SelectItem><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible</SelectItem><SelectItem value="exceptions">Exceptions</SelectItem></SelectContent></Select><Select value={filters.invoiceCoverage} onValueChange={invoiceCoverage => setFilters({ ...filters, invoiceCoverage })}><SelectTrigger className="w-44"><SelectValue placeholder="Invoice / coverage" /></SelectTrigger><SelectContent><SelectItem value="all">All billing context</SelectItem><SelectItem value="available_for_billing">Available for billing</SelectItem><SelectItem value="uncovered">Uncovered</SelectItem><SelectItem value="covered">Milestone covered</SelectItem><SelectItem value="vendor_linked">Vendor invoice linked</SelectItem><SelectItem value="client_billed">Client billed</SelectItem><SelectItem value="locked">Invoice locked</SelectItem></SelectContent></Select></div>
+      {!readOnly && <div className="rounded-md bg-muted p-3 space-y-2"><div className="flex flex-wrap gap-2 items-center"><Button size="sm" variant="outline" disabled={!eligibleVisible.length} onClick={() => selectEntries(eligibleVisible, true)}>Select visible ({eligibleVisible.length})</Button><Button size="sm" variant="outline" disabled={!reviewableTotal} onClick={() => { setSelected(new Set()); setAllMatchingSelected(true); }}>Select all matching ({reviewableTotal})</Button><Button size="sm" variant="ghost" disabled={!selectedCount} onClick={() => { setSelected(new Set()); setAllMatchingSelected(false); }}>Clear selection</Button><span className="text-sm font-medium">{selectedCount} selected{allMatchingSelected ? " (all matching)" : ""}</span></div><div className="flex flex-wrap gap-2 items-center"><Select value={classification.commercialBucketId || "__baseline__"} onValueChange={value => setClassification({ ...classification, commercialBucketId: value === "__baseline__" ? "" : value, commercialEligibilityOutcome: value === "__baseline__" ? "not_eligible" : "eligible" })}><SelectTrigger className="w-56"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__baseline__">Baseline SOW (no recovery)</SelectItem>{buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label}</SelectItem>)}</SelectContent></Select><Select value={classification.commercialEligibilityOutcome} onValueChange={value => setClassification({ ...classification, commercialEligibilityOutcome: value })}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="eligible">Eligible</SelectItem><SelectItem value="not_eligible">Not eligible</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem></SelectContent></Select><Input className="w-52" placeholder="Approval reference" value={classification.commercialApprovalReference} onChange={e => setClassification({ ...classification, commercialApprovalReference: e.target.value })} /><Input className="w-52" placeholder="Audit reason" value={classification.reason} onChange={e => setClassification({ ...classification, reason: e.target.value })} /><Button disabled={!selectedCount || classifyMutation.isPending} onClick={() => classifyMutation.mutate()}><CheckCircle2 className="mr-2 h-4 w-4" />Apply to {selectedCount}</Button></div></div>}
+      <div className="border rounded-md overflow-auto"><Table><TableHeader><TableRow>{!readOnly && <TableHead><Checkbox aria-label="Select visible eligible entries" checked={allMatchingSelected || (eligibleVisible.length > 0 && eligibleVisible.every(e => selected.has(e.id)))} onCheckedChange={checked => selectEntries(eligibleVisible, checked === true)} /></TableHead>}<TableHead>Date</TableHead><TableHead>Resource / status</TableHead><TableHead>Description</TableHead><TableHead>Invoice & coverage</TableHead><TableHead>Commercial classification</TableHead></TableRow></TableHeader><TableBody>{visible.map(entry => { const reason = selectionReason(entry); return <TableRow key={entry.id}>{!readOnly && <TableCell><Checkbox aria-label={`Select ${entry.date}`} checked={!reason && (allMatchingSelected || selected.has(entry.id))} disabled={!!reason} onCheckedChange={checked => toggle(entry.id, checked === true)} />{reason && <p className="mt-1 max-w-28 text-xs text-muted-foreground">{reason}</p>}</TableCell>}<TableCell>{entry.date}</TableCell><TableCell>{entry.personName}<br /><Badge variant="outline" className="mt-1">{entry.submissionStatus || "unknown"}</Badge></TableCell><TableCell className="max-w-72 truncate">{entry.description || "—"}</TableCell><TableCell className="space-y-1">{entry.coveredByMilestoneName && <Badge variant="secondary">Covered: {entry.coveredByMilestoneName}</Badge>}{entry.vendorInvoiceLineId && <Badge variant="secondary">Vendor invoice linked</Badge>}{entry.billedFlag && <Badge>Client billed</Badge>}{entry.locked && <Badge variant="destructive">Invoice locked</Badge>}{entry.classificationChangeNote && <p className="text-xs text-muted-foreground">{entry.classificationChangeNote}</p>}{!entry.coveredByMilestoneName && !entry.vendorInvoiceLineId && !entry.billedFlag && !entry.locked && <span className="text-muted-foreground">No invoice context</span>}</TableCell><TableCell>{entry.commercialBucketLabel ? <Badge variant={entry.commercialEligibilityOutcome === "eligible" ? "default" : "secondary"}>{entry.commercialBucketLabel} · {entry.commercialEligibilityOutcome}</Badge> : entry.commercialEligibilityOutcome === "not_eligible" ? <Badge variant="secondary">Baseline SOW / not eligible</Badge> : <span className="text-amber-700 flex items-center gap-1"><AlertCircle className="h-3 w-3" />Unclassified</span>}{entry.commercialAudit?.length > 0 && <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer">Audit trail ({entry.commercialAudit.length})</summary>{entry.commercialAudit.map((audit: any) => <p key={audit.id}>{new Date(audit.classifiedAt).toLocaleString()}: {audit.eligibilityOutcome}{audit.reason ? ` · ${audit.reason}` : ""}</p>)}</details>}</TableCell></TableRow>; })}{!visible.length && <TableRow><TableCell colSpan={readOnly ? 5 : 6} className="text-center text-muted-foreground">No time entries match these filters.</TableCell></TableRow>}</TableBody></Table></div>
+      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>{total} matching entries · page {page + 1} of {pageCount}</span><div className="flex gap-1"><Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}><ChevronLeft className="h-4 w-4" />Previous</Button><Button size="sm" variant="outline" disabled={!reconciliationQuery.data?.hasMore} onClick={() => setPage(page + 1)}>Next<ChevronRight className="h-4 w-4" /></Button></div></div>
+    </CardContent></Card>
+  </div>;
 }

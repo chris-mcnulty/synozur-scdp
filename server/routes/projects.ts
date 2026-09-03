@@ -6,14 +6,14 @@ import { getM365RetryAccessDenial } from "./project-access";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
 import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, clientTeams, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, projectDeliverables, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, commercialBuckets, commercialBucketAudit, type InvoiceBatch } from "@shared/schema";
-import { eq, sql, inArray, max, and, gte, lte, desc, or } from "drizzle-orm";
 import { projectFiltersSchema } from "@shared/pagination";
 import { emailService } from "../services/email-notification.js";
 import { SharePointFileStorage } from "../services/sharepoint-file-storage.js";
 import { generateRetainerPaymentMilestones } from "./estimates.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "../services/hubspot-client.js";
 import multer from "multer";
-import { classifyCommercialTimeEntry, validateCommercialSelection } from "../lib/commercial-buckets.js";
+import { eq, sql, inArray, max, and, gte, lte, desc, or, isNull, isNotNull } from "drizzle-orm";
+import { classifyCommercialTimeEntry, isCommercialReconciliationReviewable, validateCommercialSelection } from "../lib/commercial-buckets.js";
 
 interface ProjectRouteDeps {
   requireAuth: any;
@@ -1007,7 +1007,8 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       const optionalDecimal = z.preprocess(
         value => value === "" ? null : value,
         z.union([z.string().regex(/^\d+(\.\d+)?$/), z.number()]).nullable().optional(),
-      ).transform(value => value === undefined ? undefined : value == null ? null : String(value));
+      ).transform(value => value === undefined ? undefined : value == null ? null : String(value))
+        .refine(value => value === undefined || value === null || Number(value) >= 0, "Amounts cannot be negative.");
       const data = z.object({
         label: z.string().trim().min(1).max(250),
         basis: z.string().trim().min(2).max(50),
@@ -1051,9 +1052,12 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       const optionalDecimal = z.preprocess(
         value => value === "" ? null : value,
         z.union([z.string().regex(/^\d+(\.\d+)?$/), z.number()]).nullable().optional(),
-      ).transform(value => value === undefined ? undefined : value == null ? null : String(value));
+      ).transform(value => value === undefined ? undefined : value == null ? null : String(value))
+        .refine(value => value === undefined || value === null || Number(value) >= 0, "Amounts cannot be negative.");
       const updates = z.object({
         label: z.string().trim().min(1).max(250).optional(),
+        basis: z.enum(["fixed_fee", "retainer", "tm", "capped_tm"]).optional(),
+        contractReference: z.string().trim().max(1000).nullable().optional(),
         effectiveStartDate: optionalDate,
         effectiveEndDate: optionalDate,
         rateBasis: z.string().trim().max(50).nullable().optional(),
@@ -1066,7 +1070,12 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         approvalRequired: z.boolean().optional(),
         approvalInstructions: z.string().trim().max(1000).nullable().optional(),
         isActive: z.boolean().optional(),
-      }).parse(req.body);
+      }).refine(value => Object.keys(value).length > 0, "Supply at least one bucket setting.").parse(req.body);
+      const effectiveStartDate = updates.effectiveStartDate === undefined ? bucket.effectiveStartDate : updates.effectiveStartDate;
+      const effectiveEndDate = updates.effectiveEndDate === undefined ? bucket.effectiveEndDate : updates.effectiveEndDate;
+      if (effectiveStartDate && effectiveEndDate && effectiveStartDate > effectiveEndDate) {
+        return res.status(400).json({ message: "Effective end date must be on or after the start date." });
+      }
       const [updated] = await db.update(commercialBuckets).set({
         ...updates,
         archivedAt: updates.isActive === false ? new Date() : updates.isActive === true ? null : undefined,
@@ -1078,6 +1087,28 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
     }
   });
 
+  app.get("/api/projects/:projectId/commercial-reconciliation/contractors", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      const query = z.object({
+        startDate: z.string().date().optional(),
+        endDate: z.string().date().optional(),
+        cutoffDate: z.string().date().optional(),
+      }).parse(req.query);
+      const conditions: any[] = [eq(timeEntries.projectId, context.project.id)];
+      if (query.startDate) conditions.push(gte(timeEntries.date, query.startDate));
+      if (query.endDate || query.cutoffDate) conditions.push(lte(timeEntries.date, query.endDate || query.cutoffDate!));
+      const contractors = await db.select({ id: users.id, name: users.name })
+        .from(timeEntries).innerJoin(users, eq(timeEntries.personId, users.id))
+        .where(and(...conditions)).groupBy(users.id, users.name).orderBy(users.name);
+      res.json({ items: contractors });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to fetch reconciliation contractors" });
+    }
+  });
+
   app.get("/api/projects/:projectId/commercial-reconciliation", requireAuth, requireRole(commercialManagerRoles), async (req, res) => {
     try {
       const context = await getCommercialProject(req, res);
@@ -1086,14 +1117,52 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       const query = z.object({
         startDate: z.string().date().optional(),
         endDate: z.string().date().optional(),
+        cutoffDate: z.string().date().optional(),
+        contractorId: z.string().min(1).optional(),
+        submissionStatus: z.enum(["draft", "submitted", "approved", "rejected", "all"]).default("all"),
+        classification: z.enum(["all", "unclassified", "baseline_sow", "bucketed", "eligible", "not_eligible", "exceptions"]).default("all"),
+        invoiceCoverage: z.enum(["all", "client_billed", "vendor_linked", "covered", "locked", "uncovered", "available_for_billing"]).default("all"),
         status: z.enum(["all", "unclassified", "ineligible", "exceptions"]).default("all"),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+        offset: z.coerce.number().int().min(0).default(0),
+        page: z.coerce.number().int().min(0).optional(),
       }).parse(req.query);
       const conditions: any[] = [eq(timeEntries.projectId, context.project.id)];
       if (query.startDate) conditions.push(gte(timeEntries.date, query.startDate));
-      if (query.endDate) conditions.push(lte(timeEntries.date, query.endDate));
-      if (query.status === "unclassified") conditions.push(sql`${timeEntries.commercialBucketId} IS NULL AND (${timeEntries.commercialEligibilityOutcome} IS NULL OR ${timeEntries.commercialEligibilityOutcome} = 'pending_approval')`);
-      if (query.status === "ineligible") conditions.push(eq(timeEntries.commercialEligibilityOutcome, "not_eligible"));
-      if (query.status === "exceptions") conditions.push(sql`${timeEntries.commercialEligibilityOutcome} IN ('pending_approval', 'over_capacity', 'out_of_window')`);
+      if (query.endDate || query.cutoffDate) conditions.push(lte(timeEntries.date, query.endDate || query.cutoffDate!));
+      if (query.contractorId) conditions.push(eq(timeEntries.personId, query.contractorId));
+      if (query.submissionStatus !== "all") conditions.push(eq(timeEntries.submissionStatus, query.submissionStatus));
+      const classification = query.classification === "all"
+        ? (query.status === "ineligible" ? "not_eligible" : query.status)
+        : query.classification;
+      if (classification === "unclassified") conditions.push(sql`${timeEntries.commercialBucketId} IS NULL AND (${timeEntries.commercialEligibilityOutcome} IS NULL OR ${timeEntries.commercialEligibilityOutcome} = 'pending_approval')`);
+      if (classification === "baseline_sow") conditions.push(and(isNull(timeEntries.commercialBucketId), eq(timeEntries.commercialEligibilityOutcome, "not_eligible")));
+      if (classification === "bucketed") conditions.push(isNotNull(timeEntries.commercialBucketId));
+      if (classification === "eligible" || classification === "not_eligible") conditions.push(eq(timeEntries.commercialEligibilityOutcome, classification));
+      if (classification === "exceptions") conditions.push(sql`${timeEntries.commercialEligibilityOutcome} IN ('pending_approval', 'over_capacity', 'out_of_window')`);
+      if (query.invoiceCoverage === "client_billed") conditions.push(eq(timeEntries.billedFlag, true));
+      if (query.invoiceCoverage === "vendor_linked") conditions.push(isNotNull(timeEntries.vendorInvoiceLineId));
+      if (query.invoiceCoverage === "covered") conditions.push(isNotNull(timeEntries.coveredByMilestoneId));
+      if (query.invoiceCoverage === "locked") conditions.push(eq(timeEntries.locked, true));
+      if (query.invoiceCoverage === "uncovered") conditions.push(isNull(timeEntries.coveredByMilestoneId));
+      if (query.invoiceCoverage === "available_for_billing") conditions.push(and(
+        eq(timeEntries.billable, true), eq(timeEntries.billedFlag, false), eq(timeEntries.locked, false),
+        isNull(timeEntries.coveredByMilestoneId), isNull(timeEntries.vendorInvoiceLineId),
+      ));
+      const paginationRequested = req.query.limit !== undefined || req.query.offset !== undefined || req.query.page !== undefined;
+      const offset = req.query.offset === undefined && query.page !== undefined
+        ? query.page * query.limit
+        : query.offset;
+      const totalRows = await db.select({ count: sql<number>`count(*)` }).from(timeEntries).where(and(...conditions));
+      const total = Number(totalRows[0]?.count || 0);
+      const [reviewabilityCounts] = await db.select({
+        // Normal workflow eligibility is submitted/approved time. Historical
+        // invoice-lock attribution is counted separately in reviewableTotal.
+        eligibleTotal: sql<number>`count(*) filter (where ${timeEntries.submissionStatus} in ('submitted', 'approved'))`,
+        reviewableTotal: sql<number>`count(*) filter (where ${reconciliationReviewabilitySql()})`,
+      }).from(timeEntries).where(and(...conditions));
+      const eligibleTotal = Number(reviewabilityCounts?.eligibleTotal || 0);
+      const reviewableTotal = Number(reviewabilityCounts?.reviewableTotal || 0);
       const entries = await db.select({
         entry: timeEntries, personName: users.name, workstreamName: projectWorkstreams.name,
         milestoneName: projectMilestones.name, bucketLabel: commercialBuckets.label, bucketBasis: commercialBuckets.basis,
@@ -1102,7 +1171,8 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         .leftJoin(projectWorkstreams, eq(timeEntries.workstreamId, projectWorkstreams.id))
         .leftJoin(projectMilestones, eq(timeEntries.coveredByMilestoneId, projectMilestones.id))
         .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
-        .where(and(...conditions)).orderBy(desc(timeEntries.date));
+        .where(and(...conditions)).orderBy(desc(timeEntries.date), desc(timeEntries.id))
+        .limit(query.limit).offset(offset);
       const entryIds = entries.map(row => row.entry.id);
       const audits = entryIds.length
         ? await db.select().from(commercialBucketAudit).where(inArray(commercialBucketAudit.timeEntryId, entryIds)).orderBy(desc(commercialBucketAudit.classifiedAt))
@@ -1111,7 +1181,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       for (const audit of audits) {
         auditsByEntry.set(audit.timeEntryId, [...(auditsByEntry.get(audit.timeEntryId) || []), audit]);
       }
-      res.json(entries.map(row => ({
+      const items = entries.map(row => ({
         ...row.entry,
         personName: row.personName,
         workstreamName: row.workstreamName,
@@ -1119,7 +1189,18 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         commercialBucketLabel: row.bucketLabel,
         commercialBucketBasis: row.bucketBasis,
         commercialAudit: auditsByEntry.get(row.entry.id) || [],
-      })));
+        classificationChangeAllowed: isCommercialReconciliationReviewable(row.entry),
+        classificationChangeNote: !isCommercialReconciliationReviewable(row.entry)
+          ? "Draft and rejected time must be corrected and submitted before commercial attribution can be reviewed."
+          : row.entry.billedFlag || row.entry.locked
+          ? "Classification is attribution-only; existing client invoice facts remain unchanged."
+          : row.entry.coveredByMilestoneId
+            ? "Classification is attribution-only while this entry is covered by a milestone."
+            : null,
+      }));
+      // Preserve the original array response for deployed callers; pagination
+      // opts into the richer selection contract.
+      res.json(paginationRequested ? { items, total, eligibleTotal, reviewableTotal, limit: query.limit, offset, hasMore: offset + items.length < total } : items);
     } catch (error: any) {
       res.status(400).json({ message: error.message || "Failed to fetch reconciliation queue" });
     }
@@ -1131,28 +1212,73 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       if (!context) return;
       if (!requireCommercialProjectAccess(req, res, context.project)) return;
       const parsed = z.object({
-        entryIds: z.array(z.string()).min(1).max(500),
+        entryIds: z.array(z.string()).min(1).max(500).optional(),
+        allMatching: z.boolean().default(false),
+        filters: z.object({
+          startDate: z.string().date().optional(), endDate: z.string().date().optional(), cutoffDate: z.string().date().optional(),
+          contractorId: z.string().min(1).optional(),
+          submissionStatus: z.enum(["draft", "submitted", "approved", "rejected", "all"]).optional(),
+          classification: z.enum(["all", "unclassified", "baseline_sow", "bucketed", "eligible", "not_eligible", "exceptions"]).optional(),
+          invoiceCoverage: z.enum(["all", "client_billed", "vendor_linked", "covered", "locked", "uncovered", "available_for_billing"]).optional(),
+          status: z.enum(["all", "unclassified", "ineligible", "exceptions"]).optional(),
+        }).optional(),
         commercialBucketId: z.string().nullable().optional(),
         commercialEligibilityOutcome: z.enum(["eligible", "not_eligible", "pending_approval"]).default("eligible"),
+        baselineSow: z.boolean().default(false),
         commercialApprovalReference: z.string().trim().max(1000).nullable().optional(),
         reason: z.string().trim().max(2000).nullable().optional(),
-      }).parse(req.body);
+      }).refine(v => v.allMatching || !!v.entryIds?.length, "Select one or more entries.").parse(req.body);
+      if (parsed.allMatching && parsed.entryIds?.length) return res.status(400).json({ message: "Use entryIds or allMatching, not both." });
+      const selectedConditions: any[] = [eq(timeEntries.projectId, context.project.id)];
+      if (parsed.allMatching) {
+        const f = parsed.filters || {};
+        if (f.startDate) selectedConditions.push(gte(timeEntries.date, f.startDate));
+        if (f.endDate || f.cutoffDate) selectedConditions.push(lte(timeEntries.date, f.endDate || f.cutoffDate!));
+        if (f.contractorId) selectedConditions.push(eq(timeEntries.personId, f.contractorId));
+        if (f.submissionStatus && f.submissionStatus !== "all") selectedConditions.push(eq(timeEntries.submissionStatus, f.submissionStatus));
+        const selectedClassification = f.classification === "all" || !f.classification
+          ? (f.status === "ineligible" ? "not_eligible" : f.status)
+          : f.classification;
+        if (selectedClassification === "unclassified") selectedConditions.push(sql`${timeEntries.commercialBucketId} IS NULL AND (${timeEntries.commercialEligibilityOutcome} IS NULL OR ${timeEntries.commercialEligibilityOutcome} = 'pending_approval')`);
+        if (selectedClassification === "baseline_sow") selectedConditions.push(and(isNull(timeEntries.commercialBucketId), eq(timeEntries.commercialEligibilityOutcome, "not_eligible")));
+        if (selectedClassification === "bucketed") selectedConditions.push(isNotNull(timeEntries.commercialBucketId));
+        if (selectedClassification === "eligible" || selectedClassification === "not_eligible") selectedConditions.push(eq(timeEntries.commercialEligibilityOutcome, selectedClassification));
+        if (selectedClassification === "exceptions") selectedConditions.push(sql`${timeEntries.commercialEligibilityOutcome} IN ('pending_approval', 'over_capacity', 'out_of_window')`);
+        if (f.invoiceCoverage === "client_billed") selectedConditions.push(eq(timeEntries.billedFlag, true));
+        if (f.invoiceCoverage === "vendor_linked") selectedConditions.push(isNotNull(timeEntries.vendorInvoiceLineId));
+        if (f.invoiceCoverage === "covered") selectedConditions.push(isNotNull(timeEntries.coveredByMilestoneId));
+        if (f.invoiceCoverage === "locked") selectedConditions.push(eq(timeEntries.locked, true));
+        if (f.invoiceCoverage === "uncovered") selectedConditions.push(isNull(timeEntries.coveredByMilestoneId));
+        if (f.invoiceCoverage === "available_for_billing") selectedConditions.push(and(
+          eq(timeEntries.billable, true), eq(timeEntries.billedFlag, false), eq(timeEntries.locked, false),
+          isNull(timeEntries.coveredByMilestoneId), isNull(timeEntries.vendorInvoiceLineId),
+        ));
+        // All-matching selection is intentionally limited to the same
+        // reviewable population advertised by the paginated queue totals.
+        selectedConditions.push(reconciliationReviewabilitySql());
+      } else selectedConditions.push(inArray(timeEntries.id, parsed.entryIds!));
       const entries = await db.select().from(timeEntries).where(and(
-        eq(timeEntries.projectId, context.project.id),
-        inArray(timeEntries.id, parsed.entryIds),
+        ...selectedConditions,
       ));
-      if (entries.length !== parsed.entryIds.length) {
+      if (!parsed.allMatching && entries.length !== parsed.entryIds!.length) {
         return res.status(400).json({ message: "Every selected entry must belong to this project." });
       }
+      const nonReviewable = entries.find(entry => !isCommercialReconciliationReviewable(entry));
+      if (nonReviewable) {
+        return res.status(400).json({ message: `Time entry ${nonReviewable.id} is ${nonReviewable.submissionStatus} and must be submitted or approved before commercial attribution.` });
+      }
+      const classificationInput = parsed.baselineSow
+        ? { ...parsed, commercialEligibilityOutcome: "not_eligible" as const }
+        : parsed;
       // Validate every selected entry before mutating any of them. The
       // classification writes themselves execute in one transaction.
       await Promise.all(entries.map(entry => validateCommercialSelection({
-        projectId: entry.projectId, date: entry.date, tenantId: context.tenantId, ...parsed,
+        projectId: entry.projectId, date: entry.date, tenantId: context.tenantId, ...classificationInput,
       })));
       const results = await db.transaction(async (tx) => {
         const classified = [];
         for (const entry of entries) {
-          classified.push(await classifyCommercialTimeEntry(entry, req.user!.id, context.tenantId, parsed, tx));
+          classified.push(await classifyCommercialTimeEntry(entry, req.user!.id, context.tenantId, classificationInput, tx));
         }
         return classified;
       });
@@ -1183,6 +1309,17 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
           ...bucket, eligibleHours: hours, eligibleValue: value, exceptions: Number(usage?.exceptions || 0),
           remainingHours: bucket.hoursCeiling == null ? null : Math.max(0, Number(bucket.hoursCeiling) - hours),
           remainingValue: bucket.dollarCeiling == null ? null : Math.max(0, Number(bucket.dollarCeiling) - value),
+          capacity: {
+            hours: bucket.hoursCeiling == null ? null : { used: hours, ceiling: Number(bucket.hoursCeiling), remaining: Math.max(0, Number(bucket.hoursCeiling) - hours) },
+            dollars: bucket.dollarCeiling == null ? null : { used: value, ceiling: Number(bucket.dollarCeiling), remaining: Math.max(0, Number(bucket.dollarCeiling) - value) },
+            isCappedTm: bucket.basis === "capped_tm",
+          },
+          // valueBasis is contractual fixed value for fixed-fee/retainer work,
+          // not a recoverable time ceiling. Consumers must not label it "no
+          // configured ceiling" or add it to T&M billing capacity.
+          ceilingSemantics: ["fixed_fee", "retainer"].includes(bucket.basis)
+            ? { kind: "fixed_contract_value", value: bucket.valueBasis == null ? null : Number(bucket.valueBasis), effortHoursCeiling: bucket.hoursCeiling == null ? null : Number(bucket.hoursCeiling) }
+            : { kind: bucket.basis === "capped_tm" ? "recoverable_tm_cap" : "time_and_materials", value: bucket.dollarCeiling == null ? null : Number(bucket.dollarCeiling), effortHoursCeiling: bucket.hoursCeiling == null ? null : Number(bucket.hoursCeiling) },
           // Fixed-fee and retainer effort is utilization only; it is never reported as usage billing.
           usageBillingValue: ["tm", "capped_tm"].includes(bucket.basis) ? value : 0,
         };
@@ -9040,3 +9177,11 @@ Return a JSON response:
     }
   });
 }
+
+const reconciliationReviewabilitySql = () => sql`(
+  ${timeEntries.submissionStatus} IN ('submitted', 'approved')
+  OR ${timeEntries.locked} = true
+  OR ${timeEntries.billedFlag} = true
+  OR ${timeEntries.invoiceBatchId} IS NOT NULL
+  OR ${timeEntries.vendorInvoiceLineId} IS NOT NULL
+)`;

@@ -135,15 +135,14 @@ describe("project-from-scratch creation contract", () => {
     const h = integrationHarness(2);
     const options = {
       ...baseOptions,
-      teamsMode: "existing-channel" as const,
+      teamsMode: "new-channel" as const,
       teamsTeamId: "team-existing",
-      teamsExistingChannelId: "existing-channel",
       createPlannerPlan: true,
       provisioningRequest: { scratchCreationKey: "key-3" },
     };
     expect((await provisionProjectM365Unlocked(req, options, {
       plannerService: h.plannerService, db: h.mockDb, storage: h.mockStorage,
-    })).status).toBe("failed");
+    })).status).toBe("partial");
     expect((await provisionProjectM365Unlocked(req, {
       ...options, provisioningRequest: { scratchCreationKey: "key-2" },
     }, {

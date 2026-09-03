@@ -10,6 +10,7 @@ import {
   projectBudgetHistory,
   projectMilestones,
   projectRateOverrides,
+  commercialBuckets,
   tenants,
   type User,
   type Client,
@@ -30,6 +31,7 @@ import { eq, ne, desc, and, or, gte, lte, sql, isNotNull, isNull, inArray } from
 import { convertDecimalFieldsToNumbers, normalizeAmount, round2, safeDivide, calculateEffectiveTaxAmount, distributeResidual } from "./helpers";
 import { generateInvoicePDF } from "./pdf-generation";
 import { convertCurrency } from '../exchange-rates.js';
+import { isCommercialTimeRecoverable } from "../lib/commercial-buckets.js";
 
 export const invoicingMethods: ThisType<IStorage & {
   generateInvoiceForProject(tx: any, batchId: string, projectId: string, startDate: string, endDate: string, batchType?: string): Promise<any>;
@@ -1125,11 +1127,41 @@ export const invoicingMethods: ThisType<IStorage & {
       eq(timeEntries.projectId, projectId),
       eq(timeEntries.billable, true),
       eq(timeEntries.billedFlag, false),
+      eq(timeEntries.locked, false),
+      isNull(timeEntries.coveredByMilestoneId),
+      isNull(timeEntries.vendorInvoiceLineId),
       gte(timeEntries.date, startDate),
       lte(timeEntries.date, endDate),
+      // A reviewed classification is billable only when it is explicitly
+      // eligible in a recoverable T&M bucket. Legacy projects retain their
+      // unclassified behaviour until commercial buckets are required.
+      sql`(
+        (${timeEntries.commercialBucketId} is null
+          and ${timeEntries.commercialEligibilityOutcome} is null
+          and ${project.projects.commercialBucketsRequired === false} = true)
+        or exists (
+          select 1 from ${commercialBuckets} commercial_bucket
+          where commercial_bucket.id = ${timeEntries.commercialBucketId}
+            and commercial_bucket.basis in ('tm', 'capped_tm')
+            and ${timeEntries.commercialEligibilityOutcome} = 'eligible'
+        )
+      )`,
+      // billedFlag is the primary marker, but invoice lines are authoritative
+      // if a prior partial failure left the source row unmarked.
+      sql`not exists (
+        select 1 from ${invoiceLines} prior_line
+        inner join ${invoiceBatches} prior_batch on prior_batch.batch_id = prior_line.batch_id
+        where prior_line.source_time_entry_id = ${timeEntries.id}
+          and prior_batch.status <> 'deleted'
+      )`,
     ];
     if (tenantRequiresTimeApproval) {
       timeEntryWhereConditions.push(eq(timeEntries.submissionStatus, 'approved'));
+    }
+    // Milestone/fixed-price project time is cost/effort tracking and is billed
+    // through its contractual milestone, never through generated time lines.
+    if (project.projects.commercialScheme === "milestone" || project.projects.commercialScheme === "fixed-price") {
+      timeEntryWhereConditions.push(sql`false`);
     }
 
     const unbilledTimeEntries = await tx.select({
@@ -1138,7 +1170,11 @@ export const invoicingMethods: ThisType<IStorage & {
     })
     .from(timeEntries)
     .innerJoin(users, eq(timeEntries.personId, users.id))
-    .where(and(...timeEntryWhereConditions));
+    .where(and(...timeEntryWhereConditions))
+    // This method is always called inside the invoice-batch transaction.
+    // Concurrent generators skip rows claimed by another transaction rather
+    // than emitting duplicate source lines.
+    .for("update", { skipLocked: true });
 
     // Get unbilled expenses for this project (only approved expenses) with person info
     const unbilledExpensesWithPerson = await tx.select({
@@ -1276,14 +1312,14 @@ export const invoicingMethods: ThisType<IStorage & {
           locked: true,
           lockedAt: sql`now()`
         })
-        .where(sql`${timeEntries.id} IN (${sql.raw(timeEntryIds.map(id => `'${id}'`).join(','))})`);
+        .where(inArray(timeEntries.id, timeEntryIds));
     }
 
     // Mark expenses as billed
     if (expenseIds.length > 0) {
       await tx.update(expenses)
         .set({ billedFlag: true })
-        .where(sql`${expenses.id} IN (${sql.raw(expenseIds.map(id => `'${id}'`).join(','))})`);
+        .where(inArray(expenses.id, expenseIds));
     }
 
     if (timeEntryIds.length > 0 || expenseIds.length > 0) {
@@ -2197,7 +2233,7 @@ export const invoicingMethods: ThisType<IStorage & {
     const coveredEntriesCount = allTimeEntries.filter(e => (e as any).coveredByMilestoneId).length;
     const unbilledTimeEntries = allTimeEntries
       .filter(entry => {
-        if (!entry.billable || entry.billedFlag || entry.locked || invoicedTimeEntryIds.has(entry.id)) return false;
+        if (!entry.billable || entry.billedFlag || entry.locked || entry.vendorInvoiceLineId || invoicedTimeEntryIds.has(entry.id)) return false;
         if (requireApproval && entry.submissionStatus !== 'approved') return false;
         // Fixed-bid projects (milestone/fixed-price) are invoiced by payment milestone, not by time.
         // Their time entries are cost-tracking only and should never appear as unbilled receivable.
@@ -2205,7 +2241,12 @@ export const invoicingMethods: ThisType<IStorage & {
         if (scheme === 'milestone' || scheme === 'fixed-price') return false;
         // Entries already accounted for by a fixed-bid milestone are excluded too.
         if ((entry as any).coveredByMilestoneId) return false;
-        return true;
+        return isCommercialTimeRecoverable({
+          commercialBucketId: entry.commercialBucketId,
+          commercialEligibilityOutcome: entry.commercialEligibilityOutcome,
+          commercialBucketBasis: (entry as any).commercialBucketBasis,
+          commercialBucketsRequired: (entry.project as any)?.commercialBucketsRequired,
+        });
       });
 
     // Get unbilled expenses (only approved expenses)

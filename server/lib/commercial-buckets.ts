@@ -18,11 +18,37 @@ export const COMMERCIAL_ELIGIBILITY = [
 
 export type CommercialEligibility = typeof COMMERCIAL_ELIGIBILITY[number];
 
+/**
+ * Client-invoice eligibility for a commercial attribution. Unclassified time
+ * remains compatible only for projects that have not made bucket selection
+ * mandatory; once reviewed, recovery is explicit T&M/capped-T&M only.
+ */
+export function isCommercialTimeRecoverable(input: {
+  commercialBucketId?: string | null;
+  commercialEligibilityOutcome?: string | null;
+  commercialBucketBasis?: string | null;
+  commercialBucketsRequired?: boolean | null;
+}): boolean {
+  const classified = !!(input.commercialBucketId || input.commercialEligibilityOutcome);
+  if (!classified) return !input.commercialBucketsRequired;
+  return input.commercialEligibilityOutcome === "eligible" &&
+    (input.commercialBucketBasis === "tm" || input.commercialBucketBasis === "capped_tm");
+}
+
+/** Mirrors the reconciliation SQL predicate for explicit-row validation. */
+export function isCommercialReconciliationReviewable(entry: Pick<TimeEntry,
+  "submissionStatus" | "locked" | "billedFlag" | "invoiceBatchId" | "vendorInvoiceLineId">): boolean {
+  return ["submitted", "approved"].includes(entry.submissionStatus) ||
+    entry.locked || entry.billedFlag || !!entry.invoiceBatchId || !!entry.vendorInvoiceLineId;
+}
+
 type ClassificationInput = {
   commercialBucketId?: string | null;
   commercialEligibilityOutcome?: string | null;
   commercialApprovalReference?: string | null;
   reason?: string | null;
+  /** Manager-only reconciliation action for ordinary work already in the SOW. */
+  baselineSow?: boolean;
 };
 
 export async function validateCommercialSelection(input: {
@@ -47,6 +73,15 @@ export async function validateCommercialSelection(input: {
   let outcome = (input.commercialEligibilityOutcome || (input.commercialBucketId ? "eligible" : null)) as CommercialEligibility | null;
   if (outcome && !COMMERCIAL_ELIGIBILITY.includes(outcome)) {
     throw new Error("Invalid commercial eligibility outcome.");
+  }
+  // Baseline SOW is deliberately represented as a not-eligible attribution
+  // without a bucket. This keeps ordinary work out of incremental billing
+  // while allowing a commercial-required project to be reconciled.
+  if (input.baselineSow) {
+    if (input.commercialBucketId || (outcome && outcome !== "not_eligible")) {
+      throw new Error("Baseline SOW cannot be assigned to a commercial bucket or marked eligible.");
+    }
+    return { project, bucket: null, outcome: "not_eligible" as CommercialEligibility, hasClassification: true };
   }
   if (project.commercialBucketsRequired && !input.commercialBucketId) {
     throw new Error("This project requires a commercial bucket. Select an active bucket before saving or submitting this time entry.");
@@ -173,7 +208,7 @@ export async function classifyCommercialTimeEntry(
     bucketId: input.commercialBucketId ?? null,
     eligibilityOutcome: outcome || "not_eligible",
     approvalReference: input.commercialApprovalReference ?? null,
-    reason: input.reason ?? null,
+    reason: input.reason ?? (input.baselineSow ? "Baseline SOW attribution" : null),
     classifiedBy: userId,
   });
   return updated;
