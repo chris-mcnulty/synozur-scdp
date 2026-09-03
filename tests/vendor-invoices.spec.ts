@@ -407,6 +407,20 @@ async function startListHarness() {
 }
 
 describe("vendor invoice list pagination", () => {
+  it("accepts multiple canonical payable statuses", async () => {
+    const h = await startListHarness();
+    try {
+      const response = await fetch(
+        `${h.origin}/api/vendor-invoices?status=approved,posted&vendorUserId=vendor-b`,
+      );
+      expect(response.status).toBe(200);
+      expect(h.calls[0].filters.status).toBe(undefined);
+      expect(h.calls[0].filters.statuses).toEqual(["approved", "posted"]);
+    } finally {
+      await h.close();
+    }
+  });
+
   it("forwards page, filters, and flagged tab without dropping them", async () => {
     const h = await startListHarness();
     try {

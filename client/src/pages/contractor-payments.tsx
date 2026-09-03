@@ -53,11 +53,13 @@ interface ContractorPayment {
 
 interface AllocationInvoice {
   id: string;
-  invoiceNumber: string;
+  vendorInvoiceNumber?: string;
+  invoiceNumber?: string;
   invoiceDate: string;
   total: string;
   status: string;
-  engagementLabel: string | null;
+  description?: string | null;
+  engagementLabel?: string | null;
 }
 
 interface PaymentDetail extends ContractorPayment {
@@ -100,11 +102,15 @@ interface ContractorStatement {
 
 interface OpenInvoice {
   id: string;
-  invoiceNumber: string;
+  vendorInvoiceNumber: string;
   invoiceDate: string;
   total: string;
   status: string;
-  engagementLabel: string | null;
+  description: string | null;
+}
+
+interface OpenInvoicePage {
+  items: OpenInvoice[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -129,6 +135,12 @@ function StatusBadge({ status }: { status: string }) {
 const METHOD_LABELS: Record<string, string> = {
   ach: "ACH", check: "Check", wire: "Wire", other: "Other",
 };
+
+const displayInvoiceNumber = (invoice: OpenInvoice | AllocationInvoice) =>
+  invoice.vendorInvoiceNumber || ("invoiceNumber" in invoice ? invoice.invoiceNumber : "") || "—";
+
+const displayInvoiceDescription = (invoice: OpenInvoice | AllocationInvoice) =>
+  invoice.description || ("engagementLabel" in invoice ? invoice.engagementLabel : null) || "—";
 
 // ─── Record Payment Dialog (2-step) ──────────────────────────────────────────
 
@@ -158,14 +170,15 @@ function RecordPaymentDialog({ open, onClose, contractors }: RecordPaymentDialog
   const [allocs, setAllocs] = useState<Record<string, string>>({}); // invoiceId → amount string
 
   // Load open invoices for the chosen contractor
-  const { data: openInvoices = [] } = useQuery<OpenInvoice[]>({
-    queryKey: ["/api/contractor-cost-invoices", { contractor: contractorUserId, status: "approved" }],
+  const { data: openInvoicePage } = useQuery<OpenInvoicePage>({
+    queryKey: ["/api/vendor-invoices", { vendorUserId: contractorUserId, paymentEligible: true }],
     queryFn: () =>
       apiRequest(
-        `/api/contractor-cost-invoices?contractorUserId=${contractorUserId}&status=approved`,
+        `/api/vendor-invoices?vendorUserId=${encodeURIComponent(contractorUserId)}&paymentEligible=true&limit=100`,
       ),
     enabled: !!contractorUserId && step === 2,
   });
+  const openInvoices = openInvoicePage?.items ?? [];
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -226,7 +239,7 @@ function RecordPaymentDialog({ open, onClose, contractors }: RecordPaymentDialog
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/contractor-payments"] });
       qc.invalidateQueries({ queryKey: ["/api/contractor-payments/ap-summary"] });
-      qc.invalidateQueries({ queryKey: ["/api/contractor-cost-invoices"] });
+      qc.invalidateQueries({ queryKey: ["/api/vendor-invoices"] });
       toast({ title: "Payment recorded and allocated" });
       handleClose();
     },
@@ -344,9 +357,9 @@ function RecordPaymentDialog({ open, onClose, contractors }: RecordPaymentDialog
                 <TableBody>
                   {openInvoices.map((inv) => (
                     <TableRow key={inv.id}>
-                      <TableCell className="font-mono text-sm">{inv.invoiceNumber}</TableCell>
+                      <TableCell className="font-mono text-sm">{displayInvoiceNumber(inv)}</TableCell>
                       <TableCell className="text-sm">{format(new Date(inv.invoiceDate), "MMM d, yyyy")}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{inv.engagementLabel || "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{displayInvoiceDescription(inv)}</TableCell>
                       <TableCell className="text-right font-mono">{fmt(inv.total)}</TableCell>
                       <TableCell className="text-right">
                         <Input
@@ -414,13 +427,14 @@ function AllocateDialog({ payment, onClose }: AllocateDialogProps) {
     queryFn: () => apiRequest(`/api/contractor-payments/${payment.id}`),
   });
 
-  const { data: openInvoices = [] } = useQuery<OpenInvoice[]>({
-    queryKey: ["/api/contractor-cost-invoices", { contractor: payment.contractorUserId, status: "approved" }],
+  const { data: openInvoicePage } = useQuery<OpenInvoicePage>({
+    queryKey: ["/api/vendor-invoices", { vendorUserId: payment.contractorUserId, paymentEligible: true }],
     queryFn: () =>
       apiRequest(
-        `/api/contractor-cost-invoices?contractorUserId=${payment.contractorUserId}&status=approved`,
+        `/api/vendor-invoices?vendorUserId=${encodeURIComponent(payment.contractorUserId)}&paymentEligible=true&limit=100`,
       ),
   });
+  const openInvoices = openInvoicePage?.items ?? [];
 
   // Pre-populate existing allocations
   useEffect(() => {
@@ -448,7 +462,7 @@ function AllocateDialog({ payment, onClose }: AllocateDialogProps) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/contractor-payments"] });
       qc.invalidateQueries({ queryKey: ["/api/contractor-payments/ap-summary"] });
-      qc.invalidateQueries({ queryKey: ["/api/contractor-cost-invoices"] });
+      qc.invalidateQueries({ queryKey: ["/api/vendor-invoices"] });
       toast({ title: "Allocations saved" });
       onClose();
     },
@@ -496,9 +510,9 @@ function AllocateDialog({ payment, onClose }: AllocateDialogProps) {
               <TableBody>
                 {allInvoices.map((inv) => (
                   <TableRow key={inv.id}>
-                    <TableCell className="font-mono text-sm">{inv.invoiceNumber}</TableCell>
+                    <TableCell className="font-mono text-sm">{displayInvoiceNumber(inv)}</TableCell>
                     <TableCell className="text-sm">{format(new Date(inv.invoiceDate), "MMM d, yyyy")}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{inv.engagementLabel || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{displayInvoiceDescription(inv)}</TableCell>
                     <TableCell className="text-right font-mono">{fmt(inv.total)}</TableCell>
                     <TableCell className="text-right">
                       <Input

@@ -163,9 +163,12 @@ function InvoiceFlags({ invoice }: { invoice: VendorInvoiceRow }) {
 export default function VendorInvoicesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const projectId = new URLSearchParams(window.location.search).get("projectId");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [tab, setTab] = useState<"review" | "flags" | "all">("review");
+  const [tab, setTab] = useState<"review" | "flags" | "all">(
+    projectId ? "all" : "review",
+  );
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pagination, setPagination] = useState<PaginationState>({ page: 0, pageSize: 50 });
 
@@ -177,6 +180,7 @@ export default function VendorInvoicesPage() {
       tab,
       statusFilter,
       search.trim(),
+      projectId,
     ],
     queryFn: () => {
       const params = new URLSearchParams({
@@ -186,6 +190,7 @@ export default function VendorInvoicesPage() {
       });
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (search.trim()) params.set("search", search.trim());
+      if (projectId) params.set("projectId", projectId);
       return apiRequest(`/api/vendor-invoices?${params.toString()}`);
     },
   });

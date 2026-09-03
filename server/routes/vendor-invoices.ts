@@ -304,17 +304,22 @@ export function registerVendorInvoiceRoutes(
         const tenantId = getTenantId(req);
         if (!tenantId) return res.status(403).json({ message: "No tenant context" });
 
-        const { status, vendorUserId, projectId, search, tab } =
+        const { status, vendorUserId, projectId, search, tab, paymentEligible } =
           req.query as Record<string, string | undefined>;
+        const requestedStatuses = status?.includes(",")
+          ? status.split(",").map(value => value.trim()).filter(Boolean)
+          : undefined;
         const pagination = parseInvoiceListPagination(req.query);
         const page = await storage.listVendorInvoicesPaginated({
           tenantId,
-          status: status || undefined,
+          status: requestedStatuses ? undefined : status || undefined,
           vendorUserId: vendorUserId || undefined,
           projectId: projectId || undefined,
           search: search || undefined,
-          statuses: tab === "review" ? ["extracted", "in_review", "reconciled"] : undefined,
+          statuses: requestedStatuses ??
+            (tab === "review" ? ["extracted", "in_review", "reconciled"] : undefined),
           flaggedOnly: tab === "flags",
+          ...(paymentEligible === "true" ? { paymentEligibleOnly: true } : {}),
         }, pagination);
         res.json(page);
       } catch (err: any) {

@@ -173,6 +173,22 @@ export function registerContractorCostInvoiceRoutes(
   deps: ContractorCostInvoiceRouteDeps,
 ) {
   const cci = (storage as any);
+  const readOnlyMessage =
+    "Contractor Cost Invoices are read-only after the AP cutover. Use /api/vendor-invoices for all invoice writes.";
+
+  // Keep tenant-scoped historical GETs available during reconciliation, but
+  // make every legacy write path fail before parsing, upload, or storage work.
+  app.use(
+    "/api/contractor-cost-invoices",
+    deps.requireAuth,
+    (req: Request, res: Response, next) => {
+      if (req.method === "GET" || req.method === "HEAD") return next();
+      return res.status(410).json({
+        message: readOnlyMessage,
+        canonicalApi: "/api/vendor-invoices",
+      });
+    },
+  );
 
   // ── POST /api/contractor-cost-invoices/extract ─────────────────────────────
   // Upload a PDF/image, store it in SPE, run AI extraction, return parsed fields.

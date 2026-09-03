@@ -1645,6 +1645,7 @@ export const vendorInvoices = pgTable("vendor_invoices", {
   taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }),
   total: decimal("total", { precision: 12, scale: 2 }).notNull(),
   description: text("description"),
+  engagementLabel: text("engagement_label"),
   // Optional single-project hint (line-level project is the source of truth)
   projectId: varchar("project_id").references(() => projects.id),
   // Lifecycle: draft -> extracted -> in_review -> reconciled -> approved -> posted -> paid
@@ -5886,7 +5887,7 @@ export type ProjectRevenueEntry = typeof projectRevenueEntries.$inferSelect;
 // ============================================================================
 // CONTRACTOR PAYMENT TRACKING
 // Records outbound payments to contractors and allocates them against
-// contractor_cost_invoices (AP matching). Mirrors the Excel "Payments &
+// canonical vendor_invoices (AP matching). Mirrors the Excel "Payments &
 // Advances" sheet so the full AP cycle is trackable inside the app.
 // ============================================================================
 
@@ -5924,7 +5925,7 @@ export const contractorPayments = pgTable("contractor_payments", {
 export const contractorPaymentAllocations = pgTable("contractor_payment_allocations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   paymentId: varchar("payment_id").notNull().references(() => contractorPayments.id, { onDelete: 'cascade' }),
-  invoiceId: varchar("invoice_id").notNull().references(() => contractorCostInvoices.id, { onDelete: 'cascade' }),
+  invoiceId: varchar("invoice_id").notNull().references(() => vendorInvoices.id, { onDelete: 'cascade' }),
   allocatedAmount: decimal("allocated_amount", { precision: 12, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (t) => ({

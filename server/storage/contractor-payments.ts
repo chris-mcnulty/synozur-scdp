@@ -3,13 +3,18 @@ import { eq, and, inArray, sql, desc, gte, lte } from "drizzle-orm";
 import {
   contractorPayments,
   contractorPaymentAllocations,
-  contractorCostInvoices,
+  vendorInvoices,
+  projectCostPostings,
   users,
   tenantUsers,
   type ContractorPayment,
   type ContractorPaymentAllocation,
   type InsertContractorPayment,
 } from "../../shared/schema.js";
+import {
+  canAllocateContractorPayment,
+  resolveInvoiceSettlement,
+} from "./contractor-payment-settlement.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -148,18 +153,21 @@ export const contractorPaymentsMethods = {
       .select({
         alloc: contractorPaymentAllocations,
         invoice: {
-          id: contractorCostInvoices.id,
-          invoiceNumber: contractorCostInvoices.invoiceNumber,
-          invoiceDate: contractorCostInvoices.invoiceDate,
-          total: contractorCostInvoices.total,
-          status: contractorCostInvoices.status,
-          engagementLabel: contractorCostInvoices.engagementLabel,
+          id: vendorInvoices.id,
+          invoiceNumber: vendorInvoices.vendorInvoiceNumber,
+          invoiceDate: vendorInvoices.invoiceDate,
+          total: vendorInvoices.total,
+          status: vendorInvoices.status,
+          engagementLabel: vendorInvoices.engagementLabel,
         },
       })
       .from(contractorPaymentAllocations)
-      .leftJoin(
-        contractorCostInvoices,
-        eq(contractorPaymentAllocations.invoiceId, contractorCostInvoices.id),
+      .innerJoin(
+        vendorInvoices,
+        and(
+          eq(contractorPaymentAllocations.invoiceId, vendorInvoices.id),
+          eq(vendorInvoices.tenantId, tenantId),
+        ),
       )
       .where(eq(contractorPaymentAllocations.paymentId, id));
 
@@ -251,7 +259,7 @@ export const contractorPaymentsMethods = {
         const invoiceIds = affectedInvoices.map((row) => row.invoiceId).sort();
         if (invoiceIds.length > 0) {
           await tx.execute(sql`
-            SELECT id FROM contractor_cost_invoices
+            SELECT id FROM vendor_invoices
             WHERE id IN (${sql.join(invoiceIds.map((invoiceId) => sql`${invoiceId}`), sql`,`)})
             ORDER BY id
             FOR UPDATE
@@ -264,29 +272,56 @@ export const contractorPaymentsMethods = {
             })
             .from(contractorPaymentAllocations)
             .innerJoin(contractorPayments, eq(contractorPaymentAllocations.paymentId, contractorPayments.id))
-            .where(inArray(contractorPaymentAllocations.invoiceId, invoiceIds))
+            .where(and(
+              inArray(contractorPaymentAllocations.invoiceId, invoiceIds),
+              eq(contractorPayments.tenantId, tenantId),
+            ))
             .groupBy(contractorPaymentAllocations.invoiceId);
           for (const settlement of settlementRows) {
             const [invoice] = await tx
-              .select({ total: contractorCostInvoices.total })
-              .from(contractorCostInvoices)
+              .select({
+                total: vendorInvoices.total,
+                hasPostings: sql<boolean>`EXISTS (
+                  SELECT 1 FROM ${projectCostPostings}
+                  WHERE ${projectCostPostings.vendorInvoiceId} = ${vendorInvoices.id}
+                    AND ${projectCostPostings.voidedAt} IS NULL
+                )`,
+                legacyStatus: sql<string | null>`(
+                  SELECT legacy_invoice.status
+                  FROM contractor_cost_invoices legacy_invoice
+                  WHERE legacy_invoice.id = ${vendorInvoices.id}
+                    AND legacy_invoice.tenant_id = ${tenantId}
+                )`,
+                legacyPaidAt: sql<Date | null>`(
+                  SELECT legacy_invoice.paid_at
+                  FROM contractor_cost_invoices legacy_invoice
+                  WHERE legacy_invoice.id = ${vendorInvoices.id}
+                    AND legacy_invoice.tenant_id = ${tenantId}
+                )`,
+              })
+              .from(vendorInvoices)
               .where(and(
-                eq(contractorCostInvoices.id, settlement.invoiceId),
-                eq(contractorCostInvoices.tenantId, tenantId),
+                eq(vendorInvoices.id, settlement.invoiceId),
+                eq(vendorInvoices.tenantId, tenantId),
               ));
             if (!invoice) continue;
             const fullyPaid =
               parseFloat(settlement.received) >= parseFloat(String(invoice.total)) - 0.005;
+            const nextSettlement = resolveInvoiceSettlement({
+              fullyPaid,
+              hasPostings: invoice.hasPostings,
+              legacyStatus: invoice.legacyStatus,
+              legacyPaidAt: invoice.legacyPaidAt,
+              latestPaymentDate: settlement.latestPaymentDate,
+            });
             await tx
-              .update(contractorCostInvoices)
+              .update(vendorInvoices)
               .set({
-                status: fullyPaid ? "paid" : "approved",
-                paidAt: fullyPaid
-                  ? new Date(`${settlement.latestPaymentDate}T12:00:00.000Z`)
-                  : null,
+                status: nextSettlement.status,
+                paidAt: nextSettlement.paidAt,
                 updatedAt: new Date(),
               })
-              .where(eq(contractorCostInvoices.id, settlement.invoiceId));
+              .where(eq(vendorInvoices.id, settlement.invoiceId));
           }
         }
       }
@@ -343,7 +378,7 @@ export const contractorPaymentsMethods = {
       ].sort();
       if (lockedInvoiceIds.length > 0) {
         await tx.execute(sql`
-          SELECT id FROM contractor_cost_invoices
+          SELECT id FROM vendor_invoices
           WHERE id IN (${sql.join(lockedInvoiceIds.map((invoiceId) => sql`${invoiceId}`), sql`,`)})
           ORDER BY id
           FOR UPDATE
@@ -352,29 +387,37 @@ export const contractorPaymentsMethods = {
       if (requestedInvoiceIds.length > 0) {
         const invoiceRows = await tx
           .select({
-            id: contractorCostInvoices.id,
-            tenantId: contractorCostInvoices.tenantId,
-            contractorUserId: contractorCostInvoices.contractorUserId,
-            status: contractorCostInvoices.status,
-            total: contractorCostInvoices.total,
+            id: vendorInvoices.id,
+            tenantId: vendorInvoices.tenantId,
+            contractorUserId: vendorInvoices.vendorUserId,
+            status: vendorInvoices.status,
+            total: vendorInvoices.total,
           })
-          .from(contractorCostInvoices)
-          .where(inArray(contractorCostInvoices.id, requestedInvoiceIds));
+          .from(vendorInvoices)
+          .where(inArray(vendorInvoices.id, requestedInvoiceIds));
 
         if (invoiceRows.length !== requestedInvoiceIds.length) {
           throw new Error("One or more invoices were not found");
         }
 
         const invoiceMap = new Map(invoiceRows.map((invoice) => [invoice.id, invoice]));
+        const previouslyAllocatedInvoiceIds = new Set(
+          previousAllocations.map((allocation) => allocation.invoiceId),
+        );
         const otherAllocationRows = await tx
           .select({
             invoiceId: contractorPaymentAllocations.invoiceId,
             allocated: sql<string>`COALESCE(SUM(${contractorPaymentAllocations.allocatedAmount}), 0)::text`,
           })
           .from(contractorPaymentAllocations)
+          .innerJoin(
+            contractorPayments,
+            eq(contractorPaymentAllocations.paymentId, contractorPayments.id),
+          )
           .where(and(
             inArray(contractorPaymentAllocations.invoiceId, requestedInvoiceIds),
             sql`${contractorPaymentAllocations.paymentId} <> ${paymentId}`,
+            eq(contractorPayments.tenantId, tenantId),
           ))
           .groupBy(contractorPaymentAllocations.invoiceId);
         const otherAllocated = new Map(
@@ -386,8 +429,14 @@ export const contractorPaymentsMethods = {
           if (invoice.tenantId !== tenantId || invoice.contractorUserId !== payment.contractorUserId) {
             throw new Error("Payments can only be matched to this contractor's invoices in the active tenant");
           }
-          if (!["approved", "paid"].includes(invoice.status)) {
-            throw new Error(`Invoice ${allocation.invoiceId} must be approved before payment matching`);
+          const paymentEligible = canAllocateContractorPayment(
+            invoice.status,
+            previouslyAllocatedInvoiceIds.has(invoice.id),
+          );
+          if (!paymentEligible) {
+            throw new Error(
+              `Invoice ${allocation.invoiceId} must be posted before payment matching`,
+            );
           }
           const invoiceCents = Math.round(parseFloat(String(invoice.total)) * 100);
           const requestedCents = Math.round(allocation.allocatedAmount * 100);
@@ -446,38 +495,67 @@ export const contractorPaymentsMethods = {
             contractorPayments,
             eq(contractorPaymentAllocations.paymentId, contractorPayments.id),
           )
-          .where(inArray(contractorPaymentAllocations.invoiceId, invoiceIds))
+          .where(and(
+            inArray(contractorPaymentAllocations.invoiceId, invoiceIds),
+            eq(contractorPayments.tenantId, tenantId),
+          ))
           .groupBy(contractorPaymentAllocations.invoiceId);
 
         const receivedMap = new Map(allAllocRows.map((row) => [row.invoiceId, row.totalReceived]));
         const paidDateMap = new Map(allAllocRows.map((row) => [row.invoiceId, row.latestPaymentDate]));
         for (const invoiceId of invoiceIds) {
           const [inv] = await tx
-            .select({ total: contractorCostInvoices.total, status: contractorCostInvoices.status })
-            .from(contractorCostInvoices)
+            .select({
+              total: vendorInvoices.total,
+              status: vendorInvoices.status,
+              paidAt: vendorInvoices.paidAt,
+              hasPostings: sql<boolean>`EXISTS (
+                SELECT 1 FROM ${projectCostPostings}
+                WHERE ${projectCostPostings.vendorInvoiceId} = ${vendorInvoices.id}
+                  AND ${projectCostPostings.voidedAt} IS NULL
+              )`,
+              legacyStatus: sql<string | null>`(
+                SELECT legacy_invoice.status
+                FROM contractor_cost_invoices legacy_invoice
+                WHERE legacy_invoice.id = ${vendorInvoices.id}
+                  AND legacy_invoice.tenant_id = ${tenantId}
+              )`,
+              legacyPaidAt: sql<Date | null>`(
+                SELECT legacy_invoice.paid_at
+                FROM contractor_cost_invoices legacy_invoice
+                WHERE legacy_invoice.id = ${vendorInvoices.id}
+                  AND legacy_invoice.tenant_id = ${tenantId}
+              )`,
+            })
+            .from(vendorInvoices)
             .where(and(
-              eq(contractorCostInvoices.id, invoiceId),
-              eq(contractorCostInvoices.tenantId, tenantId),
+              eq(vendorInvoices.id, invoiceId),
+              eq(vendorInvoices.tenantId, tenantId),
             ));
           if (!inv || inv.status === "draft") continue;
 
           const invoiceTotal = parseFloat(String(inv.total));
           const received = parseFloat(receivedMap.get(invoiceId) ?? "0");
           const fullyPaid = received >= invoiceTotal - 0.005; // cent tolerance
-          if (fullyPaid && inv.status !== "paid") {
+          const nextSettlement = resolveInvoiceSettlement({
+            fullyPaid,
+            hasPostings: inv.hasPostings,
+            legacyStatus: inv.legacyStatus,
+            legacyPaidAt: inv.legacyPaidAt,
+            latestPaymentDate: paidDateMap.get(invoiceId) ?? payment.paymentDate,
+          });
+          if (
+            nextSettlement.status !== inv.status ||
+            nextSettlement.paidAt?.getTime() !== inv.paidAt?.getTime()
+          ) {
             await tx
-              .update(contractorCostInvoices)
+              .update(vendorInvoices)
               .set({
-                status: "paid",
-                paidAt: new Date(`${paidDateMap.get(invoiceId) ?? payment.paymentDate}T12:00:00.000Z`),
+                status: nextSettlement.status,
+                paidAt: nextSettlement.paidAt,
                 updatedAt: new Date(),
               })
-              .where(eq(contractorCostInvoices.id, invoiceId));
-          } else if (!fullyPaid && inv.status === "paid") {
-            await tx
-              .update(contractorCostInvoices)
-              .set({ status: "approved", paidAt: null, updatedAt: new Date() })
-              .where(eq(contractorCostInvoices.id, invoiceId));
+              .where(eq(vendorInvoices.id, invoiceId));
           }
         }
       }
@@ -518,21 +596,21 @@ export const contractorPaymentsMethods = {
     // Load invoices
     const invoices = await db
       .select({
-        id: contractorCostInvoices.id,
-        invoiceNumber: contractorCostInvoices.invoiceNumber,
-        invoiceDate: contractorCostInvoices.invoiceDate,
-        total: contractorCostInvoices.total,
-        status: contractorCostInvoices.status,
-        engagementLabel: contractorCostInvoices.engagementLabel,
+        id: vendorInvoices.id,
+        invoiceNumber: vendorInvoices.vendorInvoiceNumber,
+        invoiceDate: vendorInvoices.invoiceDate,
+        total: vendorInvoices.total,
+        status: vendorInvoices.status,
+        engagementLabel: vendorInvoices.engagementLabel,
       })
-      .from(contractorCostInvoices)
+      .from(vendorInvoices)
       .where(
         and(
-          eq(contractorCostInvoices.tenantId, tenantId),
-          eq(contractorCostInvoices.contractorUserId, contractorUserId),
+          eq(vendorInvoices.tenantId, tenantId),
+          eq(vendorInvoices.vendorUserId, contractorUserId),
         ),
       )
-      .orderBy(contractorCostInvoices.invoiceDate);
+      .orderBy(vendorInvoices.invoiceDate);
 
     // Load payments
     const payments = await db
@@ -553,7 +631,7 @@ export const contractorPaymentsMethods = {
     // Merge and sort by date
     const events: Array<{ date: string; kind: "invoice" | "payment"; data: any }> = [
       ...invoices
-        .filter((i) => i.status !== "draft")
+        .filter((i) => i.status !== "draft" && i.status !== "void")
         .map((i) => ({ date: i.invoiceDate, kind: "invoice" as const, data: i })),
       ...payments.map((p) => ({ date: p.paymentDate, kind: "payment" as const, data: p })),
     ].sort((a, b) => a.date.localeCompare(b.date));
@@ -608,17 +686,17 @@ export const contractorPaymentsMethods = {
     // Sum invoices (non-draft) per contractor
     const invRows = await db
       .select({
-        contractorUserId: contractorCostInvoices.contractorUserId,
+        contractorUserId: vendorInvoices.vendorUserId,
         totalInvoiced: sql<string>`sum(total)::text`,
       })
-      .from(contractorCostInvoices)
+      .from(vendorInvoices)
       .where(
         and(
-          eq(contractorCostInvoices.tenantId, tenantId),
-          sql`status != 'draft'`,
+          eq(vendorInvoices.tenantId, tenantId),
+          sql`${vendorInvoices.status} NOT IN ('draft', 'void')`,
         ),
       )
-      .groupBy(contractorCostInvoices.contractorUserId);
+      .groupBy(vendorInvoices.vendorUserId);
 
     // Sum payments per contractor
     const payRows = await db

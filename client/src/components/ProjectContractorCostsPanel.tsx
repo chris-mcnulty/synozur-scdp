@@ -18,21 +18,24 @@ import { useToast } from "@/hooks/use-toast";
 
 interface Invoice {
   id: string;
-  invoiceNumber: string;
+  vendorInvoiceNumber: string;
   invoiceDate: string;
   total: string;
   status: string;
+  description: string | null;
   engagementLabel: string | null;
-  pdfSpeWebUrl: string | null;
-  pdfFileName: string | null;
-  contractor: { id: string; name: string; contractorBusinessName: string | null } | null;
+  vendor: { id: string; name: string; contractorBusinessName: string | null } | null;
 }
 
-interface Summary {
-  totalInvoiced: string;
-  totalApproved: string;
-  totalPaid: string;
-  invoiceCount: number;
+interface VendorInvoicePage {
+  items: Invoice[];
+  total: number;
+  summary: {
+    invoiceCount: number;
+    totalInvoiced: number;
+    totalApproved: number;
+    totalPaid: number;
+  };
 }
 
 interface Contractor {
@@ -85,15 +88,25 @@ const EMPTY_CEILING: CeilingForm = {
 
 const STATUS_TONE: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
-  submitted: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  extracted: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  in_review: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  reconciled: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
   approved: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  posted: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200",
   paid: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  disputed: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  void: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
 };
 const STATUS_LABEL: Record<string, string> = {
   draft: "Draft",
-  submitted: "Submitted",
+  extracted: "Extracted",
+  in_review: "In review",
+  reconciled: "Reconciled",
   approved: "Approved",
+  posted: "Posted",
   paid: "Paid",
+  disputed: "Disputed",
+  void: "Void",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -120,8 +133,9 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
   const [editing, setEditing] = useState<SowCeiling | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<CeilingForm>(EMPTY_CEILING);
-  const { data, isLoading } = useQuery<{ invoices: Invoice[]; summary: Summary }>({
-    queryKey: [`/api/projects/${projectId}/contractor-cost-invoices`],
+  const { data, isLoading } = useQuery<VendorInvoicePage>({
+    queryKey: ["/api/vendor-invoices", { projectId, limit: 100 }],
+    queryFn: () => apiRequest(`/api/vendor-invoices?projectId=${encodeURIComponent(projectId)}&limit=100`),
     enabled: !!projectId,
   });
   const { data: ceilingResponse, isLoading: ceilingsLoading } = useQuery<SowCeiling[] | { ceilings: SowCeiling[] }>({
@@ -194,7 +208,7 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
     setFormOpen(true);
   };
 
-  const invoices = data?.invoices ?? [];
+  const invoices = data?.items ?? [];
   const summary = data?.summary;
 
   return (
@@ -309,10 +323,10 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Contractor Cost Invoices</CardTitle>
+              <CardTitle>Vendor Invoices</CardTitle>
               <CardDescription>Inbound invoices billed to this project by subcontractors</CardDescription>
             </div>
-            <Link href={`/contractor-cost-invoices?projectId=${projectId}`}>
+            <Link href={`/vendor-invoices?projectId=${projectId}`}>
               <Button variant="outline" size="sm">
                 View all
                 <ArrowRight className="ml-1 h-3.5 w-3.5" />
@@ -329,9 +343,9 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
             <div className="text-center py-8">
               <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
               <p className="text-muted-foreground text-sm">No contractor invoices for this project yet.</p>
-              <Link href={`/contractor-cost-invoices`}>
+              <Link href="/vendor-invoices">
                 <Button variant="outline" size="sm" className="mt-3">
-                  Add invoice
+                  Open vendor invoices
                 </Button>
               </Link>
             </div>
@@ -350,16 +364,14 @@ export function ProjectContractorCostsPanel({ projectId }: { projectId: string }
                 </TableHeader>
                 <TableBody>
                   {invoices.map(inv => {
-                    const name = inv.contractor?.contractorBusinessName || inv.contractor?.name || "Unknown";
+                    const name = inv.vendor?.contractorBusinessName || inv.vendor?.name || "Unknown";
                     return (
                       <TableRow key={inv.id}>
                         <TableCell className="font-medium">{name}</TableCell>
                         <TableCell>
-                          {inv.pdfSpeWebUrl ? (
-                            <a href={inv.pdfSpeWebUrl} target="_blank" rel="noreferrer" className="hover:underline inline-flex items-center gap-1">
-                              {inv.invoiceNumber} <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ) : inv.invoiceNumber}
+                          <Link href={`/vendor-invoices/${inv.id}`} className="hover:underline inline-flex items-center gap-1">
+                            {inv.vendorInvoiceNumber} <ExternalLink className="h-3 w-3" />
+                          </Link>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {formatBusinessDate(inv.invoiceDate)}

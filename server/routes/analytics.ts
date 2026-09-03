@@ -7,8 +7,6 @@ import {
   users,
   sows,
   projectRevenueEntries,
-  contractorCostInvoices,
-  contractorCostInvoiceLines,
 } from "@shared/schema";
 import { eq, sql, inArray, and } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -229,21 +227,24 @@ async function getProjectProfitabilityRows(
     }
   }
 
-  // 3. Contractor cost totals per project (approved + paid only)
+  // 3. Canonical vendor invoice line totals per project. Each line is counted
+  // once at its line-level project; invoice headers are never joined to legacy
+  // contractor invoice tables after the AP cutover.
   type CostRow = { project_id: string; fees_cost: string; expenses_cost: string };
   const costAgg = await db.execute<CostRow>(sql`
     SELECT
-      cci.project_id,
-      COALESCE(SUM(CASE WHEN ccil.kind = 'service' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END), 0) AS fees_cost,
-      COALESCE(SUM(CASE WHEN ccil.kind = 'expense' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END), 0) AS expenses_cost
-    FROM contractor_cost_invoices cci
-    JOIN contractor_cost_invoice_lines ccil ON ccil.invoice_id = cci.id
-    WHERE cci.tenant_id = ${tenantId}
-      AND cci.status IN ('approved', 'paid')
-      AND cci.project_id IN (${idList})
-      ${filters.dateFrom ? sql`AND cci.invoice_date >= ${filters.dateFrom}` : sql``}
-      ${filters.dateTo ? sql`AND cci.invoice_date <= ${filters.dateTo}` : sql``}
-    GROUP BY cci.project_id
+      vil.project_id,
+      COALESCE(SUM(CASE WHEN vil.kind = 'service' THEN CAST(vil.line_amount AS NUMERIC) ELSE 0 END), 0) AS fees_cost,
+      COALESCE(SUM(CASE WHEN vil.kind = 'expense' THEN CAST(vil.line_amount AS NUMERIC) ELSE 0 END), 0) AS expenses_cost
+    FROM vendor_invoice_lines vil
+    JOIN vendor_invoices vi ON vi.id = vil.vendor_invoice_id
+    WHERE vi.tenant_id = ${tenantId}
+      AND vil.tenant_id = ${tenantId}
+      AND vi.status IN ('posted', 'paid')
+      AND vil.project_id IN (${idList})
+      ${filters.dateFrom ? sql`AND vi.invoice_date >= ${filters.dateFrom}` : sql``}
+      ${filters.dateTo ? sql`AND vi.invoice_date <= ${filters.dateTo}` : sql``}
+    GROUP BY vil.project_id
   `);
   const feesCostMap = new Map<string, number>();
   const expCostMap = new Map<string, number>();
@@ -453,7 +454,7 @@ async function getProjectProfitabilityDetail(
     .reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const totalRevenue = recognizedRevenue + pendingRevenue;
 
-  // Contractor cost invoices with contractor breakdown
+  // Canonical vendor invoices with contractor breakdown.
   type InvRow = {
     contractor_id: string;
     contractor_name: string;
@@ -463,18 +464,19 @@ async function getProjectProfitabilityDetail(
   };
   const invAgg = await db.execute<InvRow>(sql`
     SELECT
-      cci.contractor_user_id AS contractor_id,
+      vi.vendor_user_id AS contractor_id,
       COALESCE(u.name, u.email, 'Unknown') AS contractor_name,
-      COALESCE(SUM(CASE WHEN ccil.kind = 'service' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END), 0) AS fees_cost,
-      COALESCE(SUM(CASE WHEN ccil.kind = 'expense' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END), 0) AS expenses_cost,
-      COUNT(DISTINCT cci.id) AS invoice_count
-    FROM contractor_cost_invoices cci
-    JOIN contractor_cost_invoice_lines ccil ON ccil.invoice_id = cci.id
-    LEFT JOIN users u ON u.id = cci.contractor_user_id
-    WHERE cci.project_id = ${projectId}
-      AND cci.tenant_id = ${tenantId}
-      AND cci.status IN ('approved', 'paid')
-    GROUP BY cci.contractor_user_id, u.name, u.email
+      COALESCE(SUM(CASE WHEN vil.kind = 'service' THEN CAST(vil.line_amount AS NUMERIC) ELSE 0 END), 0) AS fees_cost,
+      COALESCE(SUM(CASE WHEN vil.kind = 'expense' THEN CAST(vil.line_amount AS NUMERIC) ELSE 0 END), 0) AS expenses_cost,
+      COUNT(DISTINCT vi.id) AS invoice_count
+    FROM vendor_invoice_lines vil
+    JOIN vendor_invoices vi ON vi.id = vil.vendor_invoice_id
+    LEFT JOIN users u ON u.id = vi.vendor_user_id
+    WHERE vil.project_id = ${projectId}
+      AND vil.tenant_id = ${tenantId}
+      AND vi.tenant_id = ${tenantId}
+      AND vi.status IN ('posted', 'paid')
+    GROUP BY vi.vendor_user_id, u.name, u.email
   `);
 
   const byContractor = invAgg.rows.map(r => ({
@@ -601,18 +603,19 @@ async function getYearlyProfitability(
 
       UNION ALL
 
-      -- Contractor cost invoice lines (approved + paid), dated by invoice date
+      -- Canonical vendor invoice lines, dated by invoice date
       SELECT
-        EXTRACT(YEAR FROM cci.invoice_date)::int AS yr,
+        EXTRACT(YEAR FROM vi.invoice_date)::int AS yr,
         0, 0,
-        CASE WHEN ccil.kind = 'service' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END AS fees_cost,
-        CASE WHEN ccil.kind = 'expense' THEN CAST(ccil.amount AS NUMERIC) ELSE 0 END AS expenses_cost
-      FROM contractor_cost_invoices cci
-      JOIN contractor_cost_invoice_lines ccil ON ccil.invoice_id = cci.id
-      LEFT JOIN projects p ON p.id = cci.project_id
-      WHERE cci.tenant_id = ${tenantId}
-        AND cci.status IN ('approved', 'paid')
-        AND cci.invoice_date IS NOT NULL
+        CASE WHEN vil.kind = 'service' THEN CAST(vil.line_amount AS NUMERIC) ELSE 0 END AS fees_cost,
+        CASE WHEN vil.kind = 'expense' THEN CAST(vil.line_amount AS NUMERIC) ELSE 0 END AS expenses_cost
+      FROM vendor_invoice_lines vil
+      JOIN vendor_invoices vi ON vi.id = vil.vendor_invoice_id
+      LEFT JOIN projects p ON p.id = vil.project_id
+      WHERE vi.tenant_id = ${tenantId}
+        AND vil.tenant_id = ${tenantId}
+        AND vi.status IN ('posted', 'paid')
+        AND vi.invoice_date IS NOT NULL
         ${clientId ? sql`AND p.client_id = ${clientId}` : sql``}
     ) combined
     WHERE yr BETWEEN ${fromYear} AND ${currentYear}
@@ -678,16 +681,17 @@ async function getMarginAccuracyTrend(tenantId: string): Promise<TrendPoint[]> {
 
       UNION ALL
 
-      -- Contractor cost invoice lines
+      -- Canonical vendor service lines (expenses remain pass-through)
       SELECT
-        cci.invoice_date::date AS period_date,
+        vi.invoice_date::date AS period_date,
         0 AS recognized_revenue,
-        CAST(ccil.amount AS NUMERIC) AS total_cost
-      FROM contractor_cost_invoices cci
-      JOIN contractor_cost_invoice_lines ccil ON ccil.invoice_id = cci.id
-      WHERE cci.tenant_id = ${tenantId}
-        AND cci.status IN ('approved', 'paid')
-        AND ccil.kind = 'service' -- expenses are pass-through, not cost
+        CAST(vil.line_amount AS NUMERIC) AS total_cost
+      FROM vendor_invoice_lines vil
+      JOIN vendor_invoices vi ON vi.id = vil.vendor_invoice_id
+      WHERE vi.tenant_id = ${tenantId}
+        AND vil.tenant_id = ${tenantId}
+        AND vi.status IN ('posted', 'paid')
+        AND vil.kind = 'service'
     ) combined
     WHERE period_date IS NOT NULL
     GROUP BY DATE_TRUNC('month', period_date)

@@ -20,7 +20,6 @@ import TimeApproval from "@/pages/time-approval";
 import ReimbursementBatches from "@/pages/reimbursement-batches";
 import ContractorInvoices from "@/pages/contractor-invoices";
 import MyContractorInvoices from "@/pages/my-contractor-invoices";
-import ContractorCostInvoices from "@/pages/contractor-cost-invoices";
 import ContractorPayments from "@/pages/contractor-payments";
 import VendorInvoices from "@/pages/vendor-invoices";
 import VendorInvoiceDetail from "@/pages/vendor-invoice-detail";
@@ -141,6 +140,11 @@ function TrackedSplash() {
     } catch {}
   }, []);
   return <Redirect to="/login" />;
+}
+
+function LegacyContractorInvoiceRedirect({ id }: { id?: string }) {
+  const query = window.location.search;
+  return <Redirect to={id ? `/vendor-invoices/${id}` : `/vendor-invoices${query}`} />;
 }
 
 function Router() {
@@ -336,12 +340,13 @@ function Router() {
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
+      <Route path="/contractor-cost-invoices/:id">
+        {(params) => user
+          ? <LegacyContractorInvoiceRedirect id={params.id} />
+          : <Redirect to="/login" />}
+      </Route>
       <Route path="/contractor-cost-invoices">
-        {user ? (
-          <PermissionGuard allowedRoles={['admin', 'billing-admin', 'pm']}>
-            <ContractorCostInvoices />
-          </PermissionGuard>
-        ) : <Redirect to="/login" />}
+        {user ? <LegacyContractorInvoiceRedirect /> : <Redirect to="/login" />}
       </Route>
       <Route path="/my-vendor-invoices">
         {user ? <MyVendorInvoices /> : <Redirect to="/login" />}

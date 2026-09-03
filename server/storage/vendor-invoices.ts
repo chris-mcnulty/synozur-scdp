@@ -52,6 +52,12 @@ export interface VendorInvoiceListPage {
   hasMore: boolean;
   limit: number;
   offset: number;
+  summary: {
+    invoiceCount: number;
+    totalInvoiced: number;
+    totalApproved: number;
+    totalPaid: number;
+  };
 }
 
 export interface VendorInvoiceListFilters {
@@ -62,6 +68,7 @@ export interface VendorInvoiceListFilters {
   projectId?: string;
   search?: string;
   flaggedOnly?: boolean;
+  paymentEligibleOnly?: boolean;
 }
 
 export interface VendorInvoiceListPagination {
@@ -451,15 +458,53 @@ export const vendorInvoicesMethods = {
         )`,
       )!);
     }
+    if (filters.paymentEligibleOnly) {
+      conds.push(sql`
+        ${vendorInvoices.status} = 'posted'
+        AND CAST(${vendorInvoices.total} AS numeric) > COALESCE((
+          SELECT SUM(CAST(payment_allocation.allocated_amount AS numeric))
+          FROM contractor_payment_allocations payment_allocation
+          WHERE payment_allocation.invoice_id = ${vendorInvoices.id}
+        ), 0)
+      `);
+    }
 
     const whereClause = and(...conds);
+    const scopedInvoiceAmount = filters.projectId
+      ? sql`
+          COALESCE((
+            SELECT SUM(${vendorInvoiceLines.lineAmount})
+            FROM ${vendorInvoiceLines}
+            WHERE ${vendorInvoiceLines.vendorInvoiceId} = ${vendorInvoices.id}
+              AND ${vendorInvoiceLines.tenantId} = ${filters.tenantId}
+              AND ${vendorInvoiceLines.projectId} = ${filters.projectId}
+          ), 0)
+        `
+      : sql`${vendorInvoices.total}`;
     const countRows = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({
+        count: sql<number>`count(*)`,
+        totalInvoiced: sql<string>`
+          COALESCE(SUM(CASE WHEN ${vendorInvoices.status} <> 'void' THEN ${scopedInvoiceAmount} ELSE 0 END), 0)::text
+        `,
+        totalApproved: sql<string>`
+          COALESCE(SUM(CASE WHEN ${vendorInvoices.status} IN ('approved', 'posted', 'paid') THEN ${scopedInvoiceAmount} ELSE 0 END), 0)::text
+        `,
+        totalPaid: sql<string>`
+          COALESCE(SUM(CASE WHEN ${vendorInvoices.status} = 'paid' THEN ${scopedInvoiceAmount} ELSE 0 END), 0)::text
+        `,
+      })
       .from(vendorInvoices)
       .leftJoin(users, eq(vendorInvoices.vendorUserId, users.id))
       .leftJoin(projects, eq(vendorInvoices.projectId, projects.id))
       .where(whereClause);
     const total = Number(countRows[0]?.count ?? 0);
+    const summary = {
+      invoiceCount: total,
+      totalInvoiced: Number(countRows[0]?.totalInvoiced ?? 0),
+      totalApproved: Number(countRows[0]?.totalApproved ?? 0),
+      totalPaid: Number(countRows[0]?.totalPaid ?? 0),
+    };
 
     const rows = await db
       .select({
@@ -505,6 +550,7 @@ export const vendorInvoicesMethods = {
         hasMore: pagination.offset < total,
         limit: pagination.limit,
         offset: pagination.offset,
+        summary,
       };
     }
 
@@ -532,6 +578,7 @@ export const vendorInvoicesMethods = {
       hasMore: pagination.offset + items.length < total,
       limit: pagination.limit,
       offset: pagination.offset,
+      summary,
     };
   },
 
