@@ -172,4 +172,4 @@ AZURE_FOUNDRY_DEPLOYMENT = "gpt-5.2"
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 60000
+timeoutMs = 180000
