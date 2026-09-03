@@ -48,9 +48,8 @@ export async function validateCommercialSelection(input: {
   if (outcome && !COMMERCIAL_ELIGIBILITY.includes(outcome)) {
     throw new Error("Invalid commercial eligibility outcome.");
   }
-  if (project.commercialBucketsRequired && !input.commercialBucketId &&
-      outcome !== "not_eligible" && outcome !== "pending_approval") {
-    throw new Error("Select a commercial bucket, mark this entry not eligible, or submit it for commercial review.");
+  if (project.commercialBucketsRequired && !input.commercialBucketId) {
+    throw new Error("This project requires a commercial bucket. Select an active bucket before saving or submitting this time entry.");
   }
   if (!input.commercialBucketId) {
     if (outcome === "eligible") {
@@ -84,6 +83,26 @@ export async function validateCommercialSelection(input: {
     }
   }
   return { project, bucket, outcome, hasClassification };
+}
+
+export async function validateRequiredBucketForEntry(
+  entry: Pick<TimeEntry, "id" | "projectId" | "date" | "commercialBucketId" | "commercialEligibilityOutcome" | "commercialApprovalReference">,
+  tenantId?: string | null,
+  database: any = db,
+) {
+  try {
+    return await validateCommercialSelection({
+      projectId: entry.projectId,
+      date: entry.date,
+      tenantId,
+      commercialBucketId: entry.commercialBucketId,
+      commercialEligibilityOutcome: entry.commercialEligibilityOutcome,
+      commercialApprovalReference: entry.commercialApprovalReference,
+    }, database);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Time entry ${entry.id} (${entry.date}): ${message}`);
+  }
 }
 
 /**

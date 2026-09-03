@@ -120,7 +120,7 @@ export function CommercialBucketsPanel({ projectId, readOnly = false }: { projec
           </div>
           <div className="flex items-center gap-2 pb-2">
             <Checkbox id="buckets-required" checked={required} onCheckedChange={(value) => setRequired(value === true)} disabled={readOnly} />
-            <Label htmlFor="buckets-required">Require a bucket on new time</Label>
+            <Label htmlFor="buckets-required">Require an active bucket on all new or submitted time</Label>
           </div>
           {!readOnly && <Button onClick={() => settingsMutation.mutate()} disabled={!basis && !bucketQuery.data?.projectBasis || settingsMutation.isPending}><Save className="mr-2 h-4 w-4" /> Save settings</Button>}
         </CardContent>

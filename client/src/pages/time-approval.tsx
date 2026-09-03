@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { CheckCircle, XCircle, Clock, User, Calendar, DollarSign, Filter } from "lucide-react";
+import { CheckCircle, XCircle, Clock, User, Calendar, DollarSign, AlertTriangle, Eye, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -19,6 +20,14 @@ import type { TimeEntry, Project, Client, User as UserType } from "@shared/schem
 type TimeEntryWithRelations = TimeEntry & {
   person: UserType;
   project: Project & { client: Client };
+  commercialBucketLabel?: string | null;
+  commercialBucketRequired?: boolean;
+  commercialBucketActive?: boolean | null;
+  workstreamName?: string | null;
+  milestoneName?: string | null;
+  coveredByMilestoneName?: string | null;
+  assignmentName?: string | null;
+  commercialClassifiedByName?: string | null;
 };
 
 type SubmitterGroup = {
@@ -48,6 +57,11 @@ export default function TimeApproval() {
 
   const [selectedStatus, setSelectedStatus] = useState<string>("submitted");
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [contributorFilter, setContributorFilter] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [detailEntry, setDetailEntry] = useState<TimeEntryWithRelations | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
   const [pendingRejectIds, setPendingRejectIds] = useState<string[]>([]);
@@ -55,11 +69,15 @@ export default function TimeApproval() {
   const isApprover = hasAnyRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]);
 
   const { data: entries = [], isLoading } = useQuery<TimeEntryWithRelations[]>({
-    queryKey: ["/api/time-approvals/inbox", selectedStatus],
+    queryKey: ["/api/time-approvals/inbox", selectedStatus, projectFilter, contributorFilter, startDate, endDate],
     queryFn: async () => {
       const sessionId = localStorage.getItem("sessionId");
       const params = new URLSearchParams();
       if (selectedStatus && selectedStatus !== "all") params.set("status", selectedStatus);
+      if (projectFilter !== "all") params.set("projectId", projectFilter);
+      if (contributorFilter !== "all") params.set("submitterId", contributorFilter);
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
       const response = await fetch(`/api/time-approvals/inbox?${params}`, {
         credentials: "include",
         headers: sessionId ? { "X-Session-Id": sessionId } : {},
@@ -133,6 +151,10 @@ export default function TimeApproval() {
   const allEntryIds = entries.map((e) => e.id);
   const allSelected = allEntryIds.length > 0 && allEntryIds.every((id) => selectedEntries.has(id));
 
+  useEffect(() => {
+    setSelectedEntries(new Set());
+  }, [selectedStatus, projectFilter, contributorFilter, startDate, endDate]);
+
   const toggleEntry = (id: string) => {
     setSelectedEntries((prev) => {
       const next = new Set(prev);
@@ -151,13 +173,15 @@ export default function TimeApproval() {
   };
 
   const handleApproveSelected = () => {
-    const ids = Array.from(selectedEntries);
+    const visible = new Set(entries.filter(entry => entry.submissionStatus === "submitted").map(entry => entry.id));
+    const ids = Array.from(selectedEntries).filter(id => visible.has(id));
     if (ids.length === 0) return;
     approveMutation.mutate(ids);
   };
 
   const handleRejectSelected = () => {
-    const ids = Array.from(selectedEntries);
+    const visible = new Set(entries.filter(entry => entry.submissionStatus === "submitted").map(entry => entry.id));
+    const ids = Array.from(selectedEntries).filter(id => visible.has(id));
     if (ids.length === 0) return;
     setPendingRejectIds(ids);
     setRejectNote("");
@@ -205,7 +229,7 @@ export default function TimeApproval() {
           <div>
             <h2 className="text-2xl lg:text-3xl font-bold">Time Approval Inbox</h2>
             <p className="text-sm lg:text-base text-muted-foreground">
-              Review and approve submitted time entries before billing
+              Review submitted time and follow up on unsubmitted drafts
             </p>
           </div>
           {pendingCount > 0 && (
@@ -219,11 +243,35 @@ export default function TimeApproval() {
         <Tabs value={selectedStatus} onValueChange={setSelectedStatus}>
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <TabsList>
+              <TabsTrigger value="draft">Draft / Unsubmitted</TabsTrigger>
               <TabsTrigger value="submitted">Pending</TabsTrigger>
               <TabsTrigger value="approved">Approved</TabsTrigger>
               <TabsTrigger value="rejected">Rejected</TabsTrigger>
               <TabsTrigger value="all">All</TabsTrigger>
             </TabsList>
+          </div>
+
+          <div className="grid gap-3 mt-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Select value={projectFilter} onValueChange={setProjectFilter}>
+              <SelectTrigger><SelectValue placeholder="All projects" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                {Array.from(new Map(entries.map(entry => [entry.projectId, entry.project?.name])).entries())
+                  .sort((a, b) => (a[1] || "").localeCompare(b[1] || ""))
+                  .map(([id, name]) => <SelectItem key={id} value={id}>{name || id}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={contributorFilter} onValueChange={setContributorFilter}>
+              <SelectTrigger><SelectValue placeholder="All contributors" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All contributors</SelectItem>
+                {Array.from(new Map(entries.map(entry => [entry.personId, entry.person?.name])).entries())
+                  .sort((a, b) => (a[1] || "").localeCompare(b[1] || ""))
+                  .map(([id, name]) => <SelectItem key={id} value={id}>{name || id}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input type="date" aria-label="From date" value={startDate} onChange={event => setStartDate(event.target.value)} />
+            <Input type="date" aria-label="To date" value={endDate} onChange={event => setEndDate(event.target.value)} />
           </div>
 
           <TabsContent value={selectedStatus} className="mt-4">
@@ -241,6 +289,8 @@ export default function TimeApproval() {
                   <p className="text-muted-foreground text-sm">
                     {selectedStatus === "submitted"
                       ? "No time entries are awaiting review."
+                      : selectedStatus === "draft"
+                        ? "No unsubmitted draft time entries match these filters."
                       : `No ${selectedStatus} time entries found.`}
                   </p>
                 </CardContent>
@@ -344,6 +394,17 @@ export default function TimeApproval() {
                                 <span className="font-medium text-sm">{entry.project?.name}</span>
                                 <span className="text-xs text-muted-foreground">{entry.project?.client?.name}</span>
                                 {submissionStatusBadge(entry.submissionStatus)}
+                                {entry.commercialBucketLabel ? (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {entry.commercialBucketLabel} · {(entry.commercialEligibilityOutcome || "pending review").replace(/_/g, " ")}
+                                  </Badge>
+                                ) : entry.commercialBucketRequired ? (
+                                  <Badge variant="destructive" className="text-xs">
+                                    <AlertTriangle className="h-3 w-3 mr-1" /> Required bucket missing
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs">No commercial classification</Badge>
+                                )}
                                 {entry.billable && (
                                   <Badge variant="outline" className="text-xs text-chart-4 border-chart-4/50 bg-chart-4/5">
                                     <DollarSign className="h-3 w-3 mr-0.5" />Billable
@@ -351,7 +412,7 @@ export default function TimeApproval() {
                                 )}
                               </div>
                               {entry.description && (
-                                <p className="text-xs text-muted-foreground mt-1 truncate">{entry.description}</p>
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{entry.description}</p>
                               )}
                               {entry.rejectionNote && (
                                 <p className="text-xs text-red-600 mt-1 italic">
@@ -359,6 +420,9 @@ export default function TimeApproval() {
                                 </p>
                               )}
                             </div>
+                            <Button size="sm" variant="ghost" onClick={() => setDetailEntry(entry)}>
+                              <Eye className="h-4 w-4 mr-1" /> Details
+                            </Button>
                             <div className="text-right shrink-0">
                               <div className="font-semibold text-sm">{parseFloat(String(entry.hours)).toFixed(2)}h</div>
                               <div className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
@@ -410,6 +474,50 @@ export default function TimeApproval() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!detailEntry} onOpenChange={(open) => !open && setDetailEntry(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Time entry details</DialogTitle>
+            <DialogDescription>Time approval and commercial eligibility are separate review decisions.</DialogDescription>
+          </DialogHeader>
+          {detailEntry && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3">
+                <Detail label="Contributor" value={detailEntry.person?.name} />
+                <Detail label="Project" value={detailEntry.project?.name} />
+                <Detail label="Date" value={detailEntry.date} />
+                <Detail label="Hours" value={`${Number(detailEntry.hours).toFixed(2)}h`} />
+                <Detail label="Billable" value={detailEntry.billable ? "Yes" : "No"} />
+                <Detail label="Status" value={detailEntry.submissionStatus || "draft"} />
+                <Detail label="Phase" value={detailEntry.phase} />
+                <Detail label="Workstream" value={detailEntry.workstreamName} />
+                <Detail label="Milestone" value={detailEntry.milestoneName} />
+                <Detail label="Milestone coverage" value={detailEntry.coveredByMilestoneName} />
+                <Detail label="Assignment" value={detailEntry.assignmentName} />
+                <Detail label="Commercial bucket" value={detailEntry.commercialBucketLabel} warning={!!detailEntry.commercialBucketRequired && !detailEntry.commercialBucketLabel} />
+                <Detail label="Commercial eligibility" value={detailEntry.commercialEligibilityOutcome?.replace(/_/g, " ")} />
+                <Detail label="Approval reference" value={detailEntry.commercialApprovalReference} />
+                <Detail label="Classified by" value={detailEntry.commercialClassifiedByName} />
+                <Detail label="Classified at" value={detailEntry.commercialClassifiedAt ? new Date(detailEntry.commercialClassifiedAt).toLocaleString() : null} />
+              </div>
+              <div>
+                <p className="font-medium mb-1">Full description</p>
+                <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3">{detailEntry.description || "No description provided."}</p>
+              </div>
+              <Button variant="outline" asChild>
+                <a href={`/projects/${detailEntry.projectId}?tab=commercial-buckets`}>
+                  Open commercial reconciliation <ExternalLink className="h-4 w-4 ml-2" />
+                </a>
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
+}
+
+function Detail({ label, value, warning = false }: { label: string; value?: string | null; warning?: boolean }) {
+  return <div><p className="text-xs text-muted-foreground">{label}</p><p className={warning ? "font-medium text-destructive" : "font-medium"}>{value || (warning ? "Required bucket missing" : "—")}</p></div>;
 }

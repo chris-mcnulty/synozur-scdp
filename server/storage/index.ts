@@ -284,13 +284,13 @@ export interface IStorage {
   getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined>;
   getAcceptedCalendarEventIds(userId: string, date: string): Promise<Set<string>>;
   createTimeEntry(timeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>, executor?: any): Promise<TimeEntry>;
-  updateTimeEntry(id: string, timeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry>;
+  updateTimeEntry(id: string, timeEntry: Partial<InsertTimeEntry>, executor?: any): Promise<TimeEntry>;
   deleteTimeEntry(id: string): Promise<void>;
   lockTimeEntriesForBatch(batchId: string, entryIds: string[]): Promise<void>;
-  submitTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]>;
-  approveTimeEntries(entryIds: string[], approverId: string): Promise<TimeEntry[]>;
-  rejectTimeEntries(entryIds: string[], approverId: string, note: string): Promise<TimeEntry[]>;
-  recallTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]>;
+  submitTimeEntries(entryIds: string[], userId: string, executor?: any): Promise<TimeEntry[]>;
+  approveTimeEntries(entryIds: string[], approverId: string, executor?: any): Promise<TimeEntry[]>;
+  rejectTimeEntries(entryIds: string[], approverId: string, note: string, executor?: any): Promise<TimeEntry[]>;
+  recallTimeEntries(entryIds: string[], userId: string, executor?: any): Promise<TimeEntry[]>;
   getTimeApprovalsInbox(filters: { tenantId?: string; submitterId?: string; projectId?: string; startDate?: string; endDate?: string; status?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
   
   // Expenses with Project Resource Support

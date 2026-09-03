@@ -455,7 +455,7 @@ export function TimeEntryManagementDialog({
                           {commercialBucketData.buckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{bucket.label} · {bucket.basis}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">This does not change milestone coverage.</p>
+                      <p className="text-xs text-muted-foreground">Commercial classification identifies the contract bucket for this time; it does not change its delivery workstream or milestone coverage.{commercialBucketData.required ? " Select an active bucket before saving." : ""}</p>
                     </FormItem>
                   )}
                 />

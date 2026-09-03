@@ -3,6 +3,8 @@ import {
   clients,
   projects,
   projectMilestones,
+  projectWorkstreams,
+  projectAllocations,
   commercialBuckets,
   timeEntries,
   type User,
@@ -14,6 +16,7 @@ import {
 import { db } from "../db";
 import type { IStorage } from "./index";
 import { eq, desc, and, or, gte, lte, sql, inArray, isNotNull, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { placeholderUser } from "./helpers";
 
 export const timeEntriesMethods: ThisType<IStorage> = {
@@ -252,7 +255,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     }
   },
 
-  async updateTimeEntry(id: string, updateTimeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry> {
+  async updateTimeEntry(id: string, updateTimeEntry: Partial<InsertTimeEntry>, executor: any = db): Promise<TimeEntry> {
     // Get the existing entry to check if project or date changed
     const [existingEntry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id));
     
@@ -359,7 +362,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     // Combine regular update data with rates for the database update
     const dbUpdateData = { ...finalUpdateData, ...rates };
     
-    const [timeEntry] = await db.update(timeEntries).set(dbUpdateData).where(eq(timeEntries.id, id)).returning();
+    const [timeEntry] = await executor.update(timeEntries).set(dbUpdateData).where(eq(timeEntries.id, id)).returning();
     return timeEntry;
   },
 
@@ -379,9 +382,9 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .where(sql`id = ANY(${entryIds})`);
   },
 
-  async submitTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]> {
+  async submitTimeEntries(entryIds: string[], userId: string, executor: any = db): Promise<TimeEntry[]> {
     if (entryIds.length === 0) return [];
-    const updated = await db.update(timeEntries)
+    const updated = await executor.update(timeEntries)
       .set({
         submissionStatus: 'submitted',
         submittedAt: sql`now()`,
@@ -390,15 +393,18 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       })
       .where(and(
         inArray(timeEntries.id, entryIds),
-        sql`${timeEntries.submissionStatus} IN ('draft', 'rejected')`
+        or(
+          sql`${timeEntries.submissionStatus} IN ('draft', 'rejected')`,
+          isNull(timeEntries.submissionStatus),
+        )
       ))
       .returning();
     return updated;
   },
 
-  async approveTimeEntries(entryIds: string[], approverId: string): Promise<TimeEntry[]> {
+  async approveTimeEntries(entryIds: string[], approverId: string, executor: any = db): Promise<TimeEntry[]> {
     if (entryIds.length === 0) return [];
-    const updated = await db.update(timeEntries)
+    const updated = await executor.update(timeEntries)
       .set({
         submissionStatus: 'approved',
         approvedBy: approverId,
@@ -413,9 +419,9 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     return updated;
   },
 
-  async recallTimeEntries(entryIds: string[], userId: string): Promise<TimeEntry[]> {
+  async recallTimeEntries(entryIds: string[], userId: string, executor: any = db): Promise<TimeEntry[]> {
     if (entryIds.length === 0) return [];
-    const updated = await db.update(timeEntries)
+    const updated = await executor.update(timeEntries)
       .set({
         submissionStatus: 'draft',
         submittedAt: null,
@@ -433,9 +439,9 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     return updated;
   },
 
-  async rejectTimeEntries(entryIds: string[], approverId: string, note: string): Promise<TimeEntry[]> {
+  async rejectTimeEntries(entryIds: string[], approverId: string, note: string, executor: any = db): Promise<TimeEntry[]> {
     if (entryIds.length === 0) return [];
-    const updated = await db.update(timeEntries)
+    const updated = await executor.update(timeEntries)
       .set({
         submissionStatus: 'rejected',
         approvedBy: null,
@@ -458,11 +464,18 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     endDate?: string;
     status?: string;
   }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
+    const coveredMilestones = alias(projectMilestones, "covered_milestones");
+    const classifiers = alias(users, "commercial_classifiers");
     const baseQuery = db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
-      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id));
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
+      .leftJoin(projectWorkstreams, eq(timeEntries.workstreamId, projectWorkstreams.id))
+      .leftJoin(projectMilestones, eq(timeEntries.milestoneId, projectMilestones.id))
+      .leftJoin(coveredMilestones, eq(timeEntries.coveredByMilestoneId, coveredMilestones.id))
+      .leftJoin(projectAllocations, eq(timeEntries.allocationId, projectAllocations.id))
+      .leftJoin(classifiers, eq(timeEntries.commercialClassifiedBy, classifiers.id));
 
     const conditions = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
@@ -471,7 +484,9 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
     if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
     if (filters.status && filters.status !== 'all') {
-      conditions.push(eq(timeEntries.submissionStatus, filters.status));
+      conditions.push(filters.status === "draft"
+        ? or(eq(timeEntries.submissionStatus, "draft"), isNull(timeEntries.submissionStatus))
+        : eq(timeEntries.submissionStatus, filters.status));
     } else if (!filters.status) {
       conditions.push(eq(timeEntries.submissionStatus, 'submitted'));
     }
@@ -490,6 +505,13 @@ export const timeEntriesMethods: ThisType<IStorage> = {
         person,
         commercialBucket: row.commercial_buckets || null,
         commercialBucketLabel: row.commercial_buckets?.label || null,
+        commercialBucketRequired: !!row.projects?.commercialBucketsRequired,
+        commercialBucketActive: row.commercial_buckets?.isActive ?? null,
+        workstreamName: row.project_workstreams?.name || null,
+        milestoneName: row.project_milestones?.name || null,
+        coveredByMilestoneName: row.covered_milestones?.name || null,
+        assignmentName: row.project_allocations?.taskDescription || row.project_allocations?.roleInstanceLabel || null,
+        commercialClassifiedByName: row.commercial_classifiers?.name || null,
         personName: person.name,
         project: {
           ...row.projects!,

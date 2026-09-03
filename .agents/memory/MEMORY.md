@@ -8,3 +8,4 @@
 - [Planner conflict policy](planner-conflict-policy.md) — last-write-wins is mandatory for every tenant; never restore a per-tenant stale-push fallback
 - [Contractor payment settlement invariants](contractor-payment-settlement.md) — match under invoice locks; settlement date follows the latest covering payment and must react to edits
 - [Commercial buckets are additive](commercial-buckets-additive.md) — baseline terms are not a bucket; configured buckets are optional additions and must never be seeded per client in migrations
+- [Time approval transition atomicity](time-approval-transition-atomicity.md) — validate after row locks and roll back unless every selected entry transitions

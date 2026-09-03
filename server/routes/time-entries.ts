@@ -2,10 +2,10 @@ import type { Express } from "express";
 import { z } from "zod";
 import { storage, db } from "../storage";
 import { insertTimeEntrySchema, timeEntries, projectWorkstreams } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { getAllSessions } from "../session-store";
 import { notify } from "../services/notification-service.js";
-import { classifyCommercialTimeEntry, validateCommercialSelection } from "../lib/commercial-buckets.js";
+import { classifyCommercialTimeEntry, validateCommercialSelection, validateRequiredBucketForEntry } from "../lib/commercial-buckets.js";
 
 interface TimeEntryRouteDeps {
   requireAuth: any;
@@ -13,6 +13,35 @@ interface TimeEntryRouteDeps {
 }
 
 export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) {
+  const transitionEntriesAtomically = async (
+    entryIds: string[],
+    expectedStatuses: string[],
+    tenantId: string | null | undefined,
+    transition: (ids: string[], tx: any) => Promise<any[]>,
+    requireCommercialBucket = true,
+    validateLocked?: (entry: any) => void | Promise<void>,
+  ) => {
+    const ids = [...new Set(entryIds)];
+    return db.transaction(async (tx: any) => {
+      await tx.execute(sql`SELECT id FROM time_entries WHERE id = ANY(${ids}) FOR UPDATE`);
+      const lockedEntries = await tx.select().from(timeEntries).where(inArray(timeEntries.id, ids));
+      if (lockedEntries.length !== ids.length) throw new Error("One or more selected time entries no longer exist.");
+      for (const entry of lockedEntries) {
+        await validateLocked?.(entry);
+        if (!expectedStatuses.includes(entry.submissionStatus || "draft")) {
+          throw new Error(`Entry ${entry.id} cannot transition from ${entry.submissionStatus || "draft"} status.`);
+        }
+        if (requireCommercialBucket) {
+          await validateRequiredBucketForEntry(entry, tenantId, tx);
+        }
+      }
+      const updated = await transition(ids, tx);
+      if (updated.length !== ids.length) {
+        throw new Error("The selected entries changed during review. Refresh and try again.");
+      }
+      return updated;
+    });
+  };
   const canManageCommercialClassification = async (req: any, projectId: string) => {
     if (["admin", "billing-admin", "executive", "portfolio-manager"].includes(req.user?.role)) return true;
     if (req.user?.role !== "pm") return false;
@@ -302,17 +331,14 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       const hasExplicitCommercialChange = "commercialBucketId" in req.body ||
         "commercialEligibilityOutcome" in req.body ||
         "commercialApprovalReference" in req.body;
-      const needsCommercialReview = hasExplicitCommercialChange ||
-        "date" in req.body || "hours" in req.body || "projectId" in req.body;
       const proposedEntry = { ...existingEntry, ...updateData };
       let commercialInput = {
         commercialBucketId: proposedEntry.commercialBucketId,
         commercialEligibilityOutcome: proposedEntry.commercialEligibilityOutcome,
         commercialApprovalReference: proposedEntry.commercialApprovalReference,
       };
-      if (needsCommercialReview) {
-        const canManageCommercial = await canManageCommercialClassification(req, proposedEntry.projectId);
-        if (hasExplicitCommercialChange && !canManageCommercial) {
+      const canManageCommercial = await canManageCommercialClassification(req, proposedEntry.projectId);
+      if (hasExplicitCommercialChange && !canManageCommercial) {
           // Contributors may classify their own draft time by choosing one of
           // the project's active work classifications. As on create, their
           // selection is held for review unless the bucket itself is the
@@ -322,28 +348,29 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
             commercialEligibilityOutcome: proposedEntry.commercialBucketId ? "pending_approval" : undefined,
             commercialApprovalReference: undefined,
           };
-        }
-        // Validate the merged, proposed state before changing the stored entry.
-        // This prevents a rejected request from persisting a cross-project
-        // bucket, an out-of-window date, or a missing approval reference.
-        await validateCommercialSelection({
-          projectId: proposedEntry.projectId,
-          date: proposedEntry.date,
-          tenantId: req.user?.tenantId,
-          ...commercialInput,
-        });
       }
+      // Validate the merged, proposed state on every edit. This keeps legacy
+      // unclassified drafts visible but requires their bucket to be corrected
+      // before any further save on a project where buckets are now required.
       // Classification is updated with its audit row as an atomic operation by
       // classifyCommercialTimeEntry; do not persist it separately first.
       delete updateData.commercialBucketId;
       delete updateData.commercialEligibilityOutcome;
       delete updateData.commercialApprovalReference;
-      const updatedEntry = Object.keys(updateData).length
-        ? await storage.updateTimeEntry(req.params.id, updateData)
-        : existingEntry;
-      const classifiedEntry = (hasExplicitCommercialChange || (needsCommercialReview && (commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome)))
-        ? await classifyCommercialTimeEntry(updatedEntry, req.user!.id, req.user?.tenantId, commercialInput)
-        : updatedEntry;
+      const classifiedEntry = await db.transaction(async (tx: any) => {
+        await validateCommercialSelection({
+          projectId: proposedEntry.projectId,
+          date: proposedEntry.date,
+          tenantId: req.user?.tenantId,
+          ...commercialInput,
+        }, tx);
+        const updatedEntry = Object.keys(updateData).length
+          ? await storage.updateTimeEntry(req.params.id, updateData, tx)
+          : existingEntry;
+        return (hasExplicitCommercialChange || commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome)
+          ? classifyCommercialTimeEntry(updatedEntry, req.user!.id, req.user?.tenantId, commercialInput, tx)
+          : updatedEntry;
+      });
       res.json(classifiedEntry);
     } catch (error: any) {
       console.error("[ERROR] Failed to update time entry:", error);
@@ -1176,20 +1203,36 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         if (tenantId && entry.tenantId !== tenantId) {
           return res.status(403).json({ message: "Access denied: entry does not belong to your tenant" });
         }
-        if (!isManagerRole) {
-          if (entry.personId !== userId) {
-            return res.status(403).json({ message: "You can only submit your own time entries" });
-          }
-          if (entry.locked) {
-            return res.status(400).json({ message: "Cannot submit locked time entries" });
-          }
-          if (entry.submissionStatus !== 'draft' && entry.submissionStatus !== 'rejected') {
-            return res.status(400).json({ message: `Entry ${id} is already submitted or approved` });
-          }
+        if (!isManagerRole && entry.personId !== userId) {
+          return res.status(403).json({ message: "You can only submit your own time entries" });
         }
+        if (entry.locked) {
+          return res.status(400).json({ message: `Entry ${id} is locked and cannot be submitted` });
+        }
+        if (!["draft", "rejected"].includes(entry.submissionStatus || "draft")) {
+          return res.status(409).json({ message: `Entry ${id} cannot be submitted from ${entry.submissionStatus} status` });
+        }
+        await validateRequiredBucketForEntry(entry, tenantId);
       }
 
-      const updated = await storage.submitTimeEntries(entryIds, userId);
+      const updated = await transitionEntriesAtomically(
+        entryIds,
+        ["draft", "rejected"],
+        tenantId,
+        (ids, tx) => storage.submitTimeEntries(ids, userId, tx),
+        true,
+        (entry) => {
+          if (tenantId && entry.tenantId !== tenantId) {
+            throw new Error("Access denied: entry does not belong to your tenant");
+          }
+          if (!isManagerRole && entry.personId !== userId) {
+            throw new Error("You can only submit your own time entries");
+          }
+          if (entry.locked) {
+            throw new Error(`Entry ${entry.id} is locked and cannot be submitted`);
+          }
+        },
+      );
 
       // Send notifications to approvers
       try {
@@ -1252,7 +1295,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       res.json({ submitted: updated.length, entries: updated });
     } catch (error: any) {
       console.error("[TIME_APPROVAL] Submit error:", error);
-      res.status(500).json({ message: "Failed to submit time entries" });
+      res.status(400).json({ message: error.message || "Failed to submit time entries" });
     }
   });
 
@@ -1283,11 +1326,28 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         }
       }
 
-      const updated = await storage.recallTimeEntries(entryIds, userId);
+      const updated = await transitionEntriesAtomically(
+        entryIds,
+        ["submitted"],
+        tenantId,
+        (ids, tx) => storage.recallTimeEntries(ids, userId, tx),
+        false,
+        (entry) => {
+          if (tenantId && entry.tenantId !== tenantId) {
+            throw new Error("Access denied: entry does not belong to your tenant");
+          }
+          if (entry.personId !== userId) {
+            throw new Error("You can only recall your own time entries");
+          }
+          if (entry.locked) {
+            throw new Error(`Entry ${entry.id} is locked and cannot be recalled`);
+          }
+        },
+      );
       res.json({ recalled: updated.length, entries: updated });
     } catch (error: any) {
       console.error("[TIME_APPROVAL] Recall error:", error);
-      res.status(500).json({ message: "Failed to recall time entries" });
+      res.status(400).json({ message: error.message || "Failed to recall time entries" });
     }
   });
 
@@ -1320,9 +1380,15 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
             return res.status(403).json({ message: `You can only approve entries for projects you manage (entry ${id})` });
           }
         }
+        await validateRequiredBucketForEntry(entry, approverTenantId);
       }
 
-      const updated = await storage.approveTimeEntries(entryIds, approverId);
+      const updated = await transitionEntriesAtomically(
+        entryIds,
+        ["submitted"],
+        approverTenantId,
+        (ids, tx) => storage.approveTimeEntries(ids, approverId, tx),
+      );
 
       // Send notification to submitter(s)
       try {
@@ -1374,7 +1440,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       res.json({ approved: updated.length, entries: updated });
     } catch (error: any) {
       console.error("[TIME_APPROVAL] Approve error:", error);
-      res.status(500).json({ message: "Failed to approve time entries" });
+      res.status(400).json({ message: error.message || "Failed to approve time entries" });
     }
   });
 
@@ -1411,7 +1477,13 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         }
       }
 
-      const updated = await storage.rejectTimeEntries(entryIds, approverId, note.trim());
+      const updated = await transitionEntriesAtomically(
+        entryIds,
+        ["submitted"],
+        rejecterTenantId,
+        (ids, tx) => storage.rejectTimeEntries(ids, approverId, note.trim(), tx),
+        false,
+      );
 
       // Send notification to submitter(s)
       try {
@@ -1465,7 +1537,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       res.json({ rejected: updated.length, entries: updated });
     } catch (error: any) {
       console.error("[TIME_APPROVAL] Reject error:", error);
-      res.status(500).json({ message: "Failed to reject time entries" });
+      res.status(400).json({ message: error.message || "Failed to reject time entries" });
     }
   });
 

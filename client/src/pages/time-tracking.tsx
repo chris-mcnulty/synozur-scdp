@@ -1364,11 +1364,11 @@ export default function TimeTracking() {
                               <FormControl><SelectTrigger data-testid="select-commercial-bucket"><SelectValue placeholder="Baseline SOW or change-order bucket" /></SelectTrigger></FormControl>
                               <SelectContent>
                                 {!addCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
-                                <SelectItem value="__baseline__">Baseline SOW</SelectItem>
+                                {!addCommercialBucketsRequired && <SelectItem value="__baseline__">Baseline SOW (no bucket)</SelectItem>}
                                 {addCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{commercialClassificationLabel(bucket)}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">Choose whether this task was baseline SOW work or one of the change-order classifications.</p>
+                            <p className="text-xs text-muted-foreground">Commercial classification identifies the contract bucket for this time. It is separate from delivery workstreams and milestone coverage.{addCommercialBucketsRequired ? " An active bucket is required before this entry can be saved or submitted." : ""}</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -1992,11 +1992,11 @@ export default function TimeTracking() {
                               <FormControl><SelectTrigger data-testid="select-edit-commercial-bucket"><SelectValue placeholder="Baseline SOW or change-order bucket" /></SelectTrigger></FormControl>
                               <SelectContent>
                                 {!editCommercialBucketsRequired && <SelectItem value="__none__">None</SelectItem>}
-                                <SelectItem value="__baseline__">Baseline SOW</SelectItem>
+                                {!editCommercialBucketsRequired && <SelectItem value="__baseline__">Baseline SOW (no bucket)</SelectItem>}
                                 {editCommercialBuckets.filter(bucket => bucket.isActive).map(bucket => <SelectItem key={bucket.id} value={bucket.id}>{commercialClassificationLabel(bucket)}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <p className="text-xs text-muted-foreground">Choose whether this task was baseline SOW work or one of the change-order classifications.</p>
+                            <p className="text-xs text-muted-foreground">Commercial classification identifies the contract bucket for this time. It is separate from delivery workstreams and milestone coverage.{editCommercialBucketsRequired ? " An active bucket is required before this entry can be saved or submitted." : ""}</p>
                             <FormMessage />
                           </FormItem>
                         )}

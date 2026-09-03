@@ -46,4 +46,36 @@ describe("commercial bucket contributor submissions", () => {
 
     expect(result.outcome).toBe("pending_approval");
   });
+
+  it("requires an active bucket even when eligibility is pending", async () => {
+    let message = "";
+    try {
+      await validateCommercialSelection({
+        projectId: "project-1",
+        date: "2026-06-15",
+        tenantId: "tenant-1",
+        commercialEligibilityOutcome: "pending_approval",
+      }, selectionDatabase(
+        { id: "project-1", tenantId: "tenant-1", commercialBucketsRequired: true },
+        null,
+      ));
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/requires a commercial bucket/i);
+  });
+
+  it("does not force a bucket for projects where classification is optional", async () => {
+    const result = await validateCommercialSelection({
+      projectId: "project-1",
+      date: "2026-06-15",
+      tenantId: "tenant-1",
+      commercialEligibilityOutcome: "not_eligible",
+    }, selectionDatabase(
+      { id: "project-1", tenantId: "tenant-1", commercialBucketsRequired: false },
+      null,
+    ));
+    expect(result.bucket).toBeNull();
+    expect(result.outcome).toBe("not_eligible");
+  });
 });

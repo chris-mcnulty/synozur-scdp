@@ -217,6 +217,27 @@ export function registerCalendarSuggestionsRoutes(
     const alreadyExists: string[] = [];
     const errors: string[] = [];
 
+    // Validate the complete batch before creating anything. Duplicate events are
+    // skipped, but one invalid new item must not leave a partially-created batch.
+    for (const item of items) {
+      if (acceptedByDate.get(item.date)?.has(item.eventId)) continue;
+      const commercialInput = {
+        commercialBucketId: item.commercialBucketId ?? undefined,
+        commercialEligibilityOutcome: item.commercialBucketId ? "pending_approval" : item.commercialEligibilityOutcome ?? undefined,
+      };
+      try {
+        await validateCommercialSelection({
+          projectId: item.projectId,
+          date: item.date,
+          tenantId,
+          ...commercialInput,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return res.status(400).json({ message: `Calendar event "${item.eventId}": ${message}` });
+      }
+    }
+
     for (const item of items) {
       // Guard against duplicate imports — if a time entry already exists for this
       // calendar event on this date, skip creation silently.
@@ -234,12 +255,6 @@ export function registerCalendarSuggestionsRoutes(
           commercialBucketId: item.commercialBucketId ?? undefined,
           commercialEligibilityOutcome: item.commercialBucketId ? "pending_approval" : item.commercialEligibilityOutcome ?? undefined,
         };
-        await validateCommercialSelection({
-          projectId: item.projectId,
-          date: item.date,
-          tenantId,
-          ...commercialInput,
-        });
         const classifiedEntry = await db.transaction(async (tx: any) => {
           const timeEntry = await storage.createTimeEntry({
             personId: userId,
@@ -391,7 +406,7 @@ export function registerCalendarSuggestionsRoutes(
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[CALENDAR_SUGGESTIONS] Merge error:", message);
-      return res.status(500).json({ message: "Failed to create merged time entry" });
+      return res.status(400).json({ message });
     }
   });
 

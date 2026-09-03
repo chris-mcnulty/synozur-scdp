@@ -1978,11 +1978,11 @@ function CommercialBucketEditor({
       }}
     >
       <SelectTrigger className="h-8 border-0 rounded-none" data-testid="select-grid-commercial-bucket">
-        <SelectValue placeholder={isLoading ? "Loading…" : isError ? "Unable to load" : "Baseline SOW or change-order bucket"} />
+        <SelectValue placeholder={isLoading ? "Loading…" : isError ? "Unable to load" : data?.required ? "Select required contract bucket" : "Baseline SOW or contract bucket"} />
       </SelectTrigger>
       <SelectContent>
         {!data?.required && <SelectItem value="__none__">None</SelectItem>}
-        <SelectItem value="__baseline__">Baseline SOW</SelectItem>
+        {!data?.required && <SelectItem value="__baseline__">Baseline SOW (no bucket)</SelectItem>}
         {buckets.map((bucket) => (
           <SelectItem key={bucket.id} value={bucket.id}>
             {commercialClassificationLabel(bucket)}
