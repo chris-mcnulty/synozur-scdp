@@ -1,37 +1,102 @@
 import { jobQueueService } from './job-queue-service';
 import type { BackgroundJob } from '@shared/schema';
+import { JOB_POLL_INTERVAL_MS, retryDisposition } from './job-queue-service';
 
-type JobHandler = (job: BackgroundJob) => Promise<Record<string, any>>;
+export interface JobExecutionContext {
+  signal: AbortSignal;
+  assertActive: () => void;
+}
+
+type JobHandler = (job: BackgroundJob, context: JobExecutionContext) => Promise<Record<string, any>>;
 
 const handlers: Map<string, JobHandler> = new Map();
-let workerInterval: ReturnType<typeof setInterval> | null = null;
+let workerTimer: ReturnType<typeof setTimeout> | null = null;
 let isProcessing = false;
+let workerStarted = false;
+let consecutiveInfrastructureFailures = 0;
+const JOB_HEARTBEAT_INTERVAL_MS = 30_000;
 
-function register(type: string, handler: JobHandler) {
+export function registerJobHandler(type: string, handler: JobHandler) {
   handlers.set(type, handler);
 }
 
-async function processNextJob() {
-  if (isProcessing) return;
+export function pollFailureBackoffMs(consecutiveFailures: number): number {
+  const safeFailures = Number.isFinite(consecutiveFailures)
+    ? Math.max(1, Math.floor(consecutiveFailures))
+    : 1;
+  return Math.min(
+    JOB_POLL_INTERVAL_MS * 2 ** Math.min(safeFailures - 1, 4),
+    60_000,
+  );
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  try {
+    return JSON.stringify(error) || String(error);
+  } catch {
+    return String(error);
+  }
+}
+
+export async function processNextJob(): Promise<boolean> {
+  if (isProcessing) return false;
   isProcessing = true;
   try {
+    const recovered = await jobQueueService.recoverStaleJobs();
+    for (const staleJob of recovered) {
+      console.warn(
+        `[JOB-WORKER] Recovered stale job ${staleJob.id} (${staleJob.type}) ` +
+        `at attempt ${staleJob.attempts}/${staleJob.maxAttempts}: ${staleJob.lastError}`,
+      );
+      if (staleJob.status === 'failed') {
+        void notifyJobFailure(staleJob, staleJob.lastError || 'Stale job exceeded its attempt limit');
+      }
+    }
+
     const job = await jobQueueService.claimNextJob();
-    if (!job) return;
+    if (!job) return false;
+    if (!job.startedAt) {
+      throw new Error(`Claimed job ${job.id} did not include a valid claim timestamp`);
+    }
+    const claimStartedAt = job.startedAt;
 
     const handler = handlers.get(job.type);
     if (!handler) {
-      await jobQueueService.markFailed(job.id, `No handler registered for job type: ${job.type}`, false, job.attempts);
-      return;
+      const finalized = await jobQueueService.markFailed(
+        job.id,
+        `No handler registered for job type: ${job.type}`,
+        false,
+        job.attempts,
+        claimStartedAt,
+      );
+      if (!finalized) {
+        console.warn(`[JOB-WORKER] Ignored stale no-handler completion for job ${job.id}; processing lease was lost`);
+      }
+      return true;
     }
 
+    const lease = startJobLease(job.id, claimStartedAt);
     try {
-      const result = await handler(job);
-      await jobQueueService.markSucceeded(job.id, result);
+      const result = await handler(job, lease.context);
+      lease.context.assertActive();
+      await lease.stop();
+      const finalized = await jobQueueService.markSucceeded(job.id, result, claimStartedAt);
+      if (!finalized) {
+        console.warn(`[JOB-WORKER] Ignored stale success for job ${job.id}; processing lease was lost`);
+        return true;
+      }
       console.log(`[JOB-WORKER] Job ${job.id} (${job.type}) succeeded`);
     } catch (err: any) {
-      const errorMsg = err?.message || String(err);
-      const shouldRetry = job.attempts < job.maxAttempts;
-      await jobQueueService.markFailed(job.id, errorMsg, shouldRetry, job.attempts);
+      await lease.stop();
+      const errorMsg = errorMessage(err);
+      const { shouldRetry } = retryDisposition(job.attempts, job.maxAttempts);
+      const finalized = await jobQueueService.markFailed(job.id, errorMsg, shouldRetry, job.attempts, claimStartedAt);
+      if (!finalized) {
+        console.warn(`[JOB-WORKER] Ignored stale failure for job ${job.id}; processing lease was lost`);
+        return true;
+      }
       if (shouldRetry) {
         console.warn(`[JOB-WORKER] Job ${job.id} (${job.type}) failed attempt ${job.attempts}/${job.maxAttempts}, will retry with backoff: ${errorMsg}`);
       } else {
@@ -39,11 +104,77 @@ async function processNextJob() {
         notifyJobFailure(job, errorMsg).catch(() => {});
       }
     }
-  } catch (err: any) {
-    console.error(`[JOB-WORKER] Unexpected worker error:`, err?.message);
   } finally {
     isProcessing = false;
   }
+  return true;
+}
+
+function startJobLease(jobId: string, claimStartedAt: Date): {
+  context: JobExecutionContext;
+  stop: () => Promise<void>;
+} {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let inFlight: Promise<void> | null = null;
+  let consecutiveHeartbeatFailures = 0;
+  const abortController = new AbortController();
+  const abortLease = (reason: string) => {
+    if (!abortController.signal.aborted) abortController.abort(new Error(reason));
+  };
+  const context: JobExecutionContext = {
+    signal: abortController.signal,
+    assertActive: () => {
+      if (abortController.signal.aborted) {
+        const reason = abortController.signal.reason;
+        throw reason instanceof Error ? reason : new Error(`Processing lease lost for job ${jobId}`);
+      }
+    },
+  };
+
+  const schedule = () => {
+    if (stopped) return;
+    timer = setTimeout(() => {
+      timer = null;
+      inFlight = jobQueueService.heartbeat(jobId, claimStartedAt)
+        .then((retained) => {
+          consecutiveHeartbeatFailures = 0;
+          if (!retained) {
+            stopped = true;
+            const reason = `Processing lease lost for job ${jobId}`;
+            abortLease(reason);
+            console.warn(`[JOB-WORKER] ${reason}`);
+          }
+        })
+        .catch((err) => {
+          consecutiveHeartbeatFailures += 1;
+          console.error(`[JOB-WORKER] Heartbeat failed for job ${jobId}: ${errorMessage(err)}`);
+          if (consecutiveHeartbeatFailures >= 3) {
+            stopped = true;
+            const reason = `Processing lease aborted for job ${jobId} after ${consecutiveHeartbeatFailures} heartbeat failures`;
+            abortLease(reason);
+            console.error(`[JOB-WORKER] ${reason}`);
+          }
+        })
+        .finally(() => {
+          inFlight = null;
+          schedule();
+        });
+    }, JOB_HEARTBEAT_INTERVAL_MS);
+  };
+  schedule();
+
+  return {
+    context,
+    stop: async () => {
+      stopped = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (inFlight) await inFlight;
+    },
+  };
 }
 
 async function notifyJobFailure(job: BackgroundJob, error: string) {
@@ -62,35 +193,71 @@ async function notifyJobFailure(job: BackgroundJob, error: string) {
   }
 }
 
+function schedulePoll(delayMs: number) {
+  if (!workerStarted || workerTimer) return;
+  workerTimer = setTimeout(() => {
+    workerTimer = null;
+    void runPoll();
+  }, delayMs);
+}
+
+async function runPoll() {
+  if (!workerStarted) return;
+  try {
+    await processNextJob();
+    if (consecutiveInfrastructureFailures > 0) {
+      console.log('[JOB-WORKER] Database/worker polling recovered');
+    }
+    consecutiveInfrastructureFailures = 0;
+    schedulePoll(JOB_POLL_INTERVAL_MS);
+  } catch (err) {
+    consecutiveInfrastructureFailures += 1;
+    const backoff = pollFailureBackoffMs(consecutiveInfrastructureFailures);
+    console.error(
+      `[JOB-WORKER] Poll failed (${consecutiveInfrastructureFailures} consecutive): ` +
+      `${errorMessage(err)}; retrying in ${Math.round(backoff / 1_000)}s`,
+    );
+    schedulePoll(backoff);
+  }
+}
+
 export function startJobWorker() {
-  if (workerInterval) return;
+  if (workerStarted) {
+    console.log('[JOB-WORKER] Worker already started; ignoring duplicate start');
+    return;
+  }
 
   // Register all job handlers
   registerHandlers();
 
-  workerInterval = setInterval(processNextJob, 5000);
-  console.log('[JOB-WORKER] Worker started, polling every 5s');
+  workerStarted = true;
+  consecutiveInfrastructureFailures = 0;
+  schedulePoll(0);
+  console.log('[JOB-WORKER] Worker started, polling every 5s (with paced failure backoff)');
 }
 
 export function stopJobWorker() {
-  if (workerInterval) {
-    clearInterval(workerInterval);
-    workerInterval = null;
+  if (!workerStarted && !workerTimer) return;
+  workerStarted = false;
+  if (workerTimer) {
+    clearTimeout(workerTimer);
+    workerTimer = null;
   }
+  console.log('[JOB-WORKER] Worker stopped');
 }
 
 function registerHandlers() {
-  register('pdf.invoice.generate', handlePdfInvoiceGenerate);
-  register('ai.statusReport.generate', handleAiStatusReportGenerate);
-  register('ai.executiveNarrative.generate', handleAiExecutiveNarrativeGenerate);
-  register('teams.provision', handleTeamsProvision);
-  register('planner.task.pull', handlePlannerTaskPull);
+  registerJobHandler('pdf.invoice.generate', handlePdfInvoiceGenerate);
+  registerJobHandler('ai.statusReport.generate', handleAiStatusReportGenerate);
+  registerJobHandler('ai.executiveNarrative.generate', handleAiExecutiveNarrativeGenerate);
+  registerJobHandler('teams.provision', handleTeamsProvision);
+  registerJobHandler('planner.task.pull', handlePlannerTaskPull);
 }
 
 // ─── Planner Inbound Pull (Task #126) ────────────────────────────────────────
 // Triggered by the Graph webhook receiver; pulls the latest state of a single
 // Planner task and applies LWW resolution to the local allocation.
-async function handlePlannerTaskPull(job: BackgroundJob): Promise<Record<string, any>> {
+async function handlePlannerTaskPull(job: BackgroundJob, context: JobExecutionContext): Promise<Record<string, any>> {
   const { connectionId, plannerTaskId } = job.payload as {
     connectionId: string;
     plannerTaskId: string;
@@ -98,14 +265,16 @@ async function handlePlannerTaskPull(job: BackgroundJob): Promise<Record<string,
   if (!connectionId || !plannerTaskId) {
     throw new Error('planner.task.pull requires connectionId and plannerTaskId');
   }
+  context.assertActive();
   const { pullPlannerTask } = await import('./planner-sync-scheduler.js');
   const result = await pullPlannerTask(connectionId, plannerTaskId, 'webhook');
+  context.assertActive();
   return result;
 }
 
 // ─── PDF Invoice Generation ───────────────────────────────────────────────────
 
-async function handlePdfInvoiceGenerate(job: BackgroundJob): Promise<Record<string, any>> {
+async function handlePdfInvoiceGenerate(job: BackgroundJob, context: JobExecutionContext): Promise<Record<string, any>> {
   const { batchId, companySettings, timezone, tenantId } = job.payload as {
     batchId: string;
     companySettings: any;
@@ -146,6 +315,7 @@ async function handlePdfInvoiceGenerate(job: BackgroundJob): Promise<Record<stri
     }
   }
 
+  context.assertActive();
   const batch = await storage.getInvoiceBatchDetails(batchId);
   if (!batch) throw new Error(`Invoice batch ${batchId} not found`);
 
@@ -161,6 +331,7 @@ async function handlePdfInvoiceGenerate(job: BackgroundJob): Promise<Record<stri
     tenantId: tenantId || undefined,
     downloadFileDirect,
   });
+  context.assertActive();
 
   // Delete old PDF if it exists
   if (batch.pdfFileId) {
@@ -169,7 +340,9 @@ async function handlePdfInvoiceGenerate(job: BackgroundJob): Promise<Record<stri
     } catch { /* ignore */ }
   }
 
+  context.assertActive();
   const fileId = await invoicePDFStorage.storeInvoicePDF(pdfBuffer, batchId);
+  context.assertActive();
   await storage.updateInvoiceBatch(batchId, { pdfFileId: fileId });
 
   console.log(`[JOB-WORKER] PDF generated for batch ${batchId}, fileId=${fileId}`);
@@ -178,7 +351,7 @@ async function handlePdfInvoiceGenerate(job: BackgroundJob): Promise<Record<stri
 
 // ─── AI Status Report Generation ─────────────────────────────────────────────
 
-async function handleAiStatusReportGenerate(job: BackgroundJob): Promise<Record<string, any>> {
+async function handleAiStatusReportGenerate(job: BackgroundJob, context: JobExecutionContext): Promise<Record<string, any>> {
   const { projectId, startDate, endDate, style, userId, tenantId, systemPrompt, userMessage, maxTokens } = job.payload as {
     projectId: string;
     startDate: string;
@@ -194,6 +367,7 @@ async function handleAiStatusReportGenerate(job: BackgroundJob): Promise<Record<
   const { aiService } = await import('./ai-service.js');
   const { storage } = await import('../storage.js');
 
+  context.assertActive();
   const project = await storage.getProject(projectId);
   if (!project) throw new Error(`Project ${projectId} not found`);
 
@@ -203,6 +377,7 @@ async function handleAiStatusReportGenerate(job: BackgroundJob): Promise<Record<
     usageCtx: { tenantId, userId, feature: 'status_report' as any },
   });
 
+  context.assertActive();
   const savedReport = await storage.createStatusReport({
     projectId,
     tenantId: tenantId || null,
@@ -222,7 +397,7 @@ async function handleAiStatusReportGenerate(job: BackgroundJob): Promise<Record<
 
 // ─── AI Executive Narrative Generation ───────────────────────────────────────
 
-async function handleAiExecutiveNarrativeGenerate(job: BackgroundJob): Promise<Record<string, any>> {
+async function handleAiExecutiveNarrativeGenerate(job: BackgroundJob, context: JobExecutionContext): Promise<Record<string, any>> {
   const { tenantId, userId, startDate, endDate, dataPayload, groundingCtx } = job.payload as {
     tenantId: string;
     userId?: string;
@@ -236,12 +411,14 @@ async function handleAiExecutiveNarrativeGenerate(job: BackgroundJob): Promise<R
   const { storage } = await import('../storage.js');
   const { AI_FEATURES } = await import('@shared/schema');
 
+  context.assertActive();
   const narrative = await aiService.generateExecutiveNarrative(
     dataPayload,
     groundingCtx || '',
     { tenantId, userId, feature: AI_FEATURES.EXECUTIVE_NARRATIVE }
   );
 
+  context.assertActive();
   const savedReport = await storage.createStatusReport({
     tenantId,
     title: `Executive Narrative — ${startDate} to ${endDate}`,
@@ -261,7 +438,7 @@ async function handleAiExecutiveNarrativeGenerate(job: BackgroundJob): Promise<R
 
 // ─── Teams / Graph Provisioning ───────────────────────────────────────────────
 
-async function handleTeamsProvision(job: BackgroundJob): Promise<Record<string, any>> {
+async function handleTeamsProvision(job: BackgroundJob, context: JobExecutionContext): Promise<Record<string, any>> {
   const { operation, projectId, personId, tenantId, triggeredBy } = job.payload as {
     operation: 'addMember' | 'removeMember';
     projectId: string;
@@ -272,6 +449,7 @@ async function handleTeamsProvision(job: BackgroundJob): Promise<Record<string, 
 
   const { teamsAutomationService } = await import('./teams-automation-service.js');
 
+  context.assertActive();
   if (operation === 'addMember') {
     await teamsAutomationService.onUserAssignedToProject(projectId, personId, { tenantId, triggeredBy });
   } else if (operation === 'removeMember') {
@@ -279,6 +457,7 @@ async function handleTeamsProvision(job: BackgroundJob): Promise<Record<string, 
   } else {
     throw new Error(`Unknown Teams operation: ${operation}`);
   }
+  context.assertActive();
 
   return { operation, projectId, personId };
 }

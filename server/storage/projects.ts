@@ -939,7 +939,7 @@ export const projectsMethods: ThisType<IStorage> = {
     return created;
   },
 
-  async getBudgetHistory(projectId: string): Promise<(ProjectBudgetHistory & { sow?: Sow; user: User })[]> {
+  async getBudgetHistory(projectId: string): Promise<(ProjectBudgetHistory & { sow?: Sow; user: User | null })[]> {
     const history = await db.select()
       .from(projectBudgetHistory)
       .leftJoin(sows, eq(projectBudgetHistory.sowId, sows.id))

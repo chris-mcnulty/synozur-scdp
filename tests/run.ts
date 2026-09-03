@@ -21,6 +21,7 @@ import "./mcp-bearer-azp.spec.js";
 import "./commercial-buckets.spec.js";
 import "./project-scratch.spec.js";
 import "./vendor-invoices.spec.js";
+import "./background-jobs.spec.js";
 import { run } from "./_harness.js";
 
 await run();

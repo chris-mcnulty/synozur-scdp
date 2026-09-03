@@ -5673,7 +5673,7 @@ export const payrollAuditLog = pgTable("payroll_audit_log", {
 }));
 
 export const insertPayrollAuditLogSchema = createInsertSchema(payrollAuditLog).omit({ id: true, occurredAt: true });
-export type InsertPayrollAuditLog = z.infer<typeof insertPayrollAuditLogSchema>;
+export type InsertPayrollAuditLog = Omit<typeof payrollAuditLog.$inferInsert, 'id' | 'occurredAt'>;
 export type PayrollAuditLog = typeof payrollAuditLog.$inferSelect;
 
 // -------------------------------------------------------------------------

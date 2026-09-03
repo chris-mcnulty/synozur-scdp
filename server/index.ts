@@ -220,16 +220,25 @@ process.on('uncaughtException', (error: any) => {
     });
     
     // Graceful shutdown handling
-    const gracefulShutdown = (signal: string) => {
+    let shutdownStarted = false;
+    const gracefulShutdown = async (signal: string) => {
+      if (shutdownStarted) return;
+      shutdownStarted = true;
       log(`Received ${signal}, shutting down gracefully...`);
+      try {
+        const { stopJobWorker } = await import('./services/job-worker.js');
+        stopJobWorker();
+      } catch (workerStopError: any) {
+        log(`⚠️ Background job worker shutdown failed: ${workerStopError.message}`);
+      }
       server.close(() => {
         log('Server closed');
         process.exit(0);
       });
     };
     
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
     
   } catch (error: any) {
     log(`❌ Failed to start server: ${error.message}`);

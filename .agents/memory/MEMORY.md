@@ -10,3 +10,4 @@
 - [Commercial buckets are additive](commercial-buckets-additive.md) — baseline terms are not a bucket; configured buckets are optional additions and must never be seeded per client in migrations
 - [Time approval transition atomicity](time-approval-transition-atomicity.md) — validate after row locks and roll back unless every selected entry transitions
 - [Remote provisioning checkpoints](remote-provisioning-checkpoints.md) — persist each remote resource ID before dependent local writes; retries must repair mappings from checkpoints, never recreate resources
+- [Neon raw SQL timestamp casts](neon-raw-sql-timestamp-casts.md) — explicitly cast bound timestamps and NULL branches in raw SQL CASE/arithmetic expressions

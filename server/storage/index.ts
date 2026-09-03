@@ -442,7 +442,7 @@ export interface IStorage {
   
   // Project Budget History
   createBudgetHistory(history: InsertProjectBudgetHistory): Promise<ProjectBudgetHistory>;
-  getBudgetHistory(projectId: string): Promise<(ProjectBudgetHistory & { sow?: Sow; user: User })[]>;
+  getBudgetHistory(projectId: string): Promise<(ProjectBudgetHistory & { sow?: Sow; user: User | null })[]>;
   recalculateProjectBudget(projectId: string, userId: string): Promise<{ project: Project; history: ProjectBudgetHistory[] }>;
   
   // Dashboard metrics
@@ -535,6 +535,7 @@ export interface IStorage {
       entriesWithNullRates: number;
       issues: string[];
     };
+    coveredEntriesCount?: number;
   }>;
 
   // Mark time entries as covered by a fixed-bid payment milestone

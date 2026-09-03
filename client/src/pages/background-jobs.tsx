@@ -22,22 +22,24 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
+import { getBackgroundJobsViewState } from "./background-jobs-state";
 
 interface BackgroundJob {
   id: string;
   type: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: string;
   attempts: number;
   maxAttempts: number;
   lastError: string | null;
-  runAfter: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  result: Record<string, any> | null;
-  payload: Record<string, any>;
+  runAfter: unknown;
+  createdAt: unknown;
+  startedAt: unknown;
+  finishedAt: unknown;
+  result: unknown;
+  payload: unknown;
   tenantId: string | null;
   createdBy: string | null;
+  diagnostics?: string[];
 }
 
 const JOB_TYPE_LABELS: Record<string, string> = {
@@ -45,6 +47,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   "ai.statusReport.generate": "AI Status Report",
   "ai.executiveNarrative.generate": "AI Executive Narrative",
   "teams.provision": "Teams Provisioning",
+  "planner.task.pull": "Planner Task Pull",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -64,10 +67,89 @@ function StatusIcon({ status }: { status: string }) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeDate(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function safeRelativeDate(value: unknown): string {
+  const date = safeDate(value);
+  if (!date) return "Unknown date";
+  try {
+    return formatDistanceToNow(date, { addSuffix: true });
+  } catch {
+    return "Unknown date";
+  }
+}
+
+function safeDateTime(value: unknown): string {
+  const date = safeDate(value);
+  return date ? date.toLocaleString() : "Unknown date";
+}
+
+function safeJson(value: unknown): string {
+  try {
+    const json = JSON.stringify(value, null, 2);
+    return json ?? "null";
+  } catch {
+    return "[Unable to display value]";
+  }
+}
+
+function safeJobRecord(value: unknown, index: number): BackgroundJob {
+  const row = isRecord(value) ? value : {};
+  const diagnostics = Array.isArray(row.diagnostics)
+    ? row.diagnostics.filter((item): item is string => typeof item === "string")
+    : [];
+  if (!isRecord(value)) diagnostics.push("Malformed row returned by the background-jobs API");
+
+  const id = typeof row.id === "string" && row.id ? row.id : `invalid-job-${index + 1}`;
+  if (id.startsWith("invalid-job-")) diagnostics.push("Job id was missing or invalid");
+  const type = typeof row.type === "string" && row.type ? row.type : "unknown";
+  if (type === "unknown") diagnostics.push("Job type was missing or invalid");
+  const status = typeof row.status === "string" && row.status ? row.status : "unknown";
+  if (status === "unknown") diagnostics.push("Job status was missing or invalid");
+  const attempts = Number.isFinite(Number(row.attempts)) ? Math.max(0, Math.floor(Number(row.attempts))) : 0;
+  const maxAttempts = Number.isFinite(Number(row.maxAttempts)) ? Math.max(1, Math.floor(Number(row.maxAttempts))) : 1;
+  const lastError = row.lastError == null
+    ? null
+    : typeof row.lastError === "string"
+      ? row.lastError
+      : `Malformed error detail: ${safeJson(row.lastError)}`;
+
+  return {
+    id,
+    type,
+    status,
+    attempts,
+    maxAttempts,
+    lastError,
+    runAfter: row.runAfter ?? null,
+    createdAt: row.createdAt ?? null,
+    startedAt: row.startedAt ?? null,
+    finishedAt: row.finishedAt ?? null,
+    result: row.result ?? null,
+    payload: row.payload ?? {},
+    tenantId: typeof row.tenantId === "string" ? row.tenantId : null,
+    createdBy: typeof row.createdBy === "string" ? row.createdBy : null,
+    diagnostics: diagnostics.length > 0 ? Array.from(new Set(diagnostics)) : undefined,
+  };
+}
+
 function JobDetailRow({ job }: { job: BackgroundJob }) {
   const [open, setOpen] = useState(false);
+  const status = typeof job.status === "string" ? job.status : "unknown";
+  const jobId = typeof job.id === "string" && job.id ? job.id : "unknown-job";
 
-  const safePayload = { ...job.payload };
+  const safePayload: Record<string, any> = isRecord(job.payload) ? { ...job.payload } : {
+    _diagnostic: "Persisted payload was not an object",
+  };
   if (safePayload.systemPrompt) safePayload.systemPrompt = '[truncated]';
   if (safePayload.userMessage) safePayload.userMessage = '[truncated]';
   if (safePayload.dataPayload) safePayload.dataPayload = '[truncated]';
@@ -81,9 +163,9 @@ function JobDetailRow({ job }: { job: BackgroundJob }) {
             <TableCell>
               <div className="flex items-center gap-1">
                 {open ? <ChevronDown className="h-3 w-3 text-gray-400" /> : <ChevronRight className="h-3 w-3 text-gray-400" />}
-                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[job.status] || ""}`}>
-                  <StatusIcon status={job.status} />
-                  {job.status}
+                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] || "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"}`}>
+                  <StatusIcon status={status} />
+                  {status}
                 </span>
               </div>
             </TableCell>
@@ -91,23 +173,23 @@ function JobDetailRow({ job }: { job: BackgroundJob }) {
               <div className="font-medium text-sm text-gray-900 dark:text-white">
                 {JOB_TYPE_LABELS[job.type] || job.type}
               </div>
-              <div className="text-xs text-gray-400 font-mono mt-0.5">{job.id.slice(0, 8)}…</div>
+              <div className="text-xs text-gray-400 font-mono mt-0.5">{jobId.slice(0, 8)}…</div>
             </TableCell>
             <TableCell className="text-center text-sm text-gray-600 dark:text-gray-400">
-              {job.attempts}/{job.maxAttempts}
+              {Number.isFinite(job.attempts) ? job.attempts : "?"}/{Number.isFinite(job.maxAttempts) ? job.maxAttempts : "?"}
             </TableCell>
             <TableCell className="text-sm text-gray-600 dark:text-gray-400">
               {formatDuration(job)}
             </TableCell>
             <TableCell className="text-sm text-gray-600 dark:text-gray-400">
-              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+              {safeRelativeDate(job.createdAt)}
             </TableCell>
             <TableCell className="max-w-[200px]">
               {job.lastError ? (
                 <span className="text-xs text-red-600 dark:text-red-400 line-clamp-2 break-words">{job.lastError}</span>
-              ) : job.status === "queued" && job.runAfter ? (
+              ) : status === "queued" && safeDate(job.runAfter) ? (
                 <span className="text-xs text-amber-600 dark:text-amber-400">
-                  Retry {formatDistanceToNow(new Date(job.runAfter), { addSuffix: true })}
+                  Retry {safeRelativeDate(job.runAfter)}
                 </span>
               ) : (
                 <span className="text-xs text-gray-400">—</span>
@@ -116,10 +198,10 @@ function JobDetailRow({ job }: { job: BackgroundJob }) {
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-1">
                 {job.status === "failed" && (
-                  <RetryButton jobId={job.id} />
+                  <RetryButton jobId={jobId} />
                 )}
-                {(job.status === "queued" || job.status === "running") && (
-                  <CancelButton jobId={job.id} />
+                {(status === "queued" || status === "running") && (
+                  <CancelButton jobId={jobId} />
                 )}
               </div>
             </TableCell>
@@ -132,24 +214,32 @@ function JobDetailRow({ job }: { job: BackgroundJob }) {
                 <div>
                   <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Payload</p>
                   <pre className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded p-2 overflow-auto max-h-40 text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-                    {JSON.stringify(safePayload, null, 2)}
+                     {safeJson(safePayload)}
                   </pre>
                 </div>
-                {job.result && (
+                 {job.result != null && (
                   <div>
                     <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Result</p>
                     <pre className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded p-2 overflow-auto max-h-40 text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-                      {JSON.stringify(job.result, null, 2)}
+                       {safeJson(job.result)}
                     </pre>
                   </div>
                 )}
-                {job.startedAt && (
+                 {job.diagnostics && job.diagnostics.length > 0 && (
+                   <div className="md:col-span-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                     <p className="font-semibold mb-1">Diagnostic information</p>
+                     <ul className="list-disc pl-4">
+                       {job.diagnostics.map((diagnostic, index) => <li key={index}>{diagnostic}</li>)}
+                     </ul>
+                   </div>
+                 )}
+                 {safeDate(job.startedAt) !== null && (
                   <div className="text-gray-500 dark:text-gray-400">
                     <span className="font-medium">Started: </span>
-                    {new Date(job.startedAt).toLocaleString()}
-                    {job.finishedAt && (
+                     {safeDateTime(job.startedAt)}
+                     {safeDate(job.finishedAt) !== null && (
                       <><span className="font-medium ml-4">Finished: </span>
-                      {new Date(job.finishedAt).toLocaleString()}</>
+                       {safeDateTime(job.finishedAt)}</>
                     )}
                   </div>
                 )}
@@ -201,10 +291,11 @@ function CancelButton({ jobId }: { jobId: string }) {
 }
 
 function formatDuration(job: BackgroundJob): string {
-  const start = job.startedAt ? new Date(job.startedAt) : null;
-  const end = job.finishedAt ? new Date(job.finishedAt) : null;
+  const start = safeDate(job.startedAt);
+  const end = safeDate(job.finishedAt);
   if (!start) return "—";
   const ms = (end ?? new Date()).getTime() - start.getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "Unknown";
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
@@ -290,7 +381,7 @@ export default function BackgroundJobs() {
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const { data: jobs = [], isLoading, refetch } = useQuery<BackgroundJob[]>({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery<unknown>({
     queryKey: ["/api/admin/background-jobs", filterType, filterStatus],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -298,10 +389,32 @@ export default function BackgroundJobs() {
       if (filterStatus !== "all") params.set("status", filterStatus);
       params.set("limit", "200");
       const res = await fetch(`/api/admin/background-jobs?${params}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load jobs");
-      return res.json();
+      if (!res.ok) {
+        let detail = `Request failed (${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.message) detail = body.message;
+        } catch {
+          // Keep the status-based message when the server did not return JSON.
+        }
+        throw new Error(detail);
+      }
+      const body = await res.json();
+      if (!Array.isArray(body)) throw new Error("Background-jobs API returned an invalid queue");
+      return body;
     },
-    refetchInterval: 5000,
+    // A failed refresh is surfaced to the admin and must be retried manually;
+    // continuing to poll a down database only creates noise and load.
+    refetchInterval: (query) => query.state.status === "error" ? false : 5000,
+  });
+  const jobs = Array.isArray(data) ? data.map(safeJobRecord) : [];
+  const errorMessage = error instanceof Error ? error.message : "The background-jobs service is unavailable";
+  const hasFilters = filterType !== "all" || filterStatus !== "all";
+  const viewState = getBackgroundJobsViewState({
+    isInitialLoading: isLoading && data === undefined,
+    isError,
+    jobCount: jobs.length,
+    hasFilters,
   });
 
   const statusCounts = {
@@ -323,12 +436,27 @@ export default function BackgroundJobs() {
           </div>
           <div className="flex items-center gap-2">
             <PurgeOldJobsButton />
-            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-              Refresh
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+              {isFetching ? "Refreshing…" : "Refresh"}
             </Button>
           </div>
         </div>
+
+        {isError && (
+          <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">Queue refresh failed</p>
+                <p>{errorMessage}. The last successfully loaded queue is still shown when available.</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -388,14 +516,26 @@ export default function BackgroundJobs() {
             <CardDescription>Auto-refreshes every 5 seconds. Click a row to view payload and result details.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {isLoading ? (
+            {viewState === "loading" ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
               </div>
-            ) : jobs.length === 0 ? (
+            ) : viewState === "error" ? (
+              <div className="text-center py-12 text-red-600 dark:text-red-400">
+                <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-60" />
+                <p className="font-medium">Background jobs are unavailable</p>
+                <p className="text-sm mt-1">Retry the request above to load the queue.</p>
+              </div>
+            ) : viewState === "filtered-empty" ? (
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <Clock className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                <p>No background jobs found</p>
+                <p>No jobs match the selected filters</p>
+                <p className="text-sm mt-1">Try choosing a different type or status.</p>
+              </div>
+            ) : viewState === "empty" ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <Clock className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>No background jobs have been recorded</p>
               </div>
             ) : (
               <div className="overflow-x-auto">

@@ -5,6 +5,7 @@ import {
   provisionProjectM365Unlocked,
 } from "../server/routes/projects.js";
 import { clientTeams, projectChannels } from "../shared/schema.js";
+import { getM365RetryAccessDenial } from "../server/routes/project-access.js";
 
 const projectsPage = fs.readFileSync(new URL("../client/src/pages/projects.tsx", import.meta.url), "utf8");
 const projectsRoutes = fs.readFileSync(new URL("../server/routes/projects.ts", import.meta.url), "utf8");
@@ -112,7 +113,7 @@ describe("project-from-scratch creation contract", () => {
   } as const;
 
   it("repairs the client mapping without creating a second Team", async () => {
-    const h = integrationHarness(1);
+    const h = integrationHarness(2);
     const first = await provisionProjectM365Unlocked(req, {
       ...baseOptions,
       teamsMode: "new-team",
@@ -131,12 +132,14 @@ describe("project-from-scratch creation contract", () => {
   });
 
   it("repairs the project link without creating a second channel", async () => {
-    const h = integrationHarness(1);
+    const h = integrationHarness(2);
     const options = {
       ...baseOptions,
-      teamsMode: "new-channel" as const,
+      teamsMode: "existing-channel" as const,
       teamsTeamId: "team-existing",
-      provisioningRequest: { scratchCreationKey: "key-2" },
+      teamsExistingChannelId: "existing-channel",
+      createPlannerPlan: true,
+      provisioningRequest: { scratchCreationKey: "key-3" },
     };
     expect((await provisionProjectM365Unlocked(req, options, {
       plannerService: h.plannerService, db: h.mockDb, storage: h.mockStorage,
@@ -224,7 +227,7 @@ describe("project-from-scratch creation contract", () => {
 
   it("creates the local project before provisioning and reports partial failure", () => {
     const createPosition = projectsRoutes.indexOf("project = await storage.createProject");
-    const provisionPosition = projectsRoutes.indexOf("m365Provisioning = await provisionProjectM365");
+    const provisionPosition = projectsRoutes.indexOf("const result = await provisionProjectM365(req");
     expect(createPosition).toBeGreaterThanOrEqual(0);
     expect(provisionPosition).toBeGreaterThan(createPosition);
     expect(projectsRoutes).toContain('status: "failed"');
@@ -268,5 +271,36 @@ describe("project-from-scratch creation contract", () => {
     expect(projectDetail).toContain("Retry Microsoft Setup");
     expect(projectDetail).toContain(`/m365-retry`);
     expect(plannerRoutes).toContain("graphChannel");
+  });
+
+  it("forbids Microsoft setup retry by an unassigned project manager", () => {
+    const denial = getM365RetryAccessDenial(
+      { id: "pm-other", role: "pm" },
+      { pm: "pm-owner" },
+    );
+
+    expect(denial?.status).toBe(403);
+    expect(denial?.body.message).toContain("projects you manage");
+  });
+
+  it("allows Microsoft setup retry by the assigned project manager and tenant-wide roles", () => {
+    expect(getM365RetryAccessDenial(
+      { id: "pm-owner", role: "pm" },
+      { pm: "pm-owner" },
+    )).toBe(null);
+    expect(getM365RetryAccessDenial(
+      { id: "admin-user", role: "admin" },
+      { pm: "pm-owner" },
+    )).toBe(null);
+  });
+
+  it("checks Microsoft retry access before changing state or provisioning", () => {
+    const accessPosition = projectsRoutes.indexOf("getM365RetryAccessDenial(req.user, project)");
+    const stateUpdatePosition = projectsRoutes.indexOf('message: "Microsoft setup retry is in progress."');
+    const provisionPosition = projectsRoutes.indexOf("const result = await provisionProjectM365(req");
+
+    expect(accessPosition).toBeGreaterThanOrEqual(0);
+    expect(stateUpdatePosition).toBeGreaterThan(accessPosition);
+    expect(provisionPosition).toBeGreaterThan(accessPosition);
   });
 });

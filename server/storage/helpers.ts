@@ -150,9 +150,11 @@ export function placeholderUser(id: string): User {
     capacityEffectiveDate: null,
     calendarSuggestionsEnabled: true,
     calendarSuggestionsDaysBack: 0,
+    calendarDefaultProjectId: null,
     weeklyDigestEnabled: true,
     weeklyDigestDay: 1,
     weeklyDigestTime: '08:00',
+    payrollEmployeeType: null,
     createdAt: new Date(),
   };
 }

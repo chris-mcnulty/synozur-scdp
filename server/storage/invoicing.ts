@@ -2149,6 +2149,7 @@ export const invoicingMethods: ThisType<IStorage & {
       entriesWithNullRates: number;
       issues: string[];
     };
+    coveredEntriesCount?: number;
   }> {
     // Get IDs of expenses and time entries already referenced in invoice lines of active batches
     // This serves as a safety net beyond just billedFlag - catches cases where billedFlag wasn't properly set

@@ -2,6 +2,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import * as osNode from "os";
 import type { Express, Request, Response } from "express";
+import { getM365RetryAccessDenial } from "./project-access";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
 import { insertProjectSchema, insertChangeOrderSchema, insertSowSchema, insertProjectAllocationSchema, insertRaiddEntrySchema, sows, timeEntries, expenses, users, projects, clients, clientTeams, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, projectDeliverables, roles, estimates, estimateLineItems, changeOrders, raiddEntries, projectChannels, tenants, tenantUsers, commercialBuckets, commercialBucketAudit, type InvoiceBatch } from "@shared/schema";
@@ -830,6 +831,10 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         .where(and(eq(projects.id, req.params.id), eq(projects.tenantId, tenantId)))
         .limit(1);
       if (!project) return res.status(404).json({ message: "Project not found" });
+      const accessDenial = getM365RetryAccessDenial(req.user, project);
+      if (accessDenial) {
+        return res.status(accessDenial.status).json(accessDenial.body);
+      }
       const state = project.m365Provisioning as any;
       if (!state?.request) return res.status(400).json({ message: "No Microsoft setup request is available to retry" });
       if (state.status === "running") {

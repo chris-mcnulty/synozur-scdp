@@ -7,6 +7,34 @@ interface JobRouteDeps {
   requireRole: (roles: string[]) => any;
 }
 
+const JOB_STATUSES = new Set(['queued', 'running', 'succeeded', 'failed']);
+
+function queryText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function parseQueryInteger(value: unknown, name: string, defaults: number, min: number, max?: number): number | string {
+  if (value == null || value === '') return defaults;
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    return `Invalid ${name}; expected a whole number`;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < min || (max != null && parsed > max)) {
+    return `Invalid ${name}; expected a number between ${min} and ${max ?? Number.MAX_SAFE_INTEGER}`;
+  }
+  return parsed;
+}
+
+function parseQueryDate(value: unknown, name: string): Date | string | undefined {
+  if (value == null || value === '') return undefined;
+  if (typeof value !== 'string') return `Invalid ${name}; expected an ISO date`;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return `Invalid ${name}; expected an ISO date`;
+  return parsed;
+}
+
 export function registerJobRoutes(app: Express, deps: JobRouteDeps) {
   const { requireAuth, requireRole } = deps;
 
@@ -45,17 +73,36 @@ export function registerJobRoutes(app: Express, deps: JobRouteDeps) {
     try {
       const user = req.user as any;
       const tenantId = user?.activeTenantId || user?.primaryTenantId || user?.tenantId;
-      const { type, status, limit, offset, since } = req.query;
+      const { type: rawType, status: rawStatus, limit: rawLimit, offset: rawOffset, since: rawSince, until: rawUntil } = req.query;
 
       const isPlatformAdmin = user?.platformRole === 'global_admin' || user?.platformRole === 'constellation_admin';
+      const type = queryText(rawType);
+      const status = queryText(rawStatus);
+      if (rawType != null && !type) {
+        return res.status(400).json({ message: 'Invalid type; expected a non-empty job type' });
+      }
+      if (status && !JOB_STATUSES.has(status)) {
+        return res.status(400).json({ message: `Invalid status; expected one of ${Array.from(JOB_STATUSES).join(', ')}` });
+      }
+
+      const limit = parseQueryInteger(rawLimit, 'limit', 100, 1, 500);
+      const offset = parseQueryInteger(rawOffset, 'offset', 0, 0);
+      const since = parseQueryDate(rawSince, 'since');
+      const until = parseQueryDate(rawUntil, 'until');
+      const invalid = [limit, offset, since, until].find((value) => typeof value === 'string');
+      if (invalid) return res.status(400).json({ message: invalid });
+      if (since instanceof Date && until instanceof Date && since > until) {
+        return res.status(400).json({ message: 'Invalid date range; since must be before or equal to until' });
+      }
 
       const jobs = await jobQueueService.listRecent({
         tenantId: isPlatformAdmin ? undefined : tenantId,
-        type: type as string | undefined,
-        status: status as string | undefined,
-        limit: limit ? parseInt(limit as string, 10) : 100,
-        offset: offset ? parseInt(offset as string, 10) : 0,
-        since: since ? new Date(since as string) : undefined,
+        type,
+        status,
+        limit: limit as number,
+        offset: offset as number,
+        since: since as Date | undefined,
+        until: until as Date | undefined,
       });
 
       res.json(jobs);
