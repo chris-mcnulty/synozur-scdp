@@ -31,6 +31,12 @@ export const timeEntryFiltersSchema = paginationSchema.extend({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   billable: z.enum(["true", "false"]).optional(),
+  allocationId: z.string().optional(),
+  epicId: z.string().optional(),
+  workstreamId: z.string().optional(),
+  projectStageId: z.string().optional(),
+  commercialTreatment: z.string().optional(),
+  submissionStatus: z.enum(["draft", "submitted", "approved", "rejected"]).optional(),
   // search inherited from paginationSchema
 });
 

@@ -7,6 +7,7 @@ import { RaiddLogTab } from "@/components/raidd-log-tab";
 import { DeliverablesTab } from "@/components/project/deliverables-tab";
 import { StatusReportsTab } from "@/components/project/status-reports-tab";
 import { CommercialBucketsPanel } from "@/components/project/commercial-buckets-panel";
+import { ProjectTimeWorkbench } from "@/components/project/project-time-workbench";
 import { Button } from "@/components/ui/button";
 import { ToastAction } from "@/components/ui/toast";
 
@@ -158,7 +159,6 @@ import {
   Link2, Search, Loader2, Globe, Info, GripVertical, CalendarClock, Hash, ShieldOff, GitMerge, XCircle
 } from "lucide-react";
 import { MicrosoftTeamsIcon } from "@/components/icons/microsoft-icons";
-import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
 import { SubSOWGenerator } from "@/components/sub-sow-generator";
 import { StatusReportDialog } from "@/components/status-report-dialog";
@@ -1606,15 +1606,6 @@ export default function ProjectDetail() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<any>(null);
   
-  // Time entries state
-  const [timeGrouping, setTimeGrouping] = useState<"none" | "month" | "workstream" | "stage">("none");
-  const [timeFilters, setTimeFilters] = useState({
-    startDate: "",
-    endDate: "",
-    personId: "all",
-    billableFilter: "all" as "all" | "billable" | "non-billable"
-  });
-  
   // Team assignments filter state — persisted to sessionStorage (session-scoped) per project.
   // localStorage is used only for the optional "Save as default view" feature.
   const assignmentFiltersSessionKey = `assignment-filters-session-${id}`;
@@ -1693,10 +1684,6 @@ export default function ProjectDetail() {
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
-  const [selectedTimeEntry, setSelectedTimeEntry] = useState<any>(null);
-  const [timeEntryDialogOpen, setTimeEntryDialogOpen] = useState(false);
-  const [timeEntryToDelete, setTimeEntryToDelete] = useState<any>(null);
-  const [deleteTimeEntryDialogOpen, setDeleteTimeEntryDialogOpen] = useState(false);
   
   // Budget approval confirmation state
   const [approvingSow, setApprovingSow] = useState<Sow | null>(null);
@@ -2027,158 +2014,6 @@ export default function ProjectDetail() {
     return term?.termValue || null;
   };
   
-  // Processed time entries with filtering and grouping
-  const processedTimeEntries = useMemo(() => {
-    if (!timeEntries || timeEntries.length === 0) return { groups: [], summary: null };
-    
-    // Validate and clean time entries data
-    const validEntries = timeEntries.filter(entry => {
-      // Check if entry has valid date
-      if (!entry.date || typeof entry.date !== 'string') return false;
-      // Check if date is valid ISO format
-      try {
-        const testDate = parseISO(entry.date);
-        return !isNaN(testDate.getTime());
-      } catch {
-        return false;
-      }
-    }).map(entry => {
-      // Resolve workstream name from workstreamId
-      const workstream = entry.workstreamId ? workstreams.find(w => w.id === entry.workstreamId) : null;
-      
-      return {
-        ...entry,
-        hours: Number(entry.hours || 0),
-        billingRate: Number(entry.billingRate || 0),
-        costRate: Number(entry.costRate || 0),
-        isBillable: Boolean(entry.isBillable || entry.billable),
-        isLocked: Boolean(entry.isLocked || entry.locked),
-        workstream: workstream?.name || null,
-        stage: entry.phase || null // Also populate stage from phase field
-      };
-    });
-    
-    // Apply filters
-    let filtered = [...validEntries];
-    
-    if (timeFilters.startDate) {
-      filtered = filtered.filter(entry => entry.date >= timeFilters.startDate);
-    }
-    
-    if (timeFilters.endDate) {
-      filtered = filtered.filter(entry => entry.date <= timeFilters.endDate);
-    }
-    
-    if (timeFilters.personId && timeFilters.personId !== "all") {
-      filtered = filtered.filter(entry => entry.personId === timeFilters.personId);
-    }
-    
-    if (timeFilters.billableFilter !== "all") {
-      const isBillable = timeFilters.billableFilter === "billable";
-      filtered = filtered.filter(entry => entry.isBillable === isBillable);
-    }
-    
-    // Calculate summary
-    const summary = {
-      totalHours: filtered.reduce((sum, entry) => sum + entry.hours, 0),
-      billableHours: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + entry.hours, 0),
-      nonBillableHours: filtered.filter(e => !e.isBillable).reduce((sum, entry) => sum + entry.hours, 0),
-      totalRevenue: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + (entry.hours * entry.billingRate), 0),
-      lockedCount: filtered.filter(e => e.isLocked).length,
-      unlockedCount: filtered.filter(e => !e.isLocked).length,
-      dateRange: filtered.length > 0 ? {
-        start: filtered.reduce((min, e) => e.date < min ? e.date : min, filtered[0].date),
-        end: filtered.reduce((max, e) => e.date > max ? e.date : max, filtered[0].date)
-      } : null
-    };
-    
-    // Group entries
-    let groups: any[] = [];
-    
-    if (timeGrouping === "none") {
-      groups = [{
-        name: "All Entries",
-        entries: filtered.sort((a, b) => b.date.localeCompare(a.date))
-      }];
-    } else if (timeGrouping === "month") {
-      const monthMap = new Map<string, any[]>();
-      filtered.forEach(entry => {
-        try {
-          const monthKey = format(startOfMonth(parseISO(entry.date)), "MMMM yyyy");
-          if (!monthMap.has(monthKey)) {
-            monthMap.set(monthKey, []);
-          }
-          monthMap.get(monthKey)!.push(entry);
-        } catch (error) {
-          console.warn('Invalid date in entry:', entry.date);
-        }
-      });
-      
-      groups = Array.from(monthMap.entries())
-        .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([month, entries]) => ({
-          name: month,
-          entries: entries.sort((a, b) => b.date.localeCompare(a.date))
-        }));
-    } else if (timeGrouping === "workstream") {
-      const workstreamMap = new Map<string, any[]>();
-      filtered.forEach(entry => {
-        const workstream = entry.workstream || "No Workstream";
-        if (!workstreamMap.has(workstream)) {
-          workstreamMap.set(workstream, []);
-        }
-        workstreamMap.get(workstream)!.push(entry);
-      });
-      
-      groups = Array.from(workstreamMap.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([workstream, entries]) => ({
-          name: workstream,
-          entries: entries.sort((a, b) => b.date.localeCompare(a.date))
-        }));
-    } else if (timeGrouping === "stage") {
-      const stageMap = new Map<string, any[]>();
-      filtered.forEach(entry => {
-        const stage = entry.stage || "No Stage";
-        if (!stageMap.has(stage)) {
-          stageMap.set(stage, []);
-        }
-        stageMap.get(stage)!.push(entry);
-      });
-      
-      groups = Array.from(stageMap.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([stage, entries]) => ({
-          name: stage,
-          entries: entries.sort((a, b) => b.date.localeCompare(a.date))
-        }));
-    }
-    
-    // Add group summaries
-    groups = groups.map(group => ({
-      ...group,
-      summary: {
-        totalHours: group.entries.reduce((sum: number, entry: any) => sum + entry.hours, 0),
-        billableHours: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + entry.hours, 0),
-        nonBillableHours: group.entries.filter((e: any) => !e.isBillable).reduce((sum: number, entry: any) => sum + entry.hours, 0),
-        revenue: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + (entry.hours * entry.billingRate), 0)
-      }
-    }));
-    
-    return { groups, summary };
-  }, [timeEntries, timeGrouping, timeFilters, workstreams]);
-  
-  // Get unique people from time entries
-  const uniquePeople = useMemo(() => {
-    const peopleMap = new Map<string, string>();
-    timeEntries.forEach((entry: any) => {
-      if (entry.personId && entry.personName) {
-        peopleMap.set(entry.personId, entry.personName);
-      }
-    });
-    return Array.from(peopleMap.entries()).map(([id, name]) => ({ id, name }));
-  }, [timeEntries]);
-
   const sowForm = useForm<SowFormData>({
     resolver: zodResolver(sowFormSchema),
     defaultValues: {
@@ -3250,32 +3085,6 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to approve SOW",
-        variant: "destructive"
-      });
-    }
-  });
-
-  // Time entry mutations
-  const deleteTimeEntryMutation = useMutation({
-    mutationFn: async (entryId: string) => {
-      return apiRequest(`/api/time-entries/${entryId}`, {
-        method: "DELETE"
-      });
-    },
-    onSuccess: () => {
-      toast({
-        title: "Time entry deleted",
-        description: "The time entry has been deleted successfully."
-      });
-      setDeleteTimeEntryDialogOpen(false);
-      setTimeEntryToDelete(null);
-      queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${id}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/analytics`] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete time entry",
         variant: "destructive"
       });
     }
@@ -6792,415 +6601,21 @@ export default function ProjectDetail() {
           {/* Time Tab */}
           {canViewTime && (
             <TabsContent value="time" className="space-y-6">
-              {/* Time tab header with Log Time action */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Time</h3>
-                  <p className="text-sm text-muted-foreground">{analytics?.project?.client?.name || project?.client?.name} · {project?.name}</p>
-                </div>
-                {user && !embedReadonly && (
-                  <Button size="sm" onClick={() => {
-                    logTimeForm.reset({
-                      date: formatLocalDate(new Date()),
-                      hours: "",
-                      milestoneId: "",
-                      workstreamId: "",
-                      projectStageId: "",
-                      allocationId: "",
-                      description: "",
-                      billable: true,
-                    });
-                    setShowLogTimeDialog(true);
-                  }} data-testid="button-log-time-tab">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Log Time
-                  </Button>
-                )}
-              </div>
-
-              {/* Overall Summary Card */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Time Entries Summary</CardTitle>
-                  <CardDescription>
-                    Overview of all time entries for this project
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {timeEntriesLoading ? (
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-4 w-3/4" />
-                      <Skeleton className="h-4 w-1/2" />
-                    </div>
-                  ) : processedTimeEntries.summary ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="space-y-1">
-                        <p className="text-sm text-muted-foreground">Total Hours</p>
-                        <p className="text-2xl font-bold">{processedTimeEntries.summary.totalHours.toFixed(1)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm text-muted-foreground">Billable / Non-Billable</p>
-                        <p className="text-lg font-semibold">
-                          <span className="text-green-600">{processedTimeEntries.summary.billableHours.toFixed(1)}</span>
-                          {" / "}
-                          <span className="text-orange-600">{processedTimeEntries.summary.nonBillableHours.toFixed(1)}</span>
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm text-muted-foreground">Total Revenue</p>
-                        <p className="text-2xl font-bold text-green-600">
-                          ${processedTimeEntries.summary.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-sm text-muted-foreground">Locked / Unlocked</p>
-                        <p className="text-lg font-semibold">
-                          <span className="inline-flex items-center gap-1">
-                            <Lock className="w-4 h-4" />
-                            {processedTimeEntries.summary.lockedCount}
-                          </span>
-                          {" / "}
-                          <span>{processedTimeEntries.summary.unlockedCount}</span>
-                        </p>
-                      </div>
-                      {processedTimeEntries.summary.dateRange && (
-                        <div className="col-span-full pt-2 border-t">
-                          <p className="text-sm text-muted-foreground">
-                            Date Range: {safeFormatDate(processedTimeEntries.summary.dateRange.start, "MMM d, yyyy")} - {safeFormatDate(processedTimeEntries.summary.dateRange.end, "MMM d, yyyy")}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-center text-muted-foreground py-8">No time entries found</p>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Filters and Grouping */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Filters & Grouping</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Grouping Options */}
-                  <div className="space-y-3">
-                    <Label>Group By</Label>
-                    <RadioGroup
-                      value={timeGrouping}
-                      onValueChange={(value: any) => setTimeGrouping(value)}
-                      className="flex flex-wrap gap-4"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="none" id="group-none" />
-                        <Label htmlFor="group-none" className="cursor-pointer">No Grouping</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="month" id="group-month" />
-                        <Label htmlFor="group-month" className="cursor-pointer">By Month</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="workstream" id="group-workstream" />
-                        <Label htmlFor="group-workstream" className="cursor-pointer">By Workstream</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="stage" id="group-stage" />
-                        <Label htmlFor="group-stage" className="cursor-pointer">By Stage</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-                  <Separator />
-
-                  {/* Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="filter-start-date">Start Date</Label>
-                      <Input
-                        id="filter-start-date"
-                        type="date"
-                        value={timeFilters.startDate}
-                        onChange={(e) => setTimeFilters(prev => ({ ...prev, startDate: e.target.value }))}
-                        data-testid="input-filter-start-date"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="filter-end-date">End Date</Label>
-                      <Input
-                        id="filter-end-date"
-                        type="date"
-                        value={timeFilters.endDate}
-                        onChange={(e) => setTimeFilters(prev => ({ ...prev, endDate: e.target.value }))}
-                        data-testid="input-filter-end-date"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="filter-person">Person</Label>
-                      <Select
-                        value={timeFilters.personId}
-                        onValueChange={(value) => setTimeFilters(prev => ({ ...prev, personId: value }))}
-                      >
-                        <SelectTrigger id="filter-person" data-testid="select-filter-person">
-                          <SelectValue placeholder="All People" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All People</SelectItem>
-                          {uniquePeople.map(person => (
-                            <SelectItem key={person.id} value={person.id}>
-                              {person.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="filter-billable">Billable Status</Label>
-                      <Select
-                        value={timeFilters.billableFilter}
-                        onValueChange={(value: any) => setTimeFilters(prev => ({ ...prev, billableFilter: value }))}
-                      >
-                        <SelectTrigger id="filter-billable" data-testid="select-filter-billable">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Entries</SelectItem>
-                          <SelectItem value="billable">Billable Only</SelectItem>
-                          <SelectItem value="non-billable">Non-Billable Only</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {(timeFilters.startDate || timeFilters.endDate || (timeFilters.personId && timeFilters.personId !== "all") || timeFilters.billableFilter !== "all") && (
-                    <div className="flex items-center gap-2">
-                      <Filter className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Filters applied</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setTimeFilters({
-                          startDate: "",
-                          endDate: "",
-                          personId: "all",
-                          billableFilter: "all"
-                        })}
-                        data-testid="button-clear-filters"
-                      >
-                        Clear all
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Time Entries Groups */}
-              {timeEntriesLoading ? (
-                <Card>
-                  <CardContent className="py-8">
-                    <div className="space-y-4">
-                      <Skeleton className="h-8 w-1/3" />
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-4 w-3/4" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : processedTimeEntries.groups.length === 0 ? (
-                <Card>
-                  <CardContent className="py-16">
-                    <div className="text-center space-y-3">
-                      <Clock className="w-12 h-12 mx-auto text-muted-foreground" />
-                      <h3 className="text-lg font-semibold">No Time Entries</h3>
-                      <p className="text-muted-foreground">
-                        No time entries found for the selected filters.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-6">
-                  {processedTimeEntries.groups.map((group, groupIndex) => (
-                    <Card key={groupIndex}>
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <CardTitle>{group.name}</CardTitle>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">
-                              Total: <span className="font-semibold text-foreground">{group.summary.totalHours.toFixed(1)}h</span>
-                            </span>
-                            <span className="text-muted-foreground">
-                              Billable: <span className="font-semibold text-green-600">{group.summary.billableHours.toFixed(1)}h</span>
-                            </span>
-                            <span className="text-muted-foreground">
-                              Non-Billable: <span className="font-semibold text-orange-600">{group.summary.nonBillableHours.toFixed(1)}h</span>
-                            </span>
-                            {group.summary.revenue > 0 && (
-                              <span className="text-muted-foreground">
-                                Revenue: <span className="font-semibold text-green-600">
-                                  ${group.summary.revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Date</TableHead>
-                              <TableHead>Person</TableHead>
-                              <TableHead>Hours</TableHead>
-                              <TableHead>Description</TableHead>
-                              {timeGrouping !== "workstream" && <TableHead>Workstream</TableHead>}
-                              {timeGrouping !== "stage" && <TableHead>Stage</TableHead>}
-                              <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Revenue</TableHead>
-                              {canManageProjectTimeEntries && <TableHead className="text-right">Actions</TableHead>}
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {group.entries.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={8} className="text-center text-muted-foreground">
-                                  No entries in this group
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              group.entries.map((entry: any, index: number) => (
-                                <TableRow
-                                  key={entry.id || index}
-                                  data-testid={`time-entry-${entry.id}`}
-                                  ref={(el) => {
-                                    if (highlightedTimeEntryId === entry.id && el) {
-                                      setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 100);
-                                    }
-                                  }}
-                                  className={highlightedTimeEntryId === entry.id ? 'ring-2 ring-primary ring-offset-2 bg-primary/5 animate-pulse' : ''}
-                                >
-                                  <TableCell>
-                                    {safeFormatDate(entry.date, "MMM d, yyyy")}
-                                  </TableCell>
-                                  <TableCell>{entry.personName || "Unknown"}</TableCell>
-                                  <TableCell>{entry.hours.toFixed(1)}</TableCell>
-                                  <TableCell className="max-w-xs truncate" title={entry.description}>
-                                    {entry.description || "-"}
-                                  </TableCell>
-                                  {timeGrouping !== "workstream" && (
-                                    <TableCell>{entry.workstream || "-"}</TableCell>
-                                  )}
-                                  {timeGrouping !== "stage" && (
-                                    <TableCell>{entry.stage || "-"}</TableCell>
-                                  )}
-                                  <TableCell>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <Badge variant={entry.isBillable ? "default" : "secondary"}>
-                                        {entry.isBillable ? "Billable" : "Non-Billable"}
-                                      </Badge>
-                                      {entry.isLocked && (
-                                        <Lock className="w-4 h-4 text-muted-foreground" />
-                                      )}
-                                      {entry.coveredByMilestoneId && (
-                                        <UITooltipProvider>
-                                          <UITooltip>
-                                            <UITooltipTrigger asChild>
-                                              <Badge
-                                                variant="outline"
-                                                className="text-xs cursor-default text-purple-700 border-purple-300 bg-purple-50 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800"
-                                                data-testid={`badge-covered-${entry.id}`}
-                                              >
-                                                Covered
-                                              </Badge>
-                                            </UITooltipTrigger>
-                                            <UITooltipContent side="top">
-                                              <p>{entry.coveredByMilestoneName ? `Covered by: ${entry.coveredByMilestoneName}` : "Covered by a milestone"}</p>
-                                            </UITooltipContent>
-                                          </UITooltip>
-                                        </UITooltipProvider>
-                                      )}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {entry.isBillable && entry.billingRate ? (
-                                      <span className="font-medium text-green-600">
-                                        ${(entry.hours * entry.billingRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                      </span>
-                                    ) : (
-                                      "-"
-                                    )}
-                                  </TableCell>
-                                  {canManageProjectTimeEntries && (
-                                    <TableCell className="text-right">
-                                      {!entry.isLocked && (
-                                        <div className="flex justify-end gap-1">
-                                          {entry.coveredByMilestoneId && ['admin', 'billing-admin'].includes(user?.role || '') && (
-                                            <UITooltipProvider>
-                                              <UITooltip>
-                                                <UITooltipTrigger asChild>
-                                                  <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    className="h-8 w-8 text-amber-600 hover:text-amber-700"
-                                                    onClick={async () => {
-                                                      try {
-                                                        await apiRequest(`/api/time-entries/${entry.id}`, {
-                                                          method: 'PATCH',
-                                                          body: JSON.stringify({ coveredByMilestoneId: null }),
-                                                        });
-                                                        toast({ title: "Coverage cleared", description: "Entry restored to unbilled items." });
-                                                        queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${id}`] });
-                                                      } catch (err: any) {
-                                                        toast({ title: "Error", description: err.message || "Failed to clear coverage", variant: "destructive" });
-                                                      }
-                                                    }}
-                                                    data-testid={`button-clear-coverage-${entry.id}`}
-                                                  >
-                                                    <ShieldOff className="h-4 w-4" />
-                                                  </Button>
-                                                </UITooltipTrigger>
-                                                <UITooltipContent>Clear milestone coverage</UITooltipContent>
-                                              </UITooltip>
-                                            </UITooltipProvider>
-                                          )}
-                                          <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            className="h-8 w-8"
-                                            onClick={() => {
-                                              setSelectedTimeEntry(entry);
-                                              setTimeEntryDialogOpen(true);
-                                            }}
-                                            data-testid={`button-edit-time-entry-${entry.id}`}
-                                          >
-                                            <Edit className="h-4 w-4" />
-                                          </Button>
-                                          <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            className="h-8 w-8 text-destructive"
-                                            onClick={() => {
-                                              setTimeEntryToDelete(entry);
-                                              setDeleteTimeEntryDialogOpen(true);
-                                            }}
-                                            data-testid={`button-delete-time-entry-${entry.id}`}
-                                          >
-                                            <Trash2 className="h-4 w-4" />
-                                          </Button>
-                                        </div>
-                                      )}
-                                    </TableCell>
-                                  )}
-                                </TableRow>
-                              ))
-                            )}
-                          </TableBody>
-                        </Table>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+              <ProjectTimeWorkbench
+                projectId={id || ""}
+                entries={timeEntries}
+                loading={timeEntriesLoading}
+                people={users}
+                assignments={allocations}
+                milestones={milestones}
+                workstreams={workstreams}
+                epics={epics}
+                stages={stages}
+                canManage={canManageProjectTimeEntries && !embedReadonly}
+                canClearCoverage={['admin', 'billing-admin'].includes(user?.role || '') && !embedReadonly}
+                currentUserRole={user?.role}
+                highlightedEntryId={highlightedTimeEntryId}
+              />
             </TabsContent>
           )}
 
@@ -8969,46 +8384,6 @@ export default function ProjectDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* Time Entry Management Dialog */}
-        <TimeEntryManagementDialog
-          isOpen={timeEntryDialogOpen}
-          onOpenChange={setTimeEntryDialogOpen}
-          timeEntry={selectedTimeEntry}
-          projectId={id || ""}
-        />
-
-        {/* Delete Time Entry Confirmation Dialog */}
-        <AlertDialog open={deleteTimeEntryDialogOpen} onOpenChange={setDeleteTimeEntryDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Time Entry</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete this time entry?
-                {timeEntryToDelete && (
-                  <div className="mt-2 text-sm space-y-1">
-                    <div><strong>Date:</strong> {safeFormatDate(timeEntryToDelete.date, "PPP")}</div>
-                    <div><strong>Hours:</strong> {timeEntryToDelete.hours.toFixed(1)}</div>
-                    <div><strong>Person:</strong> {timeEntryToDelete.personName || "Unknown"}</div>
-                    {timeEntryToDelete.description && (
-                      <div><strong>Description:</strong> {timeEntryToDelete.description}</div>
-                    )}
-                  </div>
-                )}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel data-testid="button-cancel-delete-time-entry">Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => timeEntryToDelete && deleteTimeEntryMutation.mutate(timeEntryToDelete.id)}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                data-testid="button-confirm-delete-time-entry"
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
 
         {/* Epic Dialog */}
         <Dialog open={showEpicDialog} onOpenChange={setShowEpicDialog}>

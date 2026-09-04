@@ -4,6 +4,8 @@ import {
   projects,
   projectMilestones,
   projectWorkstreams,
+  projectEpics,
+  projectStages,
   projectAllocations,
   commercialBuckets,
   timeEntries,
@@ -18,15 +20,85 @@ import type { IStorage } from "./index";
 import { eq, desc, and, or, gte, lte, sql, inArray, isNotNull, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { placeholderUser } from "./helpers";
+import { isFinanciallyImmutable } from "../lib/project-time-workbench";
+
+/** Pure row mapper kept exported so the workbench's fallback semantics can be
+ * regression-tested without a database. Explicit entry links win over the
+ * assignment fallback, and baseline terms never become a stored bucket. */
+export function normalizeProjectTimeEntryRow(row: any) {
+  const person = row.users || placeholderUser(row.time_entries.personId);
+  const assignment = row.time_assignment;
+  const stage = row.time_direct_stage || row.time_assignment_stage;
+  const epic = row.time_direct_stage_epic || row.time_assignment_epic;
+  const workstream = row.time_direct_workstream || row.time_assignment_workstream;
+  const bucket = row.commercial_buckets;
+  const isBaseline = !row.time_entries.commercialBucketId &&
+    row.time_entries.commercialEligibilityOutcome === "not_eligible";
+  const commercialTreatmentState = bucket ? "bucket" : isBaseline ? "baseline_terms" : "no_value";
+  const readOnlyReason = row.time_entries.locked
+    ? "Locked in an invoice batch"
+    : row.time_entries.billedFlag
+      ? "Billed time cannot be edited"
+      : row.time_entries.invoiceBatchId
+        ? "Attributed to an invoice batch"
+        : row.time_entries.vendorInvoiceLineId
+          ? "Matched to a vendor invoice line"
+          : null;
+  return {
+    ...row.time_entries,
+    person,
+    personName: person.name,
+    assignment: assignment || null,
+    assignmentName: assignment?.taskDescription || assignment?.roleInstanceLabel || assignment?.resourceName || "Unassigned",
+    assignmentLabel: assignment?.taskDescription || assignment?.roleInstanceLabel || assignment?.resourceName || "Unassigned",
+    epicId: epic?.id || null,
+    epicName: epic?.name || null,
+    epicLabel: epic?.name || "No epic",
+    normalizedProjectStageId: stage?.id || null,
+    projectStageName: stage?.name || null,
+    stageLabel: stage?.name || "No stage",
+    normalizedWorkstreamId: workstream?.id || null,
+    workstreamName: workstream?.name || null,
+    workstreamLabel: workstream?.name || "No workstream",
+    coveredByMilestoneName: row.time_covered_milestone?.name || null,
+    milestoneCoverageLabel: row.time_covered_milestone?.name || "Not covered",
+    submissionStatusLabel: row.time_entries.submissionStatus === "submitted" ? "Submitted"
+      : row.time_entries.submissionStatus === "approved" ? "Approved"
+      : row.time_entries.submissionStatus === "rejected" ? "Rejected" : "Draft",
+    commercialBucket: bucket || null,
+    commercialBucketLabel: bucket?.label || null,
+    commercialBucketBasis: bucket?.basis || null,
+    commercialTreatmentState,
+    commercialTreatmentLabel: bucket?.label || (isBaseline ? "Baseline terms" : "No commercial value"),
+    immutable: isFinanciallyImmutable(row.time_entries),
+    readOnlyReason,
+    project: { ...row.projects!, client: row.clients! },
+  };
+}
 
 export const timeEntriesMethods: ThisType<IStorage> = {
   async getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
+    const assignment = alias(projectAllocations, "time_assignment");
+    const directStage = alias(projectStages, "time_direct_stage");
+    const assignmentStage = alias(projectStages, "time_assignment_stage");
+    const directStageEpic = alias(projectEpics, "time_direct_stage_epic");
+    const assignmentEpic = alias(projectEpics, "time_assignment_epic");
+    const directWorkstream = alias(projectWorkstreams, "time_direct_workstream");
+    const assignmentWorkstream = alias(projectWorkstreams, "time_assignment_workstream");
+    const coveredMilestone = alias(projectMilestones, "time_covered_milestone");
     const baseQuery = db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
-      .leftJoin(projectMilestones, eq(timeEntries.coveredByMilestoneId, projectMilestones.id))
-      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id));
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
+      .leftJoin(assignment, eq(timeEntries.allocationId, assignment.id))
+      .leftJoin(directStage, eq(timeEntries.projectStageId, directStage.id))
+      .leftJoin(assignmentStage, eq(assignment.projectStageId, assignmentStage.id))
+      .leftJoin(directStageEpic, eq(directStage.epicId, directStageEpic.id))
+      .leftJoin(assignmentEpic, sql`${assignmentEpic.id} = COALESCE(${assignment.projectEpicId}, ${assignmentStage.epicId})`)
+      .leftJoin(directWorkstream, eq(timeEntries.workstreamId, directWorkstream.id))
+      .leftJoin(assignmentWorkstream, eq(assignment.projectWorkstreamId, assignmentWorkstream.id))
+      .leftJoin(coveredMilestone, eq(timeEntries.coveredByMilestoneId, coveredMilestone.id));
 
     const conditions = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
@@ -42,28 +114,23 @@ export const timeEntriesMethods: ThisType<IStorage> = {
 
     const rows = await query.orderBy(desc(timeEntries.date));
     
-    return rows.map(row => {
-      // Handle case where user might not exist (deleted user, etc.)
-      const person: User = row.users || placeholderUser(row.time_entries.personId);
-
-      return {
-        ...row.time_entries,
-        coveredByMilestoneName: row.project_milestones?.name || null,
-        commercialBucket: row.commercial_buckets || null,
-        commercialBucketLabel: row.commercial_buckets?.label || null,
-        commercialBucketBasis: row.commercial_buckets?.basis || null,
-        person,
-        // Add personName directly on the entry for backward compatibility
-        personName: person.name,
-        project: {
-          ...row.projects!,
-          client: row.clients!
-        }
-      };
-    });
+    return rows.map(normalizeProjectTimeEntryRow) as any;
   },
 
-  async getTimeEntriesPaginated(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string; billable?: boolean; search?: string; limit: number; offset: number }): Promise<{ items: (TimeEntry & { person: User; project: Project & { client: Client } })[]; total: number; hasMore: boolean }> {
+  async getTimeEntriesPaginated(filters: {
+    personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string;
+    tenantId?: string; billable?: boolean; search?: string; allocationId?: string; epicId?: string;
+    workstreamId?: string; projectStageId?: string; commercialTreatment?: string;
+    submissionStatus?: string; limit: number; offset: number;
+  }): Promise<any> {
+    const assignment = alias(projectAllocations, "time_assignment");
+    const directStage = alias(projectStages, "time_direct_stage");
+    const assignmentStage = alias(projectStages, "time_assignment_stage");
+    const directStageEpic = alias(projectEpics, "time_direct_stage_epic");
+    const assignmentEpic = alias(projectEpics, "time_assignment_epic");
+    const directWorkstream = alias(projectWorkstreams, "time_direct_workstream");
+    const assignmentWorkstream = alias(projectWorkstreams, "time_assignment_workstream");
+    const coveredMilestone = alias(projectMilestones, "time_covered_milestone");
     const conditions: any[] = [];
     if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
     if (filters.personId) conditions.push(eq(timeEntries.personId, filters.personId));
@@ -72,6 +139,32 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
     if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
     if (filters.billable !== undefined) conditions.push(eq(timeEntries.billable, filters.billable));
+    if (filters.allocationId) conditions.push(filters.allocationId === "unassigned"
+      ? isNull(timeEntries.allocationId) : eq(timeEntries.allocationId, filters.allocationId));
+    if (filters.epicId) conditions.push(filters.epicId === "none"
+      ? and(isNull(directStageEpic.id), isNull(assignmentEpic.id))
+      : sql`COALESCE(${directStageEpic.id}, ${assignmentEpic.id}) = ${filters.epicId}`);
+    if (filters.workstreamId) conditions.push(filters.workstreamId === "none"
+      ? and(isNull(timeEntries.workstreamId), isNull(assignment.projectWorkstreamId))
+      : sql`COALESCE(${timeEntries.workstreamId}, ${assignment.projectWorkstreamId}) = ${filters.workstreamId}`);
+    if (filters.projectStageId) conditions.push(filters.projectStageId === "none"
+      ? and(isNull(timeEntries.projectStageId), isNull(assignment.projectStageId))
+      : sql`COALESCE(${timeEntries.projectStageId}, ${assignment.projectStageId}) = ${filters.projectStageId}`);
+    if (filters.submissionStatus) conditions.push(filters.submissionStatus === "draft"
+      ? or(eq(timeEntries.submissionStatus, "draft"), isNull(timeEntries.submissionStatus))
+      : eq(timeEntries.submissionStatus, filters.submissionStatus));
+    if (filters.commercialTreatment) {
+      if (filters.commercialTreatment === "baseline_terms") {
+        conditions.push(and(isNull(timeEntries.commercialBucketId), eq(timeEntries.commercialEligibilityOutcome, "not_eligible")));
+      } else if (filters.commercialTreatment === "no_value") {
+        conditions.push(and(isNull(timeEntries.commercialBucketId), or(
+          isNull(timeEntries.commercialEligibilityOutcome),
+          sql`${timeEntries.commercialEligibilityOutcome} <> 'not_eligible'`
+        )));
+      } else {
+        conditions.push(eq(timeEntries.commercialBucketId, filters.commercialTreatment));
+      }
+    }
     if (filters.search) {
       const term = `%${filters.search}%`;
       conditions.push(or(
@@ -90,6 +183,11 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
+      .leftJoin(assignment, eq(timeEntries.allocationId, assignment.id))
+      .leftJoin(directStage, eq(timeEntries.projectStageId, directStage.id))
+      .leftJoin(assignmentStage, eq(assignment.projectStageId, assignmentStage.id))
+      .leftJoin(directStageEpic, eq(directStage.epicId, directStageEpic.id))
+      .leftJoin(assignmentEpic, sql`${assignmentEpic.id} = COALESCE(${assignment.projectEpicId}, ${assignmentStage.epicId})`)
       .where(whereClause);
     const total = Number(countResult[0]?.count || 0);
 
@@ -98,24 +196,43 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
+      .leftJoin(assignment, eq(timeEntries.allocationId, assignment.id))
+      .leftJoin(directStage, eq(timeEntries.projectStageId, directStage.id))
+      .leftJoin(assignmentStage, eq(assignment.projectStageId, assignmentStage.id))
+      .leftJoin(directStageEpic, eq(directStage.epicId, directStageEpic.id))
+      .leftJoin(assignmentEpic, sql`${assignmentEpic.id} = COALESCE(${assignment.projectEpicId}, ${assignmentStage.epicId})`)
+      .leftJoin(directWorkstream, eq(timeEntries.workstreamId, directWorkstream.id))
+      .leftJoin(assignmentWorkstream, eq(assignment.projectWorkstreamId, assignmentWorkstream.id))
+      .leftJoin(coveredMilestone, eq(timeEntries.coveredByMilestoneId, coveredMilestone.id))
       .where(whereClause)
       .orderBy(desc(timeEntries.date))
       .limit(filters.limit)
       .offset(filters.offset);
 
-    const items = rows.map(row => {
-      const person = row.users || placeholderUser(row.time_entries.personId);
-      return {
-        ...row.time_entries,
-        person,
-        personName: person.name,
-        commercialBucket: row.commercial_buckets || null,
-        commercialBucketLabel: row.commercial_buckets?.label || null,
-        project: { ...row.projects!, client: row.clients! }
-      };
-    });
+    const items = rows.map(normalizeProjectTimeEntryRow);
 
-    return { items, total, hasMore: filters.offset + filters.limit < total };
+    const totals = await db.select({
+      hours: sql<string>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)`,
+      billableHours: sql<string>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)`,
+      nonBillableHours: sql<string>`COALESCE(SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)`,
+    }).from(timeEntries)
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(commercialBuckets, eq(timeEntries.commercialBucketId, commercialBuckets.id))
+      .leftJoin(assignment, eq(timeEntries.allocationId, assignment.id))
+      .leftJoin(directStage, eq(timeEntries.projectStageId, directStage.id))
+      .leftJoin(assignmentStage, eq(assignment.projectStageId, assignmentStage.id))
+      .leftJoin(directStageEpic, eq(directStage.epicId, directStageEpic.id))
+      .leftJoin(assignmentEpic, sql`${assignmentEpic.id} = COALESCE(${assignment.projectEpicId}, ${assignmentStage.epicId})`)
+      .where(whereClause);
+    return {
+      items, total, hasMore: filters.offset + filters.limit < total,
+      totals: {
+        hours: Number(totals[0]?.hours || 0),
+        billableHours: Number(totals[0]?.billableHours || 0),
+        nonBillableHours: Number(totals[0]?.nonBillableHours || 0),
+      },
+    };
   },
 
   async getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined> {
@@ -156,7 +273,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       const { personId, projectId, date, billable } = insertTimeEntry;
       
       // Look up project's tenantId for tenant-scoped rate fallback
-      const [proj] = await db.select({ tenantId: projects.tenantId }).from(projects).where(eq(projects.id, projectId));
+      const [proj] = await executor.select({ tenantId: projects.tenantId }).from(projects).where(eq(projects.id, projectId));
       const projectTenantId = proj?.tenantId ?? undefined;
       
       console.log("[STORAGE] Resolving rates using shared helper...");
@@ -165,7 +282,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       console.log("[STORAGE] Resolved rates - Billing:", billingRate, "Cost:", costRate);
       
       // Get user info for better error messages
-      const [user] = await db.select({ 
+      const [user] = await executor.select({
         id: users.id,
         name: users.name,
         email: users.email,
@@ -258,7 +375,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
 
   async updateTimeEntry(id: string, updateTimeEntry: Partial<InsertTimeEntry>, executor: any = db): Promise<TimeEntry> {
     // Get the existing entry to check if project or date changed
-    const [existingEntry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id));
+    const [existingEntry] = await executor.select().from(timeEntries).where(eq(timeEntries.id, id));
     
     if (!existingEntry) {
       throw new Error('Time entry not found');
@@ -268,16 +385,17 @@ export const timeEntriesMethods: ThisType<IStorage> = {
     const projectChanged = updateTimeEntry.projectId && updateTimeEntry.projectId !== existingEntry.projectId;
     const dateChanged = updateTimeEntry.date && updateTimeEntry.date !== existingEntry.date;
     const billableChanged = updateTimeEntry.billable !== undefined && updateTimeEntry.billable !== existingEntry.billable;
+    const personChanged = updateTimeEntry.personId && updateTimeEntry.personId !== existingEntry.personId;
     
     let finalUpdateData: any = { ...updateTimeEntry };
     let rates: { billingRate?: string; costRate?: string } = {};
     
-    if (projectChanged || dateChanged || billableChanged) {
+    if (projectChanged || dateChanged || billableChanged || personChanged) {
       // Use the new values if provided, otherwise keep existing
       const projectId = updateTimeEntry.projectId || existingEntry.projectId;
       const date = updateTimeEntry.date || existingEntry.date;
       const billable = updateTimeEntry.billable ?? existingEntry.billable;
-      const personId = existingEntry.personId; // Person ID cannot be changed via update
+      const personId = updateTimeEntry.personId || existingEntry.personId;
       
       // First check for project-specific rate override
       const override = await this.getProjectRateOverride(projectId, personId, date);
@@ -314,7 +432,7 @@ export const timeEntriesMethods: ThisType<IStorage> = {
       }
       
       // Get user info for better error messages
-      const [user] = await db.select({ 
+      const [user] = await executor.select({
         id: users.id,
         name: users.name,
         email: users.email,

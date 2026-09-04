@@ -1,11 +1,15 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage, db } from "../storage";
-import { insertTimeEntrySchema, timeEntries, projectWorkstreams } from "@shared/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import {
+  insertTimeEntrySchema, timeEntries, projectWorkstreams, projectAllocations,
+  projectEpics, projectStages, projectMilestones, projects, users, tenantUsers,
+} from "@shared/schema";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getAllSessions } from "../session-store";
 import { notify } from "../services/notification-service.js";
 import { classifyCommercialTimeEntry, validateCommercialSelection, validateRequiredBucketForEntry } from "../lib/commercial-buckets.js";
+import { canAccessProjectTime, clearRetainedProjectLocalLinks, isFinanciallyImmutable } from "../lib/project-time-workbench.js";
 
 interface TimeEntryRouteDeps {
   requireAuth: any;
@@ -48,11 +52,76 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
     const project = await storage.getProject(projectId);
     return project?.pm === req.user.id;
   };
+  const assertProjectAccess = async (projectId: string, tenantId?: string | null, executor: any = db) => {
+    const [project] = await executor.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project || (tenantId && project.tenantId !== tenantId)) {
+      throw new Error("Invalid project selected or project is outside your active tenant.");
+    }
+    return project;
+  };
+  const normalizeAndValidateHierarchy = async (input: any, projectId: string, executor: any = db) => {
+    const result = { ...input };
+    if (result.allocationId) {
+      const [assignment] = await executor.select().from(projectAllocations)
+        .where(eq(projectAllocations.id, result.allocationId)).limit(1);
+      if (!assignment || assignment.projectId !== projectId) {
+        throw new Error("Assignment must belong to the selected project.");
+      }
+      // Assignment hierarchy is the deterministic default. Explicit stage and
+      // workstream overrides remain supported, but are independently scoped.
+      if (result.projectStageId === undefined) result.projectStageId = assignment.projectStageId;
+      if (result.workstreamId === undefined) result.workstreamId = assignment.projectWorkstreamId;
+    }
+    if (result.projectStageId) {
+      const [stage] = await executor.select({
+        id: projectStages.id, projectId: projectEpics.projectId,
+      }).from(projectStages).innerJoin(projectEpics, eq(projectStages.epicId, projectEpics.id))
+        .where(eq(projectStages.id, result.projectStageId)).limit(1);
+      if (!stage || stage.projectId !== projectId) throw new Error("Stage must belong to the selected project.");
+    }
+    if (result.workstreamId) {
+      const [workstream] = await executor.select().from(projectWorkstreams)
+        .where(eq(projectWorkstreams.id, result.workstreamId)).limit(1);
+      if (!workstream || workstream.projectId !== projectId) throw new Error("Workstream must belong to the selected project.");
+    }
+    if (result.milestoneId) {
+      const [milestone] = await executor.select().from(projectMilestones)
+        .where(eq(projectMilestones.id, result.milestoneId)).limit(1);
+      if (!milestone || milestone.projectId !== projectId) throw new Error("Milestone must belong to the selected project.");
+    }
+    return result;
+  };
+  const assertAssignablePerson = async (personId: string, tenantId?: string | null, executor: any = db) => {
+    const [person] = await executor.select().from(users).where(eq(users.id, personId)).limit(1);
+    if (!person || !person.isAssignable) throw new Error("Invalid or non-assignable person.");
+    if (tenantId && person.primaryTenantId && person.primaryTenantId !== tenantId) {
+      const [membership] = await executor.select({ id: tenantUsers.id }).from(tenantUsers)
+        .where(and(eq(tenantUsers.userId, personId), eq(tenantUsers.tenantId, tenantId))).limit(1);
+      if (!membership) throw new Error("Person must belong to the active tenant.");
+    }
+    return person;
+  };
+  const assertProjectTimePermission = (req: any, project: any) => {
+    if (!canAccessProjectTime(req.user?.role, req.user?.id, project.pm)) {
+      throw new Error("You can only access time entries for projects you manage.");
+    }
+  };
 
   app.get("/api/time-entries", deps.requireAuth, async (req, res) => {
     try {
-      // Backward-compat: only paginate when caller explicitly passes limit or offset
-      if (req.query.limit === undefined && req.query.offset === undefined) {
+      // Backward-compat: ordinary callers still receive an array. Supplying
+      // pagination or any workbench-only filter opts into the metadata model.
+      const workbenchQueryKeys = [
+        "allocationId", "epicId", "workstreamId", "projectStageId",
+        "commercialTreatment", "submissionStatus", "billable", "search",
+      ];
+      const requestsWorkbenchModel = req.query.limit !== undefined || req.query.offset !== undefined ||
+        workbenchQueryKeys.some(key => req.query[key] !== undefined);
+      if (!requestsWorkbenchModel) {
+        if (req.query.projectId) {
+          const project = await assertProjectAccess(String(req.query.projectId), req.user?.tenantId);
+          assertProjectTimePermission(req, project);
+        }
         const allEntries = await storage.getTimeEntries({
           tenantId: req.user?.tenantId,
           personId: req.user!.role === "employee" ? req.user!.id : (req.query.personId as string | undefined),
@@ -74,10 +143,17 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
 
       if (req.user?.tenantId) filters.tenantId = req.user.tenantId;
 
-      const { personId, projectId, clientId, startDate, endDate, billable, search } = parsed;
+        const {
+          personId, projectId, clientId, startDate, endDate, billable, search,
+          allocationId, epicId, workstreamId, projectStageId, commercialTreatment, submissionStatus,
+        } = parsed;
+        if (projectId) {
+          const project = await assertProjectAccess(projectId, req.user?.tenantId);
+          assertProjectTimePermission(req, project);
+        }
       if (search) filters.search = search;
 
-      if (projectId && ['admin', 'billing-admin', 'pm', 'executive'].includes(req.user!.role)) {
+      if (projectId && ['admin', 'billing-admin', 'pm', 'portfolio-manager', 'executive'].includes(req.user!.role)) {
         filters.projectId = projectId;
         if (personId) filters.personId = personId;
       } else if (personId) {
@@ -92,11 +168,20 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
       if (billable !== undefined) filters.billable = billable === "true";
+      Object.assign(filters, {
+        ...(allocationId ? { allocationId } : {}),
+        ...(epicId ? { epicId } : {}),
+        ...(workstreamId ? { workstreamId } : {}),
+        ...(projectStageId ? { projectStageId } : {}),
+        ...(commercialTreatment ? { commercialTreatment } : {}),
+        ...(submissionStatus ? { submissionStatus } : {}),
+      });
 
       const result = await storage.getTimeEntriesPaginated(filters);
       return res.json({ ...result, limit: parsed.limit, offset: parsed.offset });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch time entries" });
+    } catch (error: any) {
+      const badRequest = error instanceof z.ZodError || /outside your active tenant|Invalid project|projects you manage/.test(error.message || "");
+      res.status(badRequest ? 400 : 500).json({ message: badRequest ? error.message : "Failed to fetch time entries" });
     }
   });
 
@@ -142,14 +227,18 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       console.log("[TIME_ENTRY] Tenant context:", req.user?.tenantId);
 
       if (validatedData.projectId) {
-        const project = await storage.getProject(validatedData.projectId);
-        if (!project) {
+        let project;
+        try {
+          project = await assertProjectAccess(validatedData.projectId, req.user?.tenantId);
+        } catch {
           console.error("[TIME_ENTRY] Invalid project ID:", validatedData.projectId);
           return res.status(400).json({ 
             message: "Invalid project selected. Please refresh and try again.",
             type: 'INVALID_PROJECT'
           });
         }
+        Object.assign(validatedData, await normalizeAndValidateHierarchy(validatedData, validatedData.projectId));
+        await assertAssignablePerson(validatedData.personId, req.user?.tenantId);
         const canManageCommercial = await canManageCommercialClassification(req, validatedData.projectId);
         const commercialSelection = await validateCommercialSelection({
           projectId: validatedData.projectId,
@@ -218,7 +307,8 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       }
       if (error.message?.includes("commercial") || error.message?.includes("bucket") ||
           error.message?.includes("approval") || error.message?.includes("eligible") ||
-          error.message?.includes("effective period")) {
+          error.message?.includes("effective period") || error.message?.includes("belong to the selected project") ||
+          error.message?.includes("active tenant")) {
         return res.status(400).json({ message: error.message });
       }
 
@@ -231,8 +321,99 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
     }
   });
 
+  app.post(["/api/time-entries/batch-create", "/api/time-entries/batch"], deps.requireAuth, async (req, res) => {
+    try {
+      const parsed = z.object({
+        projectId: z.string().min(1).optional(),
+        entries: z.array(z.record(z.any())).min(1).max(50),
+      }).parse(req.body);
+      const projectId = parsed.projectId || parsed.entries[0]?.projectId;
+      if (!projectId || parsed.entries.some(entry => entry.projectId && entry.projectId !== projectId)) {
+        return res.status(400).json({ message: "Every batch row must belong to the same project." });
+      }
+      const project = await assertProjectAccess(projectId, req.user?.tenantId);
+      assertProjectTimePermission(req, project);
+      if (req.user?.role === "pm" && project.pm !== req.user.id) {
+        return res.status(403).json({ message: "You can only add time for projects you manage." });
+      }
+      const mayChoosePerson = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"].includes(req.user!.role);
+      const canManageCommercial = await canManageCommercialClassification(req, projectId);
+      if (!canManageCommercial && parsed.entries.some((entry) =>
+        entry.baselineSow === true || entry.commercialTreatment === "baseline_terms"
+      )) {
+        return res.status(403).json({
+          message: "You cannot classify time as baseline terms for this project.",
+        });
+      }
+
+      const created = await db.transaction(async (tx: any) => {
+        const results = [];
+        // Validation and writes intentionally share one transaction: any rate,
+        // hierarchy, authorization, or commercial failure rolls back every row.
+        for (const raw of parsed.entries) {
+          const personId = mayChoosePerson && raw.personId ? raw.personId : req.user!.id;
+          await assertAssignablePerson(personId, req.user?.tenantId, tx);
+          const hierarchy = await normalizeAndValidateHierarchy({
+            ...raw, projectId, personId,
+            hours: raw.hours === undefined ? raw.hours : String(raw.hours),
+          }, projectId, tx);
+          for (const protectedField of [
+            "billingRate", "costRate", "billedFlag", "locked", "lockedAt", "invoiceBatchId",
+            "commercialClassifiedBy", "commercialClassifiedAt", "coveredByMilestoneId",
+          ]) delete hierarchy[protectedField];
+          const baselineSow = hierarchy.baselineSow === true ||
+            hierarchy.commercialTreatment === "baseline_terms";
+          delete hierarchy.baselineSow;
+          delete hierarchy.commercialTreatment;
+          if (!canManageCommercial && hierarchy.commercialBucketId) {
+            hierarchy.commercialEligibilityOutcome = "pending_approval";
+            delete hierarchy.commercialApprovalReference;
+          }
+          const validated = insertTimeEntrySchema.parse(hierarchy);
+          const {
+            commercialBucketId, commercialEligibilityOutcome, commercialApprovalReference,
+            ...operational
+          } = validated;
+          const checked = await validateCommercialSelection({
+            projectId,
+            date: validated.date,
+            tenantId: req.user?.tenantId,
+            commercialBucketId,
+            commercialEligibilityOutcome,
+            commercialApprovalReference,
+            baselineSow,
+          }, tx);
+          const entry = await storage.createTimeEntry({
+            ...operational, tenantId: req.user?.tenantId || null,
+          }, tx);
+          results.push(checked.hasClassification
+            ? await classifyCommercialTimeEntry(entry, req.user!.id, req.user?.tenantId, {
+              commercialBucketId,
+              commercialEligibilityOutcome: baselineSow ? "not_eligible" : checked.outcome,
+              commercialApprovalReference,
+              baselineSow,
+            }, tx)
+            : entry);
+        }
+        return results;
+      });
+      res.status(201).json({ items: created, created: created.length });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid batch time-entry data", errors: error.errors });
+      }
+      const clientError = /project|assignment|stage|workstream|milestone|commercial|bucket|person|rate|Cannot create/i.test(error.message || "");
+      res.status(clientError ? 400 : 500).json({ message: clientError ? error.message : "Failed to create time-entry batch" });
+    }
+  });
+
   app.patch("/api/time-entries/:id", deps.requireAuth, async (req, res) => {
     try {
+      // Epic is resolved from the assignment/stage hierarchy; time_entries has
+      // no epic column, so never pretend this transient client field persisted.
+      delete req.body.projectEpicId;
+      const baselineSow = req.body.baselineSow === true;
+      delete req.body.baselineSow;
       delete req.body.commercialClassifiedBy;
       delete req.body.commercialClassifiedAt;
       for (const field of ["commercialBucketId", "commercialEligibilityOutcome", "commercialApprovalReference"]) {
@@ -243,14 +424,20 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       if (!existingEntry) {
         return res.status(404).json({ message: "Time entry not found" });
       }
+      try {
+        const project = await assertProjectAccess(existingEntry.projectId, req.user?.tenantId);
+        assertProjectTimePermission(req, project);
+      } catch {
+        return res.status(404).json({ message: "Time entry not found" });
+      }
 
       const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
       const isPM = req.user?.role === "pm" || req.user?.role === "portfolio-manager";
       const isPrivileged = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"].includes(req.user!.role);
 
-      if (existingEntry.locked && !isAdmin) {
+      if (isFinanciallyImmutable(existingEntry)) {
         return res.status(403).json({ 
-          message: "This time entry has been locked in an invoice batch and cannot be edited" 
+          message: "This time entry is financially attributed or invoice-locked and cannot be edited"
         });
       }
 
@@ -286,6 +473,7 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
         if (!newPerson.isAssignable) {
           return res.status(400).json({ message: "This person cannot be assigned to time entries" });
         }
+        await assertAssignablePerson(req.body.personId, req.user?.tenantId);
         updateData.personId = req.body.personId;
       }
 
@@ -328,16 +516,31 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       delete updateData.billedFlag;
       delete updateData.statusReportedFlag;
 
+      const destinationProjectChanged = updateData.projectId !== undefined &&
+        updateData.projectId !== existingEntry.projectId;
+      Object.assign(updateData, clearRetainedProjectLocalLinks(existingEntry.projectId, updateData));
       const hasExplicitCommercialChange = "commercialBucketId" in req.body ||
         "commercialEligibilityOutcome" in req.body ||
-        "commercialApprovalReference" in req.body;
+        "commercialApprovalReference" in req.body || baselineSow;
       const proposedEntry = { ...existingEntry, ...updateData };
+      // Source access was checked above. A project move must independently
+      // authorize the destination as well, otherwise a PM could move time
+      // into another PM's project while remaining in the active tenant.
+      const destinationProject = await assertProjectAccess(proposedEntry.projectId, req.user?.tenantId);
+      assertProjectTimePermission(req, destinationProject);
+      Object.assign(updateData, await normalizeAndValidateHierarchy(updateData, proposedEntry.projectId));
       let commercialInput = {
-        commercialBucketId: proposedEntry.commercialBucketId,
-        commercialEligibilityOutcome: proposedEntry.commercialEligibilityOutcome,
-        commercialApprovalReference: proposedEntry.commercialApprovalReference,
+        commercialBucketId: baselineSow ? null : destinationProjectChanged && !hasExplicitCommercialChange
+          ? null : proposedEntry.commercialBucketId,
+        commercialEligibilityOutcome: baselineSow ? "not_eligible" : destinationProjectChanged && !hasExplicitCommercialChange
+          ? undefined : proposedEntry.commercialEligibilityOutcome,
+        commercialApprovalReference: baselineSow ? null : destinationProjectChanged && !hasExplicitCommercialChange
+          ? undefined : proposedEntry.commercialApprovalReference,
       };
       const canManageCommercial = await canManageCommercialClassification(req, proposedEntry.projectId);
+      if (baselineSow && !canManageCommercial) {
+        return res.status(403).json({ message: "Only an authorized project commercial manager can mark time as Baseline terms." });
+      }
       if (hasExplicitCommercialChange && !canManageCommercial) {
           // Contributors may classify their own draft time by choosing one of
           // the project's active work classifications. As on create, their
@@ -363,12 +566,17 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
           date: proposedEntry.date,
           tenantId: req.user?.tenantId,
           ...commercialInput,
+          baselineSow,
         }, tx);
         const updatedEntry = Object.keys(updateData).length
           ? await storage.updateTimeEntry(req.params.id, updateData, tx)
           : existingEntry;
-        return (hasExplicitCommercialChange || commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome)
-          ? classifyCommercialTimeEntry(updatedEntry, req.user!.id, req.user?.tenantId, commercialInput, tx)
+        return (hasExplicitCommercialChange || destinationProjectChanged || commercialInput.commercialBucketId || commercialInput.commercialEligibilityOutcome)
+          ? classifyCommercialTimeEntry(updatedEntry, req.user!.id, req.user?.tenantId, {
+            ...commercialInput,
+            baselineSow,
+            reason: baselineSow ? "Baseline SOW attribution" : undefined,
+          }, tx)
           : updatedEntry;
       });
       res.json(classifiedEntry);
@@ -386,7 +594,8 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       }
       if (error.message?.includes("commercial") || error.message?.includes("bucket") ||
           error.message?.includes("approval") || error.message?.includes("eligible") ||
-          error.message?.includes("effective period")) {
+          error.message?.includes("effective period") || error.message?.includes("belong to the selected project") ||
+          error.message?.includes("active tenant")) {
         return res.status(400).json({ message: error.message });
       }
 
@@ -396,69 +605,87 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
 
   app.post("/api/time-entries/bulk-update", deps.requireAuth, async (req, res) => {
     try {
-      const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
-      if (!isAdmin) {
-        return res.status(403).json({ message: "Only admins can bulk update time entries" });
-      }
-
       const bulkUpdateSchema = z.object({
+        projectId: z.string().min(1),
         ids: z.array(z.string()).min(1, "Must provide at least one time entry ID"),
         updates: z.object({
-          billedFlag: z.boolean().optional(),
           billable: z.boolean().optional(),
+          personId: z.string().optional(),
+          allocationId: z.string().nullable().optional(),
           milestoneId: z.string().nullable().optional(),
           projectStageId: z.string().nullable().optional(),
+          workstreamId: z.string().nullable().optional(),
+          phase: z.string().nullable().optional(),
+          commercialBucketId: z.string().nullable().optional(),
+          commercialEligibilityOutcome: z.enum(["eligible", "not_eligible", "pending_approval", "over_capacity", "out_of_window"]).nullable().optional(),
+          commercialApprovalReference: z.string().nullable().optional(),
+          baselineSow: z.boolean().optional(),
         }).refine(obj => Object.keys(obj).length > 0, "Must provide at least one field to update"),
       });
-
-      const parsed = bulkUpdateSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid request data" });
+      const parsed = bulkUpdateSchema.parse(req.body);
+      const ids = [...new Set(parsed.ids)];
+      const { projectId, updates } = parsed;
+      const project = await assertProjectAccess(projectId, req.user?.tenantId);
+      assertProjectTimePermission(req, project);
+      const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
+      const privileged = isAdmin || ["pm", "portfolio-manager", "executive"].includes(req.user!.role);
+      if (!privileged || (req.user?.role === "pm" && project.pm !== req.user.id)) {
+        return res.status(403).json({ message: "You cannot bulk edit time for this project." });
+      }
+      if (updates.personId) await assertAssignablePerson(updates.personId, req.user?.tenantId);
+      const hasCommercialChange = ["commercialBucketId", "commercialEligibilityOutcome", "commercialApprovalReference", "baselineSow"]
+        .some(field => field in updates);
+      if (hasCommercialChange && !(await canManageCommercialClassification(req, projectId))) {
+        return res.status(403).json({ message: "You cannot bulk change commercial classification for this project." });
       }
 
-      const { ids, updates } = parsed.data;
-
-      const allowedBulkFields = ['billedFlag', 'billable', 'milestoneId', 'projectStageId'];
-      const sanitizedUpdates: any = {};
-      for (const field of allowedBulkFields) {
-        if (field in updates) {
-          sanitizedUpdates[field] = (updates as any)[field];
+      const changed = await db.transaction(async (tx: any) => {
+        await tx.execute(sql`SELECT id FROM time_entries WHERE id = ANY(${ids}) FOR UPDATE`);
+        const scopedConditions: any[] = [
+          inArray(timeEntries.id, ids),
+          eq(timeEntries.projectId, projectId),
+        ];
+        if (req.user?.tenantId) scopedConditions.push(eq(timeEntries.tenantId, req.user.tenantId));
+        const entries = await tx.select().from(timeEntries).where(and(...scopedConditions));
+        if (entries.length !== ids.length) {
+          throw new Error("Every selected entry must exist in this project and active tenant.");
         }
-      }
-
-      if (Object.keys(sanitizedUpdates).length === 0) {
-        return res.status(400).json({ message: "No valid fields to update. Allowed: " + allowedBulkFields.join(', ') });
-      }
-
-      let updatedCount = 0;
-      const errors: string[] = [];
-
-      for (const id of ids) {
-        try {
-          const entry = await storage.getTimeEntry(id);
-          if (!entry) {
-            errors.push(`Entry ${id} not found`);
-            continue;
+        for (const entry of entries) {
+          if (isFinanciallyImmutable(entry)) {
+            throw new Error(`Entry ${entry.id} is invoice-locked or financially attributed and cannot be bulk edited.`);
           }
-          if (entry.locked) {
-            errors.push(`Entry ${id} is locked in an invoice batch`);
-            continue;
+          if (!isAdmin && !["draft", "rejected"].includes(entry.submissionStatus || "draft")) {
+            throw new Error(`Entry ${entry.id} is ${entry.submissionStatus} and cannot be bulk edited.`);
           }
-          await storage.updateTimeEntry(id, sanitizedUpdates);
-          updatedCount++;
-        } catch (err: any) {
-          errors.push(`Entry ${id}: ${err.message}`);
         }
-      }
-
-      res.json({
-        updated: updatedCount,
-        total: ids.length,
-        errors: errors.length > 0 ? errors : undefined,
+        const results = [];
+        for (const entry of entries) {
+          const operational: any = { ...updates };
+          for (const field of ["baselineSow", "commercialBucketId", "commercialEligibilityOutcome", "commercialApprovalReference"]) {
+            delete operational[field];
+          }
+          Object.assign(operational, await normalizeAndValidateHierarchy(operational, projectId, tx));
+          const updatedEntry = Object.keys(operational).length
+            ? await storage.updateTimeEntry(entry.id, operational, tx) : entry;
+          results.push(hasCommercialChange
+            ? await classifyCommercialTimeEntry(updatedEntry, req.user!.id, req.user?.tenantId, {
+              commercialBucketId: updates.baselineSow ? null : updates.commercialBucketId,
+              commercialEligibilityOutcome: updates.baselineSow ? "not_eligible" : updates.commercialEligibilityOutcome,
+              commercialApprovalReference: updates.baselineSow ? null : updates.commercialApprovalReference,
+              baselineSow: updates.baselineSow,
+              reason: "Project time workbench bulk classification",
+            }, tx)
+            : updatedEntry);
+        }
+        return results;
       });
+      res.json({ updated: changed.length, total: ids.length, items: changed });
     } catch (error: any) {
       console.error("[TIME_ENTRY] Bulk update error:", error);
-      res.status(500).json({ message: "Failed to bulk update time entries" });
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0]?.message || "Invalid request data" });
+      }
+      res.status(400).json({ message: error.message || "Failed to bulk update time entries" });
     }
   });
 
@@ -469,11 +696,17 @@ export function registerTimeEntryRoutes(app: Express, deps: TimeEntryRouteDeps) 
       if (!existingEntry) {
         return res.status(404).json({ message: "Time entry not found" });
       }
+      try {
+        const project = await assertProjectAccess(existingEntry.projectId, req.user?.tenantId);
+        assertProjectTimePermission(req, project);
+      } catch {
+        return res.status(404).json({ message: "Time entry not found" });
+      }
 
       const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
-      if (existingEntry.locked && !isAdmin) {
+      if (isFinanciallyImmutable(existingEntry)) {
         return res.status(403).json({ 
-          message: "This time entry has been locked in an invoice batch and cannot be deleted" 
+          message: "This time entry is financially attributed or invoice-locked and cannot be deleted"
         });
       }
 
