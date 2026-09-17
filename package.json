@@ -10,7 +10,9 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "db:migrate": "npx tsx scripts/db-migrate.ts",
-    "test": "tsx tests/run.ts"
+    "test": "npm run test:unit && npm run test:browser",
+    "test:unit": "tsx tests/run.ts",
+    "test:browser": "tsx tests/project-time-workbench.browser.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^3.7.3",

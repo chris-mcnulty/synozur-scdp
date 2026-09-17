@@ -113,19 +113,20 @@ function validation(draft: Draft) {
   };
 }
 
-function FieldSelect({ label, value, onChange, options, noneLabel, disabled }: {
+function FieldSelect({ label, value, onChange, options, noneLabel, disabled, testId }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: Option[];
   noneLabel: string;
   disabled?: boolean;
+  testId?: string;
 }) {
   return (
     <div className="space-y-1">
       <Label>{label}</Label>
       <Select value={value || MISSING} onValueChange={(v) => onChange(v === MISSING ? "" : v)} disabled={disabled}>
-        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectTrigger data-testid={testId}><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value={MISSING}>{noneLabel}</SelectItem>
           {options.map((option) => <SelectItem key={option.id} value={option.id}>{optionName(option, "Unnamed")}</SelectItem>)}
@@ -337,16 +338,16 @@ export function ProjectTimeWorkbench({
   const bulkBucket = buckets.find((bucket) => bucket.id === bulkCommercial.bucketId);
   const bulkCommercialNeedsApproval = !!bulkBucket?.approvalRequired && bulkCommercial.eligibility === "eligible";
 
-  const renderDraftFields = (draft: Draft, setDraft: (next: Draft) => void, includePerson = true) => {
+  const renderDraftFields = (draft: Draft, setDraft: (next: Draft) => void, includePerson = true, testPrefix = draft.key) => {
     const errors = draftValidation(draft);
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {includePerson && <FieldSelect label="Person" value={draft.personId} onChange={(personId) => setDraft({ ...draft, personId })} options={people.map((p) => ({ ...p, name: personName(p) }))} noneLabel="Select person" />}
-        <div className="space-y-1"><Label>Date</Label><Input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />{errors.date && <p className="text-xs text-destructive">{errors.date}</p>}</div>
-        <div className="space-y-1"><Label>Hours</Label><Input type="number" min="0.01" max="24" step="0.25" value={draft.hours} onChange={(e) => setDraft({ ...draft, hours: e.target.value })} />{errors.hours && <p className="text-xs text-destructive">{errors.hours}</p>}</div>
-        <FieldSelect label="Assignment" value={draft.allocationId} onChange={(id) => setDraft(assignmentSelected(draft, id))} options={assignments.map((a) => ({ id: a.id, name: a.taskDescription || a.roleInstanceLabel || a.role?.name || "Unnamed assignment" }))} noneLabel="Unassigned" />
-        <FieldSelect label="Workstream" value={draft.workstreamId} onChange={(workstreamId) => setDraft({ ...draft, workstreamId })} options={workstreams} noneLabel="No workstream" />
-        <FieldSelect label="Stage" value={draft.projectStageId} onChange={(projectStageId) => setDraft({ ...draft, projectStageId })} options={stages} noneLabel="No stage" />
+        {includePerson && <FieldSelect testId={`${testPrefix}-person`} label="Person" value={draft.personId} onChange={(personId) => setDraft({ ...draft, personId })} options={people.map((p) => ({ ...p, name: personName(p) }))} noneLabel="Select person" />}
+        <div className="space-y-1"><Label>Date</Label><Input data-testid={`${testPrefix}-date`} type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />{errors.date && <p className="text-xs text-destructive">{errors.date}</p>}</div>
+        <div className="space-y-1"><Label>Hours</Label><Input data-testid={`${testPrefix}-hours`} type="number" min="0.01" max="24" step="0.25" value={draft.hours} onChange={(e) => setDraft({ ...draft, hours: e.target.value })} />{errors.hours && <p className="text-xs text-destructive">{errors.hours}</p>}</div>
+        <FieldSelect testId={`${testPrefix}-assignment`} label="Assignment" value={draft.allocationId} onChange={(id) => setDraft(assignmentSelected(draft, id))} options={assignments.map((a) => ({ id: a.id, name: a.taskDescription || a.roleInstanceLabel || a.role?.name || "Unnamed assignment" }))} noneLabel="Unassigned" />
+        <FieldSelect testId={`${testPrefix}-workstream`} label="Workstream" value={draft.workstreamId} onChange={(workstreamId) => setDraft({ ...draft, workstreamId })} options={workstreams} noneLabel="No workstream" />
+        <FieldSelect testId={`${testPrefix}-stage`} label="Stage" value={draft.projectStageId} onChange={(projectStageId) => setDraft({ ...draft, projectStageId })} options={stages} noneLabel="No stage" />
         <FieldSelect label="Milestone coverage" value={draft.milestoneId} onChange={(milestoneId) => setDraft({ ...draft, milestoneId })} options={milestones} noneLabel="No milestone" />
         <FieldSelect label="Commercial treatment" value={draft.baselineSow ? BASELINE : draft.commercialBucketId} onChange={(commercialBucketId) => {
           if (commercialBucketId === BASELINE) {
@@ -362,7 +363,7 @@ export function ProjectTimeWorkbench({
             <div className="space-y-1 sm:col-span-2"><Label>Approval reference {buckets.find((bucket) => bucket.id === draft.commercialBucketId)?.approvalRequired && draft.commercialEligibilityOutcome === "eligible" ? "(required)" : "(optional)"}</Label><Input value={draft.commercialApprovalReference} onChange={(event) => setDraft({ ...draft, commercialApprovalReference: event.target.value })} aria-describedby={errors.commercialApprovalReference ? `approval-error-${draft.key}` : undefined} />{errors.commercialApprovalReference && <p id={`approval-error-${draft.key}`} className="text-xs text-destructive" role="alert">{errors.commercialApprovalReference}</p>}</div>
           </>
         )}
-        <div className="space-y-1 sm:col-span-2"><Label>Description</Label><Textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} rows={2} /></div>
+        <div className="space-y-1 sm:col-span-2"><Label>Description</Label><Textarea data-testid={`${testPrefix}-description`} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} rows={2} /></div>
         <div className="flex items-center gap-2 pt-6"><Checkbox id={`billable-${draft.key}`} checked={draft.billable} onCheckedChange={(billable) => setDraft({ ...draft, billable: !!billable })} /><Label htmlFor={`billable-${draft.key}`}>Billable effort</Label></div>
         {errors.personId && <p className="text-xs text-destructive">{errors.personId}</p>}
       </div>
@@ -392,7 +393,7 @@ export function ProjectTimeWorkbench({
                   <Button variant="ghost" size="icon" aria-label={`Duplicate row ${index + 1}`} onClick={() => setDrafts((old) => [...old.slice(0, index + 1), { ...draft, key: newDraft().key }, ...old.slice(index + 1)])}><Copy className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" aria-label={`Remove row ${index + 1}`} disabled={drafts.length === 1} onClick={() => setDrafts((old) => old.filter((item) => item.key !== draft.key))}><X className="h-4 w-4" /></Button>
                 </div></div>
-                {renderDraftFields(draft, (next) => setDrafts((old) => old.map((item) => item.key === draft.key ? next : item)))}
+                {renderDraftFields(draft, (next) => setDrafts((old) => old.map((item) => item.key === draft.key ? next : item)), true, `composer-row-${index + 1}`)}
               </div>
             ))}
             <div className="flex flex-wrap justify-between gap-2">
@@ -419,14 +420,14 @@ export function ProjectTimeWorkbench({
             ["Stage", "stage", stages, "No stage"],
             ["Person", "person", people.map((p) => ({ ...p, name: personName(p) })), "Unknown person"],
           ] as Array<[string, "assignment" | "epic" | "workstream" | "stage" | "person", any[], string]>).map(([label, key, options, missing]) => (
-            <div className="space-y-1" key={String(key)}><Label>{String(label)}</Label><Select value={(filters as any)[key]} onValueChange={(value) => { setFilters((old) => ({ ...old, [key as string]: value })); setSelected(new Set()); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={ALL}>All</SelectItem><SelectItem value={MISSING}>{String(missing)}</SelectItem>{(options as any[]).map((item) => <SelectItem key={item.id} value={item.id}>{item.name || item.label || item.taskDescription || item.roleInstanceLabel || item.role?.name || "Unnamed"}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1" key={String(key)}><Label>{String(label)}</Label><Select value={(filters as any)[key]} onValueChange={(value) => { setFilters((old) => ({ ...old, [key as string]: value })); setSelected(new Set()); }}><SelectTrigger data-testid={`time-filter-${key}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value={ALL}>All</SelectItem><SelectItem value={MISSING}>{String(missing)}</SelectItem>{(options as any[]).map((item) => <SelectItem key={item.id} value={item.id}>{item.name || item.label || item.taskDescription || item.roleInstanceLabel || item.role?.name || "Unnamed"}</SelectItem>)}</SelectContent></Select></div>
           ))}
           <div className="space-y-1"><Label>Commercial treatment</Label><Select value={filters.commercial} onValueChange={(commercial) => setFilters((old) => ({ ...old, commercial }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={ALL}>All</SelectItem><SelectItem value={BASELINE}>Baseline terms</SelectItem><SelectItem value={MISSING}>No commercial bucket</SelectItem>{buckets.map((bucket) => <SelectItem key={bucket.id} value={bucket.id}>{optionName(bucket, "Unnamed")}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-1"><Label>Start date</Label><Input type="date" value={filters.startDate} onChange={(e) => setFilters((old) => ({ ...old, startDate: e.target.value }))} /></div>
           <div className="space-y-1"><Label>End date</Label><Input type="date" value={filters.endDate} onChange={(e) => setFilters((old) => ({ ...old, endDate: e.target.value }))} /></div>
           <div className="space-y-1"><Label>Billability</Label><Select value={filters.billability} onValueChange={(billability) => setFilters((old) => ({ ...old, billability }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={ALL}>All</SelectItem><SelectItem value="billable">Billable</SelectItem><SelectItem value="nonbillable">Non-billable</SelectItem></SelectContent></Select></div>
           <div className="space-y-1"><Label>Status</Label><Select value={filters.status} onValueChange={(status) => setFilters((old) => ({ ...old, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={ALL}>All</SelectItem>{["draft", "submitted", "approved", "rejected", "locked"].map((status) => <SelectItem key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-1"><Label>Group by</Label><Select value={grouping} onValueChange={(value) => setGrouping(value as Grouping)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(["none", "month", "assignment", "commercial", "epic", "workstream", "stage"] as Grouping[]).map((value) => <SelectItem key={value} value={value}>{value === "none" ? "No grouping" : value[0].toUpperCase() + value.slice(1)}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1"><Label>Group by</Label><Select value={grouping} onValueChange={(value) => setGrouping(value as Grouping)}><SelectTrigger data-testid="time-group-by"><SelectValue /></SelectTrigger><SelectContent>{(["none", "month", "assignment", "commercial", "epic", "workstream", "stage"] as Grouping[]).map((value) => <SelectItem key={value} value={value}>{value === "none" ? "No grouping" : value[0].toUpperCase() + value.slice(1)}</SelectItem>)}</SelectContent></Select></div>
           <div className="flex items-end"><Button variant="ghost" onClick={() => { setFilters({ assignment: ALL, commercial: ALL, epic: ALL, workstream: ALL, stage: ALL, person: ALL, startDate: "", endDate: "", billability: ALL, status: ALL }); setSelected(new Set()); }}>Clear all filters</Button></div>
         </CardContent>
       </Card>
@@ -488,7 +489,7 @@ export function ProjectTimeWorkbench({
                   {expandedId === row.id && <TableRow><TableCell colSpan={8} className="bg-muted/20 p-4">
                     {!editable(row) ? <Alert><Lock className="h-4 w-4" /><AlertTitle>Read only</AlertTitle><AlertDescription>{row.immutableReason || `This ${row.normalizedStatus} entry cannot be edited in the project workbench.`}</AlertDescription></Alert> :
                     editor && <form onSubmit={(e) => { e.preventDefault(); if (!Object.values(draftValidation(editor)).some(Boolean)) updateMutation.mutate({ id: row.id, draft: editor }); }} className="space-y-4">
-                      {renderDraftFields(editor, setEditor)}
+                      {renderDraftFields(editor, setEditor, true, "inline-editor")}
                       <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => { setExpandedId(null); setEditor(null); }}>Cancel</Button><Button type="submit" disabled={updateMutation.isPending || Object.values(draftValidation(editor)).some(Boolean)}>{updateMutation.isPending ? "Saving…" : "Save changes"}</Button></div>
                     </form>}
                   </TableCell></TableRow>}
