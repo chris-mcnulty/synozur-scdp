@@ -16,11 +16,18 @@ let entry = {
   commercialBucketId: null as string | null, commercialEligibilityOutcome: null as string | null,
 };
 const patches: Record<string, unknown>[] = [];
-let releaseFirst!: () => void;
-const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve; });
-let firstStarted!: () => void;
-const firstReceived = new Promise<void>((resolve) => { firstStarted = resolve; });
+let releaseFirst: () => void = () => {};
+let firstHeld: Promise<void>;
+let firstStarted: () => void;
+let firstReceived: Promise<void>;
+let failFirst = false;
 let refetches = 0;
+
+function holdFirstPatch(reject = false) {
+  failFirst = reject;
+  firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  firstReceived = new Promise<void>((resolve) => { firstStarted = resolve; });
+}
 
 function chromiumExecutable() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH && existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
@@ -82,6 +89,7 @@ async function respond(request: HTTPRequest, failures: string[]) {
     if (patches.length === 1) {
       firstStarted();
       await withTimeout(firstHeld, "release of the first PATCH");
+      if (failFirst) return json({ error: "Simulated save failure" }, 503);
     }
     entry = { ...entry, ...patch, hours: String(patch.hours ?? entry.hours) };
     return json({ ...entry });
@@ -100,6 +108,7 @@ async function respond(request: HTTPRequest, failures: string[]) {
 }
 
 async function main() {
+  holdFirstPatch();
   server = spawn("npm", ["run", "dev"], {
     env: { ...process.env, PORT: String(port), NODE_ENV: "development" },
     stdio: ["ignore", "pipe", "pipe"], detached: true,
@@ -120,7 +129,9 @@ async function main() {
     page.on("console", (message) => {
       // Vite's Replit metadata transform adds a prop to an existing Fragment in GridTable.
       // It is a development-only React warning, not an error from the interaction under test.
-      if (message.type() === "error" && !message.text().includes("Invalid prop `%s` supplied to `React.Fragment`")) {
+      if (message.type() === "error" &&
+          !message.text().includes("Invalid prop `%s` supplied to `React.Fragment`") &&
+          !(failFirst && message.text().includes("the server responded with a status of 503"))) {
         failures.push(`Console error: ${message.text()}`);
       }
     });
@@ -169,6 +180,45 @@ async function main() {
     assert.ok(refetches >= 2, "autosave triggered a server refetch");
     assert.equal(entry.commercialBucketId, bucketId);
 
+    await page.reload({ waitUntil: "networkidle0" });
+    await page.waitForFunction((selector, text) => document.querySelector(selector)?.textContent?.includes(text), {}, cell, label);
+    assert.equal(failures.length, 0, failures.join("\n"));
+
+    // Repeat with a rejected older PATCH. The server still has the old value
+    // when the failure arrives, so the newer selection must remain dirty and retry.
+    entry = { ...entry, commercialBucketId: null, commercialEligibilityOutcome: null, billable: true };
+    patches.length = 0;
+    holdFirstPatch(true);
+    await page.reload({ waitUntil: "networkidle0" });
+    await page.waitForSelector(cell);
+    await page.click('[data-testid="grid-cell-billable-0"]');
+    await withTimeout(firstReceived, "first autosave in failure scenario");
+    assert.equal(patches[0].commercialBucketId, null);
+    await page.click(cell, { clickCount: 2 });
+    await page.waitForSelector('[data-testid="select-grid-commercial-bucket"]');
+    await page.waitForSelector('[role="option"]');
+    const selectedAfterFailure = await page.evaluate((text) => {
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((node) => node.textContent?.trim() === text);
+      option?.click();
+      return !!option;
+    }, label);
+    assert.equal(selectedAfterFailure, true, "change-order bucket is offered after reload");
+    await page.waitForFunction((selector, text) => document.querySelector(selector)?.textContent?.includes(text), {}, cell, label);
+    assert.equal(patches.length, 1, "newer classification is selected while older save is in flight");
+
+    const rejectedSave = page.waitForResponse((response) =>
+      response.url().endsWith("/api/time-entries/entry-1") && response.request().method() === "PATCH" && response.status() === 503,
+      { timeout: 15_000 });
+    releaseFirst();
+    await rejectedSave;
+    assert.equal(entry.commercialBucketId, null, "rejected PATCH does not change the stored entry");
+    assert.equal(await page.$eval(cell, (node) => node.textContent?.trim()), label,
+      "failed older save cannot erase the newer classification");
+    await page.waitForFunction(() => document.querySelector('[data-testid="button-grid-save-all"]')?.textContent?.trim() === "Save all", { timeout: 15_000 });
+    assert.equal(patches.length, 2, "newer classification is retried after the failed save");
+    assert.equal(patches[1].commercialBucketId, bucketId);
+    assert.equal(patches[1].commercialEligibilityOutcome, "eligible");
+    assert.equal(entry.commercialBucketId, bucketId, "retry persists the classification");
     await page.reload({ waitUntil: "networkidle0" });
     await page.waitForFunction((selector, text) => document.querySelector(selector)?.textContent?.includes(text), {}, cell, label);
     assert.equal(failures.length, 0, failures.join("\n"));
