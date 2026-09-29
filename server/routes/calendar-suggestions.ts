@@ -234,7 +234,9 @@ export function registerCalendarSuggestionsRoutes(
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        return res.status(400).json({ message: `Calendar event "${item.eventId}": ${message}` });
+        return res.status(400).json({
+          message: `${message} (Calendar event: ${(item.subject || "Untitled").trim().slice(0, 80)})`,
+        });
       }
     }
 

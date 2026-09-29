@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { formatProjectLabel } from "@/lib/project-utils";
 import { ChevronDown, ChevronRight, ChevronLeft, CheckCheck, X, Clock, Info, Sparkles, Users, UserCheck, GitMerge } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Project, Client } from "@shared/schema";
+import { commercialSelectionIssue, type CalendarCommercialBuckets } from "./calendar-commercial-selection";
 
 type ProjectWithClient = Project & { client: Client };
 
@@ -65,6 +66,53 @@ interface UserCalendarSettings {
   calendarSuggestionsDaysBack?: number;
 }
 
+function CalendarBucketPicker({
+  projectId,
+  data,
+  isError,
+  value,
+  onChange,
+}: {
+  projectId: string;
+  data?: CalendarCommercialBuckets;
+  isError?: boolean;
+  value: string;
+  onChange: (bucketId: string) => void;
+}) {
+  if (isError) return <p className="text-xs text-destructive mt-1">Unable to load work classifications. Refresh and try again.</p>;
+  if (!data) return <p className="text-xs text-muted-foreground mt-1">Loading work classifications…</p>;
+  const activeBuckets = data.buckets.filter(bucket => bucket.isActive);
+  if (!data.required && activeBuckets.length === 0) return null;
+  if (data.required && activeBuckets.length === 0) {
+    return <p className="text-xs text-destructive mt-1">This project requires a work classification, but none are active. Contact the project manager.</p>;
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      <span className="text-xs text-muted-foreground">
+        Work classification{data.required ? " *" : ""}
+      </span>
+      <Select
+        value={value || (data.required ? undefined : "__none__")}
+        onValueChange={(selected) => onChange(selected === "__none__" ? "" : selected)}
+      >
+        <SelectTrigger className="h-7 w-56 text-xs" data-testid={`select-calendar-bucket-${projectId}`}>
+          <SelectValue placeholder="Select required bucket…" />
+        </SelectTrigger>
+        <SelectContent>
+          {!data.required && <SelectItem value="__none__">No bucket</SelectItem>}
+          {activeBuckets.map(bucket => (
+            <SelectItem key={bucket.id} value={bucket.id}>{bucket.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {value && !activeBuckets.some(bucket => bucket.id === value) && (
+        <span className="text-xs text-destructive">This bucket is no longer active. Choose another.</span>
+      )}
+    </div>
+  );
+}
+
 function parseLocalDate(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, (m ?? 1) - 1, d ?? 1);
@@ -111,6 +159,7 @@ function fireAndForgetTelemetry(
 export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: Props) {
   const [isOpen, setIsOpen] = useState(true);
   const [projectOverrides, setProjectOverrides] = useState<Record<string, string>>({});
+  const [bucketSelections, setBucketSelections] = useState<Record<string, string>>({});
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   // changingEvents tracks rows where the user clicked "Change" on an auto-mapped
   // suggestion — keeps the project picker visible even when suggestion.projectId exists.
@@ -126,6 +175,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set());
   // Project chosen in the merge bar (overrides individual row project when merging mixed-project events).
   const [mergeProjectId, setMergeProjectId] = useState<string>("");
+  const [mergeBucketSelection, setMergeBucketSelection] = useState<{ projectId: string; bucketId: string }>({ projectId: "", bucketId: "" });
   const [commercialEligibilityOutcome, setCommercialEligibilityOutcome] = useState<"not_eligible" | "pending_approval">("not_eligible");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -145,6 +195,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       items: Array<{ eventId: string; eventKey: string; hours: number; description: string; date: string; seriesMasterId?: string | null; subject?: string | null }>;
       projectId: string;
       date: string;
+      commercialBucketId?: string;
       commercialEligibilityOutcome?: "not_eligible" | "pending_approval";
     }) =>
       apiRequest("/api/me/calendar-suggestions/merge", {
@@ -201,6 +252,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
   useEffect(() => {
     setSelectedForMerge(new Set());
     setMergeProjectId("");
+    setMergeBucketSelection({ projectId: "", bucketId: "" });
   }, [viewDate]);
 
   const goPrevDay = () => {
@@ -243,6 +295,40 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
     retry: false,
   });
 
+  // Fetch only the projects involved in the visible suggestions (and any
+  // explicitly chosen merge project), with the same query key as the grid.
+  const commercialProjectIds = [...new Set([
+    ...(data?.suggestions ?? [])
+      .filter(s => !s.alreadyAccepted && !dismissed.has(s.eventId))
+      .map(s => projectOverrides[s.eventId] || s.projectId)
+      .filter((id): id is string => !!id),
+    ...(mergeProjectId ? [mergeProjectId] : []),
+  ])];
+  const commercialQueries = useQueries({
+    queries: commercialProjectIds.map(projectId => ({
+      queryKey: ["/api/projects", projectId, "commercial-buckets"],
+      queryFn: (): Promise<CalendarCommercialBuckets> => apiRequest(`/api/projects/${projectId}/commercial-buckets`),
+    })),
+  });
+  const commercialByProject = new Map(commercialProjectIds.map((id, index) => [id, commercialQueries[index]]));
+
+  const selectionIssue = (projectId: string, bucketId: string | undefined) => {
+    const query = commercialByProject.get(projectId);
+    if (query?.isError) return "Unable to load this project's work classifications. Refresh and try again.";
+    return commercialSelectionIssue(query?.data, bucketId);
+  };
+
+  const requireSelections = (items: Array<{ projectId: string; bucketId?: string }>) => {
+    for (const item of items) {
+      const issue = selectionIssue(item.projectId, item.bucketId);
+      if (issue) {
+        toast({ title: "Work classification required", description: issue, variant: "destructive" });
+        return false;
+      }
+    }
+    return true;
+  };
+
   // Telemetry: fire "shown" when suggestions are first loaded
   useEffect(() => {
     if (!data || data.disabled || data.outlookNotConnected) return;
@@ -267,6 +353,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       date: string;
       seriesMasterId?: string | null;
       subject?: string | null;
+      commercialBucketId?: string;
       commercialEligibilityOutcome?: "not_eligible" | "pending_approval";
     }>) => {
       const response = await apiRequest("/api/me/calendar-suggestions/accept", {
@@ -275,15 +362,27 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       });
       return response;
     },
-    onSuccess: (result: { created: number }, variables) => {
+    onSuccess: (result: {
+      created: number;
+      entries: Array<{ calendarEventId: string | null }>;
+      alreadyExists?: string[];
+      errors?: string[];
+    }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
-      const eventIds = variables.map(v => v.eventId);
+      const eventIds = [
+        ...result.entries.map(entry => entry.calendarEventId).filter((id): id is string => !!id),
+        ...(result.alreadyExists ?? []),
+      ];
       setDismissed(prev => new Set([...prev, ...eventIds]));
-      toast({
-        title: result.created === 1 ? "Time entry created" : `${result.created} time entries created`,
-        description: "Review and submit when ready.",
-      });
-      onEntriesCreated();
+      if (result.errors?.length) {
+        toast({ title: `${result.created} entries created; some failed`, description: result.errors[0], variant: "destructive" });
+      } else {
+        toast({
+          title: result.created === 0 ? "Already logged" : result.created === 1 ? "Time entry created" : `${result.created} time entries created`,
+          description: result.created ? "Review and submit when ready." : "These calendar events were already added.",
+        });
+      }
+      if (result.created) onEntriesCreated();
     },
     onError: (err: Error) => {
       toast({
@@ -304,6 +403,8 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       });
       return;
     }
+    const bucketId = bucketSelections[suggestion.eventId] || undefined;
+    if (!requireSelections([{ projectId: resolvedProjectId, bucketId }])) return;
     acceptMutation.mutate([{
       eventId: suggestion.eventId,
       eventKey: suggestion.eventKey,
@@ -313,6 +414,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       date: suggestion.date,
       seriesMasterId: suggestion.seriesMasterId,
       subject: suggestion.subject,
+      commercialBucketId: bucketId,
       commercialEligibilityOutcome,
     }]);
   };
@@ -329,6 +431,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
         date: s.date,
         seriesMasterId: s.seriesMasterId,
         subject: s.subject,
+        commercialBucketId: bucketSelections[s.eventId] || undefined,
         commercialEligibilityOutcome,
       }));
 
@@ -336,6 +439,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       toast({ title: "No matched events", description: "Map events to projects first.", variant: "destructive" });
       return;
     }
+    if (!requireSelections(toAccept.map(s => ({ projectId: s.projectId, bucketId: s.commercialBucketId })))) return;
 
     acceptMutation.mutate(toAccept);
   };
@@ -359,6 +463,10 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       toast({ title: "Pick a project", description: "Select a project for the merged entry.", variant: "destructive" });
       return;
     }
+    const bucketId = mergeBucketSelection.projectId === effectiveProjectId
+      ? mergeBucketSelection.bucketId || undefined
+      : undefined;
+    if (!requireSelections([{ projectId: effectiveProjectId, bucketId }])) return;
 
     mergeMutation.mutate({
       items: selectedSuggestions.map(s => ({
@@ -372,12 +480,14 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
       })),
       projectId: effectiveProjectId,
       date: viewDate,
+      commercialBucketId: bucketId,
       commercialEligibilityOutcome,
     });
   };
 
   const handleManualProjectPick = (eventId: string, projectId: string) => {
     setProjectOverrides(prev => ({ ...prev, [eventId]: projectId }));
+    setBucketSelections(prev => ({ ...prev, [eventId]: "" }));
     fireAndForgetTelemetry({ event: 'manual_project_pick', date: viewDate, eventId });
   };
 
@@ -453,10 +563,10 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                   Suggestions from Calendar
                 </CardTitle>
                 <Select value={commercialEligibilityOutcome} onValueChange={(value: "not_eligible" | "pending_approval") => setCommercialEligibilityOutcome(value)}>
-                  <SelectTrigger className="h-7 w-40 text-xs" onClick={(event) => event.stopPropagation()}><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-7 w-40 text-xs" title="Treatment for entries without a bucket" onClick={(event) => event.stopPropagation()}><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="not_eligible">Not eligible</SelectItem>
-                    <SelectItem value="pending_approval">Pending review</SelectItem>
+                    <SelectItem value="not_eligible">No bucket: baseline</SelectItem>
+                    <SelectItem value="pending_approval">No bucket: review</SelectItem>
                   </SelectContent>
                 </Select>
                 {daysBackLimit > 0 && (
@@ -612,6 +722,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                   return (
                     <div
                       key={suggestion.eventId}
+                      data-testid={`calendar-suggestion-${suggestion.eventId}`}
                       className={`flex items-start gap-3 p-3 bg-background rounded-lg border transition-colors ${isLogged ? "border-border/30 opacity-60" : selectedForMerge.has(suggestion.eventId) ? "border-primary/50 bg-primary/5" : "border-border/50"}`}
                     >
                       {visibleSuggestions.length >= 2 && (
@@ -824,6 +935,15 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                             </div>
                           )}
                         </div>
+                        {!isLogged && resolvedProjectId && (
+                          <CalendarBucketPicker
+                            projectId={resolvedProjectId}
+                            data={commercialByProject.get(resolvedProjectId)?.data}
+                            isError={commercialByProject.get(resolvedProjectId)?.isError}
+                            value={bucketSelections[suggestion.eventId] || ""}
+                            onChange={(bucketId) => setBucketSelections(prev => ({ ...prev, [suggestion.eventId]: bucketId }))}
+                          />
+                        )}
 
                         {showPicker && !isChanging && projectOverrides[suggestion.eventId] === undefined && (
                           <p className="text-xs text-muted-foreground mt-1">
@@ -855,8 +975,9 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                                   <Button
                                     size="sm"
                                     className="h-7 w-7 p-0"
+                                    data-testid={`button-calendar-accept-${suggestion.eventId}`}
                                     onClick={() => handleAcceptOne(suggestion)}
-                                    disabled={acceptMutation.isPending || !resolvedProjectId}
+                                    disabled={acceptMutation.isPending || !resolvedProjectId || !!(resolvedProjectId && selectionIssue(resolvedProjectId, bucketSelections[suggestion.eventId]))}
                                   >
                                     <CheckCheck className="w-3.5 h-3.5" />
                                   </Button>
@@ -923,7 +1044,7 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
                     {needsPicker && (
-                      <Select value={mergeProjectId} onValueChange={setMergeProjectId}>
+                      <Select value={mergeProjectId} onValueChange={(id) => { setMergeProjectId(id); setMergeBucketSelection({ projectId: "", bucketId: "" }); }}>
                         <SelectTrigger className="h-7 w-44 text-xs border-dashed">
                           <SelectValue placeholder="Pick project…" />
                         </SelectTrigger>
@@ -934,10 +1055,19 @@ export function CalendarSuggestionsPanel({ date, projects, onEntriesCreated }: P
                         </SelectContent>
                       </Select>
                     )}
+                    {effectiveProjectId && (
+                      <CalendarBucketPicker
+                        projectId={effectiveProjectId}
+                        data={commercialByProject.get(effectiveProjectId)?.data}
+                        isError={commercialByProject.get(effectiveProjectId)?.isError}
+                        value={mergeBucketSelection.projectId === effectiveProjectId ? mergeBucketSelection.bucketId : ""}
+                        onChange={(bucketId) => setMergeBucketSelection({ projectId: effectiveProjectId, bucketId })}
+                      />
+                    )}
                     <Button
                       size="sm"
                       className="h-7 text-xs px-3"
-                      disabled={!effectiveProjectId || mergeMutation.isPending}
+                      disabled={!effectiveProjectId || mergeMutation.isPending || !!(effectiveProjectId && selectionIssue(effectiveProjectId, mergeBucketSelection.projectId === effectiveProjectId ? mergeBucketSelection.bucketId : ""))}
                       onClick={handleMerge}
                     >
                       <GitMerge className="w-3 h-3 mr-1" />

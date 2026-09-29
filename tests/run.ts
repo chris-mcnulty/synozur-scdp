@@ -20,6 +20,7 @@ import "./mcp-bearer-audience.spec.js";
 import "./mcp-bearer-azp.spec.js";
 import "./commercial-buckets.spec.js";
 import "./time-grid-save.spec.js";
+import "./calendar-commercial-selection.spec.js";
 import "./project-time-workbench.spec.js";
 import "./project-scratch.spec.js";
 import "./vendor-invoices.spec.js";
