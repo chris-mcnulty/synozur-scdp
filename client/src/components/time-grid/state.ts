@@ -12,6 +12,29 @@ export interface RowLike {
   id: string;
 }
 
+export interface SaveFields {
+  date: string;
+  projectId: string;
+  hours: string;
+  billable: boolean;
+  description: string;
+  milestoneId: string;
+  allocationId: string;
+  commercialBucketId: string;
+  commercialEligibilityOutcome: string;
+  commercialApprovalReference: string;
+}
+
+// An acknowledgement for an older snapshot must not clear newer edits.
+export function matchesSavedSnapshot(current: SaveFields, sent: SaveFields): boolean {
+  const fields: (keyof SaveFields)[] = [
+    "date", "projectId", "hours", "billable", "description", "milestoneId",
+    "allocationId", "commercialBucketId", "commercialEligibilityOutcome",
+    "commercialApprovalReference",
+  ];
+  return fields.every((field) => current[field] === sent[field]);
+}
+
 export const HISTORY_CAP = 50;
 
 // Append a snapshot to the undo (or redo) stack while enforcing the cap.

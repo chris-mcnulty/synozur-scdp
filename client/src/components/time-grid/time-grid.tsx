@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import type { Project, Client, TimeEntry, User } from "@shared/schema";
 import { parseClipboard, toTsv, toCsv, coerceDate, coerceHours, coerceBoolean } from "./clipboard";
-import { pushHistorySnapshot, markDirty, markSaving, markSaved, markError } from "./state";
+import { pushHistorySnapshot, markDirty, markSaving, markSaved, markError, matchesSavedSnapshot } from "./state";
 
 type ProjectWithClient = Project & { client: Client };
 type TimeEntryRow = TimeEntry & { project?: ProjectWithClient };
@@ -262,7 +262,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       const merged: DraftRow[] = [];
       for (const e of ownDraft) {
         const existing = byServer.get(e.id);
-        if (existing && (existing.state === "dirty" || existing.state === "saving")) {
+        if (existing && (existing.state === "dirty" || existing.state === "saving" || existing.state === "error")) {
           merged.push(existing);
         } else {
           merged.push(entryToDraft(e));
@@ -341,8 +341,10 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
 
   // Update a cell value (allocation auto-fill of description is handled in
   // the AllocationEditor, which has direct access to the loaded allocations).
-  const updateCell = (rowIdx: number, col: ColKey, value: unknown) => {
+  const updateCell = (rowId: string, col: ColKey, value: unknown) => {
     setDrafts((prev) => {
+      const rowIdx = prev.findIndex((r) => r.id === rowId);
+      if (rowIdx < 0) return prev;
       const next = prev.slice();
       let row: DraftRow;
       if (col === "commercialBucketId" && typeof value === "object" && value !== null) {
@@ -378,6 +380,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
 
   // Autosave per-row 800ms
   const saveTimers = useRef<Map<string, any>>(new Map());
+  const savingRows = useRef(new Set<string>());
 
   const saveMutation = useMutation<TimeEntryRow, Error, DraftRow>({
     mutationFn: async (row) => {
@@ -410,12 +413,20 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       const row = drafts.find((r) => r.id === rowId);
       if (!row) return;
       if (Object.keys(row.errors).length > 0) return;
+      // In particular, never POST a second copy of a new row while its first
+      // request is still creating the server id.
+      if (savingRows.current.has(rowId)) return;
+      savingRows.current.add(rowId);
       setDrafts((prev) => prev.map((r) => (r.id === rowId ? markSaving(r) : r)));
       try {
         const result = await saveMutation.mutateAsync(row);
         const newId = result?.id;
         setDrafts((prev) =>
-          prev.map((r) => (r.id === rowId ? markSaved(r, newId) : r)),
+          prev.map((r) => {
+            if (r.id !== rowId) return r;
+            const withServerId = { ...r, serverId: newId ?? r.serverId, id: newId ?? r.id };
+            return matchesSavedSnapshot(r, row) ? markSaved(withServerId) : markDirty(withServerId);
+          }),
         );
         // If the row id changed (newly created → server uuid), keep the
         // selection stable so subsequent bulk actions still see this row.
@@ -432,8 +443,12 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Save failed";
         setDrafts((prev) =>
-          prev.map((r) => (r.id === rowId ? markError(r, message) : r)),
+          prev.map((r) => (r.id === rowId
+            ? matchesSavedSnapshot(r, row) ? markError(r, message) : markDirty(r)
+            : r)),
         );
+      } finally {
+        savingRows.current.delete(rowId);
       }
     },
     [drafts, saveMutation, queryClient],
@@ -707,23 +722,9 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     });
   };
 
-  // Translate an index from the sorted view back to the canonical drafts
-  // array so existing index-based mutations (updateCell/dragFill/paste)
-  // continue to work when a sort is applied.
-  const draftsIdxFromSorted = useCallback(
-    (sortedIdx: number): number => {
-      if (!draftsSort) return sortedIdx;
-      const id = sortedDrafts[sortedIdx]?.id;
-      if (!id) return -1;
-      return drafts.findIndex((r) => r.id === id);
-    },
-    [draftsSort, sortedDrafts, drafts],
-  );
-
   const updateCellSorted = (sortedIdx: number, col: ColKey, value: unknown) => {
-    const realIdx = draftsIdxFromSorted(sortedIdx);
-    if (realIdx < 0) return;
-    updateCell(realIdx, col, value);
+    const id = sortedDrafts[sortedIdx]?.id;
+    if (id) updateCell(id, col, value);
   };
 
   // Keyboard navigation handler attached at table-level
@@ -1980,7 +1981,10 @@ function CommercialBucketEditor({
       <SelectTrigger className="h-8 border-0 rounded-none" data-testid="select-grid-commercial-bucket">
         <SelectValue placeholder={isLoading ? "Loading…" : isError ? "Unable to load" : data?.required ? "Select required contract bucket" : "Baseline SOW or contract bucket"} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent
+        onPointerDownCapture={(event) => event.stopPropagation()}
+        onMouseDownCapture={(event) => event.stopPropagation()}
+      >
         {!data?.required && <SelectItem value="__none__">None</SelectItem>}
         {!data?.required && <SelectItem value="__baseline__">Baseline SOW (no bucket)</SelectItem>}
         {buckets.map((bucket) => (
