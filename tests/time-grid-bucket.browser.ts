@@ -19,6 +19,7 @@ const patches: Record<string, unknown>[] = [];
 let createdEntry: typeof entry | null = null;
 const creates: Record<string, unknown>[] = [];
 const createPatches: Record<string, unknown>[] = [];
+let bucketRequired = false;
 let releaseCreate!: () => void;
 const createHeld = new Promise<void>((resolve) => { releaseCreate = resolve; });
 let createStarted!: () => void;
@@ -83,7 +84,7 @@ async function respond(request: HTTPRequest, failures: string[]) {
   if (path === "/api/changelog/whats-new") return json({ showModal: false });
   if (path === "/api/ai/status") return json({ enabled: false });
   if (path === `/api/projects/${projectId}/commercial-buckets`) return json({
-    required: false, buckets: [{ id: bucketId, label: "Extended delivery", basis: "time_and_materials",
+    required: bucketRequired, buckets: [{ id: bucketId, label: "Extended delivery", basis: "time_and_materials",
       contractReference: "CO M2", isActive: true, approvalRequired: false, defaultEligibilityOutcome: "eligible" }],
   });
   if (path === `/api/projects/${projectId}/allocations` || path === `/api/projects/${projectId}/milestones`) return json([]);
@@ -255,8 +256,11 @@ async function main() {
     await page.waitForFunction((selector, text) => document.querySelector(selector)?.textContent?.includes(text), {}, cell, label);
     assert.equal(failures.length, 0, failures.join("\n"));
 
-    // Create a draft, edit it while POST is pending, and verify its new server
-    // ID, follow-up PATCH and newer value survive refetch and reload.
+    // A required-bucket project must not POST an incomplete new row.
+    // Once selected, the initial POST must carry that classification.
+    bucketRequired = true;
+    await page.reload({ waitUntil: "networkidle0" });
+    await page.waitForSelector(cell);
     await page.click('[data-testid="button-grid-add-row"]');
     await page.click('[data-testid="grid-cell-projectId-0"]', { clickCount: 2 });
     await page.waitForSelector('[data-radix-popper-content-wrapper] button');
@@ -271,8 +275,19 @@ async function main() {
     await page.waitForSelector('input[inputmode="decimal"]');
     await page.type('input[inputmode="decimal"]', "3");
     await page.keyboard.press("Enter");
-    await withTimeout(createReceived, "new row create POST");
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    assert.equal(creates.length, 0, "required project must not create an unclassified row");
+    await page.click('[data-testid="grid-cell-commercialBucketId-0"]', { clickCount: 2 });
+    await page.waitForSelector('[data-testid="select-grid-commercial-bucket"]');
+    await page.waitForSelector('[role="option"]');
+    assert.equal(await page.$eval('[role="option"]', (node) => node.textContent?.trim()), label,
+      "required bucket is offered to the new row");
+    await page.click('[role="option"]');
+    await withTimeout(createReceived, "new row create POST").catch(async (error) => {
+      throw new Error(`${error}; cell=${await page.$eval('[data-testid="grid-cell-commercialBucketId-0"]', (node) => node.textContent?.trim())}; body=${(await page.$eval("body", (node) => node.innerText)).slice(-800)}; failures=${failures.join(" | ")}`);
+    });
     assert.equal(creates.length, 1);
+    assert.equal(creates[0].commercialBucketId, bucketId);
     assert.equal(creates[0].billable, true);
     await page.click('[data-testid="grid-cell-billable-0"]');
     await page.waitForFunction(() => document.querySelector('[data-testid="grid-cell-billable-0"]')?.getAttribute("data-state") === "unchecked");

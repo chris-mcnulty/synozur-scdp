@@ -13,3 +13,4 @@
 - [Neon raw SQL timestamp casts](neon-raw-sql-timestamp-casts.md) — explicitly cast bound timestamps and NULL branches in raw SQL CASE/arithmetic expressions
 - [Nix browser validation lifecycle](nix-browser-validation.md) — use the environment Chromium and terminate spawned npm process groups so browser checks remain offline and exit cleanly
 - [Authenticated browser mocks](authenticated-browser-mocks.md) — full-page API mocks need valid shapes for always-mounted widgets; generic arrays can crash unrelated UI
+- [Required grid selectors](required-grid-selectors.md) — an empty controlled Radix Select in a grid cell can close before its choice callback; defer cancellation to preserve the selection

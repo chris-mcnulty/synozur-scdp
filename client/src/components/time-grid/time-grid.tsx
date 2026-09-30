@@ -387,6 +387,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   // Autosave per-row 800ms
   const saveTimers = useRef<Map<string, any>>(new Map());
   const savingRows = useRef(new Set<string>());
+  const draftsRef = useRef<DraftRow[]>(drafts);
 
   const saveMutation = useMutation<TimeEntryRow, Error, DraftRow>({
     mutationFn: async (row) => {
@@ -422,20 +423,46 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       const row = drafts.find((r) => r.id === currentId);
       if (!row) return;
       if (Object.keys(row.errors).length > 0) return;
+      // A newly filled row can become saveable before its classification has
+      // been chosen. Wait for the project policy rather than POSTing an
+      // unclassified row that the server is guaranteed to reject.
+      let commercial: CommercialBucketResponse;
+      try {
+        commercial = await queryClient.fetchQuery({
+          queryKey: ["/api/projects", row.projectId, "commercial-buckets"],
+          queryFn: (): Promise<CommercialBucketResponse> =>
+            apiRequest(`/api/projects/${row.projectId}/commercial-buckets`),
+          staleTime: 30_000,
+        });
+      } catch {
+        setDrafts((prev) => prev.map((r) => r.id === currentId
+          ? markError(r, "Unable to load work classifications. Try saving again.")
+          : r));
+        return;
+      }
+      // The user may have edited this row while the project policy loaded.
+      const saveRow = draftsRef.current.find((r) => r.id === currentId);
+      if (!saveRow || Object.keys(saveRow.errors).length > 0) return;
+      if (commercial.required && !saveRow.commercialBucketId) {
+        setDrafts((prev) => prev.map((r) => r.id === currentId && !r.commercialBucketId && !r.errors.commercialBucketId
+          ? { ...r, errors: { ...r.errors, commercialBucketId: "Select a work classification before saving" } }
+          : r));
+        return;
+      }
       // In particular, never POST a second copy of a new row while its first
       // request is still creating the server id.
       if (savingRows.current.has(currentId)) return;
       savingRows.current.add(currentId);
       setDrafts((prev) => prev.map((r) => (r.id === currentId ? markSaving(r) : r)));
       try {
-        const result = await saveMutation.mutateAsync(row);
+        const result = await saveMutation.mutateAsync(saveRow);
         const newId = result?.id;
         if (newId && newId !== currentId) createdRowIds.current.set(currentId, newId);
         setDrafts((prev) =>
           prev.map((r) => {
             if (r.id !== currentId) return r;
             const withServerId = { ...r, serverId: newId ?? r.serverId, id: newId ?? r.id };
-            return matchesSavedSnapshot(r, row) ? markSaved(withServerId) : markDirty(withServerId);
+            return matchesSavedSnapshot(r, saveRow) ? markSaved(withServerId) : markDirty(withServerId);
           }),
         );
         // If the row id changed (newly created → server uuid), keep the
@@ -454,7 +481,7 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
         const message = err instanceof Error ? err.message : "Save failed";
         setDrafts((prev) =>
           prev.map((r) => (r.id === currentId
-            ? matchesSavedSnapshot(r, row) ? markError(r, message) : markDirty(r)
+            ? matchesSavedSnapshot(r, saveRow) ? markError(r, message) : markDirty(r)
             : r)),
         );
       } finally {
@@ -480,7 +507,6 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
 
   // Ref always points to the latest drafts so async flows (bulk submit)
   // can read post-save state without being trapped in a stale closure.
-  const draftsRef = useRef<DraftRow[]>(drafts);
   useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
@@ -1956,6 +1982,11 @@ function CommercialBucketEditor({
 }) {
   const { data, isLoading, isError } = useProjectCommercialBuckets(projectId);
   const buckets = (data?.buckets ?? []).filter((bucket) => bucket.isActive);
+  const committed = useRef(false);
+  const cancelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (cancelTimer.current) clearTimeout(cancelTimer.current);
+  }, []);
   const currentValue = bucketId || (eligibilityOutcome === "not_eligible"
     ? "__baseline__"
     : data?.required ? undefined : "__none__");
@@ -1969,9 +2000,14 @@ function CommercialBucketEditor({
       open
       value={currentValue}
       onOpenChange={(open) => {
-        if (!open) onCancel();
+        // Radix can signal close before it dispatches a choice for an
+        // unselected required field. Let the selection handler run first.
+        if (!open) cancelTimer.current = setTimeout(() => {
+          if (!committed.current) onCancel();
+        }, 100);
       }}
       onValueChange={(value) => {
+        committed.current = true;
         if (value === "__none__") {
           onCommit({ bucketId: "", eligibilityOutcome: "", approvalReference: "" });
           return;
