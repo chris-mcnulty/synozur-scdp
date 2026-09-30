@@ -319,6 +319,12 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
   // Undo/redo stacks (max 50)
   const undoStack = useRef<DraftRow[][]>([]);
   const redoStack = useRef<DraftRow[][]>([]);
+  // History can contain a row's temporary id from before its POST completed.
+  const createdRowIds = useRef(new Map<string, string>());
+  const restoreCreatedIds = (rows: DraftRow[]) => rows.map((row) => {
+    const serverId = createdRowIds.current.get(row.id);
+    return serverId ? markDirty({ ...row, id: serverId, serverId }) : row;
+  });
 
   const pushHistory = useCallback((current: DraftRow[]) => {
     const snapshot = current.map((r) => ({ ...r, errors: { ...r.errors } }));
@@ -330,13 +336,13 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
     redoStack.current = pushHistorySnapshot(redoStack.current, drafts.map((r) => ({ ...r })));
-    setDrafts(prev);
+    setDrafts(restoreCreatedIds(prev));
   };
   const redo = () => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
     undoStack.current = pushHistorySnapshot(undoStack.current, drafts.map((r) => ({ ...r })));
-    setDrafts(next);
+    setDrafts(restoreCreatedIds(next));
   };
 
   // Update a cell value (allocation auto-fill of description is handled in
@@ -410,31 +416,35 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
 
   const flushRow = useCallback(
     async (rowId: string) => {
-      const row = drafts.find((r) => r.id === rowId);
+      // A timer captured under the temporary id may fire after POST returned.
+      // It must never send another POST, even if React hasn't rendered the new id yet.
+      const currentId = createdRowIds.current.get(rowId) ?? rowId;
+      const row = drafts.find((r) => r.id === currentId);
       if (!row) return;
       if (Object.keys(row.errors).length > 0) return;
       // In particular, never POST a second copy of a new row while its first
       // request is still creating the server id.
-      if (savingRows.current.has(rowId)) return;
-      savingRows.current.add(rowId);
-      setDrafts((prev) => prev.map((r) => (r.id === rowId ? markSaving(r) : r)));
+      if (savingRows.current.has(currentId)) return;
+      savingRows.current.add(currentId);
+      setDrafts((prev) => prev.map((r) => (r.id === currentId ? markSaving(r) : r)));
       try {
         const result = await saveMutation.mutateAsync(row);
         const newId = result?.id;
+        if (newId && newId !== currentId) createdRowIds.current.set(currentId, newId);
         setDrafts((prev) =>
           prev.map((r) => {
-            if (r.id !== rowId) return r;
+            if (r.id !== currentId) return r;
             const withServerId = { ...r, serverId: newId ?? r.serverId, id: newId ?? r.id };
             return matchesSavedSnapshot(r, row) ? markSaved(withServerId) : markDirty(withServerId);
           }),
         );
         // If the row id changed (newly created → server uuid), keep the
         // selection stable so subsequent bulk actions still see this row.
-        if (newId && newId !== rowId) {
+        if (newId && newId !== currentId) {
           setSelectedIds((prev) => {
-            if (!prev.has(rowId)) return prev;
+            if (!prev.has(currentId)) return prev;
             const next = new Set(prev);
-            next.delete(rowId);
+            next.delete(currentId);
             next.add(newId);
             return next;
           });
@@ -443,12 +453,12 @@ export function TimeGrid({ currentUser, projects }: TimeGridProps) {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Save failed";
         setDrafts((prev) =>
-          prev.map((r) => (r.id === rowId
+          prev.map((r) => (r.id === currentId
             ? matchesSavedSnapshot(r, row) ? markError(r, message) : markDirty(r)
             : r)),
         );
       } finally {
-        savingRows.current.delete(rowId);
+        savingRows.current.delete(currentId);
       }
     },
     [drafts, saveMutation, queryClient],

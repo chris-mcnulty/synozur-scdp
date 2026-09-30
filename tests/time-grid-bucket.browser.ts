@@ -16,6 +16,17 @@ let entry = {
   commercialBucketId: null as string | null, commercialEligibilityOutcome: null as string | null,
 };
 const patches: Record<string, unknown>[] = [];
+let createdEntry: typeof entry | null = null;
+const creates: Record<string, unknown>[] = [];
+const createPatches: Record<string, unknown>[] = [];
+let releaseCreate!: () => void;
+const createHeld = new Promise<void>((resolve) => { releaseCreate = resolve; });
+let createStarted!: () => void;
+const createReceived = new Promise<void>((resolve) => { createStarted = resolve; });
+let releaseCreatePatch!: () => void;
+const createPatchHeld = new Promise<void>((resolve) => { releaseCreatePatch = resolve; });
+let createPatchStarted!: () => void;
+const createPatchReceived = new Promise<void>((resolve) => { createPatchStarted = resolve; });
 let releaseFirst: () => void = () => {};
 let firstHeld: Promise<void>;
 let firstStarted: () => void;
@@ -77,11 +88,24 @@ async function respond(request: HTTPRequest, failures: string[]) {
   });
   if (path === `/api/projects/${projectId}/allocations` || path === `/api/projects/${projectId}/milestones`) return json([]);
   if (path === "/api/time-entries" && request.method() === "GET") {
+    const items = createdEntry ? [{ ...entry }, { ...createdEntry }] : [{ ...entry }];
     if (url.searchParams.has("personId")) {
       refetches++;
-      return json([{ ...entry }]);
+      return json(items);
     }
-    return json({ items: [{ ...entry }], total: 1, hasMore: false });
+    return json({ items, total: items.length, hasMore: false });
+  }
+  if (path === "/api/time-entries" && request.method() === "POST") {
+    const payload = JSON.parse(request.postData() || "{}");
+    creates.push(payload);
+    createStarted();
+    await withTimeout(createHeld, "release of the create POST");
+    createdEntry = {
+      ...entry, ...payload, id: "entry-created", hours: String(payload.hours),
+      commercialBucketId: payload.commercialBucketId ?? null,
+      commercialEligibilityOutcome: payload.commercialEligibilityOutcome ?? null,
+    };
+    return json({ ...createdEntry });
   }
   if (path === "/api/time-entries/entry-1" && request.method() === "PATCH") {
     const patch = JSON.parse(request.postData() || "{}");
@@ -93,6 +117,14 @@ async function respond(request: HTTPRequest, failures: string[]) {
     }
     entry = { ...entry, ...patch, hours: String(patch.hours ?? entry.hours) };
     return json({ ...entry });
+  }
+  if (path === "/api/time-entries/entry-created" && request.method() === "PATCH") {
+    const patch = JSON.parse(request.postData() || "{}");
+    createPatches.push(patch);
+    createPatchStarted();
+    await withTimeout(createPatchHeld, "release of the follow-up PATCH");
+    createdEntry = { ...createdEntry!, ...patch, hours: String(patch.hours ?? createdEntry!.hours) };
+    return json({ ...createdEntry });
   }
   // These widgets remain mounted even when the grid view is selected.
   if (path === "/api/me/calendar-suggestions") return json({ disabled: true, outlookNotConnected: true, suggestions: [] });
@@ -116,9 +148,9 @@ async function main() {
   let serverLog = "";
   server.stdout?.on("data", (chunk) => { serverLog += chunk; });
   server.stderr?.on("data", (chunk) => { serverLog += chunk; });
-  for (let attempt = 0; attempt < 80; attempt++) {
+  for (let attempt = 0; attempt < 240; attempt++) {
     try { if ((await fetch(`${origin}/health`)).ok) break; } catch {}
-    if (attempt === 79) throw new Error(`Grid test server did not start:\n${serverLog.slice(-2000)}`);
+    if (attempt === 239) throw new Error(`Grid test server did not start:\n${serverLog.slice(-2000)}`);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   const browser = await puppeteer.launch({ executablePath: chromiumExecutable(), headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
@@ -222,9 +254,73 @@ async function main() {
     await page.reload({ waitUntil: "networkidle0" });
     await page.waitForFunction((selector, text) => document.querySelector(selector)?.textContent?.includes(text), {}, cell, label);
     assert.equal(failures.length, 0, failures.join("\n"));
+
+    // Create a draft, edit it while POST is pending, and verify its new server
+    // ID, follow-up PATCH and newer value survive refetch and reload.
+    await page.click('[data-testid="button-grid-add-row"]');
+    await page.click('[data-testid="grid-cell-projectId-0"]', { clickCount: 2 });
+    await page.waitForSelector('[data-radix-popper-content-wrapper] button');
+    const pickedProject = await page.evaluate(() => {
+      const option = [...document.querySelectorAll<HTMLButtonElement>('[data-radix-popper-content-wrapper] button')]
+        .find((node) => node.textContent?.includes("Grid Project"));
+      option?.click();
+      return !!option;
+    });
+    assert.equal(pickedProject, true, "project can be selected for the new row");
+    await page.click('[data-testid="grid-cell-hours-0"]', { clickCount: 2 });
+    await page.waitForSelector('input[inputmode="decimal"]');
+    await page.type('input[inputmode="decimal"]', "3");
+    await page.keyboard.press("Enter");
+    await withTimeout(createReceived, "new row create POST");
+    assert.equal(creates.length, 1);
+    assert.equal(creates[0].billable, true);
+    await page.click('[data-testid="grid-cell-billable-0"]');
+    await page.waitForFunction(() => document.querySelector('[data-testid="grid-cell-billable-0"]')?.getAttribute("data-state") === "unchecked");
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert.equal(creates.length, 1, "editing during creation cannot send a duplicate POST");
+
+    const beforeCreateRefetch = refetches;
+    const creationRefetch = page.waitForResponse((response) =>
+      response.url().includes("/api/time-entries?personId=user-1") && response.request().method() === "GET",
+      { timeout: 15_000 });
+    releaseCreate();
+    await creationRefetch;
+    await withTimeout(createPatchReceived, "follow-up autosave PATCH");
+    assert.equal(creates.length, 1);
+    assert.equal(createPatches.length, 1, "newer edit uses the new server ID");
+    assert.equal(createPatches[0].billable, false);
+    assert.ok(refetches > beforeCreateRefetch, "creation triggered a refetch with the old value");
+    assert.equal(await page.$eval('[data-testid="grid-cell-billable-0"]', (node) => node.getAttribute("data-state")), "unchecked",
+      "the creation refetch cannot overwrite the newer edit");
+    releaseCreatePatch();
+    await page.waitForFunction(() => document.querySelector('[data-testid="button-grid-save-all"]')?.textContent?.trim() === "Save all");
+    assert.equal(createdEntry?.billable, false);
+
+    // Undo can restore a snapshot from before the POST assigned its server ID.
+    await page.click('button[title="Undo (Ctrl/Cmd+Z)"]');
+    await page.waitForFunction(() => document.querySelector('[data-testid="grid-cell-billable-0"]')?.getAttribute("data-state") === "checked");
+    const undoEditSaved = page.waitForResponse((response) =>
+      response.url().endsWith("/api/time-entries/entry-created") &&
+      response.request().method() === "PATCH" &&
+      JSON.parse(response.request().postData() || "{}").billable === false,
+      { timeout: 15_000 });
+    await page.click('[data-testid="grid-cell-billable-0"]');
+    await undoEditSaved;
+    await page.waitForFunction(() => document.querySelector('[data-testid="button-grid-save-all"]')?.textContent?.trim() === "Save all");
+    assert.equal(creates.length, 1, "editing an undone row cannot create another entry");
+    assert.equal(createdEntry?.billable, false);
+
+    await page.reload({ waitUntil: "networkidle0" });
+    await page.waitForFunction(() => document.querySelector('[data-testid="tab-drafts"]')?.textContent?.includes("(2)"));
+    assert.equal(await page.$eval('[data-testid="grid-cell-billable-0"]', (node) => node.getAttribute("data-state")), "unchecked",
+      "the newer edit persists after reload");
+    assert.equal(creates.length, 1);
+    assert.equal(failures.length, 0, failures.join("\n"));
     console.log("time grid bucket browser regression passed");
   } finally {
     releaseFirst();
+    releaseCreate();
+    releaseCreatePatch();
     await browser.close();
   }
 }
