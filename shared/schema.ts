@@ -2015,7 +2015,7 @@ export const invoiceBatches = pgTable("invoice_batches", {
   // Payment milestone link - one invoice batch per payment milestone
   projectMilestoneId: varchar("project_milestone_id").references(() => projectMilestones.id), // Now references unified milestones table
   // Revenue recognition date tracking
-  asOfDate: date("as_of_date"), // Date for revenue recognition (defaults to finalized date)
+  asOfDate: date("as_of_date"), // Invoice/revenue date; preserved on finalization, defaults only when unset
   asOfDateUpdatedBy: varchar("as_of_date_updated_by").references(() => users.id),
   asOfDateUpdatedAt: timestamp("as_of_date_updated_at"),
   notes: text("notes"), // For review comments

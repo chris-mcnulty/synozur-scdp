@@ -777,7 +777,9 @@ export const invoicingMethods: ThisType<IStorage & {
           status: 'finalized',
           finalizedAt: sql`now()`,
           finalizedBy: userId,
-          asOfDate: sql`CURRENT_DATE` // Set as-of date to today when finalizing
+          // Preserve the saved invoice date, including on re-finalization.
+          // Read it in the UPDATE so a date saved since the initial SELECT isn't lost.
+          asOfDate: sql`COALESCE(${invoiceBatches.asOfDate}, CURRENT_DATE)`
         })
         .where(eq(invoiceBatches.batchId, batchId))
         .returning();
