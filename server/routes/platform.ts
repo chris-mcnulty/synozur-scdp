@@ -3,6 +3,7 @@ import { db, storage } from "../storage";
 import { servicePlans, tenants, users, tenantUsers } from "@shared/schema";
 import { eq, sql, desc, and } from "drizzle-orm";
 import { z } from "zod";
+import { tenantPlanUpdateSchema } from "@shared/tenant-plan-settings";
 
 const servicePlanSchema = z.object({
   internalName: z.string().min(1).regex(/^[a-z0-9_]+$/),
@@ -25,7 +26,7 @@ const tenantSchema = z.object({
   enforceSso: z.boolean().optional(),
   allowLocalAuth: z.boolean().optional(),
   defaultTimezone: z.string().optional().nullable(),
-});
+}).extend(tenantPlanUpdateSchema.shape);
 
 const tenantSettingsSchema = z.object({
   name: z.string().min(1).optional(),
@@ -200,6 +201,8 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         allowedDomains: data.allowedDomains,
         azureTenantId: data.azureTenantId,
         servicePlanId: data.servicePlanId,
+        planStatus: data.planStatus,
+        planExpiresAt: data.planExpiresAt,
         enforceSso: data.enforceSso,
         allowLocalAuth: data.allowLocalAuth ?? true,
         defaultTimezone: data.defaultTimezone || 'UTC',

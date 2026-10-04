@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Plus, Edit2, Crown, Users, Calendar, Building2, Globe } from "lucide-react";
 import type { Tenant, ServicePlan } from "@shared/schema";
+import { editablePlanStatusSchema, planExpirationDateSchema, expirationDateValue, expirationDatePayload } from "@shared/tenant-plan-settings";
 
 const US_TIMEZONES = [
   { value: "America/New_York", label: "Eastern (ET)" },
@@ -42,6 +43,8 @@ const tenantFormSchema = z.object({
   allowedDomains: z.string().optional(),
   azureTenantId: z.string().optional(),
   servicePlanId: z.string().optional(),
+  planStatus: editablePlanStatusSchema.default("active"),
+  planExpiresOn: planExpirationDateSchema.default(""),
   enforceSso: z.boolean().default(false),
   allowLocalAuth: z.boolean().default(true),
   defaultTimezone: z.string().default(browserTimezone),
@@ -71,6 +74,8 @@ export default function PlatformTenants() {
       allowedDomains: "",
       azureTenantId: "",
       servicePlanId: "",
+      planStatus: "active",
+      planExpiresOn: "",
       enforceSso: false,
       allowLocalAuth: true,
       defaultTimezone: browserTimezone,
@@ -79,8 +84,10 @@ export default function PlatformTenants() {
 
   const createMutation = useMutation({
     mutationFn: async (data: TenantFormData) => {
+      const { planExpiresOn, ...settings } = data;
       const payload = {
-        ...data,
+        ...settings,
+        planExpiresAt: expirationDatePayload(planExpiresOn),
         allowedDomains: data.allowedDomains ? data.allowedDomains.split(",").map(d => d.trim()).filter(Boolean) : [],
         servicePlanId: data.servicePlanId || null,
         azureTenantId: data.azureTenantId || null,
@@ -100,9 +107,10 @@ export default function PlatformTenants() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: TenantFormData & { id: string }) => {
-      const { id, ...rest } = data;
+      const { id, planExpiresOn, ...rest } = data;
       const payload = {
         ...rest,
+        planExpiresAt: expirationDatePayload(planExpiresOn, editingTenant?.planExpiresAt),
         allowedDomains: rest.allowedDomains ? rest.allowedDomains.split(",").map(d => d.trim()).filter(Boolean) : [],
         servicePlanId: rest.servicePlanId || null,
         azureTenantId: rest.azureTenantId || null,
@@ -111,6 +119,7 @@ export default function PlatformTenants() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/platform/tenants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/plan-status"] });
       setEditingTenant(null);
       form.reset();
       toast({ title: "Tenant updated successfully" });
@@ -136,6 +145,8 @@ export default function PlatformTenants() {
       allowedDomains: tenant.allowedDomains?.join(", ") || "",
       azureTenantId: tenant.azureTenantId || "",
       servicePlanId: tenant.servicePlanId || "",
+      planStatus: editablePlanStatusSchema.parse(tenant.planStatus || "active"),
+      planExpiresOn: expirationDateValue(tenant.planExpiresAt),
       enforceSso: tenant.enforceSso || false,
       allowLocalAuth: tenant.allowLocalAuth ?? true,
       defaultTimezone: tenant.defaultTimezone || browserTimezone,
@@ -180,7 +191,7 @@ export default function PlatformTenants() {
                 New Tenant
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Create New Tenant</DialogTitle>
                 <DialogDescription>Add a new organization to the platform</DialogDescription>
@@ -270,6 +281,7 @@ export default function PlatformTenants() {
                       </FormItem>
                     )}
                   />
+                  <TenantPlanFields control={form.control} />
                   <FormField
                     control={form.control}
                     name="defaultTimezone"
@@ -412,11 +424,11 @@ export default function PlatformTenants() {
                       <TableCell>
                         <Dialog open={editingTenant?.id === tenant.id} onOpenChange={(open) => !open && setEditingTenant(null)}>
                           <DialogTrigger asChild>
-                            <Button variant="ghost" size="sm" onClick={() => openEditDialog(tenant)}>
+                            <Button variant="ghost" size="sm" onClick={() => openEditDialog(tenant)} aria-label={`Edit ${tenant.name}`} data-testid={`button-edit-tenant-${tenant.id}`}>
                               <Edit2 className="h-4 w-4" />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="max-w-md">
+                          <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
                             <DialogHeader>
                               <DialogTitle>Edit Tenant</DialogTitle>
                               <DialogDescription>Update organization settings</DialogDescription>
@@ -503,6 +515,7 @@ export default function PlatformTenants() {
                                     </FormItem>
                                   )}
                                 />
+                                <TenantPlanFields control={form.control} />
                                 <FormField
                                   control={form.control}
                                   name="defaultTimezone"
@@ -577,5 +590,67 @@ export default function PlatformTenants() {
         </Card>
       </div>
     </Layout>
+  );
+}
+
+function TenantPlanFields({ control }: { control: Control<TenantFormData> }) {
+  return (
+    <div className="space-y-4 rounded-lg border p-3">
+      <FormField
+        control={control}
+        name="planStatus"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Plan status</FormLabel>
+            <Select value={field.value} onValueChange={field.onChange}>
+              <FormControl>
+                <SelectTrigger data-testid="select-tenant-plan-status">
+                  <SelectValue />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="trial">Trial</SelectItem>
+                <SelectItem value="expired">Expired</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+                <SelectItem value="suspended">Suspended</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              To restore an expired plan, choose Active and clear or extend its expiration date.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="planExpiresOn"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Expiration date (UTC)</FormLabel>
+            <div className="flex items-center gap-2">
+              <FormControl>
+                <Input type="date" {...field} data-testid="input-tenant-plan-expiration" />
+              </FormControl>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!field.value}
+                onClick={() => field.onChange("")}
+                data-testid="button-clear-tenant-plan-expiration"
+              >
+                Clear
+              </Button>
+            </div>
+            <FormDescription>
+              Leave blank for no expiration. A new date expires at the end of that day in UTC.
+              Changing the service plan alone does not reset its status or expiration.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
   );
 }
