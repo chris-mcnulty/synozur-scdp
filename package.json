@@ -14,7 +14,8 @@
     "test:unit": "tsx tests/run.ts",
     "test:tenant-plan": "tsx tests/tenant-plan.browser.ts",
     "test:documentation": "tsx tests/documentation.browser.ts",
-    "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts"
+    "test:background-jobs": "tsx tests/background-jobs.browser.ts",
+    "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts && npm run test:background-jobs"
   },
   "dependencies": {
     "@azure/msal-node": "^3.7.3",

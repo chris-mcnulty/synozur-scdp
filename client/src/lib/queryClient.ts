@@ -14,23 +14,31 @@ export const setSessionId = (id: string | null) => {
 
 export const getSessionId = () => sessionId;
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    let errorMessage: string;
+    let errorMessage = `Request failed (${res.status})`;
+    const text = await res.text();
     const contentType = res.headers.get("content-type");
     
     if (contentType && contentType.includes("application/json")) {
       try {
-        const errorData = await res.json();
-        errorMessage = errorData.message || errorData.error || JSON.stringify(errorData);
+        const errorData = JSON.parse(text);
+        errorMessage = errorData?.message || errorData?.error || text || errorMessage;
       } catch {
-        errorMessage = await res.text() || res.statusText;
+        errorMessage = text || errorMessage;
       }
     } else {
-      errorMessage = await res.text() || res.statusText;
+      errorMessage = text || errorMessage;
     }
     
-    throw new Error(errorMessage);
+    throw new ApiError(errorMessage, res.status);
   }
 }
 
@@ -63,7 +71,7 @@ export async function apiRequest(
   const data = await res.json();
   
   // Store session ID if returned in login response
-  if (data.sessionId) {
+  if (data?.sessionId) {
     setSessionId(data.sessionId);
   }
   

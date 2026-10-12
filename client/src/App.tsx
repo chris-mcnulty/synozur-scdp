@@ -99,7 +99,7 @@ import NotificationPreferencesPage from "@/pages/notification-preferences";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { setSessionId } from "@/lib/queryClient";
+import { ApiError, setSessionId } from "@/lib/queryClient";
 import { useSessionRecovery } from "@/hooks/use-session-recovery";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
@@ -153,7 +153,7 @@ function Router() {
   const [, setLocation] = useLocation();
   
   // Get user data first
-  const { data: user, isLoading, error } = useQuery({
+  const { data: user, isLoading, error, refetch: retryAuth } = useQuery({
     queryKey: ["/api/auth/user"],
     retry: false,
     enabled: !processingSession && !isRecovering, // Only check auth after processing sessionId and not recovering
@@ -193,7 +193,10 @@ function Router() {
 
   // Handle session errors - redirect to login (with loop protection)
   useEffect(() => {
-    if (error && !user && !isLoading && !processingSession && !isRecovering) {
+    if (error instanceof ApiError && error.status === 401 && !isLoading && !processingSession && !isRecovering) {
+      setSessionId(null);
+      queryClient.clear();
+      queryClient.setQueryData(["/api/auth/user"], null);
       const currentPath = window.location.pathname;
       if (currentPath !== '/login' && currentPath !== '/signup' && !currentPath.startsWith('/embed/')) {
         const lastRedirect = sessionStorage.getItem('redirectAfterLogin');
@@ -214,7 +217,7 @@ function Router() {
 
   const isEmbedRoute = window.location.pathname.startsWith('/embed/');
 
-  if ((processingSession || isLoading || isRecovering) && !isEmbedRoute) {
+  if ((processingSession || isLoading || (isRecovering && !user)) && !isEmbedRoute) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -223,6 +226,17 @@ function Router() {
             {isRecovering ? "Recovering session..." : "Loading..."}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // A service outage is not a login failure. Keep saved credentials, but never
+  // render protected content without a successfully loaded user.
+  if (error && !user && !isEmbedRoute && window.location.pathname !== "/login" && window.location.pathname !== "/signup") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background">
+        <p role="alert">Unable to verify session. Please retry when the service is available.</p>
+        <button className="rounded border px-4 py-2" onClick={() => retryAuth()}>Retry</button>
       </div>
     );
   }

@@ -388,18 +388,7 @@ export default function BackgroundJobs() {
       if (filterType !== "all") params.set("type", filterType);
       if (filterStatus !== "all") params.set("status", filterStatus);
       params.set("limit", "200");
-      const res = await fetch(`/api/admin/background-jobs?${params}`, { credentials: "include" });
-      if (!res.ok) {
-        let detail = `Request failed (${res.status})`;
-        try {
-          const body = await res.json();
-          if (body?.message) detail = body.message;
-        } catch {
-          // Keep the status-based message when the server did not return JSON.
-        }
-        throw new Error(detail);
-      }
-      const body = await res.json();
+      const body = await apiRequest(`/api/admin/background-jobs?${params}`);
       if (!Array.isArray(body)) throw new Error("Background-jobs API returned an invalid queue");
       return body;
     },
