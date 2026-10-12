@@ -1,0 +1,23 @@
+{
+  "status": "planning-approved-execution-not-authorized",
+  "proposalHash": "6456f208400f3f69a76b99c07f29c1cd02b3d587897431b43988dee1d8d3fd1a",
+  "approvalStatement": "all decisions are approved",
+  "scope": [
+    "Proposed client, estimate title/date and three-phase ROM scope",
+    "All 47 activity allocations and existing-role substitutions, including competency assumptions",
+    "Program Manager costing of the PM allowance",
+    "Contingency costing using each phase's direct-plus-PM role mix",
+    "Listed internal cost rates confirmed as USD per hour",
+    "Design-and-verify boundary, exclusions and non-binding ROM status"
+  ],
+  "approvedHours100": 1305936,
+  "approvedFeesCents": 424429200,
+  "approvedInternalCostCents": 314733300,
+  "approvedMarginCents": 109695900,
+  "productionExecutionApproved": false,
+  "remainingRequirements": [
+    "Verify the actual published-app database connection and refresh inventory",
+    "Resolve any changed source, role snapshot or record drift",
+    "Obtain separate explicit approval of the exact final execution preview hash"
+  ]
+}
