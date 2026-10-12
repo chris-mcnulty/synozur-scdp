@@ -13,6 +13,7 @@
     "test": "npm run test:unit && npm run test:browser",
     "test:unit": "tsx tests/run.ts",
     "test:tenant-plan": "tsx tests/tenant-plan.browser.ts",
+    "test:documentation": "tsx tests/documentation.browser.ts",
     "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts"
   },
   "dependencies": {

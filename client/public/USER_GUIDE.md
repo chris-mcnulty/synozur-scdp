@@ -1078,8 +1078,8 @@ Link HubSpot deals to Constellation projects for end-to-end visibility from sale
 
 #### Documentation Resources
 - **This User Guide**: Overview and common tasks
-- **[Detailed User Guide](user-guide/SCDP-User-Guide.md)**: Comprehensive feature documentation
-- **[Administrator Guide](user-guide/SCDP-Administrator-Guide.md)**: System configuration and admin tasks
+- **[Detailed User Guide](/docs/user-guide/SCDP-User-Guide.md)**: Comprehensive feature documentation
+- **[Administrator Guide](/docs/user-guide/SCDP-Administrator-Guide.md)**: System configuration and admin tasks
 - **[Changelog](CHANGELOG.md)**: Version history and release notes
 - **[Roadmap](ROADMAP.md)**: Planned features and future direction
 
@@ -1120,14 +1120,14 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ### Core Documentation
 
-**[SCDP User Guide](user-guide/SCDP-User-Guide.md)**
+**[SCDP User Guide](/docs/user-guide/SCDP-User-Guide.md)**
 - Complete feature-by-feature guide
 - Detailed workflows with screenshots
 - Role-specific instructions
 - Advanced tips and tricks
 - 3500+ lines of comprehensive documentation
 
-**[SCDP Administrator Guide](user-guide/SCDP-Administrator-Guide.md)**
+**[SCDP Administrator Guide](/docs/user-guide/SCDP-Administrator-Guide.md)**
 - System configuration and setup
 - User and permission management
 - Vocabulary and rate configuration

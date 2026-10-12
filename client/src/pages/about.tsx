@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { SystemSetting } from "@shared/schema";
@@ -40,6 +41,7 @@ interface TenantsResponse {
 }
 
 export default function About() {
+  const [scdpTriviaOpen, setScdpTriviaOpen] = useState(false);
   // Fetch system settings for version information
   const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
     queryKey: ["/api/settings"]
@@ -91,9 +93,22 @@ export default function About() {
             <h1 className="text-3xl font-bold tracking-tight">Constellation</h1>
             <p className="text-xl text-muted-foreground">
               Synozur Consulting Delivery Platform{" "}
-              <Tooltip>
+              <Tooltip open={scdpTriviaOpen} onOpenChange={setScdpTriviaOpen}>
                 <TooltipTrigger asChild>
-                  <span className="cursor-help border-b border-dotted border-muted-foreground/50">(SCDP)</span>
+                  <button
+                    type="button"
+                    className="cursor-help border-b border-dotted border-muted-foreground/50 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="Reveal the SCDP fun fact"
+                    data-testid="button-scdp-easter-egg"
+                    onClick={(event) => {
+                      // Radix normally dismisses a tooltip on click. Keep it
+                      // open for touch users and keyboard activation instead.
+                      event.preventDefault();
+                      setScdpTriviaOpen(true);
+                    }}
+                  >
+                    (SCDP)
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-xs text-center">
                   <p className="text-xs italic">
