@@ -1079,6 +1079,7 @@ export const projectMilestones = pgTable("project_milestones", {
 // Project Resource Allocations - mirrors estimate allocations for actual project work
 export const projectAllocations = pgTable("project_allocations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  commercialBucketId: varchar("commercial_bucket_id").references(() => commercialBuckets.id, { onDelete: "restrict" }),
   tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
   projectActivityId: varchar("project_activity_id").references(() => projectActivities.id),

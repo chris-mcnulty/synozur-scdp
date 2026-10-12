@@ -7,6 +7,10 @@ import { RaiddLogTab } from "@/components/raidd-log-tab";
 import { DeliverablesTab } from "@/components/project/deliverables-tab";
 import { StatusReportsTab } from "@/components/project/status-reports-tab";
 import { CommercialBucketsPanel } from "@/components/project/commercial-buckets-panel";
+import { AssignmentBucketField, BulkAssignmentBucketControl } from "@/components/project/assignment-commercial-bucket-controls";
+import { useAssignmentCommercialBuckets } from "@/hooks/use-assignment-commercial-buckets";
+import { changedAssignmentFields, assignmentFormPricingMode } from "@shared/assignment-patch";
+import { assignmentBucketLabel, assignmentBucketWindowWarning, matchesAssignmentBucket, canManageAssignmentBuckets, NO_ASSIGNMENT_BUCKET } from "@/lib/assignment-commercial-buckets";
 import { ProjectTimeWorkbench } from "@/components/project/project-time-workbench";
 import { Button } from "@/components/ui/button";
 import { ToastAction } from "@/components/ui/toast";
@@ -303,6 +307,7 @@ const assignmentFormSchema = z.object({
   projectWorkstreamId: z.string().optional(),
   projectEpicId: z.string().optional(),
   projectStageId: z.string().optional(),
+  commercialBucketId: z.string().nullable().optional(),
   hours: z.string().min(1, "Hours is required"),
   pricingMode: z.enum(["role", "person", "resource_name"]).default("person"),
   rackRate: z.string().optional(),
@@ -1516,12 +1521,16 @@ export default function ProjectDetail() {
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
   const [assignStart, setAssignStart] = useState<string>("");
   const [assignEnd, setAssignEnd] = useState<string>("");
+  const [assignBucket, setAssignBucket] = useState<string | null>(null);
+  const [assignBucketChanged, setAssignBucketChanged] = useState(false);
 
   const [dialogStatus, setDialogStatus] = useState<string>('');
   useEffect(() => {
     if (showAssignmentDialog) {
       setAssignStart(editingAssignment?.plannedStartDate || "");
       setAssignEnd(editingAssignment?.plannedEndDate || "");
+      setAssignBucket(editingAssignment?.commercialBucketId || null);
+      setAssignBucketChanged(false);
       setDialogStatus(editingAssignment?.status || 'open');
     }
   }, [showAssignmentDialog, editingAssignment]);
@@ -1629,11 +1638,13 @@ export default function ProjectDetail() {
   const [allocationAssignedFilter, setAllocationAssignedFilter] = useState<string>(() => readStoredFilters(id).assigned ?? 'all');
   const [allocationRoleFilter, setAllocationRoleFilter] = useState<string>(() => readStoredFilters(id).role ?? 'all');
   const [allocationSearchQuery, setAllocationSearchQuery] = useState<string>(() => readStoredFilters(id).search ?? '');
+  const [allocationBucketFilter, setAllocationBucketFilter] = useState<string>(() => readStoredFilters(id).commercialBucket ?? 'all');
   // Delivery sub-tab controlled state (so we can navigate to it programmatically)
   const [deliverySubTab, setDeliverySubTab] = useState<string>('allocations');
 
   useEffect(() => {
     const stored = readStoredFilters(id);
+    setAllocationBucketFilter(stored.commercialBucket ?? 'all');
     setAllocationStatusFilter(stored.status ?? 'all');
     setAllocationResourceFilter(stored.resource ?? 'all');
     setAllocationStageFilter(stored.stage ?? 'all');
@@ -1651,12 +1662,13 @@ export default function ProjectDetail() {
         assigned: allocationAssignedFilter,
         role: allocationRoleFilter,
         search: allocationSearchQuery,
+        commercialBucket: allocationBucketFilter,
       });
       sessionStorage.setItem(assignmentFiltersSessionKey, payload);
     } catch {
       // ignore storage errors
     }
-  }, [allocationStatusFilter, allocationResourceFilter, allocationStageFilter, allocationAssignedFilter, allocationRoleFilter, allocationSearchQuery, assignmentFiltersSessionKey]);
+  }, [allocationStatusFilter, allocationResourceFilter, allocationStageFilter, allocationAssignedFilter, allocationRoleFilter, allocationSearchQuery, allocationBucketFilter, assignmentFiltersSessionKey]);
 
   const saveAssignmentFiltersAsDefault = () => {
     try {
@@ -1667,6 +1679,7 @@ export default function ProjectDetail() {
         assigned: allocationAssignedFilter,
         role: allocationRoleFilter,
         search: allocationSearchQuery,
+        commercialBucket: allocationBucketFilter,
       });
       localStorage.setItem(assignmentFiltersDefaultKey, payload);
     } catch {
@@ -1801,6 +1814,10 @@ export default function ProjectDetail() {
     ['admin', 'billing-admin'].includes(user.role) ||
     (user.role === 'pm' && analytics?.project?.pm === user.id)
   ) : false;
+  const canManageCommercialAssignments = !embedReadonly && canManageAssignmentBuckets(user, analytics?.project?.pm);
+  const assignmentBucketQuery = useAssignmentCommercialBuckets(id);
+  const assignmentBuckets = assignmentBucketQuery.data?.buckets || [];
+  const hasAssignmentBuckets = assignmentBuckets.length > 0;
 
   const { data: sows = [], refetch: refetchSows } = useQuery<Sow[]>({
     queryKey: [`/api/projects/${id}/sows`],
@@ -1950,6 +1967,7 @@ export default function ProjectDetail() {
   });
 
   const visibleAllocations = allocations.filter((allocation: any) => {
+    if (hasAssignmentBuckets && !matchesAssignmentBucket(allocation.commercialBucketId, allocationBucketFilter)) return false;
     if (allocationStatusFilter !== 'all' && allocation.status !== allocationStatusFilter) return false;
     if (allocationResourceFilter !== 'all') {
       const resourceId = allocation.person?.id || allocation.resourceName;
@@ -2844,7 +2862,9 @@ export default function ProjectDetail() {
       
       return apiRequest(`/api/projects/${id}/allocations/${allocationId}`, {
         method: "PUT",
-        body: JSON.stringify(processedData)
+        body: JSON.stringify(data.commercialBucketId !== undefined && editingAssignment?.id === allocationId
+          ? changedAssignmentFields(editingAssignment, processedData)
+          : processedData)
       });
     },
     onSuccess: () => {
@@ -5001,7 +5021,21 @@ export default function ProjectDetail() {
                         })}
                     </SelectContent>
                   </Select>
-                  {(allocationStatusFilter !== 'all' || allocationResourceFilter !== 'all' || allocationStageFilter !== 'all' || allocationAssignedFilter !== 'all' || allocationRoleFilter !== 'all' || allocationSearchQuery) && (
+                  {hasAssignmentBuckets && (
+                    <Select value={allocationBucketFilter} onValueChange={setAllocationBucketFilter}>
+                      <SelectTrigger className="w-[240px] h-8" aria-label="Filter commercial bucket" data-testid="filter-allocation-commercial-bucket">
+                        <SelectValue placeholder="Commercial bucket" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All commercial buckets</SelectItem>
+                        <SelectItem value="none">{NO_ASSIGNMENT_BUCKET}</SelectItem>
+                        {assignmentBuckets.map(bucket => (
+                          <SelectItem key={bucket.id} value={bucket.id}>{assignmentBucketLabel(bucket.id, assignmentBuckets)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {(allocationStatusFilter !== 'all' || allocationResourceFilter !== 'all' || allocationStageFilter !== 'all' || allocationAssignedFilter !== 'all' || allocationRoleFilter !== 'all' || allocationSearchQuery || (hasAssignmentBuckets && allocationBucketFilter !== 'all')) && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -5012,6 +5046,7 @@ export default function ProjectDetail() {
                         setAllocationStageFilter('all');
                         setAllocationAssignedFilter('all');
                         setAllocationRoleFilter('all');
+                        setAllocationBucketFilter('all');
                         setAllocationSearchQuery('');
                       }}
                     >
@@ -5033,9 +5068,24 @@ export default function ProjectDetail() {
                     Save as default view
                   </Button>
                 </div>
+                {assignmentBucketQuery.isError && (
+                  <div role="alert" className="flex items-center gap-2 mb-3 text-sm text-muted-foreground">
+                    Assignment commercial data could not be loaded. Existing mappings will be preserved.
+                    <Button variant="outline" size="sm" onClick={() => assignmentBucketQuery.refetch()}>Retry</Button>
+                  </div>
+                )}
                 {!embedReadonly && selectedAllocIds.size > 0 && (
-                  <div className="flex items-center gap-3 mb-3 p-2 rounded-md bg-primary/5 border border-primary/20">
+                  <div className="flex flex-wrap items-center gap-3 mb-3 p-2 rounded-md bg-primary/5 border border-primary/20">
                     <span className="text-sm font-medium">{selectedAllocIds.size} selected</span>
+                    {hasAssignmentBuckets && canManageCommercialAssignments && (
+                      <BulkAssignmentBucketControl
+                        key={id}
+                        projectId={id!}
+                        buckets={assignmentBuckets}
+                        assignments={allocations.filter(allocation => selectedAllocIds.has(allocation.id))}
+                        onSaved={() => setSelectedAllocIds(new Set())}
+                      />
+                    )}
                     <Button
                       size="sm"
                       onClick={openAllocPushDialog}
@@ -5093,6 +5143,7 @@ export default function ProjectDetail() {
                         )}
                         <TableHead>Resource</TableHead>
                         <TableHead>Task/Activity</TableHead>
+                        {hasAssignmentBuckets && <TableHead>Commercial bucket</TableHead>}
                         <TableHead>Role</TableHead>
                         <TableHead>Role Instance</TableHead>
                         <TableHead>Workstream</TableHead>
@@ -5158,6 +5209,17 @@ export default function ProjectDetail() {
                               )}
                             </div>
                           </TableCell>
+                          {hasAssignmentBuckets && (
+                            <TableCell data-testid={`allocation-commercial-bucket-${allocation.id}`}>
+                              <span className="text-sm">{assignmentBucketLabel(allocation.commercialBucketId, assignmentBuckets)}</span>
+                              {assignmentBucketWindowWarning(
+                                assignmentBuckets.find(bucket => bucket.id === allocation.commercialBucketId),
+                                allocation.plannedStartDate, allocation.plannedEndDate,
+                              ) && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                                Review schedule: dates outside bucket window.
+                              </p>}
+                            </TableCell>
+                          )}
                           <TableCell>
                             {allocation.role?.name || '—'}
                           </TableCell>
@@ -8614,12 +8676,7 @@ export default function ProjectDetail() {
               const personIdValue = formData.get('personId') as string;
               const roleIdFinal = roleIdValue === 'none' ? undefined : roleIdValue || undefined;
               
-              let pricingMode: "role" | "person" | "resource_name" = "resource_name";
-              if (personIdValue) {
-                pricingMode = "person";
-              } else if (roleIdFinal) {
-                pricingMode = "role";
-              }
+              const pricingMode = assignmentFormPricingMode(editingAssignment, personIdValue, roleIdFinal);
               
               const completedViaAlternatePathChecked = formData.get('completedViaAlternatePath') === 'on';
               const data: AssignmentFormData = {
@@ -8635,6 +8692,10 @@ export default function ProjectDetail() {
                 endDate: assignEnd || undefined,
                 taskDescription: formData.get('taskDescription') as string || undefined,
                 notes: formData.get('notes') as string || undefined,
+                // Omission preserves existing mappings, including when bucket data
+                // is unavailable. Only an explicit choice changes an edited mapping.
+                ...(hasAssignmentBuckets && canManageCommercialAssignments && (!editingAssignment || assignBucketChanged)
+                  ? { commercialBucketId: assignBucket } : {}),
                 ...(editingAssignment ? { status: dialogStatus } : {}),
                 ...(dialogStatus === 'completed' ? { completedViaAlternatePath: completedViaAlternatePathChecked } : {})
               };
@@ -8675,6 +8736,14 @@ export default function ProjectDetail() {
                 createAssignmentMutation.mutate(data);
               }
             }} className="space-y-4">
+              <AssignmentBucketField
+                buckets={assignmentBuckets}
+                value={assignBucket}
+                disabled={!canManageCommercialAssignments}
+                onChange={value => { setAssignBucket(value); setAssignBucketChanged(true); }}
+                start={assignStart}
+                end={assignEnd}
+              />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="personId">Person *</Label>

@@ -1614,7 +1614,7 @@ export const projectsMethods: ThisType<IStorage> = {
   async updateProjectAllocation(id: string, updates: any): Promise<any> {
     // Task #126 — Stamp lastEditedAt unless this is a sync writer.
     const { _syncWrite, _editedBy, ...payload } = updates || {};
-    if (!_syncWrite && (payload as any).lastEditedAt === undefined) {
+    if (!_syncWrite && Object.keys(payload).some(key => key !== "commercialBucketId") && (payload as any).lastEditedAt === undefined) {
       (payload as any).lastEditedAt = new Date();
       if (_editedBy) (payload as any).lastEditedBy = _editedBy;
     }

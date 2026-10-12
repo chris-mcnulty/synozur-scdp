@@ -14,6 +14,8 @@ import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompan
 import multer from "multer";
 import { eq, sql, inArray, max, and, gte, lte, desc, or, isNull, isNotNull } from "drizzle-orm";
 import { classifyCommercialTimeEntry, isCommercialReconciliationReviewable, validateCommercialSelection } from "../lib/commercial-buckets.js";
+import { bulkSetAssignmentBucket, validateAssignmentBucket } from "../lib/assignment-commercial.js";
+import { changedAssignmentFields, assignmentPersonChanged } from "@shared/assignment-patch";
 
 interface ProjectRouteDeps {
   requireAuth: any;
@@ -936,7 +938,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   const getCommercialProject = async (req: any, res: Response) => {
     const project = await storage.getProject(req.params.projectId || req.params.id);
     const tenantId = (req.user as any)?.activeTenantId || req.user?.primaryTenantId || req.user?.tenantId;
-    if (!project || (tenantId && project.tenantId && project.tenantId !== tenantId)) {
+    if (!project || !tenantId || project.tenantId !== tenantId) {
       res.status(404).json({ message: "Project not found" });
       return null;
     }
@@ -1513,6 +1515,8 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
   // Project Allocations endpoints
   app.get("/api/projects/:projectId/allocations", requireAuth, async (req, res) => {
     try {
+      const context = await getCommercialProject(req, res);
+      if (!context) return;
       const allocations = await storage.getProjectAllocations(req.params.projectId);
       const { personId } = req.query;
       if (personId && typeof personId === "string") {
@@ -1529,6 +1533,10 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
 
   app.post("/api/projects/:projectId/allocations", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
+      const context = await getCommercialProject(req, res);
+      if (!context || !context.tenantId) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      await validateAssignmentBucket(context.project.id, context.tenantId, req.body.commercialBucketId);
       // Validate required hours
       const hours = typeof req.body.hours === 'string' ? parseFloat(req.body.hours) : req.body.hours;
       if (!hours || isNaN(hours) || hours <= 0) {
@@ -1595,7 +1603,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         rackRate: rackRate,
         costRate: costRate || null,
         pricingMode: pricingMode,
-        tenantId: req.user?.tenantId || null // Multi-tenancy dual-write
+        tenantId: context.tenantId // Verified project/session scope
       };
       const validatedData = insertProjectAllocationSchema.parse(allocationData);
       // Task #126 — track last human edit for LWW conflict resolution.
@@ -1625,18 +1633,42 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
         return res.status(400).json({ message: "Invalid allocation data", errors: error.errors });
       }
       console.error("[ERROR] Failed to create project allocation:", error);
+      if (/commercial bucket|archived commercial/i.test(error.message || "")) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: "Failed to create project allocation" });
+    }
+  });
+
+  app.put("/api/projects/:projectId/allocations/commercial-bucket", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const context = await getCommercialProject(req, res);
+      if (!context || !context.tenantId) return;
+      if (!requireCommercialProjectAccess(req, res, context.project)) return;
+      res.json(await bulkSetAssignmentBucket(context.project.id, context.tenantId, req.body));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
     }
   });
 
   app.put("/api/projects/:projectId/allocations/:id", requireAuth, async (req, res) => {
     try {
       const user = req.user!;
+      const context = await getCommercialProject(req, res);
+      if (!context || !context.tenantId) return;
       const allocation = await storage.getProjectAllocation(req.params.id);
       
-      if (!allocation) {
+      if (!allocation || allocation.projectId !== context.project.id || allocation.tenantId !== context.tenantId) {
         return res.status(404).json({ message: "Allocation not found" });
       }
+      if (req.body.commercialBucketId !== undefined) {
+        if (!requireCommercialProjectAccess(req, res, context.project)) return;
+        await validateAssignmentBucket(context.project.id, context.tenantId, req.body.commercialBucketId, allocation.commercialBucketId);
+      }
+      // Assignment identity is not editable through a project-scoped route.
+      delete req.body.projectId;
+      delete req.body.tenantId;
+      delete req.body.id;
       
       // Check permissions: admin/pm can update any allocation,
       // regular users can only update status fields on their own assignments
@@ -1661,19 +1693,26 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       }
       
       // Task #126 — track last human edit for LWW conflict resolution.
-      updateData.lastEditedAt = new Date();
-      updateData.lastEditedBy = user.id;
+      for (const key of ["lastEditedAt", "lastEditedBy", "_syncWrite", "_editedBy"]) delete updateData[key];
+      updateData = changedAssignmentFields(allocation, updateData);
+      if (Object.keys(updateData).length === 0) return res.json(allocation);
+      if (Object.keys(updateData).some(key => key !== "commercialBucketId")) {
+        updateData.lastEditedAt = new Date();
+        updateData.lastEditedBy = user.id;
+      }
       const updated = await storage.updateProjectAllocation(req.params.id, updateData);
       
-      // Auto-create or reactivate engagement when a person is assigned
-      if (req.body.personId) {
-        await storage.ensureProjectEngagement(req.params.projectId, req.body.personId);
+      // Unchanged assignees must not reactivate completed engagements or
+      // provision Teams membership during unrelated (e.g. bucket-only) edits.
+      const assigneeChanged = assignmentPersonChanged(allocation, updateData);
+      if (assigneeChanged && updateData.personId) {
+        await storage.ensureProjectEngagement(req.params.projectId, updateData.personId);
         // Submit Teams provisioning as a tracked background job
         import('../services/job-queue-service.js').then(({ jobQueueService }) => {
           jobQueueService.submit('teams.provision', {
             operation: 'addMember',
             projectId: req.params.projectId,
-            personId: req.body.personId,
+            personId: updateData.personId,
             tenantId: req.user?.tenantId,
             triggeredBy: req.user?.id,
           }, { tenantId: req.user?.tenantId, createdBy: req.user?.id }).catch(() => {});
@@ -1681,7 +1720,7 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       }
 
       // If personId changed, remove the previous assignee from Teams via tracked job
-      if (req.body.personId && allocation && allocation.personId && allocation.personId !== req.body.personId) {
+      if (assigneeChanged && allocation.personId) {
         import('../services/job-queue-service.js').then(({ jobQueueService }) => {
           jobQueueService.submit('teams.provision', {
             operation: 'removeMember',
@@ -1696,6 +1735,9 @@ export function registerProjectRoutes(app: Express, deps: ProjectRouteDeps) {
       res.json(updated);
     } catch (error: any) {
       console.error("[ERROR] Failed to update project allocation:", error);
+      if (error instanceof z.ZodError || /commercial bucket|archived commercial/i.test(error.message || "")) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: "Failed to update project allocation" });
     }
   });
