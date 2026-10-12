@@ -33,6 +33,29 @@ the ceiling. These are checks, not allocation rates/estimates or invoices.
 No invoices, revenue, time entries, milestone coverage or commercial terms
 are written by this package.
 
+## Optional client-owned tracking
+
+The operator may include an explicitly approved `clientTracking` array and
+`clientTrackingReviewed: true` in the reviewed manifest. Each row contains
+`id` (new UUID), `sourceKey` (existing retained source), `type` (`decision`,
+`dependency`, or `action_item`), `title`, `description`, `dueDate`, and explicit
+`ownerId: null`, `assigneeId: null`. These are open RAIDD entries, not billable
+resource allocations. Past planned dates never imply completed work.
+
+The same preview/apply/verify/rollback commands include the companion inside
+the **same transaction** as assignment changes. A separate run under the
+`-client-tracking` package-key suffix stores the complete approved manifest and
+full RAIDD after-images in the existing audit ledger. It does not add schema.
+Identical reruns do not write. Changed rows/manifests and rolled-back runs are
+refused. Rollback refuses both database FK references and the application's
+logical RAIDD parent/conversion/supersession references.
+
+Exclude client-only gates/dependencies from the allocation portion with an
+explicit note that they are tracked in the companion, not omitted from scope.
+Requirements/advisory and client execution may reference the same source only
+when their descriptions clearly separate responsibility and effort. Keep
+commercial settings changes separate: this package still never edits buckets.
+
 ## Deployment and maintenance prerequisites
 
 1. Deploy migration `0048_assignment_commercial_buckets.sql` and the matching

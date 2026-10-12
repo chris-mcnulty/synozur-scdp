@@ -23,6 +23,7 @@ LANGUAGE plpgsql AS $$
 DECLARE cfg jsonb; r record; b record; a project_allocations; v jsonb; p projects; run assignment_import_runs;
 BEGIN
  SELECT m INTO STRICT cfg FROM co_manifest;
+ RETURN QUERY SELECT * FROM pg_temp.co_client_exceptions();
  IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='project_allocations'::regclass
    AND tgname='assignment_commercial_bucket_guard' AND tgenabled IN ('O','A')) THEN
    RETURN QUERY SELECT '*'::text, 'Assignment commercial schema guard is not deployed/enabled';

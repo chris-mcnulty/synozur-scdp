@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { buildSql } from "../scripts/platinum-co1/build";
+import { buildSql, buildOperatorApply } from "../scripts/platinum-co1/build";
 const sql = (text: string) => execFileSync("psql", ["-h","/tmp","-p","55432","-U","runner","-d","postgres","-v","ON_ERROR_STOP=1","-At"], {input:text,encoding:"utf8",stdio:["pipe","pipe","pipe"]});
 const fail = (text: string) => assert.throws(() => sql(text));
 sql(`DELETE FROM clients WHERE id='co-c'; DELETE FROM tenants WHERE id IN ('co-t','co-other');
@@ -84,4 +84,61 @@ sql(buildSql(insertion,"rollback",true));
 assert.equal(sql(`SELECT count(*) FROM project_allocations WHERE id='co-new'`).trim(),"0");
 assert.deepEqual(get("time_entries","co-time"),timeBefore);
 assert.deepEqual(get("planner_task_sync","co-sync"),plannerBefore);
+// Client execution is tracked without named people or billable allocations.
+sql(`DELETE FROM assignment_import_rows; DELETE FROM assignment_import_runs;`);
+const withClient=structuredClone(insertion);
+withClient.clientTrackingReviewed=true;
+withClient.clientTracking=[{
+  id:"10000000-0000-4000-8000-000000000001",sourceKey:"D-baseline",type:"action_item",
+  title:"Client executes No-AI labeling",description:"Approved client-owned execution, unassigned.",
+  dueDate:"2026-08-25",ownerId:null,assigneeId:null
+}];
+const unapprovedClient=structuredClone(withClient);
+unapprovedClient.clientTrackingReviewed=false;
+fail(buildSql(unapprovedClient,"apply",true));
+const namedClient=structuredClone(withClient);
+namedClient.clientTracking[0].ownerId="co-u";
+fail(buildSql(namedClient,"apply",true));
+const duplicateClient=structuredClone(withClient);
+duplicateClient.clientTracking.push({...duplicateClient.clientTracking[0]});
+fail(buildSql(duplicateClient,"apply",true));
+// Invalid calendar dates fail after assignment insertion, but the whole batch rolls back.
+const invalidClientDate=structuredClone(withClient);
+invalidClientDate.clientTracking[0].dueDate="2026-02-31";
+fail(buildOperatorApply(invalidClientDate));
+assert.equal(sql(`SELECT count(*) FROM project_allocations WHERE id='co-new'`).trim(),"0");
+assert.equal(sql(`SELECT count(*) FROM assignment_import_runs`).trim(),"0");
+assert.match(sql(buildSql(withClient,"preview")),/insert \(not applied\)/);
+sql(buildSql(withClient,"apply")); // Dry-run includes companion, persists nothing.
+assert.equal(sql(`SELECT count(*) FROM raidd_entries`).trim(),"0");
+sql(buildOperatorApply(withClient));
+const clientAfter=get("raidd_entries",withClient.clientTracking[0].id);
+assert.equal(clientAfter.owner_id,null);
+assert.equal(clientAfter.assignee_id,null);
+assert.equal(clientAfter.status,"open");
+assert.equal(sql(`SELECT count(*) FROM assignment_import_runs`).trim(),"2");
+sql(buildSql(withClient,"apply",true));
+assert.deepEqual(get("raidd_entries",clientAfter.id),clientAfter);
+assert.match(sql(buildSql(withClient,"verify")),/unchanged \/ verified/);
+sql(`UPDATE raidd_entries SET status='closed' WHERE id='${clientAfter.id}'`);
+fail(buildSql(withClient,"apply",true));
+fail(buildSql(withClient,"rollback",true));
+assert.equal(sql(`SELECT count(*) FROM project_allocations WHERE id='co-new'`).trim(),"1");
+sql(`UPDATE raidd_entries SET status='open' WHERE id='${clientAfter.id}';
+CREATE TABLE fixture_raidd_reference(entry_id varchar REFERENCES raidd_entries(id) ON DELETE SET NULL);
+INSERT INTO fixture_raidd_reference VALUES('${clientAfter.id}')`);
+fail(buildSql(withClient,"rollback",true));
+sql(`DROP TABLE fixture_raidd_reference;
+INSERT INTO raidd_entries(id,tenant_id,project_id,type,title,parent_entry_id)
+VALUES('co-client-child','co-t','co-p','action_item','Later child','${clientAfter.id}')`);
+fail(buildSql(withClient,"rollback",true));
+sql(`DELETE FROM raidd_entries WHERE id='co-client-child'`);
+sql(buildSql(withClient,"rollback",true));
+assert.equal(sql(`SELECT count(*) FROM raidd_entries`).trim(),"0");
+assert.equal(sql(`SELECT count(*) FROM project_allocations WHERE id='co-new'`).trim(),"0");
+assert.equal(sql(`SELECT count(*) FROM assignment_import_runs WHERE rolled_back_at IS NOT NULL`).trim(),"2");
+fail(buildSql(withClient,"apply",true));
+assert.deepEqual(get("time_entries","co-time"),timeBefore);
+assert.deepEqual(get("planner_task_sync","co-sync"),plannerBefore);
 console.log("Platinum SQL: preview, atomic failure, tenant isolation, signature anchor, rerun, later-edit protection, rollback, archived rejection passed");
+console.log("Client companion: approval, unnamed ownership, duplicate prevention, atomic dry-run/apply, rerun, complete audit images, later-edit/FK/logical-reference protection and rollback passed");
