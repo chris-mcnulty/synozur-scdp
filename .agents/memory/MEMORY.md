@@ -18,3 +18,4 @@
 - [Session recovery policy](session-recovery-policy.md) — endpoint 401s are not proof of expiration; recover in place and preserve credentials during validation outages.
 - [Estimate import approval](estimate-import-approval.md) — package approval is not production execution approval; resolve cost allocations before asking to apply.
 - [Planner webhook expiration](planner-webhook-expiration.md) — production Graph rejected seven-day subscriptions; observed maximum was 4,230 minutes, not the code comment’s seven days.
+- [Test runner transforms](test-runner-transforms.md) — the test runner can bundle a different Vite than the app; JSX options must match the runner's transform engine.

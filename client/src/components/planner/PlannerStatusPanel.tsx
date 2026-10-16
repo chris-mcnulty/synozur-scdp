@@ -21,6 +21,7 @@ import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PlannerConnectionDialog } from "./PlannerConnectionDialog";
+import { PlannerWebhookHealth } from "./PlannerWebhookHealth";
 import { formatDistanceToNow } from "date-fns";
 import {
   AlertDialog,
@@ -82,7 +83,7 @@ interface SyncHealth {
   subscriptions?: Array<{
     id: string;
     status: string;
-    expirationDateTime: string;
+    expirationDateTime: string | null;
     lastRenewedAt: string | null;
     lastRenewalError: string | null;
     consecutiveRenewalErrors: number;
@@ -132,6 +133,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-health"] });
       const parts = [];
       if (result.created) parts.push(`${result.created} tasks created`);
       if (result.updated) parts.push(`${result.updated} tasks updated`);
@@ -156,6 +158,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-health"] });
     },
     onError: (error: any) => {
       toast({ title: "Failed to update settings", description: error.message, variant: "destructive" });
@@ -347,12 +350,12 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
             </div>
           )}
 
-          {syncHealth?.subscriptions && syncHealth.subscriptions.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-              Webhook: {syncHealth.subscriptions[0].status}
-              {syncHealth.subscriptions[0].expirationDateTime &&
-                ` · expires ${formatDistanceToNow(new Date(syncHealth.subscriptions[0].expirationDateTime), { addSuffix: true })}`}
-            </div>
+          {syncHealth && (
+            <PlannerWebhookHealth
+              subscription={syncHealth.subscriptions?.[0]}
+              enabled={connection.syncEnabled}
+              suspended={syncHealth.connection?.syncSuspended || false}
+            />
           )}
 
           <div className="space-y-3 pt-4 border-t">

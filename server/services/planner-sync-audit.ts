@@ -23,9 +23,19 @@ export type PlannerAuditAction =
 
 export type PlannerAuditOutcome = 'success' | 'error' | 'skipped' | 'conflict';
 
-export async function recordPlannerAudit(entry: Omit<InsertPlannerSyncAudit, 'id' | 'createdAt'>): Promise<void> {
+type AuditStore = Pick<typeof db, 'insert'> & {
+  transaction?: (fn: (tx: Pick<typeof db, 'insert'>) => Promise<void>) => Promise<void>;
+};
+
+export async function recordPlannerAudit(entry: Omit<InsertPlannerSyncAudit, 'id' | 'createdAt'>, store: AuditStore = db): Promise<void> {
   try {
-    await db.insert(plannerSyncAudit).values(entry as any);
+    const insert = async (target: Pick<typeof db, 'insert'>) => {
+      await target.insert(plannerSyncAudit).values(entry as any);
+    };
+    // A failed best-effort audit must not poison the subscription transaction.
+    // Drizzle nested transactions use a savepoint, on the same pool connection.
+    if (store !== db && store.transaction) await store.transaction(insert);
+    else await insert(store);
   } catch (err: any) {
     // Audit must be non-blocking — log and continue.
     console.warn('[PLANNER-AUDIT] Failed to record audit entry:', err?.message);

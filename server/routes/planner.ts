@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { storage, db } from "../storage";
-import { projectChannels, projects, clients, clientTeams, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, estimateChannels, estimates, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES } from "@shared/schema";
+import { projectChannels, projects, clients, clientTeams, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, estimateChannels, estimates, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES, projectPlannerConnections } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
+import { confirmedSubscriptionExpiry } from "@shared/planner-subscription-health";
 
 interface PlannerRouteDeps {
   requireAuth: any;
@@ -1235,6 +1236,9 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           }).catch(() => {});
           return res.status(401).json({ message: 'clientState mismatch' });
         }
+        const [connection] = await db.select().from(projectPlannerConnections)
+          .where(eq(projectPlannerConnections.id, sub.connectionId)).limit(1);
+        if (sub.status === 'removed' || !connection?.syncEnabled || connection.syncSuspended) continue;
 
         // Extract Planner task ID from resource path. Examples Graph may send:
         //   /planner/tasks/{taskId}
@@ -1379,10 +1383,15 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           lastSyncError: conn.lastSyncError,
           lastAlertAt: (conn as any).lastAlertAt || null,
         },
-        subscriptions: subs.map((s: any) => ({
+        subscriptions: subs.filter((s: any) => s.status !== 'removed')
+          .sort((a: any, b: any) => {
+            const active = (s: any) => s.status === 'active' && (confirmedSubscriptionExpiry(s)?.getTime() || 0) > Date.now();
+            return Number(active(b)) - Number(active(a)) ||
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          }).map((s: any) => ({
           id: s.id,
           status: s.status,
-          expirationDateTime: s.expirationDateTime,
+          expirationDateTime: confirmedSubscriptionExpiry(s),
           lastRenewedAt: s.lastRenewedAt,
           lastRenewalError: s.lastRenewalError,
           consecutiveRenewalErrors: s.consecutiveRenewalErrors,
@@ -1474,6 +1483,9 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         outcome: 'success',
         trigger: 'manual',
       });
+      const { ensureSubscription } = await import('../services/planner-subscription-manager.js');
+      ensureSubscription(conn.id).catch((e: any) =>
+        console.warn('[PLANNER] subscription recovery on resume failed:', e?.message));
       res.json(updated);
     } catch (err: any) {
       console.error('[PLANNER-RESUME] Error:', err);

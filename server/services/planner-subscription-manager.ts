@@ -5,8 +5,7 @@
  *   - Create/renew/delete Graph webhook subscriptions for a Planner plan.
  *   - Persist subscription metadata in `planner_subscriptions`.
  *   - Verify inbound notifications via `clientState`.
- *   - Schedule renewal every 4 hours (Graph caps subscriptions at 7 days for
- *     Planner resources, but we renew well before that to allow retries).
+ *   - Schedule renewal every 4 hours, within Planner's resource lifetime limit.
  *
  * NOTE: Microsoft Graph does not currently support change notifications on
  * `/planner/plans/{id}/tasks` directly. This manager attempts the subscription
@@ -22,17 +21,18 @@ import {
   projects,
   type PlannerSubscription,
 } from '@shared/schema.js';
-import { and, eq, inArray, lte } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { recordPlannerAudit } from './planner-sync-audit.js';
 import { classifyGraphError } from '@shared/planner-conflict.js';
+import { plannerSubscriptionExpiration } from '@shared/planner-subscription-health.js';
 
 /**
  * Task #126 — Derive tenant_id for a planner connection by joining through
  * the linked project. project_planner_connections has no tenant column.
  */
-async function tenantIdForConnection(connectionId: string): Promise<string | null> {
+async function tenantIdForConnection(connectionId: string, store: SubscriptionDb): Promise<string | null> {
   try {
-    const [row] = await db.select({ tenantId: projects.tenantId })
+    const [row] = await store.select({ tenantId: projects.tenantId })
       .from(projectPlannerConnections)
       .innerJoin(projects, eq(projectPlannerConnections.projectId, projects.id))
       .where(eq(projectPlannerConnections.id, connectionId))
@@ -42,7 +42,7 @@ async function tenantIdForConnection(connectionId: string): Promise<string | nul
 }
 
 const RENEWAL_LEAD_TIME_MS = 24 * 3600 * 1000; // Renew if expiring within 24h
-const DEFAULT_LIFETIME_MS = 7 * 24 * 3600 * 1000 - 60 * 1000; // 7 days minus 1 minute
+type SubscriptionDb = Pick<typeof db, 'select' | 'insert' | 'update'>;
 let renewalTask: cron.ScheduledTask | null = null;
 
 function getNotificationUrl(): string {
@@ -65,6 +65,7 @@ async function callGraphFetch(method: string, path: string, body?: any): Promise
       'Content-Type': 'application/json',
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(15_000),
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
@@ -85,144 +86,122 @@ function safeJson(s: string): any { try { return JSON.parse(s); } catch { return
  * falls back to polling.
  */
 export async function ensureSubscription(connectionId: string): Promise<PlannerSubscription | null> {
-  const [conn] = await db.select()
-    .from(projectPlannerConnections)
-    .where(eq(projectPlannerConnections.id, connectionId))
-    .limit(1);
-  if (!conn) return null;
+  // Lock the connection across Graph + persistence, including concurrent workers.
+  return db.transaction(async tx => {
+    const [conn] = await tx.select()
+      .from(projectPlannerConnections)
+      .where(eq(projectPlannerConnections.id, connectionId))
+      // Compatible with audit inserts' FK key-share locks on another connection.
+      .limit(1).for('no key update');
+    if (!conn || !conn.syncEnabled || conn.syncSuspended) return null;
+    return ensureForConnection(tx, conn);
+  });
+}
 
-  // Reuse existing active subscription if not near expiration
-  const [existing] = await db.select()
+async function ensureForConnection(store: SubscriptionDb, conn: typeof projectPlannerConnections.$inferSelect): Promise<PlannerSubscription | null> {
+  const connectionId = conn.id;
+  const rows = await store.select()
     .from(plannerSubscriptions)
-    .where(and(
-      eq(plannerSubscriptions.connectionId, connectionId),
-      eq(plannerSubscriptions.status, 'active'),
-    ))
-    .limit(1);
-  if (existing && existing.expirationDateTime.getTime() - Date.now() > RENEWAL_LEAD_TIME_MS) {
+    .where(eq(plannerSubscriptions.connectionId, connectionId));
+  // Prefer a valid remote subscription over old errors, then the latest attempt.
+  rows.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') ||
+    b.updatedAt.getTime() - a.updatedAt.getTime());
+  const existing = rows.find(s => s.status !== 'removed') ?? rows[0];
+  if (existing?.status === 'active' && existing.expirationDateTime.getTime() - Date.now() > RENEWAL_LEAD_TIME_MS) {
     return existing;
   }
-
-  if (existing) {
-    return renewSubscription(existing).catch(() => existing);
+  if (existing && !existing.subscriptionId.startsWith('local-error-') &&
+      existing.status !== 'removed' && existing.expirationDateTime.getTime() > Date.now()) {
+    const renewed = await renewRemoteSubscription(store, existing);
+    if (renewed.status !== 'expired') return renewed;
+    // Graph 404/410: recreate using this same row.
   }
 
   const clientState = generateClientState();
-  const expiration = new Date(Date.now() + DEFAULT_LIFETIME_MS);
   const resource = `/planner/plans/${conn.planId}`;
+  const expiration = plannerSubscriptionExpiration(resource);
   const notificationUrl = getNotificationUrl();
+  const tenantId = await tenantIdForConnection(connectionId, store);
+  const save = async (values: any): Promise<PlannerSubscription> => {
+    const [row] = existing
+      ? await store.update(plannerSubscriptions).set({ ...values, updatedAt: new Date() })
+          .where(eq(plannerSubscriptions.id, existing.id)).returning()
+      : await store.insert(plannerSubscriptions).values(values).returning();
+    return row;
+  };
 
-  // Task #126 — Derive tenant context once so audit + alert subsystems get
-  // a real tenantId on the resulting rows.
-  const tenantId = await tenantIdForConnection(connectionId);
-
-  let subscriptionId: string;
+  let result: any;
   try {
-    const result = await callGraphFetch('POST', '/subscriptions', {
-      changeType: 'updated,deleted',
-      notificationUrl,
-      resource,
-      expirationDateTime: expiration.toISOString(),
-      clientState,
+    result = await callGraphFetch('POST', '/subscriptions', {
+      changeType: 'updated,deleted', notificationUrl, resource,
+      expirationDateTime: expiration.toISOString(), clientState,
     });
-    subscriptionId = result.id;
+    if (!result?.id || !result?.expirationDateTime || !Number.isFinite(new Date(result.expirationDateTime).getTime())) {
+      throw new Error('Graph returned an invalid subscription response');
+    }
   } catch (err: any) {
     const cls = classifyGraphError(err);
-    const [row] = await db.insert(plannerSubscriptions).values({
-      connectionId,
-      tenantId,
-      subscriptionId: `local-error-${crypto.randomBytes(6).toString('hex')}`,
-      resource,
-      changeType: 'updated,deleted',
-      notificationUrl,
-      clientState,
-      expirationDateTime: expiration,
-      status: 'error',
+    const row = await save({
+      connectionId, tenantId,
+      subscriptionId: existing?.subscriptionId ?? `local-error-${crypto.randomBytes(6).toString('hex')}`,
+      resource, changeType: 'updated,deleted', notificationUrl, clientState,
+      // Schema requires a timestamp. A failed creation has no accepted expiry.
+      expirationDateTime: new Date(0), lastRenewedAt: null,
+      status: 'error', consecutiveRenewalErrors: (existing?.consecutiveRenewalErrors || 0) + 1,
       lastRenewalError: err.message?.slice(0, 500) || 'Unknown error',
-    }).returning();
-    await recordPlannerAudit({
-      tenantId,
-      connectionId,
-      action: 'subscription_created',
-      outcome: 'error',
-      errorCode: cls.code,
-      errorMessage: err.message?.slice(0, 500) || null,
     });
+    await recordPlannerAudit({ tenantId, connectionId, action: 'subscription_created',
+      outcome: 'error', errorCode: cls.code, errorMessage: err.message?.slice(0, 500) || null }, store);
     return row;
   }
-
-  const [row] = await db.insert(plannerSubscriptions).values({
-    connectionId,
-    tenantId,
-    subscriptionId,
-    resource,
-    changeType: 'updated,deleted',
-    notificationUrl,
-    clientState,
-    expirationDateTime: expiration,
-    status: 'active',
-    lastRenewedAt: new Date(),
-  }).returning();
-
-  await recordPlannerAudit({
-    tenantId,
-    connectionId,
-    action: 'subscription_created',
-    outcome: 'success',
-    details: { subscriptionId, resource, expiration: expiration.toISOString() },
+  const acceptedExpiry = new Date(result.expirationDateTime);
+  const row = await save({
+    connectionId, tenantId, subscriptionId: result.id, resource,
+    changeType: 'updated,deleted', notificationUrl, clientState,
+    expirationDateTime: acceptedExpiry, status: 'active', lastRenewedAt: new Date(),
+    lastRenewalError: null, consecutiveRenewalErrors: 0,
   });
+  await recordPlannerAudit({ tenantId, connectionId, action: 'subscription_created',
+    outcome: 'success', details: { subscriptionId: result.id, resource, expiration: acceptedExpiry.toISOString() } }, store);
   return row;
 }
 
-export async function renewSubscription(sub: PlannerSubscription): Promise<PlannerSubscription> {
-  const expiration = new Date(Date.now() + DEFAULT_LIFETIME_MS);
+/* Subscription lifecycle is serialized through ensureSubscription, including renewal. */
+export async function renewSubscription(sub: PlannerSubscription): Promise<PlannerSubscription | null> {
+  return ensureSubscription(sub.connectionId);
+}
+
+async function renewRemoteSubscription(store: SubscriptionDb, sub: PlannerSubscription): Promise<PlannerSubscription> {
+  const expiration = plannerSubscriptionExpiration(sub.resource);
   try {
-    await callGraphFetch('PATCH', `/subscriptions/${sub.subscriptionId}`, {
+    const result = await callGraphFetch('PATCH', `/subscriptions/${sub.subscriptionId}`, {
       expirationDateTime: expiration.toISOString(),
     });
-    const [updated] = await db.update(plannerSubscriptions)
-      .set({
-        expirationDateTime: expiration,
-        status: 'active',
-        lastRenewedAt: new Date(),
-        lastRenewalError: null,
-        consecutiveRenewalErrors: 0,
-        updatedAt: new Date(),
-      })
-      .where(eq(plannerSubscriptions.id, sub.id))
-      .returning();
-    await recordPlannerAudit({
-      tenantId: sub.tenantId,
-      connectionId: sub.connectionId,
-      action: 'subscription_renewed',
-      outcome: 'success',
-      details: { subscriptionId: sub.subscriptionId, expiration: expiration.toISOString() },
-    });
+    const acceptedExpiry = new Date(result?.expirationDateTime);
+    if (!result?.expirationDateTime || !Number.isFinite(acceptedExpiry.getTime())) {
+      throw new Error('Graph returned an invalid renewal response');
+    }
+    const [updated] = await store.update(plannerSubscriptions)
+      .set({ expirationDateTime: acceptedExpiry, status: 'active', lastRenewedAt: new Date(),
+        lastRenewalError: null, consecutiveRenewalErrors: 0, updatedAt: new Date() })
+      .where(eq(plannerSubscriptions.id, sub.id)).returning();
+    await recordPlannerAudit({ tenantId: sub.tenantId, connectionId: sub.connectionId,
+      action: 'subscription_renewed', outcome: 'success',
+      details: { subscriptionId: sub.subscriptionId, expiration: acceptedExpiry.toISOString() } }, store);
     return updated;
   } catch (err: any) {
     const cls = classifyGraphError(err);
-    const consecutive = (sub.consecutiveRenewalErrors || 0) + 1;
-    const [updated] = await db.update(plannerSubscriptions)
-      .set({
-        status: cls.code === 'plan_not_found' ? 'expired' : 'error',
+    const [updated] = await store.update(plannerSubscriptions)
+      .set({ status: [404, 410].includes(err.statusCode) ? 'expired' : 'error',
         lastRenewalError: err.message?.slice(0, 500) || 'Unknown error',
-        consecutiveRenewalErrors: consecutive,
-        updatedAt: new Date(),
-      })
-      .where(eq(plannerSubscriptions.id, sub.id))
-      .returning();
-    await recordPlannerAudit({
-      tenantId: sub.tenantId,
-      connectionId: sub.connectionId,
-      action: 'subscription_renewed',
-      outcome: 'error',
-      errorCode: cls.code,
-      errorMessage: err.message?.slice(0, 500) || null,
-    });
+        consecutiveRenewalErrors: (sub.consecutiveRenewalErrors || 0) + 1, updatedAt: new Date() })
+      .where(eq(plannerSubscriptions.id, sub.id)).returning();
+    await recordPlannerAudit({ tenantId: sub.tenantId, connectionId: sub.connectionId,
+      action: 'subscription_renewed', outcome: 'error', errorCode: cls.code,
+      errorMessage: err.message?.slice(0, 500) || null }, store);
     return updated;
   }
 }
-
 export async function deleteSubscription(sub: PlannerSubscription): Promise<void> {
   try {
     await callGraphFetch('DELETE', `/subscriptions/${sub.subscriptionId}`);
@@ -242,74 +221,32 @@ export async function deleteSubscription(sub: PlannerSubscription): Promise<void
 }
 
 export async function renewExpiringSubscriptions(): Promise<{ renewed: number; failed: number; recreated: number; backfilled: number }> {
-  const cutoff = new Date(Date.now() + RENEWAL_LEAD_TIME_MS);
   let renewed = 0;
   let failed = 0;
   let recreated = 0;
   let backfilled = 0;
 
-  // 1. Renew active subs nearing expiry.
-  const expiring = await db.select()
-    .from(plannerSubscriptions)
-    .where(and(
-      eq(plannerSubscriptions.status, 'active'),
-      lte(plannerSubscriptions.expirationDateTime, cutoff),
-    ));
-  for (const sub of expiring) {
-    const result = await renewSubscription(sub);
-    if (result.status === 'active') renewed++; else failed++;
-  }
-
-  // 2. Recreate subs that already expired or errored — Graph won't accept a
-  // PATCH renewal for these; we have to POST a brand-new subscription so the
-  // connection regains webhook coverage. We mark the old row 'removed'.
-  const stale = await db.select()
-    .from(plannerSubscriptions)
-    .where(inArray(plannerSubscriptions.status, ['expired', 'error']));
-  for (const sub of stale) {
+  // One attempt per eligible connection per cycle, not per historical error row.
+  const connections = await db.select().from(projectPlannerConnections)
+    .where(eq(projectPlannerConnections.syncEnabled, true));
+  for (const conn of connections) {
+    if (conn.syncSuspended) continue;
     try {
-      await db.update(plannerSubscriptions)
-        .set({ status: 'removed', updatedAt: new Date() })
-        .where(eq(plannerSubscriptions.id, sub.id));
-      const fresh = await ensureSubscription(sub.connectionId);
-      if (fresh && fresh.status === 'active') recreated++; else failed++;
+      const before = await db.select().from(plannerSubscriptions)
+        .where(eq(plannerSubscriptions.connectionId, conn.id));
+      const active = before.find(s => s.status === 'active');
+      if (active && active.expirationDateTime.getTime() - Date.now() > RENEWAL_LEAD_TIME_MS) continue;
+      const result = await ensureSubscription(conn.id);
+      if (!result) continue;
+      if (result.status !== 'active') failed++;
+      else if (active) renewed++;
+      else if (before.length) recreated++;
+      else backfilled++;
     } catch (err: any) {
-      console.warn('[PLANNER-SUB] Recreate failed for', sub.connectionId, err.message);
+      console.warn('[PLANNER-SUB] Recovery failed for', conn.id, err.message);
       failed++;
     }
   }
-
-  // 3. Backfill: any sync-enabled, non-suspended connection that has NO active
-  // subscription needs one. This covers connections that were created before
-  // subscription support landed, or whose subscription was removed manually.
-  try {
-    const enabledConns = await db.select()
-      .from(projectPlannerConnections)
-      .where(and(
-        eq(projectPlannerConnections.syncEnabled, true),
-      ));
-    for (const conn of enabledConns) {
-      if ((conn as any).syncSuspended) continue;
-      const [active] = await db.select()
-        .from(plannerSubscriptions)
-        .where(and(
-          eq(plannerSubscriptions.connectionId, conn.id),
-          eq(plannerSubscriptions.status, 'active'),
-        ))
-        .limit(1);
-      if (active) continue;
-      try {
-        const fresh = await ensureSubscription(conn.id);
-        if (fresh && fresh.status === 'active') backfilled++;
-      } catch (err: any) {
-        console.warn('[PLANNER-SUB] Backfill failed for', conn.id, err.message);
-        failed++;
-      }
-    }
-  } catch (err: any) {
-    console.warn('[PLANNER-SUB] Backfill scan failed:', err.message);
-  }
-
   return { renewed, failed, recreated, backfilled };
 }
 
@@ -334,8 +271,8 @@ export function startSubscriptionRenewalScheduler(): void {
   renewalTask = cron.schedule('0 */4 * * *', async () => {
     try {
       const result = await renewExpiringSubscriptions();
-      if (result.renewed || result.failed) {
-        console.log(`[PLANNER-SUB] Renewal cycle: ${result.renewed} renewed, ${result.failed} failed`);
+      if (Object.values(result).some(Boolean)) {
+        console.log(`[PLANNER-SUB] Renewal cycle: ${result.renewed} renewed, ${result.recreated} recovered, ${result.backfilled} backfilled, ${result.failed} failed`);
       }
     } catch (err: any) {
       console.error('[PLANNER-SUB] Renewal scheduler error:', err.message);
