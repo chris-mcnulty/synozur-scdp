@@ -10,3 +10,19 @@ certs/
 *.key
 *.crt
 attached_assets/
+
+# Private operator inputs and runtime business files (not public app assets).
+# Already-tracked records require explicit, owner-approved untracking.
+/private-inputs/
+/uploads/
+/.local/tasks/
+/backup_*.sql
+/cookies.txt
+/cookies-*.txt
+/allocations-*.csv
+/seddFlNoS
+/bfg-*.jar
+/server-output.log
+/batch-summary.png
+/file-list-check.png
+/unreachable_app.png
