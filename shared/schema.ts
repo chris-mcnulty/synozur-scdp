@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid, uniqueIndex, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid, uniqueIndex, index, unique, primaryKey, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -5940,6 +5940,57 @@ export const insertContractorPaymentSchema = createInsertSchema(contractorPaymen
 });
 export type InsertContractorPayment = z.infer<typeof insertContractorPaymentSchema>;
 export type ContractorPayment = typeof contractorPayments.$inferSelect;
+
+// Durable import ledgers. Match the operational SQL and existing production
+// constraints exactly; omitting these would make schema sync drop import history.
+export const assignmentImportRuns = pgTable("assignment_import_runs", {
+  id: varchar("id").primaryKey(),
+  tenantId: varchar("tenant_id").notNull(),
+  projectId: varchar("project_id").notNull(),
+  packageKey: text("package_key").notNull(),
+  manifest: jsonb("manifest").notNull(),
+  operatorReference: text("operator_reference").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  rolledBackAt: timestamp("rolled_back_at", { withTimezone: true }),
+}, (t) => ({
+  tenantFk: foreignKey({
+    name: "assignment_import_runs_tenant_id_fkey",
+    columns: [t.tenantId], foreignColumns: [tenants.id],
+  }),
+  projectFk: foreignKey({
+    name: "assignment_import_runs_project_id_fkey",
+    columns: [t.projectId], foreignColumns: [projects.id],
+  }),
+  packageUniq: unique("assignment_import_runs_project_id_package_key_key").on(t.projectId, t.packageKey),
+}));
+
+export const assignmentImportRows = pgTable("assignment_import_rows", {
+  runId: varchar("run_id").notNull(),
+  sourceKey: text("source_key").notNull(),
+  allocationId: varchar("allocation_id").notNull(),
+  action: text("action").notNull(),
+  beforeImage: jsonb("before_image"),
+  afterImage: jsonb("after_image").notNull(),
+}, (t) => ({
+  pk: primaryKey({ name: "assignment_import_rows_pkey", columns: [t.runId, t.sourceKey] }),
+  allocationUniq: unique("assignment_import_rows_run_id_allocation_id_key").on(t.runId, t.allocationId),
+  runFk: foreignKey({
+    name: "assignment_import_rows_run_id_fkey",
+    columns: [t.runId], foreignColumns: [assignmentImportRuns.id],
+  }),
+  actionCheck: check("assignment_import_rows_action_check", sql`${t.action} IN ('insert', 'update', 'noop')`),
+}));
+
+export const aiGuardrailsImportRuns = pgTable("ai_guardrails_import_runs", {
+  packageKey: text("package_key").primaryKey(),
+  previewHash: text("preview_hash").notNull(),
+  tenantId: text("tenant_id").notNull(),
+  manifest: jsonb("manifest").notNull(),
+  afterImages: jsonb("after_images").notNull(),
+  operatorReference: text("operator_reference").notNull(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+  rolledBackAt: timestamp("rolled_back_at", { withTimezone: true }),
+});
 
 export const insertContractorPaymentAllocationSchema = createInsertSchema(contractorPaymentAllocations).omit({
   id: true, createdAt: true,

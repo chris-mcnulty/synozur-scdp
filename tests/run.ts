@@ -29,6 +29,7 @@ import "./background-jobs.spec.js";
 import "./contractor-payment-cutover.spec.js";
 import "./invoice-date.spec.js";
 import "./tenant-plan-settings.spec.js";
+import "./import-ledger-schema.spec.js";
 import { run } from "./_harness.js";
 
 await run();
