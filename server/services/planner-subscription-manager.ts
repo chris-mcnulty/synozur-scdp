@@ -80,14 +80,92 @@ async function callGraphFetch(method: string, path: string, body?: any): Promise
 
 function safeJson(s: string): any { try { return JSON.parse(s); } catch { return s; } }
 
+function preferredSubscription(rows: PlannerSubscription[]): PlannerSubscription | undefined {
+  rows.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') ||
+    b.updatedAt.getTime() - a.updatedAt.getTime());
+  return rows.find(s => s.status !== 'removed') ?? rows[0];
+}
+
+/**
+ * Commit the attempt's secret BEFORE the transaction containing the remote POST.
+ * Otherwise a rollback after Graph accepts creation loses our only safe way to
+ * distinguish this connection's subscription from another connection's.
+ */
+async function prepareSubscriptionAttempt(connectionId: string): Promise<void> {
+  await db.transaction(async tx => {
+    const [conn] = await tx.select().from(projectPlannerConnections)
+      .where(eq(projectPlannerConnections.id, connectionId)).limit(1).for('no key update');
+    if (!conn || !conn.syncEnabled || conn.syncSuspended) return;
+    const existing = preferredSubscription(await tx.select().from(plannerSubscriptions)
+      .where(eq(plannerSubscriptions.connectionId, connectionId)));
+    if (existing && existing.status !== 'removed' && existing.status !== 'expired' &&
+        (existing.subscriptionId.startsWith('local-error-') ||
+          existing.expirationDateTime.getTime() > Date.now())) return;
+
+    const values = {
+      connectionId, tenantId: await tenantIdForConnection(connectionId, tx),
+      subscriptionId: `local-error-${crypto.randomBytes(16).toString('hex')}`,
+      resource: `/planner/plans/${conn.planId}`, changeType: 'updated,deleted',
+      notificationUrl: getNotificationUrl(), clientState: generateClientState(),
+      expirationDateTime: new Date(0), lastRenewedAt: null, status: 'error',
+      lastRenewalError: 'Subscription creation pending reconciliation',
+      consecutiveRenewalErrors: 0, updatedAt: new Date(),
+    };
+    if (existing) {
+      await tx.update(plannerSubscriptions).set(values)
+        .where(eq(plannerSubscriptions.id, existing.id)).returning();
+    } else {
+      await tx.insert(plannerSubscriptions).values(values).returning();
+    }
+  });
+}
+
+async function reconcileRemoteSubscription(store: SubscriptionDb, attempt: PlannerSubscription): Promise<any | null> {
+  let path = '/subscriptions';
+  const visited = new Set<string>();
+  while (true) {
+    if (visited.has(path)) throw new Error('Graph returned a subscription pagination loop');
+    visited.add(path);
+    const page = await callGraphFetch('GET', path);
+    if (!Array.isArray(page?.value)) throw new Error('Graph returned an invalid subscriptions list');
+    for (const sub of page.value) {
+      // Graph may omit the resource's leading slash. Do not relax URL or secret
+      // matching: several connections can legitimately subscribe to the same plan.
+      if (sub.resource?.replace(/^\//, '') !== attempt.resource.replace(/^\//, '') ||
+          sub.notificationUrl !== attempt.notificationUrl || sub.clientState !== attempt.clientState) continue;
+      if (!sub.id || !sub.expirationDateTime ||
+          !Number.isFinite(new Date(sub.expirationDateTime).getTime())) {
+        throw new Error('Graph returned an invalid matching subscription');
+      }
+      if (new Date(sub.expirationDateTime).getTime() <= Date.now()) continue;
+      const owners = await store.select().from(plannerSubscriptions)
+        .where(eq(plannerSubscriptions.subscriptionId, sub.id));
+      if (owners.some(owner => owner.connectionId !== attempt.connectionId)) {
+        throw new Error('Matching Graph subscription belongs to another connection');
+      }
+      return sub;
+    }
+    const next = page['@odata.nextLink'];
+    if (!next) return null;
+    // Only follow Graph subscription pages; never forward a bearer token to an
+    // arbitrary nextLink host or another Graph resource.
+    const url = new URL(next, 'https://graph.microsoft.com/v1.0/subscriptions');
+    if (url.origin !== 'https://graph.microsoft.com' || url.pathname !== '/v1.0/subscriptions') {
+      throw new Error('Graph returned an invalid subscription pagination URL');
+    }
+    path = `${url.pathname.slice('/v1.0'.length)}${url.search}`;
+  }
+}
+
 /**
  * Create a Graph subscription for a Planner plan. If Graph rejects the
  * resource as unsupported, persists a row with status='error' so the system
  * falls back to polling.
  */
 export async function ensureSubscription(connectionId: string): Promise<PlannerSubscription | null> {
+  await prepareSubscriptionAttempt(connectionId);
   // Lock the connection across Graph + persistence, including concurrent workers.
-  return db.transaction(async tx => {
+  const result = await db.transaction(async tx => {
     const [conn] = await tx.select()
       .from(projectPlannerConnections)
       .where(eq(projectPlannerConnections.id, connectionId))
@@ -96,6 +174,9 @@ export async function ensureSubscription(connectionId: string): Promise<PlannerS
     if (!conn || !conn.syncEnabled || conn.syncSuspended) return null;
     return ensureForConnection(tx, conn);
   });
+  // A renewal's 404/410 is committed before preparing a fresh durable identity.
+  if (result?.status === 'expired') return ensureSubscription(connectionId);
+  return result;
 }
 
 async function ensureForConnection(store: SubscriptionDb, conn: typeof projectPlannerConnections.$inferSelect): Promise<PlannerSubscription | null> {
@@ -103,37 +184,31 @@ async function ensureForConnection(store: SubscriptionDb, conn: typeof projectPl
   const rows = await store.select()
     .from(plannerSubscriptions)
     .where(eq(plannerSubscriptions.connectionId, connectionId));
-  // Prefer a valid remote subscription over old errors, then the latest attempt.
-  rows.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') ||
-    b.updatedAt.getTime() - a.updatedAt.getTime());
-  const existing = rows.find(s => s.status !== 'removed') ?? rows[0];
+  const existing = preferredSubscription(rows);
   if (existing?.status === 'active' && existing.expirationDateTime.getTime() - Date.now() > RENEWAL_LEAD_TIME_MS) {
     return existing;
   }
   if (existing && !existing.subscriptionId.startsWith('local-error-') &&
       existing.status !== 'removed' && existing.expirationDateTime.getTime() > Date.now()) {
-    const renewed = await renewRemoteSubscription(store, existing);
-    if (renewed.status !== 'expired') return renewed;
-    // Graph 404/410: recreate using this same row.
+    return renewRemoteSubscription(store, existing);
   }
 
-  const clientState = generateClientState();
-  const resource = `/planner/plans/${conn.planId}`;
+  if (!existing || !existing.subscriptionId.startsWith('local-error-') || existing.status === 'removed') {
+    throw new Error('Subscription attempt must be persisted before remote creation');
+  }
+  const { clientState, resource, notificationUrl, tenantId } = existing;
   const expiration = plannerSubscriptionExpiration(resource);
-  const notificationUrl = getNotificationUrl();
-  const tenantId = await tenantIdForConnection(connectionId, store);
   const save = async (values: any): Promise<PlannerSubscription> => {
-    const [row] = existing
-      ? await store.update(plannerSubscriptions).set({ ...values, updatedAt: new Date() })
-          .where(eq(plannerSubscriptions.id, existing.id)).returning()
-      : await store.insert(plannerSubscriptions).values(values).returning();
+    const [row] = await store.update(plannerSubscriptions).set({ ...values, updatedAt: new Date() })
+      .where(eq(plannerSubscriptions.id, existing.id)).returning();
     return row;
   };
 
   let result: any;
   try {
-    result = await callGraphFetch('POST', '/subscriptions', {
-      changeType: 'updated,deleted', notificationUrl, resource,
+    result = await reconcileRemoteSubscription(store, existing);
+    result ??= await callGraphFetch('POST', '/subscriptions', {
+      changeType: existing.changeType, notificationUrl, resource,
       expirationDateTime: expiration.toISOString(), clientState,
     });
     if (!result?.id || !result?.expirationDateTime || !Number.isFinite(new Date(result.expirationDateTime).getTime())) {
@@ -143,7 +218,7 @@ async function ensureForConnection(store: SubscriptionDb, conn: typeof projectPl
     const cls = classifyGraphError(err);
     const row = await save({
       connectionId, tenantId,
-      subscriptionId: existing?.subscriptionId ?? `local-error-${crypto.randomBytes(6).toString('hex')}`,
+      subscriptionId: existing.subscriptionId,
       resource, changeType: 'updated,deleted', notificationUrl, clientState,
       // Schema requires a timestamp. A failed creation has no accepted expiry.
       expirationDateTime: new Date(0), lastRenewedAt: null,
