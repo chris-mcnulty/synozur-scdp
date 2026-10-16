@@ -13,3 +13,10 @@ The custom SQL migration runner once dropped any statement that *began with* a `
 
 **Why:** "migration marked applied" is not proof its data landed — verify rows when debugging missing seed data. And a vanished tracker table means push wiped it, not that migrations never ran.
 **How to apply:** new seed files must include "seed" in the filename and be fully idempotent; production only heals on republish (build runs db:migrate).
+
+## Import ledgers must survive schema synchronization
+Treat import-run and per-row ledgers as durable operational data, not disposable staging tables. Tables created by approved import scripts must also be represented in the canonical application schema and development database.
+
+**Why:** Production imports left populated ledgers absent from development, causing the next publish to propose dropping them. Removing those records would discard rollback evidence and the checks that prevent an import from being applied twice.
+
+**How to apply:** Before approving a publish after an operational import, compare development and production table inventories. Preserve import ledgers and correct the development/schema mismatch rather than accepting their deletion.
