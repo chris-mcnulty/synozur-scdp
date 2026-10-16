@@ -2,9 +2,11 @@ import XLSX from "xlsx";
 import mammoth from "mammoth";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { privateInputDirectory, requirePrivateFile } from "../private-input";
 
-export const workbook = "attached_assets/AI_Guardrails_ROM_Estimate_1791834332357.xlsx";
-export const narrative = "attached_assets/Synozur_AI_Guardrails_ROM_Narrative_DRAFT_1791834349838.docx";
+export const workbook = join(privateInputDirectory(), "workbook.xlsx");
+export const narrative = join(privateInputDirectory(), "narrative.docx");
 export const hash = (v: unknown): string => createHash("sha256").update(typeof v === "string" ? v : JSON.stringify(v)).digest("hex");
 export const fileHash = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
 export const hundredths = (v: number) => {
@@ -12,6 +14,8 @@ export const hundredths = (v: number) => {
   return Math.round(v * 100);
 };
 export async function normalize() {
+  requirePrivateFile(workbook, "Provide workbook.xlsx in --input-dir <private-directory> (append after positional arguments).");
+  requirePrivateFile(narrative, "Provide narrative.docx in the same private input directory.");
   const w = XLSX.readFile(workbook);
   const rows = (sheet: string): any[][] => XLSX.utils.sheet_to_json(w.Sheets[sheet], { header: 1, defval: null });
   const wb = rows("WBS"), ce = rows("Confidence Estimate"), discovery = rows("Discovery Checklist");

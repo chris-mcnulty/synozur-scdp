@@ -63,6 +63,10 @@ A comprehensive consulting project lifecycle platform: estimation, resource allo
 - HubSpot API
 
 ## Planning & Documentation Files (READ BEFORE PLANNING WORK)
+For cleanup, private imports and document retention, also follow
+`docs/REPOSITORY_FILE_POLICY.md`. Never infer disposal permission from a missing
+source reference. Ignored local records are not protected by Git checkpoints.
+
 When planning new features, enhancements, or prioritizing work, ALWAYS consult these files first:
 - **`docs/USER_GUIDE.md`** — The canonical user guide (v1.7). Describes all features, workflows, roles, and integrations from the user's perspective. Use this to understand how features should behave and to keep new work consistent with documented behavior. Also mirrored at `client/public/docs/USER_GUIDE.md` for in-app access. Detailed guides in `docs/user-guide/`.
 - **`backlog.md`** — The product backlog (v5.0). Lists completed items, in-progress work, and prioritized future items. Check this BEFORE starting any new feature to avoid duplicating work or conflicting with planned items. Update it when completing backlog items.

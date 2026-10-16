@@ -587,7 +587,7 @@ The following major features have been delivered and are live in production. See
 - User preferences with granular per-type controls
 - Admin controls for system-wide notification management
 
-**Detailed Plan:** See `notifications-plan.md` for comprehensive implementation details
+**Current behavior:** See the notification sections of the user guide. Historical implementation plans are not current API contracts.
 
 ---
 

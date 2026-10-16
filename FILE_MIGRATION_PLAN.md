@@ -1,5 +1,11 @@
 # File Migration Plan: Local Storage → SharePoint Embedded
 
+> Historical proposal (October 2025), not an execution runbook. Retained because
+> local records and migration acceptance requirements have not been signed off.
+> Use [current storage and retention guidance](docs/REPOSITORY_FILE_POLICY.md#storage-and-historical-requirements)
+> and the canonical administrator guide. Do not run these historical examples
+> or delete local files on the strength of this plan.
+
 ## Current State (October 26, 2025)
 
 **File Storage Strategy:** Smart Routing (Document-type-based)

@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hash } from "./source";
+import { privateInputPositionals } from "../private-input";
 import { preview, type Review } from "./review";
 import { render } from "./render";
 
@@ -54,7 +55,7 @@ ${mode === "verify" ? "ROLLBACK" : "COMMIT"};\n`;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [mode = "preview", path, approvedHash] = process.argv.slice(2);
+  const [mode = "preview", path, approvedHash] = privateInputPositionals();
   const review = path ? JSON.parse(readFileSync(path, "utf8")) : undefined;
   const out = "generated-artifacts/ai-guardrails";
   mkdirSync(out, { recursive: true });

@@ -93,7 +93,14 @@ costed preview may execute its SQL against production.
 
 ## Reconciled source
 
-Run from the repository root with the two original attachments available:
+Run from the repository root with private copies named `workbook.xlsx` and
+`narrative.docx` in `private-inputs/ai-guardrails/`, or append
+`--input-dir /private/reviewed-sources` **after all positional arguments** to
+build, proposal, console and test commands. Missing inputs fail explicitly.
+No database is contacted by source normalization.
+See [private input and retention policy](../../docs/REPOSITORY_FILE_POLICY.md).
+The original attachments remain untouched until the operator verifies copies
+and SHA-256 hashes. Do not place customer documents in `client/public`.
 
 ```
 npx tsx scripts/ai-guardrails/build.ts preview

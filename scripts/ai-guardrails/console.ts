@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "./build";
 import { preview, type Review } from "./review";
 import { hash } from "./source";
+import { privateInputPositionals } from "../private-input";
 import { createHash } from "node:crypto";
 
 // A single DO statement is atomic without SQL-editor batch/transaction controls.
@@ -21,7 +22,7 @@ $guardrails_console$;\n`;
 }
 
 async function main() {
-  const [path, approvedHash] = process.argv.slice(2);
+  const [path, approvedHash] = privateInputPositionals();
   const review: Review = JSON.parse(readFileSync(path,"utf8"));
   const p = await preview(review);
   const out = "generated-artifacts/ai-guardrails";

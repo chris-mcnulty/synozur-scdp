@@ -1,5 +1,11 @@
 # SCDP Notifications System - Implementation Plan
 
+> Historical design, not current implementation status. The canonical
+> [backlog](backlog.md) and [user guide](docs/USER_GUIDE.md) describe
+> shipped behavior. SMS, mobile push and admin broadcasts remain future work;
+> unverified design details (including quiet hours/digest modes) are not promises
+> of delivered functionality. Retained pending requirements reconciliation.
+
 ## Overview
 
 Comprehensive notifications system to keep users informed about time entries, expense approvals, invoice batches, budget alerts, and project deadlines through in-app and email channels.

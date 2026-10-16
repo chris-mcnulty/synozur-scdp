@@ -1159,9 +1159,9 @@ This guide provides an overview of Constellation's key features and workflows. F
 - [Microsoft 365 Integration](design/microsoft-365-project-integration.md)
 - [Task Assignment Notifications](design/task-assignment-notifications.md)
 
-**Implementation Plans:**
-- [Notifications Plan](../notifications-plan.md)
-- [File Migration Plan](../FILE_MIGRATION_PLAN.md)
+**Operations:**
+- Notification behavior and preferences are documented in this guide; future work is in the product roadmap.
+- Storage retention and migration requirements are maintained in the repository's `docs/REPOSITORY_FILE_POLICY.md` (operator documentation, not a public download).
 
 ---
 

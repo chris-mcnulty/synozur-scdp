@@ -1,11 +1,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { hash } from "./source";
+import { privateInputPositionals } from "../private-input";
 import { preview, type Review } from "./review";
 
 async function main() {
-  const input = process.argv[2];
-  const output = process.argv[3];
+  const [input, output] = privateInputPositionals();
   if (!input || !output || input === output) throw new Error("Provide distinct proposal-review input and approved-planning-review output paths");
   const receipt = JSON.parse(readFileSync(new URL("./planning-approval.json", import.meta.url), "utf8"));
   const review: Review = JSON.parse(readFileSync(input,"utf8"));

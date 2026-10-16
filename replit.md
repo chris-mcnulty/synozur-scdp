@@ -41,6 +41,10 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Key Entities**: Users, Clients, Projects, Estimates, Time entries, Expenses, Invoices, Payment Milestones, Rate overrides, Project Engagements.
 
 ### Project Structure
+- **File retention**: Follow `docs/REPOSITORY_FILE_POLICY.md`. Private uploads,
+  backups, operator inputs and local task plans must not be newly committed.
+  Existing tracked business records remain until owner-approved protected copies
+  and local-file compatibility are verified; ignores do not untrack or purge history.
 - **Monorepo**: Organized into `/client`, `/server`, and `/shared`.
 - **Storage Layer**: Modularized into `server/storage/` with domain-focused modules:
   - `index.ts` - IStorage interface, DatabaseStorage class composition, resolveRatesForTimeEntry, singleton export

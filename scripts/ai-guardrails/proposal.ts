@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import assert from "node:assert/strict";
 import { normalize, hash } from "./source";
+import { privateInputPositionals } from "../private-input";
 import { preview, type Review } from "./review";
 
 const A = "Senior Architect", S = "Security Engineer", G = "Transformation Office Lead";
@@ -68,7 +69,7 @@ function allocate(total: number, weights: Array<[string, number]>) {
   return rows.filter(r=>r.hours100>0).map(({roleId,hours100})=>({roleId,hours100}));
 }
 async function main() {
-  const input = process.argv[2];
+  const [input] = privateInputPositionals();
   if (!input) throw new Error("Usage: npx tsx scripts/ai-guardrails/proposal.ts <inventory-review.json>");
   const review: Review = JSON.parse(readFileSync(input,"utf8"));
   const source = await normalize();

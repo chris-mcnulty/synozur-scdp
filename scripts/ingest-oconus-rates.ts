@@ -1,8 +1,8 @@
-import { db } from "../server/db";
 import { oconusPerDiemRates } from "../shared/schema";
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
+import { requirePrivateFile } from "./private-input";
 
 interface OconusRate {
   country: string;
@@ -19,7 +19,10 @@ interface OconusRate {
 }
 
 async function ingestOconusRates(zipPath?: string, fiscalYear?: number) {
-  const targetZipPath = zipPath || path.join(process.cwd(), "attached_assets/OCONUS-ASCII-2026_1769712725667.zip");
+  const targetZipPath = requirePrivateFile(
+    zipPath || "private-inputs/oconus-rates.zip",
+    "Usage: npx tsx scripts/ingest-oconus-rates.ts <private-rates.zip> [YYYY]",
+  );
   const targetFiscalYear = fiscalYear || 2026;
   const tempDir = "/tmp/oconus_ingest";
   
@@ -36,8 +39,9 @@ async function ingestOconusRates(zipPath?: string, fiscalYear?: number) {
   fs.mkdirSync(tempDir, { recursive: true });
   
   console.log("Extracting ZIP file...");
-  execSync(`unzip -o "${targetZipPath}" -d "${tempDir}"`, { stdio: "pipe" });
+  execFileSync("unzip", ["-o", targetZipPath, "-d", tempDir], { stdio: "pipe" });
   
+  const { db } = await import("../server/db");
   const files = fs.readdirSync(tempDir);
   console.log(`Found files: ${files.join(", ")}`);
   

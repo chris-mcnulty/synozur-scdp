@@ -15,6 +15,7 @@
     "test:planner-subscriptions": "vitest run --config tests/planner-subscription.vitest.config.ts",
     "test:tenant-plan": "tsx tests/tenant-plan.browser.ts",
     "test:documentation": "tsx tests/documentation.browser.ts",
+    "test:repository": "tsx tests/repository-policy.spec.ts",
     "test:background-jobs": "tsx tests/background-jobs.browser.ts",
     "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts && npm run test:background-jobs"
   },

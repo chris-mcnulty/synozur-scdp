@@ -108,7 +108,11 @@ npm run db:push
 npm run start
 ```
 
-> **Note**: This repository does not have a comprehensive automated test suite. TypeScript type-checking (`npm run check`) is the primary automated validation method. When making changes, validate correctness through type-checking and manual smoke-testing rather than expecting test coverage to catch regressions.
+> **Validation**: Run `npm run check`, `npm run test:unit`, and
+> `npx tsx scripts/check-route-integrity.ts`. Browser suites are listed in
+> `package.json`; documentation checks require a build and a running dev server.
+> Do not run database-mutating imports, repair scripts, deployment builds or
+> post-merge hooks as cleanup validation. See `docs/REPOSITORY_FILE_POLICY.md`.
 
 ---
 

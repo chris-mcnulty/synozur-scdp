@@ -1,43 +1,19 @@
-# Production Deployment Database Migration Fix
+# Historical production constraint incident
 
-## Problem
-The production deployment is failing with the error:
-```
-Failed to run database migration statement
-ALTER TABLE "invoice_batches" DROP CONSTRAINT "invoice_batches_project_payment_milestone_id_project_payment_mi";
-constraint "invoice_batches_project_payment_milestone_id_project_payment_mi" of relation "invoice_batches" does not exist
-```
+An earlier deployment tried to drop an old invoice-batch milestone constraint
+after the schema had already switched to the unified milestone relationship.
+This is historical context, not evidence of the current production schema.
 
-## Root Cause
-The schema was refactored to consolidate payment milestones into the unified `projectMilestones` table. The old field `project_payment_milestone_id` was renamed to `project_milestone_id`. The production database already has the correct constraint, but the deployment process is trying to drop a non-existent old constraint.
+The old recommendation to force schema synchronization has been withdrawn.
+Do not add forced schema pushes to a build or replay a repair script based only
+on this incident. `fix-production-constraint.sql` is retained pending operator
+review, not authorized for execution.
 
-## Solution Options
+Current deployment configuration uses the versioned migration runner
+(`scripts/db-migrate.ts`). Preserve migration history. Before any repair, an
+authorized operator must confirm the environment, inspect the actual constraint
+and migration state read-only, obtain an approved recovery plan and verified
+backup, and separately authorize writes. Repository cleanup does none of these
+operations and does not change deployment or post-merge database behavior.
 
-### Option 1: Run Fix Script in Production Database (Recommended)
-1. Access the production database through the Replit Database pane
-2. Run the SQL script in `fix-production-constraint.sql`
-3. This script safely checks if constraints exist before dropping/adding them
-4. Retry the deployment
-
-### Option 2: Force Schema Sync (Alternative)
-1. Temporarily modify the deployment build script to include:
-   ```bash
-   npm run db:push -- --force
-   ```
-2. Deploy once to sync the schema
-3. Remove the modification after successful deployment
-
-### Option 3: Manual Database Intervention
-1. Access the production database directly through Replit's database pane
-2. Check existing constraints:
-   ```sql
-   SELECT conname FROM pg_constraint 
-   WHERE conrelid = 'invoice_batches'::regclass;
-   ```
-3. If the old constraint doesn't exist (which it shouldn't), the deployment process needs to be updated to skip this migration
-
-## Prevention
-To prevent this in the future:
-- Always use `npm run db:push --force` for schema changes instead of manual migrations
-- Test schema changes in a staging environment first
-- Keep production and development schemas in sync
+See [repository operations and retention policy](docs/REPOSITORY_FILE_POLICY.md).

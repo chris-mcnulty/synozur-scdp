@@ -12,9 +12,8 @@
  * detected by (tenantId, contractorUserId, invoiceNumber) and skipped.
  */
 
-import * as path from "path";
-import * as fs from "fs";
 import { parseArgs } from "util";
+import { requirePrivateFile } from "./private-input";
 
 // ─── CLI args ─────────────────────────────────────────────────────────────────
 
@@ -34,15 +33,10 @@ if (!args.tenantId) {
   process.exit(1);
 }
 
-const DEFAULT_FILE = path.resolve(
-  "attached_assets/0_Master_2026_Account_Reconciliation_Ledger_with_Project_Prof_1786477799463.xlsx",
+const filePath = requirePrivateFile(
+  args.file || "private-inputs/contractor-ledger.xlsx",
+  "Use --file <private-workbook.xlsx>; see docs/REPOSITORY_FILE_POLICY.md.",
 );
-const filePath = args.file ? path.resolve(args.file as string) : DEFAULT_FILE;
-
-if (!fs.existsSync(filePath)) {
-  console.error(`File not found: ${filePath}`);
-  process.exit(1);
-}
 
 const TENANT_ID = args.tenantId as string;
 const DRY_RUN = args.dryRun === true;

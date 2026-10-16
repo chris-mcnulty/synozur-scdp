@@ -1,14 +1,17 @@
-import { db } from "../server/db";
 import { airportCodes } from "../shared/schema";
 import { sql } from "drizzle-orm";
 import fs from "fs";
-import path from "path";
+import { requirePrivateFile } from "./private-input";
 
 async function ingestAirportCodes() {
-  const csvPath = path.join(process.cwd(), "attached_assets/flat-ui__data-Fri_Jan_23_2026_1769217195966.csv");
+  const csvPath = requirePrivateFile(
+    process.argv[2] || "private-inputs/airport-codes.csv",
+    "Usage: npx tsx scripts/ingest-airport-codes.ts <private-airport-codes.csv>",
+  );
   
   console.log("Reading CSV file...");
   const csvContent = fs.readFileSync(csvPath, "utf-8");
+  const { db } = await import("../server/db");
   const lines = csvContent.split("\n");
   
   console.log(`Total lines in CSV: ${lines.length}`);

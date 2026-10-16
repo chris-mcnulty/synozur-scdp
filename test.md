@@ -1,5 +1,11 @@
 # SCDP Test Tracking
 
+> Historical October 2025 checklist. Open items below have not been confirmed
+> resolved; retain until their owner reconciles them with maintained `tests/`
+> and the [backlog](backlog.md). It is not the current test status.
+> Archived startup wrappers and corrupted route copies listed in this historical
+> log were subsequently removed; those checked entries are not current links.
+
 ## Active Sprint Testing (Week of Oct 5, 2025)
 
 ### 🔴 Critical Issues

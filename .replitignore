@@ -1,1 +1,19 @@
 /generated-artifacts/
+
+# Offline operator inputs and scratch output must not ship.
+/private-inputs/
+/attached_assets/
+/.local/tasks/
+/backup_*.sql
+/cookies.txt
+/cookies-*.txt
+/allocations-*.csv
+/seddFlNoS
+/bfg-*.jar
+/server-output.log
+/batch-summary.png
+/file-list-check.png
+/unreachable_app.png
+
+# Do NOT exclude uploads here: current local-file storage still needs it.
+# Remove it from deployment only after an approved storage migration.

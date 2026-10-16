@@ -1,5 +1,11 @@
 # Pending Receipt Tracking System - Verification Report
 
+> Historical verification evidence, not a fresh test result or current API
+> contract. Retained pending owner approval to retire it. Current usage is in
+> [the user guide](docs/USER_GUIDE.md); maintained checks are in `tests/`.
+> Do not infer that today's routes, permissions or storage behavior were tested
+> from the assertions below.
+
 ## ✅ VERIFICATION COMPLETE - ALL ARCHITECT CONCERNS ADDRESSED
 
 This report confirms that the pending receipt tracking system has been fully implemented and verified according to all architect requirements.

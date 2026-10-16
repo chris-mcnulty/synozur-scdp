@@ -1,3 +1,15 @@
+# Private source location
+
+The template's `source.file` is now `private-inputs/platinum-co1/signed-change-order.pdf`.
+In your private reviewed manifest, set `source.file` to the verified protected
+copy's absolute or repository-relative path. This is provenance metadata, not a
+PDF loader: the SQL builder consumes the reviewed manifest and does not read the
+PDF. An operator must verify the signed pages and source identity before review.
+Do not change a previously executed manifest just to relocate a file: retain the
+exact audited manifest for verify/rollback and record relocation separately.
+Current attachments are preserved pending verified copies.
+See [repository file policy](../../docs/REPOSITORY_FILE_POLICY.md).
+
 # Platinum CO No. 1 — operator package
 
 ## Development verification
