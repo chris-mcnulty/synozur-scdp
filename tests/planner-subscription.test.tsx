@@ -7,7 +7,9 @@ const state = vi.hoisted(() => ({
   serial: Promise.resolve() as Promise<any>,
   failActiveSave: false, failActiveCommit: false, failPrepareCommit: false,
   committedRows: [] as any[],
+  subscriptionReads: [] as number[], selectError: false,
 }));
+vi.mock('node-cron', () => ({ schedule: vi.fn(() => ({ stop: vi.fn() })) }));
 vi.mock('../server/db.js', async () => {
   const schema = await import('../shared/schema');
   const matches = (row: any, condition: any) => {
@@ -21,13 +23,25 @@ vi.mock('../server/db.js', async () => {
   };
   const store: any = {
     select: (projection: any) => {
-      let table: any, condition: any;
-      const result = () => projection ? [{ tenantId: 'tenant' }]
-        : (table === schema.projectPlannerConnections ? [state.conn] : state.rows)
+      if (state.selectError) throw new Error('Database unavailable');
+      let table: any, condition: any, ordered = false, limit: number | undefined;
+      const result = () => {
+        if (projection) return [{ tenantId: 'tenant' }];
+        let rows = (table === schema.projectPlannerConnections ? [state.conn] : state.rows)
           .filter(row => !condition || matches(row, condition));
+        if (ordered) rows = [...rows].sort((a, b) => {
+          const rank = (row: any) => row.status === 'active' ? 0 : row.status === 'removed' ? 2 : 1;
+          return rank(a) - rank(b) || b.updatedAt.getTime() - a.updatedAt.getTime();
+        });
+        if (limit !== undefined) rows = rows.slice(0, limit);
+        if (table === schema.plannerSubscriptions) state.subscriptionReads.push(rows.length);
+        return rows;
+      };
       const builder: any = {
         from(t: any) { table = t; return builder; },
-        where(c: any) { condition = c; return builder; }, innerJoin() { return builder; }, limit() { return builder; },
+        where(c: any) { condition = c; return builder; }, innerJoin() { return builder; },
+        orderBy() { ordered = true; return builder; },
+        limit(n: number) { limit = n; return builder; },
         for(mode: string) { state.lockModes.push(mode); return Promise.resolve(result()); },
         then(resolve: any, reject: any) { return Promise.resolve(result()).then(resolve, reject); },
       };
@@ -75,7 +89,8 @@ vi.mock('../server/services/planner-graph-client.js', () => ({
 vi.mock('../server/services/planner-sync-audit.js', () => ({
   recordPlannerAudit: vi.fn(async () => {}),
 }));
-import { ensureSubscription, renewSubscription, renewExpiringSubscriptions } from '../server/services/planner-subscription-manager';
+import * as cron from 'node-cron';
+import { ensureSubscription, renewSubscription, renewExpiringSubscriptions, startSubscriptionRenewalScheduler, stopSubscriptionRenewalScheduler, runSubscriptionRecoveryCycle } from '../server/services/planner-subscription-manager';
 import { plannerSubscriptionExpiration, confirmedSubscriptionExpiry } from '../shared/planner-subscription-health';
 import { PlannerWebhookHealth } from '../client/src/components/planner/PlannerWebhookHealth';
 
@@ -109,6 +124,7 @@ beforeEach(() => {
   state.rows = []; state.calls = []; state.lockModes = []; state.serial = Promise.resolve();
   state.failActiveSave = false; state.failActiveCommit = false; state.failPrepareCommit = false;
   state.committedRows = []; remoteSubscriptions = [];
+  state.subscriptionReads = []; state.selectError = false;
   listGraph = vi.fn(async () => new Response(JSON.stringify({ value: remoteSubscriptions }), { status: 200 }));
   graph = vi.fn(async (_url: string, options: any) => {
     const body = JSON.parse(options.body);
@@ -121,6 +137,50 @@ beforeEach(() => {
     if (options.method === 'GET') return listGraph(url, options);
     state.calls.push({ method: options.method, body: JSON.parse(options.body) });
     return graph(url, options);
+  });
+});
+
+describe('immediate subscription recovery', () => {
+  it('recovers on startup without waiting for cron and coalesces overlapping cycles', async () => {
+    startSubscriptionRenewalScheduler();
+    const first = runSubscriptionRecoveryCycle('startup');
+    const second = runSubscriptionRecoveryCycle('scheduled');
+    expect(first).toBe(second);
+    await first;
+    expect(graph).toHaveBeenCalledTimes(1);
+    expect(state.rows[0].status).toBe('active');
+    const scheduled = vi.mocked(cron.schedule).mock.calls.at(-1)!;
+    expect(scheduled[0]).toBe('0 */4 * * *');
+    (scheduled[1] as () => void)();
+    await runSubscriptionRecoveryCycle('scheduled');
+    expect(graph).toHaveBeenCalledTimes(1);
+    stopSubscriptionRenewalScheduler();
+  });
+
+  it('reports startup failures and allows the next recovery cycle', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    state.selectError = true;
+    await runSubscriptionRecoveryCycle('startup');
+    expect(errors).toHaveBeenCalledWith(
+      '[PLANNER-SUB] Recovery cycle failed (trigger=startup):', 'Database unavailable');
+    state.selectError = false;
+    await runSubscriptionRecoveryCycle('scheduled');
+    expect(state.rows[0].status).toBe('active');
+    errors.mockRestore();
+  });
+
+  it('retrieves at most one history candidate per lookup despite a removal backlog', async () => {
+    state.rows = Array.from({ length: 250 }, (_, i) => ({
+      ...remote('removed'), id: `historical-${i}`, subscriptionId: `old-${i}`,
+      updatedAt: new Date(now.getTime() + i),
+    }));
+    state.rows.push({ ...remote('error'), id: 'pending-attempt', subscriptionId: 'local-error-pending',
+      lastRenewedAt: null });
+    const result = await ensureSubscription('conn');
+    expect(result?.id).toBe('pending-attempt');
+    expect(result?.status).toBe('active');
+    expect(Math.max(...state.subscriptionReads)).toBe(1);
+    expect(state.rows).toHaveLength(251);
   });
 });
 

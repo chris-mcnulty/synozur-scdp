@@ -13,6 +13,7 @@
     "test": "npm run test:unit && npm run test:browser",
     "test:unit": "tsx tests/run.ts && npm run test:planner-subscriptions",
     "test:planner-subscriptions": "vitest run --config tests/planner-subscription.vitest.config.ts",
+    "test:planner-webhook-ui": "tsx tests/planner-webhook-retry.browser.ts",
     "test:tenant-plan": "tsx tests/tenant-plan.browser.ts",
     "test:documentation": "tsx tests/documentation.browser.ts",
     "test:repository": "tsx tests/repository-policy.spec.ts",

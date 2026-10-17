@@ -14,3 +14,9 @@ Avoid declaring named helper functions inside callbacks serialized into the brow
 **Why:** The workspace's TypeScript runner can inject a naming helper (`__name`) into nested declarations. Puppeteer sends only the callback to the browser, where that helper is unavailable; the resulting error is in the test callback, not the app.
 
 **How to apply:** Keep browser-evaluation callbacks self-contained and inline simple logic. Attach an early rejection handler to pending response waits so closing the browser after a click error does not replace the original failure with a page-closed error.
+
+For isolated component browser checks, an intercepted HTML document can load real application components through Vite without adding any test-only routes or authentication bypasses to the app.
+
+**Why:** Loading the complete project page can require unrelated API fixtures. Direct component imports avoid those dependencies, but Vite's React refresh preamble and optimized dependency interop still apply; otherwise the harness can fail before the component mounts.
+
+**How to apply:** Include the React refresh preamble, derive optimized dependency URLs from the running app's transformed modules, and preserve their import conventions. In this environment the optimized React DOM client requires the default export's `createRoot`, not a named ESM import. Treat these failures as harness issues rather than changing production code to accommodate them.

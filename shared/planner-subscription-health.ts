@@ -14,6 +14,11 @@ export interface SubscriptionHealthInput {
   lastRenewalError: string | null;
 }
 
+export function canManagePlannerWebhooks(user: { role?: string | null; platformRole?: string | null } | null | undefined): boolean {
+  return !!user && (["admin", "global_admin"].includes(user.role || "") ||
+    ["global_admin", "constellation_admin"].includes(user.platformRole || ""));
+}
+
 export function confirmedSubscriptionExpiry(sub: SubscriptionHealthInput): Date | null {
   if (sub.subscriptionId?.startsWith('local-error-') || !sub.lastRenewedAt ||
       !['active', 'error'].includes(sub.status) || !sub.expirationDateTime) return null;

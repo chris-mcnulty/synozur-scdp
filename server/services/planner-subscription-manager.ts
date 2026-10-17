@@ -21,7 +21,7 @@ import {
   projects,
   type PlannerSubscription,
 } from '@shared/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import { recordPlannerAudit } from './planner-sync-audit.js';
 import { classifyGraphError } from '@shared/planner-conflict.js';
 import { plannerSubscriptionExpiration } from '@shared/planner-subscription-health.js';
@@ -44,6 +44,7 @@ async function tenantIdForConnection(connectionId: string, store: SubscriptionDb
 const RENEWAL_LEAD_TIME_MS = 24 * 3600 * 1000; // Renew if expiring within 24h
 type SubscriptionDb = Pick<typeof db, 'select' | 'insert' | 'update'>;
 let renewalTask: cron.ScheduledTask | null = null;
+let recoveryCycle: Promise<void> | null = null;
 
 function getNotificationUrl(): string {
   const base = process.env.APP_PUBLIC_URL || 'https://constellation.synozur.com';
@@ -80,10 +81,15 @@ async function callGraphFetch(method: string, path: string, body?: any): Promise
 
 function safeJson(s: string): any { try { return JSON.parse(s); } catch { return s; } }
 
-function preferredSubscription(rows: PlannerSubscription[]): PlannerSubscription | undefined {
-  rows.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') ||
-    b.updatedAt.getTime() - a.updatedAt.getTime());
-  return rows.find(s => s.status !== 'removed') ?? rows[0];
+async function preferredSubscription(store: SubscriptionDb, connectionId: string): Promise<PlannerSubscription | undefined> {
+  // Production has a large historical error/removal backlog. Select one
+  // candidate in SQL instead of loading and sorting the entire history.
+  const [row] = await store.select().from(plannerSubscriptions)
+    .where(eq(plannerSubscriptions.connectionId, connectionId))
+    .orderBy(sql`CASE WHEN ${plannerSubscriptions.status} = 'active' THEN 0 WHEN ${plannerSubscriptions.status} = 'removed' THEN 2 ELSE 1 END`,
+      desc(plannerSubscriptions.updatedAt))
+    .limit(1);
+  return row;
 }
 
 /**
@@ -96,8 +102,7 @@ async function prepareSubscriptionAttempt(connectionId: string): Promise<void> {
     const [conn] = await tx.select().from(projectPlannerConnections)
       .where(eq(projectPlannerConnections.id, connectionId)).limit(1).for('no key update');
     if (!conn || !conn.syncEnabled || conn.syncSuspended) return;
-    const existing = preferredSubscription(await tx.select().from(plannerSubscriptions)
-      .where(eq(plannerSubscriptions.connectionId, connectionId)));
+    const existing = await preferredSubscription(tx, connectionId);
     if (existing && existing.status !== 'removed' && existing.status !== 'expired' &&
         (existing.subscriptionId.startsWith('local-error-') ||
           existing.expirationDateTime.getTime() > Date.now())) return;
@@ -181,10 +186,7 @@ export async function ensureSubscription(connectionId: string): Promise<PlannerS
 
 async function ensureForConnection(store: SubscriptionDb, conn: typeof projectPlannerConnections.$inferSelect): Promise<PlannerSubscription | null> {
   const connectionId = conn.id;
-  const rows = await store.select()
-    .from(plannerSubscriptions)
-    .where(eq(plannerSubscriptions.connectionId, connectionId));
-  const existing = preferredSubscription(rows);
+  const existing = await preferredSubscription(store, connectionId);
   if (existing?.status === 'active' && existing.expirationDateTime.getTime() - Date.now() > RENEWAL_LEAD_TIME_MS) {
     return existing;
   }
@@ -307,15 +309,14 @@ export async function renewExpiringSubscriptions(): Promise<{ renewed: number; f
   for (const conn of connections) {
     if (conn.syncSuspended) continue;
     try {
-      const before = await db.select().from(plannerSubscriptions)
-        .where(eq(plannerSubscriptions.connectionId, conn.id));
-      const active = before.find(s => s.status === 'active');
+      const before = await preferredSubscription(db, conn.id);
+      const active = before?.status === 'active' ? before : undefined;
       if (active && active.expirationDateTime.getTime() - Date.now() > RENEWAL_LEAD_TIME_MS) continue;
       const result = await ensureSubscription(conn.id);
       if (!result) continue;
       if (result.status !== 'active') failed++;
       else if (active) renewed++;
-      else if (before.length) recreated++;
+      else if (before) recreated++;
       else backfilled++;
     } catch (err: any) {
       console.warn('[PLANNER-SUB] Recovery failed for', conn.id, err.message);
@@ -343,17 +344,26 @@ export function startSubscriptionRenewalScheduler(): void {
     renewalTask = null;
   }
   // Every 4 hours
-  renewalTask = cron.schedule('0 */4 * * *', async () => {
-    try {
-      const result = await renewExpiringSubscriptions();
-      if (Object.values(result).some(Boolean)) {
-        console.log(`[PLANNER-SUB] Renewal cycle: ${result.renewed} renewed, ${result.recreated} recovered, ${result.backfilled} backfilled, ${result.failed} failed`);
-      }
-    } catch (err: any) {
-      console.error('[PLANNER-SUB] Renewal scheduler error:', err.message);
-    }
+  renewalTask = cron.schedule('0 */4 * * *', () => {
+    void runSubscriptionRecoveryCycle('scheduled');
   });
   console.log('[PLANNER-SUB] Subscription renewal scheduler started');
+  // Do not wait for the next four-hour slot after a release or cold start.
+  // The returned promise handles failures and never blocks server readiness.
+  void runSubscriptionRecoveryCycle('startup');
+}
+
+export function runSubscriptionRecoveryCycle(trigger: 'startup' | 'scheduled'): Promise<void> {
+  if (recoveryCycle) return recoveryCycle;
+  console.log(`[PLANNER-SUB] Recovery cycle started (trigger=${trigger})`);
+  recoveryCycle = renewExpiringSubscriptions().then(result => {
+    console.log(`[PLANNER-SUB] Recovery cycle (trigger=${trigger}): ${result.renewed} renewed, ${result.recreated} recovered, ${result.backfilled} backfilled, ${result.failed} failed`);
+  }).catch((err: any) => {
+    console.error(`[PLANNER-SUB] Recovery cycle failed (trigger=${trigger}):`, err.message);
+  }).finally(() => {
+    recoveryCycle = null;
+  });
+  return recoveryCycle;
 }
 
 export function stopSubscriptionRenewalScheduler(): void {

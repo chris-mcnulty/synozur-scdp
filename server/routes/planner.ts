@@ -3,6 +3,7 @@ import { storage, db } from "../storage";
 import { projectChannels, projects, clients, clientTeams, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, estimateChannels, estimates, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES, projectPlannerConnections } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { confirmedSubscriptionExpiry } from "@shared/planner-subscription-health";
+import { registerPlannerWebhookRecovery } from "./planner-webhook-recovery";
 
 interface PlannerRouteDeps {
   requireAuth: any;
@@ -10,6 +11,15 @@ interface PlannerRouteDeps {
 }
 
 export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
+  registerPlannerWebhookRecovery(app, {
+    ...deps,
+    getProject: (id) => storage.getProject(id),
+    getConnection: (projectId) => storage.getProjectPlannerConnection(projectId),
+    recover: async (connectionId) => {
+      const { ensureSubscription } = await import("../services/planner-subscription-manager.js");
+      return ensureSubscription(connectionId);
+    },
+  });
 
   app.get("/api/planner/status", deps.requireAuth, async (req, res) => {
     try {

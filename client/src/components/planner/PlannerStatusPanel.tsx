@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PlannerConnectionDialog } from "./PlannerConnectionDialog";
 import { PlannerWebhookHealth } from "./PlannerWebhookHealth";
+import { PlannerWebhookRetry } from "./PlannerWebhookRetry";
 import { formatDistanceToNow } from "date-fns";
 import {
   AlertDialog,
@@ -357,6 +358,11 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
               suspended={syncHealth.connection?.syncSuspended || false}
             />
           )}
+          <PlannerWebhookRetry
+            projectId={projectId}
+            enabled={connection.syncEnabled}
+            suspended={syncHealth?.connection?.syncSuspended ?? true}
+          />
 
           <div className="space-y-3 pt-4 border-t">
             <div className="flex items-center justify-between">
