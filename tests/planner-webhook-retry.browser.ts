@@ -30,18 +30,18 @@ import React from ${JSON.stringify(reactUrl)};
 import ReactDOM from ${JSON.stringify(domUrl)};
 import {QueryClientProvider,useQuery} from ${JSON.stringify(queryUrl)};
 import {queryClient} from "/src/lib/queryClient.ts";
-import {PlannerWebhookRetry} from "/src/components/planner/PlannerWebhookRetry.tsx";
-import {PlannerWebhookHealth} from "/src/components/planner/PlannerWebhookHealth.tsx";
+import {PlannerInboundCheck} from "/src/components/planner/PlannerWebhookRetry.tsx";
+import {PlannerInboundHealth} from "/src/components/planner/PlannerInboundHealth.tsx";
 import {Toaster} from "/src/components/ui/toaster.tsx";
 function Test(){
  const {data:health}=useQuery({queryKey:["/api/projects","test-project","planner-sync-health"]});
  return React.createElement("main",{style:{padding:24,maxWidth:480}},
-  React.createElement("h1",{style:{fontSize:22,marginBottom:16}},"Planner webhook"),
-  health&&React.createElement(PlannerWebhookHealth,{subscription:health.subscriptions[0],
+  React.createElement("h1",{style:{fontSize:22,marginBottom:16}},"Planner inbound updates"),
+  health&&React.createElement(PlannerInboundHealth,{health:health.inbound,direction:health.connection.syncDirection,
    enabled:health.connection.syncEnabled,suspended:health.connection.syncSuspended}),
   React.createElement("div",{style:{marginTop:16}},
-   React.createElement(PlannerWebhookRetry,{projectId:"test-project",
-    enabled:health?.connection.syncEnabled||false,suspended:health?.connection.syncSuspended??true})),
+   React.createElement(PlannerInboundCheck,{projectId:"test-project",
+    enabled:health?.connection.syncEnabled&&health?.connection.syncDirection!=="outbound_only",suspended:health?.connection.syncSuspended??true})),
   React.createElement(Toaster));
 }
 ReactDOM.createRoot(window.document.getElementById("root")).render(
@@ -63,11 +63,10 @@ const writes: string[] = [];
 let pending: HTTPRequest | undefined;
 let user = { role: "admin", platformRole: "user" };
 let health = {
-  connected: true, connection: { syncEnabled: true, syncSuspended: false },
-  subscriptions: [{
-    status: "error", lastRenewedAt: null as string | null,
-    expirationDateTime: null as string | null, lastRenewalError: "Subscription needs recovery",
-  }],
+  connected: true, connection: { syncEnabled: true, syncSuspended: false, syncDirection: "bidirectional" },
+  inbound: { mode: "polling", intervalMinutes: 5, lastCheck: null as null | {
+    status: string; checkedAt: string; error: string | null; counts: { checked: number; failed: number; skipped: number };
+  } },
 };
 try {
   const page = await browser.newPage();
@@ -83,7 +82,7 @@ try {
       }
       if (!url.pathname.startsWith("/api/")) return request.continue();
       if (request.method() !== "GET") writes.push(`${request.method()} ${url.pathname}`);
-      if (url.pathname === "/api/projects/test-project/planner-webhook/retry" && request.method() === "POST") {
+      if (url.pathname === "/api/projects/test-project/planner-inbound/check" && request.method() === "POST") {
         pending = request;
         return;
       }
@@ -94,50 +93,54 @@ try {
     };
     void handle().catch((error) => failures.push(String(error)));
   });
-  const selector = '[data-testid="button-retry-planner-webhook"]';
+  const selector = '[data-testid="button-check-planner-inbound"]';
   await page.goto(`${origin}/__planner-webhook-retry-test`, { waitUntil: "networkidle0" });
   await page.waitForSelector(selector);
-  await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-testid="button-retry-planner-webhook"]')?.disabled === false);
+  await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-testid="button-check-planner-inbound"]')?.disabled === false);
+  assert.ok(await page.evaluate(() => document.body.innerText.includes("No inbound check completed yet")));
+  await page.screenshot({ path: "/tmp/planner-inbound-mobile.png" });
   await page.tap(selector);
-  await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-testid="button-retry-planner-webhook"]')?.disabled);
-  assert.match(await page.$eval(selector, (el) => el.textContent || ""), /Retrying/);
+  await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-testid="button-check-planner-inbound"]')?.disabled);
+  assert.match(await page.$eval(selector, (el) => el.textContent || ""), /Checking Planner/);
   // A second activation while pending must not start another request.
   await page.$eval(selector, (el) => (el as HTMLButtonElement).click());
   assert.equal(writes.length, 1);
   assert.ok(pending, "Retry request was sent");
   const failed = pending;
   pending = undefined;
-  health.subscriptions[0].lastRenewalError = "Graph temporarily unavailable";
+  health.inbound.lastCheck = { status: "error", checkedAt: new Date().toISOString(),
+    error: "Graph temporarily unavailable", counts: { checked: 0, failed: 1, skipped: 0 } };
   await failed.respond({ status: 502, contentType: "application/json", body: JSON.stringify({ message: "Graph temporarily unavailable" }) });
   await page.waitForFunction(() => document.querySelector('[role="alert"]')?.textContent?.includes("Graph temporarily unavailable"));
-  await page.waitForFunction(() => document.querySelector('[data-testid="planner-webhook-health"]')?.textContent?.includes("Graph temporarily unavailable"));
+  await page.waitForFunction(() => document.querySelector('[data-testid="planner-inbound-health"]')?.textContent?.includes("Graph temporarily unavailable"));
 
   await page.tap(selector);
-  await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-testid="button-retry-planner-webhook"]')?.disabled);
+  await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-testid="button-check-planner-inbound"]')?.disabled);
   assert.ok(pending);
   const accepted = pending;
   pending = undefined;
-  health.subscriptions[0] = {
-    status: "active", lastRenewedAt: new Date().toISOString(),
-    expirationDateTime: new Date(Date.now() + 60 * 60_000).toISOString(), lastRenewalError: "",
-  };
+  health.inbound.lastCheck = { status: "success", checkedAt: new Date().toISOString(),
+    error: null, counts: { checked: 2, failed: 0, skipped: 0 } };
   await accepted.respond({ status: 200, contentType: "application/json", body: JSON.stringify({
-    status: "active", expirationDateTime: health.subscriptions[0].expirationDateTime,
+    status: "success", checked: 2, failed: 0, skipped: 0,
   }) });
-  await page.waitForFunction(() => document.querySelector('[data-testid="planner-webhook-health"]')?.textContent?.includes("Webhook: active"));
-  await page.waitForFunction(() => document.body.innerText.includes("Webhook subscription is active"));
+  await page.waitForFunction(() => document.querySelector('[data-testid="planner-inbound-health"]')?.textContent?.includes("Completed"));
+  await page.waitForFunction(() => document.body.innerText.includes("Planner check completed"));
   assert.equal(await page.$('[role="alert"]'), null);
-  await page.screenshot({ path: "/tmp/planner-webhook-retry-mobile.png" });
 
   health.connection.syncEnabled = false;
   await page.reload({ waitUntil: "networkidle0" });
   assert.equal(await page.$eval(selector, (el) => (el as HTMLButtonElement).disabled), true);
-  assert.ok(await page.evaluate(() => document.body.innerText.includes("Enable sync first")));
+  assert.ok(await page.evaluate(() => document.body.innerText.includes("Enable inbound or bidirectional sync first")));
   health.connection.syncEnabled = true;
   health.connection.syncSuspended = true;
   await page.reload({ waitUntil: "networkidle0" });
   assert.equal(await page.$eval(selector, (el) => (el as HTMLButtonElement).disabled), true);
   health.connection.syncSuspended = false;
+  health.connection.syncDirection = "outbound_only";
+  await page.reload({ waitUntil: "networkidle0" });
+  assert.equal(await page.$eval(selector, (el) => (el as HTMLButtonElement).disabled), true);
+  health.connection.syncDirection = "bidirectional";
   user = { role: "pm", platformRole: "user" };
   await page.reload({ waitUntil: "networkidle0" });
   assert.equal(await page.$(selector), null);
@@ -147,11 +150,11 @@ try {
   await page.waitForSelector(selector);
   assert.equal(await page.$eval(selector, (el) => (el as HTMLButtonElement).disabled), false);
   assert.deepEqual(writes, [
-    "POST /api/projects/test-project/planner-webhook/retry",
-    "POST /api/projects/test-project/planner-webhook/retry",
+    "POST /api/projects/test-project/planner-inbound/check",
+    "POST /api/projects/test-project/planner-inbound/check",
   ]);
   assert.deepEqual(failures, []);
-  console.log("Webhook retry browser regression passed: mobile pending/error/retry/success, health refresh, disabled/suspended state, admin visibility and no task-sync writes.");
+  console.log("Inbound polling browser regression passed: mobile pending/error/retry/success, health refresh, disabled/suspended/outbound-only state, admin visibility and only two mocked inbound-check POSTs.");
 } catch (error) {
   console.error("Webhook retry browser failure:", error, "Browser errors:", failures);
   throw error;

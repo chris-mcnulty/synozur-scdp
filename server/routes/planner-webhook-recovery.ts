@@ -1,16 +1,21 @@
 import type { Express } from "express";
-import { canManagePlannerWebhooks, confirmedSubscriptionExpiry, type SubscriptionHealthInput } from "@shared/planner-subscription-health";
+import { canManagePlannerWebhooks } from "@shared/planner-subscription-health";
+import type { InboundCheckResult } from "../services/planner-inbound-polling";
 
 interface RecoveryDependencies {
   requireAuth: any;
   requireRole: (roles: string[]) => any;
   getProject: (id: string) => Promise<{ tenantId: string | null } | undefined>;
-  getConnection: (projectId: string) => Promise<{ id: string; syncEnabled: boolean; syncSuspended?: boolean | null } | undefined>;
-  recover: (connectionId: string) => Promise<SubscriptionHealthInput | null>;
+  getConnection: (projectId: string) => Promise<{ id: string; syncEnabled: boolean; syncSuspended?: boolean | null; syncDirection: string } | undefined>;
+  check: (connectionId: string) => Promise<InboundCheckResult>;
 }
 
-export function registerPlannerWebhookRecovery(app: Express, deps: RecoveryDependencies): void {
+export function registerPlannerInboundCheck(app: Express, deps: RecoveryDependencies): void {
   app.post("/api/projects/:projectId/planner-webhook/retry",
+    deps.requireAuth, deps.requireRole(["admin", "global_admin"]), (_req, res) => {
+      res.status(410).json({ message: "Planner does not support these webhooks. Use Check Planner now in the project Planner panel." });
+    });
+  app.post("/api/projects/:projectId/planner-inbound/check",
     deps.requireAuth, deps.requireRole(["admin", "global_admin"]), async (req, res) => {
       try {
         const user = req.user as any;
@@ -23,27 +28,18 @@ export function registerPlannerWebhookRecovery(app: Express, deps: RecoveryDepen
         }
         const connection = await deps.getConnection(req.params.projectId);
         if (!connection) return res.status(404).json({ message: "Planner connection not found" });
-        if (!connection.syncEnabled || connection.syncSuspended) {
+        if (!connection.syncEnabled || connection.syncSuspended || connection.syncDirection === "outbound_only") {
           return res.status(409).json({
             message: connection.syncSuspended
-              ? "Sync is suspended. Resolve the sync issue and resume it before retrying the webhook."
-              : "Enable Planner sync before retrying the webhook.",
+              ? "Sync is suspended. Resolve the sync issue and resume it before checking Planner."
+              : "Enable inbound or bidirectional Planner sync before checking Planner.",
           });
         }
-        // Subscription-only operation. Never call task sync, resume the
-        // connection, or reset mappings as part of a webhook retry.
-        const subscription = await deps.recover(connection.id);
-        const expiry = subscription && confirmedSubscriptionExpiry(subscription);
-        if (!subscription || subscription.status !== "active" || !expiry || expiry.getTime() <= Date.now()) {
-          return res.status(502).json({
-            message: subscription?.lastRenewalError || "Webhook recovery did not produce an active subscription. Refresh sync health before retrying.",
-          });
-        }
-        // Do not return Graph correlation secrets or the raw subscription row.
-        res.json({ status: "active", expirationDateTime: expiry.toISOString() });
+        const result = await deps.check(connection.id);
+        res.status(result.status === "error" ? 502 : result.status === "busy" || result.status === "skipped" ? 409 : 200).json(result);
       } catch (error: any) {
-        console.error("[PLANNER-SUB] Manual recovery failed:", error?.message);
-        res.status(500).json({ message: "Webhook recovery failed. Refresh sync health and try again." });
+        console.error("[PLANNER-INBOUND] Manual check failed:", error?.message);
+        res.status(500).json({ message: "Planner check failed. Refresh sync health and try again." });
       }
     });
 }

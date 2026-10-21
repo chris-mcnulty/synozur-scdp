@@ -7,5 +7,5 @@ export default defineConfig({
     '@': fileURLToPath(new URL('../client/src', import.meta.url)),
   } },
   oxc: { jsx: { runtime: 'automatic' } },
-  test: { include: ['tests/planner-subscription.test.tsx', 'tests/planner-webhook-retry.test.ts'] },
+  test: { include: ['tests/planner-subscription.test.tsx', 'tests/planner-inbound-check.test.ts', 'tests/planner-inbound-polling.test.ts', 'tests/planner-inbound-scheduler.test.ts'] },
 });

@@ -2,8 +2,7 @@ import type { Express } from "express";
 import { storage, db } from "../storage";
 import { projectChannels, projects, clients, clientTeams, teamsTabTemplates, DEFAULT_TAB_TEMPLATES, estimateChannels, estimates, teamsFolderTemplates, DEFAULT_ESTIMATE_FOLDER_TEMPLATES, projectPlannerConnections } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
-import { confirmedSubscriptionExpiry } from "@shared/planner-subscription-health";
-import { registerPlannerWebhookRecovery } from "./planner-webhook-recovery";
+import { registerPlannerInboundCheck } from "./planner-webhook-recovery";
 
 interface PlannerRouteDeps {
   requireAuth: any;
@@ -11,13 +10,13 @@ interface PlannerRouteDeps {
 }
 
 export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
-  registerPlannerWebhookRecovery(app, {
+  registerPlannerInboundCheck(app, {
     ...deps,
     getProject: (id) => storage.getProject(id),
     getConnection: (projectId) => storage.getProjectPlannerConnection(projectId),
-    recover: async (connectionId) => {
-      const { ensureSubscription } = await import("../services/planner-subscription-manager.js");
-      return ensureSubscription(connectionId);
+    check: async (connectionId) => {
+      const { checkPlannerInbound } = await import("../services/planner-inbound-scheduler.js");
+      return checkPlannerInbound(connectionId, "manual");
     },
   });
 
@@ -855,17 +854,8 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         connectedBy: user.id
       });
 
-      // Task #126 — Best-effort: provision a Graph webhook subscription for the
-      // plan so inbound changes flow in real-time. Failure is non-fatal — the
-      // scheduled-sync fallback still runs.
-      try {
-        const { ensureSubscription } = await import('../services/planner-subscription-manager.js');
-        ensureSubscription(connection.id).catch((e: any) =>
-          console.warn('[PLANNER] ensureSubscription on create failed:', e?.message)
-        );
-      } catch (e: any) {
-        console.warn('[PLANNER] subscription manager import failed:', e?.message);
-      }
+      // Inbound changes are checked by the periodic reader; no unsupported
+      // Graph subscription is created and existing mappings are preserved.
 
       res.json(connection);
     } catch (error: any) {
@@ -889,14 +879,10 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       
       const updated = await storage.updateProjectPlannerConnection(connection.id, updates);
 
-      // Task #126 — Subscription lifecycle on syncEnabled toggle.
+      // Retain cleanup for historical subscriptions; enabling never creates one.
       try {
-        const { ensureSubscription, deleteSubscription } = await import('../services/planner-subscription-manager.js');
-        if (syncEnabled === true) {
-          ensureSubscription(connection.id).catch((e: any) =>
-            console.warn('[PLANNER] ensureSubscription on enable failed:', e?.message)
-          );
-        } else if (syncEnabled === false) {
+        const { deleteSubscription } = await import('../services/planner-subscription-manager.js');
+        if (syncEnabled === false) {
           const subs = await storage.getPlannerSubscriptionsByConnection(connection.id);
           for (const sub of subs.filter((s: any) => s.status === 'active')) {
             deleteSubscription(sub).catch((e: any) =>
@@ -1377,10 +1363,12 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
       if (!conn) {
         return res.json({ connected: false });
       }
-      const subs = await storage.getPlannerSubscriptionsByConnection(conn.id);
+      const { getPlannerInboundHealth } = await import('../services/planner-inbound-scheduler.js');
+      const inbound = await getPlannerInboundHealth(conn.id);
       const audit = await storage.getPlannerSyncAuditByConnection(conn.id, 25);
       res.json({
         connected: true,
+        inbound,
         connection: {
           id: conn.id,
           syncEnabled: conn.syncEnabled,
@@ -1393,19 +1381,8 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
           lastSyncError: conn.lastSyncError,
           lastAlertAt: (conn as any).lastAlertAt || null,
         },
-        subscriptions: subs.filter((s: any) => s.status !== 'removed')
-          .sort((a: any, b: any) => {
-            const active = (s: any) => s.status === 'active' && (confirmedSubscriptionExpiry(s)?.getTime() || 0) > Date.now();
-            return Number(active(b)) - Number(active(a)) ||
-              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-          }).map((s: any) => ({
-          id: s.id,
-          status: s.status,
-          expirationDateTime: confirmedSubscriptionExpiry(s),
-          lastRenewedAt: s.lastRenewedAt,
-          lastRenewalError: s.lastRenewalError,
-          consecutiveRenewalErrors: s.consecutiveRenewalErrors,
-        })),
+        // Historical subscription failures are retained, but are not live health.
+        subscriptions: [],
         audit: audit.map((a: any) => ({
           id: a.id, action: a.action, outcome: a.outcome, trigger: a.trigger,
           errorCode: a.errorCode, errorMessage: a.errorMessage,
@@ -1493,9 +1470,7 @@ export function registerPlannerRoutes(app: Express, deps: PlannerRouteDeps) {
         outcome: 'success',
         trigger: 'manual',
       });
-      const { ensureSubscription } = await import('../services/planner-subscription-manager.js');
-      ensureSubscription(conn.id).catch((e: any) =>
-        console.warn('[PLANNER] subscription recovery on resume failed:', e?.message));
+      // The next polling cycle will check a resumed connection.
       res.json(updated);
     } catch (err: any) {
       console.error('[PLANNER-RESUME] Error:', err);

@@ -319,17 +319,17 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import Planner sync scheduler: ${importError.message}`);
       });
 
-      // Task #126 — Start the Planner Graph subscription renewal scheduler
-      log('🔄 Starting Planner subscription renewal scheduler...');
-      import('./services/planner-subscription-manager.js').then(({ startSubscriptionRenewalScheduler }) => {
+      // Planner plans do not support Graph webhooks. Read mapped tasks periodically.
+      log('Starting Planner inbound polling scheduler...');
+      import('./services/planner-inbound-scheduler.js').then(({ startPlannerInboundScheduler }) => {
         try {
-          startSubscriptionRenewalScheduler();
-          log('✅ Planner subscription renewal scheduler started');
+          startPlannerInboundScheduler();
+          log('Planner inbound polling scheduler started');
         } catch (err: any) {
-          log(`⚠️ Subscription renewal scheduler failed to start: ${err.message}`);
+          log(`Planner inbound polling scheduler failed to start: ${err.message}`);
         }
       }).catch((importError: any) => {
-        log(`⚠️ Failed to import subscription renewal scheduler: ${importError.message}`);
+        log(`Failed to import Planner inbound polling scheduler: ${importError.message}`);
       });
       
       // Start the plan expiration scheduler

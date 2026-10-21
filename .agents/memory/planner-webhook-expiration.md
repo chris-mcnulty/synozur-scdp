@@ -19,3 +19,9 @@ Planner plan webhooks are not a supported basis for production inbound synchroni
 **Why:** On 2026-10-21, confirmed post-release startup recovery reached Graph for all three eligible production connections. With the expiration issue removed, Graph rejected `/planner/plans/{id}` with “Invalid subscription resource. Subscribe with a supported resource pattern.” Microsoft's supported-resources documentation did not list Planner plans or tasks. Callback validation returned 200 despite subscription rejection.
 
 **How to apply:** Recheck Microsoft's current [supported change-notification resources](https://learn.microsoft.com/en-us/graph/change-notifications-overview#supported-resources) before promising Planner webhooks. Prefer a supported periodic inbound-read design unless documented support changes; beta Planner delta queries are a separate capability, not evidence of webhook support. Preserve mappings and require explicit approval for any real Planner task edit used to verify inbound synchronization.
+
+The user approved scheduled inbound checks as the replacement for unsupported webhook retries on 2026-10-21.
+
+**Why:** Production proved that successful publishing, startup recovery, and callback validation could not produce a supported Planner subscription. Repeating those attempts cannot validate inbound functionality.
+
+**How to apply:** Use supported reads of existing mapped tasks, preserve conflict handling and mappings, and distinguish completed checks from actual imported changes. Periodic checks run only while the application is running; do not promise an uninterrupted five-minute delivery guarantee on an autoscaling deployment. Live acceptance still needs observed polling results and an explicitly approved real task change, not fabricated webhook evidence.

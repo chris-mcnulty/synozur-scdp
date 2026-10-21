@@ -637,6 +637,9 @@ export async function pullPlannerTask(
   if (!conn) {
     return { status: 'connection_missing' };
   }
+  if (!conn.syncEnabled || conn.syncDirection === 'outbound_only') {
+    return { status: 'inbound_disabled' };
+  }
   if ((conn as any).syncSuspended) {
     return { status: 'suspended' };
   }
@@ -654,6 +657,9 @@ export async function pullPlannerTask(
     });
     return { status: 'no_local_sync_record' };
   }
+  if (sync.connectionId !== connectionId) {
+    return { status: 'mapping_connection_mismatch' };
+  }
   if (!sync.allocationId) {
     return { status: 'no_allocation' };
   }
@@ -661,6 +667,7 @@ export async function pullPlannerTask(
   if (!allocation) {
     return { status: 'allocation_missing' };
   }
+  if (allocation.projectId !== conn.projectId) return { status: 'mapping_project_mismatch' };
 
   // Task #126 — Resolve tenant via project (no tenant_id column on connection)
   // and pre-fetch project for alert recipient/PM lookups.
@@ -765,8 +772,8 @@ export async function pullPlannerTask(
   }
 
   await storage.updatePlannerTaskSync(sync.id, {
-    lastSyncedAt: new Date(),
-    syncStatus: 'synced',
+    // A read must not advance the conflict boundary past a pending local edit.
+    ...(conflict.winner === 'local' ? {} : { lastSyncedAt: new Date(), syncStatus: 'synced' }),
     remoteEtag: task['@odata.etag'],
     remoteLastModified: task.lastModifiedDateTime ? new Date(task.lastModifiedDateTime) : null,
     lastConflictResolution: {
@@ -783,7 +790,7 @@ export async function pullPlannerTask(
   } as any);
 
   await recordPlannerAudit({
-    tenantId: (conn as any).tenantId ?? null,
+    tenantId: tenantIdForConn,
     connectionId,
     taskSyncId: sync.id,
     allocationId: allocation.id,
@@ -794,7 +801,7 @@ export async function pullPlannerTask(
     details: conflict as any,
   });
 
-  return { status: 'pulled', winner: conflict.winner, reason: conflict.reason };
+  return { status: conflict.winner === 'local' ? 'local_pending' : 'pulled', winner: conflict.winner, reason: conflict.reason };
 }
 
 export async function runPlannerSyncJob(

@@ -21,8 +21,8 @@ import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PlannerConnectionDialog } from "./PlannerConnectionDialog";
-import { PlannerWebhookHealth } from "./PlannerWebhookHealth";
-import { PlannerWebhookRetry } from "./PlannerWebhookRetry";
+import { PlannerInboundHealth, type PlannerInboundHealthData } from "./PlannerInboundHealth";
+import { PlannerInboundCheck } from "./PlannerWebhookRetry";
 import { formatDistanceToNow } from "date-fns";
 import {
   AlertDialog,
@@ -68,6 +68,7 @@ interface SyncStatus {
 }
 
 interface SyncHealth {
+  inbound?: PlannerInboundHealthData;
   connected: boolean;
   connection?: {
     id: string;
@@ -352,15 +353,16 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
           )}
 
           {syncHealth && (
-            <PlannerWebhookHealth
-              subscription={syncHealth.subscriptions?.[0]}
+            <PlannerInboundHealth
+              health={syncHealth.inbound}
+              direction={connection.syncDirection}
               enabled={connection.syncEnabled}
               suspended={syncHealth.connection?.syncSuspended || false}
             />
           )}
-          <PlannerWebhookRetry
+          <PlannerInboundCheck
             projectId={projectId}
-            enabled={connection.syncEnabled}
+            enabled={connection.syncEnabled && connection.syncDirection !== "outbound_only"}
             suspended={syncHealth?.connection?.syncSuspended ?? true}
           />
 
