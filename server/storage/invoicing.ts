@@ -32,6 +32,7 @@ import { convertDecimalFieldsToNumbers, normalizeAmount, round2, safeDivide, cal
 import { generateInvoicePDF } from "./pdf-generation";
 import { convertCurrency } from '../exchange-rates.js';
 import { isCommercialTimeRecoverable } from "../lib/commercial-buckets.js";
+import { calculateInvoiceTotals, invoiceLineAmount } from "@shared/invoice-totals";
 
 export const invoicingMethods: ThisType<IStorage & {
   generateInvoiceForProject(tx: any, batchId: string, projectId: string, startDate: string, endDate: string, batchType?: string): Promise<any>;
@@ -64,6 +65,9 @@ export const invoicingMethods: ThisType<IStorage & {
         projectId: invoiceLines.projectId,
         clientName: clients.name,
         projectName: projects.name,
+        amount: invoiceLines.amount,
+        billedAmount: invoiceLines.billedAmount,
+        taxable: invoiceLines.taxable,
       })
       .from(invoiceLines)
       .innerJoin(clients, eq(invoiceLines.clientId, clients.id))
@@ -77,7 +81,11 @@ export const invoicingMethods: ThisType<IStorage & {
       projectNameById: Map<string, string>;
     };
     const byBatch = new Map<string, Aggregate>();
+    const taxableByBatch = new Map<string, number>();
     for (const row of lineRows) {
+      if (row.taxable !== false) {
+        taxableByBatch.set(row.batchId, (taxableByBatch.get(row.batchId) ?? 0) + invoiceLineAmount(row));
+      }
       let agg = byBatch.get(row.batchId);
       if (!agg) {
         agg = {
@@ -109,6 +117,8 @@ export const invoicingMethods: ThisType<IStorage & {
           : [];
       return convertDecimalFieldsToNumbers({
         ...batch,
+        // Supply effective tax even for legacy batches without persisted tax.
+        taxAmount: calculateInvoiceTotals(batch, taxableByBatch.get(batch.batchId) ?? 0).tax.toFixed(2),
         clientCount,
         projectCount,
         clientNames,
@@ -243,7 +253,7 @@ export const invoicingMethods: ThisType<IStorage & {
     const totalLinesCount = lines.length;
     const totalAmount = lines.reduce((sum, line) => {
       // Use billedAmount if available (adjusted), otherwise use amount (original)
-      const effectiveAmount = normalizeAmount(line.billedAmount || line.amount);
+      const effectiveAmount = normalizeAmount(line.billedAmount ?? line.amount);
       return sum + effectiveAmount;
     }, 0);
     const uniqueClients = new Set(lines.map(l => l.clientId));
@@ -360,17 +370,17 @@ export const invoicingMethods: ThisType<IStorage & {
     const allLines = await executor.select().from(invoiceLines).where(eq(invoiceLines.batchId, batchId));
 
     const batchTotal = allLines.reduce((sum: number, line: any) => {
-      return sum + normalizeAmount(line.billedAmount || line.amount);
+      return sum + normalizeAmount(line.billedAmount ?? line.amount);
     }, 0);
 
     const taxableSubtotal = allLines.reduce((sum: number, line: any) => {
       if (line.taxable === false) return sum;
-      return sum + normalizeAmount(line.billedAmount || line.amount);
+      return sum + normalizeAmount(line.billedAmount ?? line.amount);
     }, 0);
 
     const discountAmount = normalizeAmount(batch.discountAmount);
     const taxRate = normalizeAmount(batch.taxRate);
-    const taxAmountOverride = batch.taxAmountOverride ? normalizeAmount(batch.taxAmountOverride) : null;
+    const taxAmountOverride = batch.taxAmountOverride != null ? normalizeAmount(batch.taxAmountOverride) : null;
 
     const discountRatio = batchTotal > 0 ? discountAmount / batchTotal : 0;
     const taxableAfterDiscount = taxableSubtotal - (taxableSubtotal * discountRatio);

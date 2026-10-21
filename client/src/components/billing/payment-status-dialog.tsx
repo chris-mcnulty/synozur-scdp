@@ -37,6 +37,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { calculateInvoiceTotals, type InvoiceTotalComponents } from "@shared/invoice-totals";
+import { getTodayBusinessDate } from "@/lib/date-utils";
 
 const paymentUpdateSchema = z.object({
   paymentStatus: z.enum(["unpaid", "partial", "paid"]),
@@ -50,12 +52,12 @@ type PaymentUpdateFormData = z.infer<typeof paymentUpdateSchema>;
 interface PaymentStatusDialogProps {
   open: boolean;
   onClose: () => void;
-  batch: {
+  batch: InvoiceTotalComponents & {
     batchId: string;
     totalAmount: number;
     paymentStatus: 'unpaid' | 'partial' | 'paid';
     paymentDate?: string;
-    paymentAmount?: number;
+    paymentAmount?: number | string | null;
     paymentNotes?: string;
     status: string;
   };
@@ -67,6 +69,8 @@ export function PaymentStatusDialog({
   batch,
 }: PaymentStatusDialogProps) {
   const { toast } = useToast();
+  const totals = calculateInvoiceTotals(batch);
+  const money = (value: number) => `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const form = useForm<PaymentUpdateFormData>({
     resolver: zodResolver(paymentUpdateSchema),
@@ -79,17 +83,37 @@ export function PaymentStatusDialog({
   });
 
   const paymentStatus = form.watch("paymentStatus");
-  const prevStatusRef = useRef(batch.paymentStatus);
+  const openedBatch = useRef<string | null>(null);
 
   useEffect(() => {
-    if (paymentStatus === 'paid' && prevStatusRef.current !== 'paid') {
-      form.setValue("paymentAmount", batch.totalAmount.toFixed(2));
+    if (!open) {
+      openedBatch.current = null;
+      return;
+    }
+    if (openedBatch.current !== batch.batchId) {
+      openedBatch.current = batch.batchId;
+      form.reset({
+        paymentStatus: batch.paymentStatus,
+        paymentDate: batch.paymentDate || '',
+        paymentAmount: batch.paymentAmount?.toString() ?? '',
+        paymentNotes: batch.paymentNotes || '',
+      });
+    }
+  }, [open, batch, form]);
+
+  const selectPaymentStatus = (status: PaymentUpdateFormData["paymentStatus"]) => {
+    if (status === "paid" && form.getValues("paymentStatus") !== "paid") {
+      // Only a deliberate status selection prefills; opening an existing receipt
+      // must never replace its recorded amount/date, even if historically wrong.
+      if (!form.getFieldState("paymentAmount").isDirty) {
+        form.setValue("paymentAmount", totals.gross.toFixed(2));
+      }
       if (!form.getValues("paymentDate")) {
-        form.setValue("paymentDate", new Date().toISOString().split('T')[0]);
+        form.setValue("paymentDate", getTodayBusinessDate());
       }
     }
-    prevStatusRef.current = paymentStatus;
-  }, [paymentStatus, batch.totalAmount, form]);
+    form.setValue("paymentStatus", status, { shouldDirty: true });
+  };
 
   const updatePaymentMutation = useMutation({
     mutationFn: async (data: PaymentUpdateFormData) => {
@@ -98,7 +122,15 @@ export function PaymentStatusDialog({
         body: JSON.stringify(data),
       });
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      queryClient.setQueryData<any[]>(["/api/invoice-batches"], (batches) =>
+        batches?.map(item => item.batchId === saved.batchId ? {
+          ...item,
+          paymentStatus: saved.paymentStatus,
+          paymentDate: saved.paymentDate,
+          paymentAmount: saved.paymentAmount,
+          paymentNotes: saved.paymentNotes,
+        } : item));
       toast({
         title: "Payment Status Updated",
         description: "Invoice payment status has been successfully updated.",
@@ -187,9 +219,9 @@ export function PaymentStatusDialog({
         <div className="py-4">
           <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
             <div>
-              <div className="text-sm text-muted-foreground">Invoice Total</div>
+              <div className="text-sm text-muted-foreground">Invoice Total (including tax)</div>
               <div className="text-2xl font-semibold">
-                ${batch.totalAmount.toLocaleString()}
+                {money(totals.gross)}
               </div>
             </div>
             <div className="text-right">
@@ -200,6 +232,19 @@ export function PaymentStatusDialog({
               </div>
             </div>
           </div>
+          <dl className="mt-3 space-y-1 text-sm" data-testid="invoice-payment-breakdown">
+            <div className="flex justify-between"><dt>Subtotal</dt><dd>{money(totals.subtotal)}</dd></div>
+            {totals.discount !== 0 && <div className="flex justify-between"><dt>Discount</dt><dd>-{money(totals.discount)}</dd></div>}
+            <div className="flex justify-between"><dt>Tax</dt><dd>{money(totals.tax)}</dd></div>
+            <div className="flex justify-between font-semibold"><dt>Total including tax</dt><dd>{money(totals.gross)}</dd></div>
+          </dl>
+          {batch.paymentStatus === "paid" && batch.paymentAmount != null &&
+            Math.abs(Number(batch.paymentAmount) - totals.gross) >= 0.01 && (
+            <p role="status" className="mt-3 text-sm text-amber-700">
+              Recorded cash received ({money(Number(batch.paymentAmount))}) differs from the invoice total.
+              Review the receipt before changing it; the saved amount has not been adjusted.
+            </p>
+          )}
         </div>
 
         <Form {...form}>
@@ -215,8 +260,8 @@ export function PaymentStatusDialog({
                   </FormLabel>
                   <FormControl>
                     <RadioGroup
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
+                      onValueChange={(value) => selectPaymentStatus(value as PaymentUpdateFormData["paymentStatus"])}
+                      value={field.value}
                       className="flex flex-col space-y-2"
                     >
                       <div className="flex items-center space-x-2">
@@ -304,7 +349,7 @@ export function PaymentStatusDialog({
                             />
                           </FormControl>
                           <FormDescription>
-                            {paymentStatus === 'paid' ? 'Full invoice amount (pre-filled)' : 'Amount received for partial payment'}
+                            Cash received, including tax. You can edit this amount.
                           </FormDescription>
                           <FormMessage />
                         </FormItem>

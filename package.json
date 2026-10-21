@@ -11,14 +11,16 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "npx tsx scripts/db-migrate.ts",
     "test": "npm run test:unit && npm run test:browser",
-    "test:unit": "tsx tests/run.ts && npm run test:planner-subscriptions",
+    "test:unit": "tsx tests/run.ts && npm run test:planner-subscriptions && npm run test:invoice-payment",
+    "test:invoice-payment": "vitest run --config tests/invoice-payment.vitest.config.ts",
+    "test:invoice-payment-ui": "tsx tests/invoice-payment.browser.ts",
     "test:planner-subscriptions": "vitest run --config tests/planner-subscription.vitest.config.ts",
     "test:planner-webhook-ui": "tsx tests/planner-webhook-retry.browser.ts",
     "test:tenant-plan": "tsx tests/tenant-plan.browser.ts",
     "test:documentation": "tsx tests/documentation.browser.ts",
     "test:repository": "tsx tests/repository-policy.spec.ts",
     "test:background-jobs": "tsx tests/background-jobs.browser.ts",
-    "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts && npm run test:background-jobs"
+    "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts && npm run test:background-jobs && npm run test:invoice-payment-ui"
   },
   "dependencies": {
     "@azure/msal-node": "^3.7.3",

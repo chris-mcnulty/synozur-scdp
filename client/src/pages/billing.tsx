@@ -63,6 +63,8 @@ interface InvoiceBatchData {
   projectNames?: string[]; // Names of projects if <= 3
   totalAmount: number;
   taxAmount?: number | null;
+  taxAmountOverride?: number | string | null;
+  taxRate?: number | string | null;
   discountAmount?: number;
   invoicingMode: 'client' | 'project';
   status: string;
@@ -1424,6 +1426,10 @@ export default function Billing() {
             batch={{
               batchId: selectedBatch.batchId,
               totalAmount: selectedBatch.totalAmount,
+              taxAmount: selectedBatch.taxAmount,
+              taxAmountOverride: selectedBatch.taxAmountOverride,
+              taxRate: selectedBatch.taxRate,
+              discountAmount: selectedBatch.discountAmount,
               paymentStatus: selectedBatch.paymentStatus || 'unpaid',
               paymentDate: selectedBatch.paymentDate,
               paymentAmount: selectedBatch.paymentAmount,

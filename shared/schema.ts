@@ -2027,7 +2027,7 @@ export const invoiceBatches = pgTable("invoice_batches", {
   // Payment tracking
   paymentStatus: text("payment_status").notNull().default("unpaid"), // unpaid, partial, paid
   paymentDate: date("payment_date"), // Date payment was received
-  paymentAmount: decimal("payment_amount", { precision: 10, scale: 2 }), // Amount paid (for partial payments)
+  paymentAmount: decimal("payment_amount", { precision: 10, scale: 2 }), // Cash received, including sales tax and expense reimbursements; not recognized revenue
   paymentNotes: text("payment_notes"), // Notes about payment
   paymentUpdatedBy: varchar("payment_updated_by").references(() => users.id), // Who updated payment status
   paymentUpdatedAt: timestamp("payment_updated_at"), // When payment status was updated

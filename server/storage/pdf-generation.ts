@@ -11,9 +11,10 @@ import puppeteer from 'puppeteer';
 import { PDFDocument } from 'pdf-lib';
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { db } from "../db";
-import { normalizeAmount, round2, calculateEffectiveTaxAmount } from "./helpers";
+import { normalizeAmount, round2 } from "./helpers";
 import { receiptStorage } from "../services/receipt-storage";
 import { normalizeReceiptBatch, type NormalizedReceipt } from "../services/receipt-normalizer";
+import { calculateInvoiceTotals } from "@shared/invoice-totals";
 
 const __pdfGenFilename = fileURLToPath(import.meta.url);
 const __pdfGenDirname = path.dirname(__pdfGenFilename);
@@ -215,10 +216,11 @@ export async function generateInvoicePDF(params: {
   // Calculate non-taxable subtotal for display
   const nonTaxableSubtotal = subtotal - taxableSubtotal;
 
-  const discountAmount = batch.discountAmount ? parseFloat(batch.discountAmount) : 0;
+  const totals = calculateInvoiceTotals({ ...batch, totalAmount: subtotal }, taxableSubtotal);
+  const discountAmount = totals.discount;
   const originalTotal = lines.reduce((sum, line) => sum + parseFloat(line.originalAmount || line.amount || '0'), 0);
   const totalAdjustments = subtotal - originalTotal;
-  const subtotalAfterDiscount = subtotal - discountAmount;
+  const subtotalAfterDiscount = totals.net;
   
   // Calculate taxable amount after proportional discount allocation
   const discountRatio = subtotal > 0 ? discountAmount / subtotal : 0;
@@ -227,13 +229,13 @@ export async function generateInvoicePDF(params: {
   // Calculate tax (only on taxable items, not expenses)
   // Respects manual override if set
   const taxRate = batch.taxRate ? parseFloat(batch.taxRate) : 0;
-  const taxAmountOverride = batch.taxAmountOverride ? parseFloat(batch.taxAmountOverride) : null;
-  const taxAmount = calculateEffectiveTaxAmount(taxableAfterDiscount, taxRate, taxAmountOverride);
+  const taxAmountOverride = batch.taxAmountOverride != null ? Number(batch.taxAmountOverride) : null;
+  const taxAmount = totals.tax;
   const isManualTaxOverride = taxAmountOverride !== null;
   // Calculate effective tax percentage for display purposes
   const effectiveTaxPercent = taxableAfterDiscount > 0 ? round2((taxAmount / taxableAfterDiscount) * 100) : 0;
   
-  const total = subtotalAfterDiscount + taxAmount;
+  const total = totals.gross;
 
   // Get unique clients
   const uniqueClients = Array.from(new Set(lines.map(l => l.client.id))).map(clientId => {
@@ -604,8 +606,11 @@ export async function generateInvoicePDF(params: {
   // Load template
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const projectRoot = path.resolve(__dirname, '..');
-  const templatePath = path.join(projectRoot, 'server', 'invoice-template.html');
+  // Source modules live in server/storage; the production bundle lives in dist.
+  const sourceTemplatePath = path.resolve(__dirname, '..', 'invoice-template.html');
+  const templatePath = fs.existsSync(sourceTemplatePath)
+    ? sourceTemplatePath
+    : path.resolve(__dirname, '..', 'server', 'invoice-template.html');
   const templateSource = fs.readFileSync(templatePath, 'utf8');
   const template = Handlebars.compile(templateSource);
   

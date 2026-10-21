@@ -9,6 +9,7 @@ import { AI_FEATURES } from "@shared/schema";
 import { eq, sql, inArray, and, gte, lte, desc } from "drizzle-orm";
 import { aiService } from "../services/ai-service.js";
 import { SharePointFileStorage } from "../services/sharepoint-file-storage.js";
+import { calculateInvoiceTotals, invoiceLineAmount } from "@shared/invoice-totals";
 
 interface ReportsRouteDeps {
   requireAuth: any;
@@ -514,11 +515,15 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
       const batchIds = rows.map(r => r.batchId);
 
       let clientMap: Record<string, string> = {};
+      const taxableSubtotals: Record<string, number> = {};
       if (batchIds.length > 0) {
-        const lineClients = await db.selectDistinct({
+        const lineClients = await db.select({
           batchId: invoiceLines.batchId,
           clientId: invoiceLines.clientId,
           clientName: clients.name,
+          amount: invoiceLines.amount,
+          billedAmount: invoiceLines.billedAmount,
+          taxable: invoiceLines.taxable,
         })
         .from(invoiceLines)
         .innerJoin(clients, eq(invoiceLines.clientId, clients.id))
@@ -526,6 +531,9 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
 
         const batchClientNames: Record<string, Set<string>> = {};
         for (const lc of lineClients) {
+          if (lc.taxable !== false) {
+            taxableSubtotals[lc.batchId] = (taxableSubtotals[lc.batchId] ?? 0) + invoiceLineAmount(lc);
+          }
           if (!batchClientNames[lc.batchId]) batchClientNames[lc.batchId] = new Set();
           batchClientNames[lc.batchId].add(lc.clientName);
         }
@@ -535,14 +543,8 @@ export function registerReportsRoutes(app: Express, deps: ReportsRouteDeps) {
       }
 
       const invoices = rows.map(row => {
-        const base = Number(row.totalAmount || 0);
-        const discount = Number(row.discountAmount || 0);
-        const taxRate = Number(row.taxRate || 0);
-        const invoiceAmount = base - discount;
-        const calculatedTax = taxRate > 0 ? Math.round(invoiceAmount * taxRate) / 100 : 0;
-        const storedTax = row.taxAmountOverride ?? row.taxAmount;
-        const tax = storedTax != null ? Number(storedTax) : calculatedTax;
-        const invoiceTotal = invoiceAmount + tax;
+        const { net: invoiceAmount, tax, gross: invoiceTotal } =
+          calculateInvoiceTotals(row, taxableSubtotals[row.batchId] ?? 0);
         const paid = row.paymentStatus === 'paid' ? invoiceTotal : Number(row.paymentAmount || 0);
         const outstanding = row.paymentStatus === 'paid' ? 0 : invoiceTotal - paid;
 
