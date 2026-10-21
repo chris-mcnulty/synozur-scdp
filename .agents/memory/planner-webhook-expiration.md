@@ -1,6 +1,6 @@
 ---
 name: Planner webhook expiration
-description: Runtime Graph subscription limit differs from the assumed seven-day expiration.
+description: Planner webhook resource support must be checked independently from expiration limits and callback validation.
 ---
 For the production Planner webhook resource, Graph returned HTTP 400 on 2026-10-12 with “Subscription expiration can only be 4230 minutes in the future.” Do not trust a seven-day comment or requested expiration as evidence of a working subscription.
 
@@ -13,3 +13,9 @@ Do not infer that a new release failed from unchanged subscription errors; requi
 **Why:** After the corrected release on 2026-10-16, production retained the old seven-day-expiration errors. The next scheduled time passed with a node-cron missed-execution warning and no subscription changes. A working release and webhook handshake did not establish that recovery had actually run.
 
 **How to apply:** Compare persisted attempt timestamps to the release, check recovery logs, and use an authenticated administrative recovery path rather than waiting indefinitely for the four-hour schedule. Never count a synthetic validation handshake as real inbound-delivery verification.
+
+Planner plan webhooks are not a supported basis for production inbound synchronization. Do not keep treating subscription retry or a different expiration as the solution to an unsupported resource.
+
+**Why:** On 2026-10-21, confirmed post-release startup recovery reached Graph for all three eligible production connections. With the expiration issue removed, Graph rejected `/planner/plans/{id}` with “Invalid subscription resource. Subscribe with a supported resource pattern.” Microsoft's supported-resources documentation did not list Planner plans or tasks. Callback validation returned 200 despite subscription rejection.
+
+**How to apply:** Recheck Microsoft's current [supported change-notification resources](https://learn.microsoft.com/en-us/graph/change-notifications-overview#supported-resources) before promising Planner webhooks. Prefer a supported periodic inbound-read design unless documented support changes; beta Planner delta queries are a separate capability, not evidence of webhook support. Preserve mappings and require explicit approval for any real Planner task edit used to verify inbound synchronization.
