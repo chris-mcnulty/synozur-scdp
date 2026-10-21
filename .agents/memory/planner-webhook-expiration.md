@@ -25,3 +25,9 @@ The user approved scheduled inbound checks as the replacement for unsupported we
 **Why:** Production proved that successful publishing, startup recovery, and callback validation could not produce a supported Planner subscription. Repeating those attempts cannot validate inbound functionality.
 
 **How to apply:** Use supported reads of existing mapped tasks, preserve conflict handling and mappings, and distinguish completed checks from actual imported changes. Periodic checks run only while the application is running; do not promise an uninterrupted five-minute delivery guarantee on an autoscaling deployment. Live acceptance still needs observed polling results and an explicitly approved real task change, not fabricated webhook evidence.
+
+The polling interval is not an upper bound on delivery latency, even while the application is awake.
+
+**Why:** Live verification showed a large project's sequential reads delaying subsequent connections beyond the cron interval. A long check also logged a database client becoming non-queryable even though task changes and completion audit records had already persisted through other connections.
+
+**How to apply:** Bound work per connection and avoid retaining an idle database transaction across an unbounded remote-read loop. Verify lock/transaction completion separately from successful per-task writes and audits. Trace real changes to their actual audit action: scheduled conflict reconciliation can import a remote edit independently of the dedicated inbound reader, so that action alone does not prove the dedicated reader handled it.

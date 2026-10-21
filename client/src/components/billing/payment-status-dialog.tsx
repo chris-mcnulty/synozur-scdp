@@ -70,6 +70,8 @@ export function PaymentStatusDialog({
 }: PaymentStatusDialogProps) {
   const { toast } = useToast();
   const totals = calculateInvoiceTotals(batch);
+  const recordedAmount = batch.paymentAmount?.toString();
+  const defaultPaymentAmount = recordedAmount?.trim() ? recordedAmount : totals.gross.toFixed(2);
   const money = (value: number) => `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const form = useForm<PaymentUpdateFormData>({
@@ -77,7 +79,7 @@ export function PaymentStatusDialog({
     defaultValues: {
       paymentStatus: batch.paymentStatus,
       paymentDate: batch.paymentDate || '',
-      paymentAmount: batch.paymentAmount?.toString() || '',
+      paymentAmount: defaultPaymentAmount,
       paymentNotes: batch.paymentNotes || '',
     },
   });
@@ -95,17 +97,17 @@ export function PaymentStatusDialog({
       form.reset({
         paymentStatus: batch.paymentStatus,
         paymentDate: batch.paymentDate || '',
-        paymentAmount: batch.paymentAmount?.toString() ?? '',
+        paymentAmount: defaultPaymentAmount,
         paymentNotes: batch.paymentNotes || '',
       });
     }
-  }, [open, batch, form]);
+  }, [open, batch, form, defaultPaymentAmount]);
 
   const selectPaymentStatus = (status: PaymentUpdateFormData["paymentStatus"]) => {
     if (status === "paid" && form.getValues("paymentStatus") !== "paid") {
-      // Only a deliberate status selection prefills; opening an existing receipt
-      // must never replace its recorded amount/date, even if historically wrong.
-      if (!form.getFieldState("paymentAmount").isDirty) {
+      // A paid-in-full selection defaults to gross unless the user entered a
+      // nonempty override. Opening a receipt preserves its saved amount/date.
+      if (!form.getFieldState("paymentAmount").isDirty || !form.getValues("paymentAmount")?.trim()) {
         form.setValue("paymentAmount", totals.gross.toFixed(2));
       }
       if (!form.getValues("paymentDate")) {
@@ -238,7 +240,7 @@ export function PaymentStatusDialog({
             <div className="flex justify-between"><dt>Tax</dt><dd>{money(totals.tax)}</dd></div>
             <div className="flex justify-between font-semibold"><dt>Total including tax</dt><dd>{money(totals.gross)}</dd></div>
           </dl>
-          {batch.paymentStatus === "paid" && batch.paymentAmount != null &&
+          {batch.paymentStatus === "paid" && !!recordedAmount?.trim() &&
             Math.abs(Number(batch.paymentAmount) - totals.gross) >= 0.01 && (
             <p role="status" className="mt-3 text-sm text-amber-700">
               Recorded cash received ({money(Number(batch.paymentAmount))}) differs from the invoice total.

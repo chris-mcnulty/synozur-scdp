@@ -106,6 +106,33 @@ try {
   }
 
   const base = { batchId: "PARTIAL", totalAmount: 1000, taxAmount: 100, status: "finalized", paymentStatus: "unpaid" };
+  // Amount defaults must work on opening the payment form, not only when
+  // changing a radio selection. Saved receipt amounts must never be inferred away.
+  for (const paymentStatus of ["paid", "partial"]) {
+    for (const paymentAmount of [undefined, null, ""]) {
+      await show({ ...base, batchId: `EMPTY-${paymentStatus}-${String(paymentAmount)}`, paymentStatus, paymentAmount });
+      assert.equal(await amount(), "1100.00", `${paymentStatus}: missing amount defaults to tax-inclusive total`);
+      assert.equal(await page.$('[role="status"]'), null, "An absent receipt amount is not reported as recorded zero cash");
+      await page.click('[data-testid="button-cancel-payment"]');
+    }
+  }
+  for (const paymentAmount of ["300.00", "0.00"]) {
+    await show({ ...base, batchId: `RECORDED-${paymentAmount}`, paymentStatus: "paid", paymentAmount });
+    assert.equal(await amount(), paymentAmount, "Opening a recorded receipt preserves its cash amount");
+    await page.click('[data-testid="button-cancel-payment"]');
+  }
+  await show({ ...base, batchId: "NEW-PARTIAL" });
+  await page.click('label[for="partial"]');
+  assert.equal(await amount(), "1100.00", "A new payment defaults to the full gross amount");
+  await fill('[data-testid="input-payment-amount"]', "");
+  await page.click('label[for="paid"]');
+  assert.equal(await amount(), "1100.00", "Selecting paid fills a deliberately cleared amount");
+  await fill('[data-testid="input-payment-amount"]', "987.65");
+  await page.click('label[for="partial"]');
+  await page.click('label[for="paid"]');
+  assert.equal(await amount(), "987.65", "A nonempty deliberate amount is preserved");
+  await page.click('[data-testid="button-cancel-payment"]');
+
   await show(base);
   await page.click('label[for="partial"]');
   await fill('[data-testid="input-payment-amount"]', "501.23");
@@ -143,7 +170,7 @@ try {
   assert.equal(await amount(), "501.23", "Reopening discards unsaved edits");
   assert.equal(await page.$eval<HTMLInputElement, []>('[data-testid="input-payment-date"]', el => el.value), "2024-02-29");
   assert.deepEqual(errors, []);
-  console.log(`Invoice payment browser regression passed (${paymentFixtures.length} gross fixtures, save/reopen, explicit amount/date, partial, failure, batch switching).`);
+  console.log(`Invoice payment browser regression passed (${paymentFixtures.length} gross fixtures, empty paid/partial defaults, saved receipt preservation, cleared fields, save/reopen, explicit amount/date, partial, failure, batch switching).`);
 } catch (error) {
   console.error("Invoice payment browser failure:", error, "Page errors:", errors);
   throw error;

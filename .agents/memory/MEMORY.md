@@ -8,6 +8,7 @@
 - [Verify prod build freshness](prod-build-freshness.md) — curl the live endpoint before claiming prod behavior; stale builds mimic "feature broken" when it's just not deployed
 - [Planner conflict policy](planner-conflict-policy.md) — last-write-wins is mandatory for every tenant; never restore a per-tenant stale-push fallback
 - [Contractor payment settlement invariants](contractor-payment-settlement.md) — match under invoice locks; settlement date follows the latest covering payment and must react to edits
+- [Invoice payment defaults](invoice-payment-defaults.md) — suggest the full tax-inclusive amount for empty payment forms, without rewriting saved receipts or manual overrides.
 - [Commercial buckets are additive](commercial-buckets-additive.md) — baseline terms are not a bucket; configured buckets are optional additions and must never be seeded per client in migrations
 - [Time approval transition atomicity](time-approval-transition-atomicity.md) — validate after row locks and roll back unless every selected entry transitions
 - [Remote provisioning checkpoints](remote-provisioning-checkpoints.md) — persist each remote resource ID before dependent local writes; retries must repair mappings from checkpoints, never recreate resources
