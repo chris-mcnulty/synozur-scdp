@@ -20,6 +20,7 @@ export interface SnapshotLineItem {
   adjustedHours: string;
   totalAmount: string;
   totalCost: string | null;
+  fixedCostOverride?: string | null;
   margin: string | null;
   marginPercent: string | null;
   comments: string | null;
@@ -194,6 +195,7 @@ export class EstimateVersionService {
       adjustedHours: li.adjustedHours,
       totalAmount: li.totalAmount,
       totalCost: li.totalCost,
+      fixedCostOverride: li.fixedCostOverride,
       margin: li.margin,
       marginPercent: li.marginPercent,
       comments: li.comments,
@@ -344,7 +346,7 @@ export class EstimateVersionService {
 
     const lineItemFields: (keyof SnapshotLineItem)[] = [
       "description", "baseHours", "factor", "rate", "size", "complexity",
-      "confidence", "adjustedHours", "totalAmount", "totalCost", "margin",
+      "confidence", "adjustedHours", "totalAmount", "totalCost", "fixedCostOverride", "margin",
       "marginPercent", "category", "workstream", "week", "resourceName",
       "roleId", "comments",
     ];

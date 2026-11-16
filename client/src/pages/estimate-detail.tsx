@@ -27,6 +27,7 @@ import { useEffectiveRates } from "@/hooks/useEffectiveRates";
 import { useGenerateEstimateNarrative, useAIStatus } from "@/lib/ai";
 import { ProgramEstimateView } from "@/components/ProgramEstimateView";
 import { EstimateCrmPanel } from "@/components/estimates/estimate-crm-panel";
+import { FixedCostEditor } from "@/components/estimates/fixed-cost-editor";
 import { ClientSignoffPanel } from "@/components/client-signoff-panel";
 
 const EPIC_COLORS = [
@@ -1507,7 +1508,10 @@ function EstimateDetailContent() {
         return next;
       });
       toast({ title: "Line item updated successfully" });
-    }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not update line item", description: error.message, variant: "destructive" });
+    },
   });
 
   const deleteLineItemMutation = useMutation({
@@ -5206,6 +5210,13 @@ function EstimateDetailContent() {
                                   </div>
                                   {canViewCostMargins && (
                                     <>
+                                      <FixedCostEditor
+                                        value={item.fixedCostOverride ?? null}
+                                        disabled={!isEditable || updateLineItemMutation.isPending}
+                                        onSave={fixedCostOverride => updateLineItemMutation.mutate({
+                                          itemId: item.id, data: { fixedCostOverride },
+                                        })}
+                                      />
                                       <div className="flex justify-between text-sm">
                                         <span className="text-muted-foreground">Cost:</span>
                                         <span className="font-medium">${Number(item.totalCost || 0).toFixed(2)}</span>

@@ -837,6 +837,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   factor: decimal("factor", { precision: 10, scale: 2 }).notNull().default(sql`1`), // Multiplier (e.g., 4 interviews × 3 hours)
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Charge rate (customer-facing)
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate (internal cost)
+  fixedCostOverride: decimal("fixed_cost_override", { precision: 10, scale: 2 }), // Fixed line total, independent of effort and contingency
   assignedUserId: varchar("assigned_user_id").references(() => users.id), // User assigned to this line item
   roleId: varchar("role_id").references(() => roles.id), // Generic role assigned (alternative to specific user)
   resourceName: text("resource_name"), // Name of assigned resource (denormalized for display)
@@ -2782,7 +2783,9 @@ export const insertEstimateSchema = createInsertSchema(estimates).omit({
   status: estimateStatusEnum.optional(), // Validate status using enum
 });
 
-export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({
+export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems, {
+  fixedCostOverride: z.string().regex(/^\d{1,8}(\.\d{1,2})?$/, "Enter a non-negative amount with at most two decimal places").nullable().optional(),
+}).omit({
   id: true,
   createdAt: true,
 });

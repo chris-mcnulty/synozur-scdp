@@ -34,6 +34,7 @@ import type { IStorage } from "./index";
 import { eq, desc, and, or, sql, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { placeholderClient } from "./helpers";
+import { estimateLineCost } from "@shared/estimate-cost";
 
 export const estimatesMethods: ThisType<IStorage> = {
   async getEstimates(includeArchived: boolean = false, tenantId?: string | null): Promise<(Estimate & { client: Client; project?: Project })[]> {
@@ -266,6 +267,7 @@ export const estimatesMethods: ThisType<IStorage> = {
           factor: originalLineItem.factor,
           rate: originalLineItem.rate,
           costRate: originalLineItem.costRate,
+          fixedCostOverride: originalLineItem.fixedCostOverride,
           assignedUserId: originalLineItem.assignedUserId,
           roleId: originalLineItem.roleId,
           resourceName: originalLineItem.resourceName,
@@ -531,9 +533,9 @@ export const estimatesMethods: ThisType<IStorage> = {
   async createEstimateLineItem(insertLineItem: InsertEstimateLineItem): Promise<EstimateLineItem> {
     // Calculate margin if both rate and costRate are provided
     let marginData: any = {};
-    if (insertLineItem.rate && insertLineItem.costRate && insertLineItem.adjustedHours) {
-      const totalAmount = Number(insertLineItem.adjustedHours) * Number(insertLineItem.rate);
-      const totalCost = Number(insertLineItem.adjustedHours) * Number(insertLineItem.costRate);
+    if (insertLineItem.fixedCostOverride != null || (insertLineItem.rate && insertLineItem.costRate && insertLineItem.adjustedHours)) {
+      const totalAmount = Number(insertLineItem.totalAmount);
+      const totalCost = estimateLineCost(insertLineItem);
       const margin = totalAmount - totalCost;
       const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
       
@@ -562,9 +564,11 @@ export const estimatesMethods: ThisType<IStorage> = {
     const adjustedHours = updateLineItem.adjustedHours !== undefined ? updateLineItem.adjustedHours : currentItem.adjustedHours;
     const totalAmount = updateLineItem.totalAmount !== undefined ? updateLineItem.totalAmount : currentItem.totalAmount;
     
-    if (rate && costRate && adjustedHours) {
-      const calcTotalAmount = Number(adjustedHours) * Number(rate);
-      const totalCost = Number(adjustedHours) * Number(costRate);
+    const fixedCostOverride = updateLineItem.fixedCostOverride !== undefined
+      ? updateLineItem.fixedCostOverride : currentItem.fixedCostOverride;
+    if (fixedCostOverride != null || 'fixedCostOverride' in updateLineItem || (rate && costRate && adjustedHours)) {
+      const calcTotalAmount = Number(totalAmount);
+      const totalCost = estimateLineCost({ fixedCostOverride, adjustedHours, costRate });
       const margin = calcTotalAmount - totalCost;
       const marginPercent = calcTotalAmount > 0 ? (margin / calcTotalAmount) * 100 : 0;
       
@@ -604,6 +608,9 @@ export const estimatesMethods: ThisType<IStorage> = {
     
     if (!originalItem) {
       throw new Error("Line item not found");
+    }
+    if (originalItem.fixedCostOverride != null) {
+      throw new Error("Remove the fixed cost override before splitting this line, then allocate the fixed cost explicitly between the new lines.");
     }
 
     // Calculate adjusted hours and total amounts for each new item

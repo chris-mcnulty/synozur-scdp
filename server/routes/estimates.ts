@@ -69,6 +69,7 @@ async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, sta
 // Individual employee setting takes precedence over role configuration
 // Role is a fallback used in estimates when specific staffing isn't decided
 export function isLineItemSalaried(item: any): boolean {
+  if (item.fixedCostOverride != null) return false;
   if (item.assignedUser) {
     // Specific person assigned - use only their individual salaried setting
     return item.assignedUser.isSalaried === true;
@@ -243,7 +244,7 @@ function filterSensitiveData(data: any, userRole: string): any {
 
   if (!canViewCostMargins && data) {
     // Remove sensitive financial fields for Project Managers and Employees
-    const sensitiveFields = ['costRate', 'totalCost', 'margin', 'marginPercent'];
+    const sensitiveFields = ['costRate', 'fixedCostOverride', 'totalCost', 'margin', 'marginPercent'];
 
     if (Array.isArray(data)) {
       return data.map(item => {
@@ -2097,6 +2098,9 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       if (!estimate) {
         return res.status(404).json({ message: "Estimate not found" });
       }
+      if ('fixedCostOverride' in req.body && !['admin', 'executive'].includes((req.user as any)?.role)) {
+        return res.status(403).json({ message: "Only cost-authorized users can change a fixed cost" });
+      }
 
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
 
@@ -2136,6 +2140,15 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
   app.patch("/api/estimates/:estimateId/line-items/:id", requireAuth, async (req, res) => {
     try {
+      const targetEstimate = await storage.getEstimate(req.params.estimateId);
+      const targetItem = await storage.getEstimateLineItem(req.params.id);
+      const tenantId = (req.user as any)?.activeTenantId || (req.user as any)?.tenantId || (req.user as any)?.primaryTenantId;
+      if (!targetEstimate || targetEstimate.tenantId !== tenantId || !targetItem || targetItem.estimateId !== req.params.estimateId) {
+        return res.status(404).json({ message: "Estimate line not found" });
+      }
+      if ('fixedCostOverride' in req.body && !['admin', 'executive'].includes((req.user as any)?.role)) {
+        return res.status(403).json({ message: "Only cost-authorized users can change a fixed cost" });
+      }
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
 
@@ -2981,7 +2994,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         const totalCost = updatedLineItems.reduce((sum, item) => {
           const costRate = Number(item.costRate || 0);
           const hours = Number(item.adjustedHours || 0);
-          return sum + (costRate * hours);
+          return sum + Number(item.totalCost || 0);
         }, 0);
         const totalMargin = totalFees - totalCost;
         const overallMarginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
@@ -4982,6 +4995,9 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   const normalizeEstimateLineItemPayload = (data: any): any => {
     const normalized = { ...data };
 
+    if (normalized.fixedCostOverride != null) {
+      normalized.fixedCostOverride = String(normalized.fixedCostOverride).trim();
+    }
     const decimalFields = ['baseHours', 'factor', 'rate', 'costRate', 'totalAmount', 'totalCost', 'margin', 'marginPercent', 'adjustedHours'];
 
     for (const field of decimalFields) {
@@ -6041,6 +6057,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           adjustedHours: sli.adjustedHours,
           totalAmount: sli.totalAmount,
           totalCost: sli.totalCost,
+          fixedCostOverride: sli.fixedCostOverride,
           margin: sli.margin,
           marginPercent: sli.marginPercent,
           comments: sli.comments,
