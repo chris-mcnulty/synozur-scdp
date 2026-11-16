@@ -31,3 +31,11 @@ The polling interval is not an upper bound on delivery latency, even while the a
 **Why:** Live verification showed a large project's sequential reads delaying subsequent connections beyond the cron interval. A long check also logged a database client becoming non-queryable even though task changes and completion audit records had already persisted through other connections.
 
 **How to apply:** Bound work per connection and avoid retaining an idle database transaction across an unbounded remote-read loop. Verify lock/transaction completion separately from successful per-task writes and audits. Trace real changes to their actual audit action: scheduled conflict reconciliation can import a remote edit independently of the dedicated inbound reader, so that action alone does not prove the dedicated reader handled it.
+
+## Approved Planner inbound approach
+
+Use scheduled supported Graph reads for Planner inbound updates, rather than requiring Planner plan webhook subscriptions.
+
+**Why:** After the lifetime/recovery fixes were published, Graph rejected Planner plan subscriptions as unsupported. The operator explicitly approved replacing them with scheduled inbound checks. The approved production progress-and-restoration test on 2026-10-21 confirmed incoming status changes through scheduled reconciliation and an `inbound_pull` audit, not webhook delivery.
+
+**How to apply:** Accept correlated remote edits, production assignment changes, and inbound audits as polling evidence; never label them `webhook_received` evidence. Preserve mappings and planned dates, obtain approval for exact live edits (including completion timestamp changes), and do not infer a five-minute delivery guarantee from the scheduler cadence.
