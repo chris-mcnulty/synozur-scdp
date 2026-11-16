@@ -1,4 +1,6 @@
 /generated-artifacts/
+/deliverables/
+/.agents/agent_assets_metadata.toml
 node_modules
 dist
 .DS_Store

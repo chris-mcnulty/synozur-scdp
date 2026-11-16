@@ -1,4 +1,6 @@
 /generated-artifacts/
+/deliverables/
+/.agents/agent_assets_metadata.toml
 
 # Offline operator inputs and scratch output must not ship.
 /private-inputs/
