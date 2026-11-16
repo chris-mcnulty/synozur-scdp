@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation } from "wouter";
 import { 
@@ -51,6 +51,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "constellation-sidebar-sections-v2";
+// Page-level Layout instances remount on navigation. Keep the menu position
+// outside the component so selecting a page does not reset the navigation.
+let sidebarScrollTop = 0;
 
 function SubGroupLabel({ label }: { label: string }) {
   return (
@@ -170,6 +173,22 @@ function saveSectionState(state: Record<string, boolean>) {
 }
 
 export function Sidebar() {
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const viewport = scrollAreaRef.current?.querySelector<HTMLDivElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (!viewport) return;
+    viewport.scrollTop = sidebarScrollTop;
+    const rememberPosition = () => {
+      sidebarScrollTop = viewport.scrollTop;
+    };
+    viewport.addEventListener("scroll", rememberPosition, { passive: true });
+    return () => {
+      rememberPosition();
+      viewport.removeEventListener("scroll", rememberPosition);
+    };
+  }, []);
   const { hasAnyRole, isPlatformAdmin } = useAuth();
   const [location] = useLocation();
   
@@ -208,7 +227,7 @@ export function Sidebar() {
   
   return (
     <aside className="hidden lg:flex lg:flex-col w-64 bg-card border-r border-border h-[calc(100vh-73px)] sticky top-[73px]" data-testid="sidebar">
-      <ScrollArea className="flex-1">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0">
         <div className="px-4 py-2">
           <nav className="space-y-1">
             <CollapsibleSection
