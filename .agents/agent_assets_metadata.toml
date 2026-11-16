@@ -79,3 +79,17 @@ mtime_ms = 1791840887748
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:fe536eef-aa4a-4f38-9444-a53b449002d7/cd71a1de-e2c0-4910-a8ad-6d24188dea76/2b7cdfca-e47b-4897-80df-c2e6f1028564"
 storage_version_token = "1791840903304477"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "U4A0Fdc1Z-ik14f5Ioh4v"
+uri = "file://deliverables/masshousing/MassHousing-Good-estimate.csv"
+type = "table"
+title = "MassHousing-Good-estimate.csv"
+description = "Validated GOOD-only estimate: 372 Synozur delivery hours plus one OUTCOME fixed-fee allowance; total $166,600. Internal material."
+logical_id = "3cadf4ac-1237-4ba8-8040-c56cf012d134"
+content_hash = "sha256:b294d6adb3cdb7183d21e7df5b22934f1abfda131beb39429225bb159993e5ad"
+size = 8264
+mtime_ms = 1794794361482
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:fe536eef-aa4a-4f38-9444-a53b449002d7/3cadf4ac-1237-4ba8-8040-c56cf012d134/7ed2db48-b3d7-47dd-b0a5-d4929e62904f"
+storage_version_token = "1794794389355898"
+content_type = "text/csv"
