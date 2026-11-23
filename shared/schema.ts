@@ -1989,6 +1989,52 @@ export const statusReports = pgTable("status_reports", {
   tenantIdx: index("idx_status_reports_tenant").on(table.tenantId),
 }));
 
+export const reportSchedules = pgTable("report_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  ownerId: varchar("owner_id").notNull().references(() => users.id),
+  config: jsonb("config").$type<import("./report-scheduling").ReportScheduleConfig>().notNull(),
+  paused: boolean("paused").notNull().default(false),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+  lastResult: text("last_result"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const reportScheduleRuns = pgTable("report_schedule_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  scheduleId: varchar("schedule_id").notNull().references(() => reportSchedules.id),
+  scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  config: jsonb("config").$type<import("./report-scheduling").ReportScheduleConfig>().notNull(),
+  status: text("status").notNull().default("queued"),
+  reportId: varchar("report_id").references(() => statusReports.id, { onDelete: "set null" }),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedContent: text("approved_content"),
+  leaseToken: text("lease_token"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [uniqueIndex("report_run_occurrence").on(t.scheduleId, t.scheduledFor)]);
+export const reportDeliveries = pgTable("report_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  runId: varchar("run_id").notNull().references(() => reportScheduleRuns.id, { onDelete: "cascade" }),
+  recipientId: varchar("recipient_id").notNull().references(() => users.id),
+  email: text("email").notNull(),
+  status: text("status").notNull().default("pending"),
+  lastError: text("last_error"),
+  providerMessageId: text("provider_message_id"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+}, t => [uniqueIndex("report_delivery_recipient").on(t.runId, t.recipientId)]);
+export type ReportSchedule = typeof reportSchedules.$inferSelect;
+export type ReportScheduleRun = typeof reportScheduleRuns.$inferSelect;
+export type ReportDelivery = typeof reportDeliveries.$inferSelect;
+
 export const statusReportsRelations = relations(statusReports, ({ one }) => ({
   project: one(projects, { fields: [statusReports.projectId], references: [projects.id] }),
   tenant: one(tenants, { fields: [statusReports.tenantId], references: [tenants.id] }),

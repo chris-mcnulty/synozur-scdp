@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Clock, Play, CheckCircle, XCircle, AlertCircle, Loader2, Calendar, Mail, RefreshCw, History, GitBranch } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { AdminReportSchedules } from "@/components/project/report-schedules";
 
 interface ScheduledJobRun {
   id: string;
@@ -122,7 +123,7 @@ function getTriggerBadge(triggeredBy: string) {
 
 export default function ScheduledJobsPage() {
   const { toast } = useToast();
-  const { isPlatformAdmin } = useAuth();
+  const { isPlatformAdmin, user } = useAuth();
   const [selectedJobType, setSelectedJobType] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -320,6 +321,7 @@ export default function ScheduledJobsPage() {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="history">Run History</TabsTrigger>
+            {(isPlatformAdmin || user?.role === "admin") && <TabsTrigger value="report-schedules">Status Reports</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -604,6 +606,11 @@ export default function ScheduledJobsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+          {(isPlatformAdmin || user?.role === "admin") && (
+            <TabsContent value="report-schedules" className="space-y-4">
+              <AdminReportSchedules />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </Layout>

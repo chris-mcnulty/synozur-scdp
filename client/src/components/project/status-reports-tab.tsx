@@ -22,6 +22,7 @@ import {
 import type { StatusReport } from "@shared/schema";
 import { ClientSignoffPanel, type ClientSignoff } from "@/components/client-signoff-panel";
 import { format } from "date-fns";
+import { ReportSchedules } from "@/components/project/report-schedules";
 
 interface StatusReportMetadata {
   projectName?: string;
@@ -662,6 +663,10 @@ export function StatusReportsTab({ projectId }: StatusReportsTabProps) {
           )}
         </CardContent>
       </Card>
+
+      {!embedReadonly && ["admin", "pm", "portfolio-manager"].includes(user?.role ?? "") && (
+        <ReportSchedules projectId={projectId} />
+      )}
 
       <ReportViewerDialog
         report={viewingReport}

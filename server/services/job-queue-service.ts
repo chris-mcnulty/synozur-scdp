@@ -7,6 +7,7 @@ export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type JobType =
   | 'pdf.invoice.generate'
   | 'ai.statusReport.generate'
+  | 'statusReport.scheduled'
   | 'ai.executiveNarrative.generate'
   | 'teams.provision'
   | 'planner.task.pull';

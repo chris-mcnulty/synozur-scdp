@@ -4,6 +4,7 @@
 - [Assignment commercial policy](assignment-commercial-policy.md) — optional planning metadata is independent of time review and Planner edits; signed-source scheduling requires review.
 - [Payroll module integration pattern](payroll-integration.md) — routes import storage modules directly, not via the storage singleton; IStorage interface still needs explicit declarations
 - [Status report period scoping](status-report-period-scoping.md) — "completed" needs an explicit end date bounded both ends in-period; count header + list must share one predicate; PM context leads accomplishments
+- [Status report delivery safety](status-report-delivery-safety.md) — uncertain email outcomes block replay; client-facing schedules never inherit cached internal PM context.
 - [Bulk date-shift (push out) pattern](bulk-date-shift-pattern.md) — deliverables/assignments reschedule via anchor + day-delta ({ids[], deltaDays}), never per-row absolute dates
 - [Migration runner & seeds](migration-runner-seeds.md) — seed-named migrations are repeatable and must be idempotent; "marked applied" ≠ data landed; platform rows need the partial unique index
 - [Expenses are pass-through, never margin](expenses-pass-through.md) — expense reimbursements are tracked for billing reconciliation but excluded from all cost/profit/margin math; only fees count

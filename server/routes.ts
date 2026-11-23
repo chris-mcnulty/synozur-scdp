@@ -60,6 +60,7 @@ import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerEmbedRoutes } from "./routes/embed.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerReportScheduleRoutes } from "./routes/report-schedules.js";
 import { registerRevenueRoutes } from "./routes/revenue.js";
 import { registerGalaxyV1Routes } from "./routes/galaxy/v1/index.js";
 import { enqueueGalaxyEvent } from "./services/galaxy-webhook-delivery.js";
@@ -603,6 +604,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     // Inline project endpoints below in this file are dead duplicates pending
     // cleanup — projects.ts handles them as of this commit.
     registerProjectRoutes(app, { requireAuth, requireRole, upload, sharePointFileStorage });
+    registerReportScheduleRoutes(app, requireAuth);
     registerSupportRoutes(app, { requireAuth, requireRole });
     registerResourcePlanningRoutes(app, { requireAuth, requireRole });
     registerJobRoutes(app, { requireAuth, requireRole });

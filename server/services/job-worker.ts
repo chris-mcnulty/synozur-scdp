@@ -204,7 +204,10 @@ function schedulePoll(delayMs: number) {
 async function runPoll() {
   if (!workerStarted) return;
   try {
+    const { enqueueDueReportSchedules, reconcileFailedReportJobs } = await import("./report-schedule-store");
+    await enqueueDueReportSchedules();
     await processNextJob();
+    await reconcileFailedReportJobs();
     if (consecutiveInfrastructureFailures > 0) {
       console.log('[JOB-WORKER] Database/worker polling recovered');
     }
@@ -249,6 +252,10 @@ export function stopJobWorker() {
 function registerHandlers() {
   registerJobHandler('pdf.invoice.generate', handlePdfInvoiceGenerate);
   registerJobHandler('ai.statusReport.generate', handleAiStatusReportGenerate);
+  registerJobHandler('statusReport.scheduled', async (job, context) => {
+    const { executeScheduledReport } = await import("./report-schedule-runner");
+    return executeScheduledReport(job, context);
+  });
   registerJobHandler('ai.executiveNarrative.generate', handleAiExecutiveNarrativeGenerate);
   registerJobHandler('teams.provision', handleTeamsProvision);
   registerJobHandler('planner.task.pull', handlePlannerTaskPull);
@@ -364,18 +371,14 @@ async function handleAiStatusReportGenerate(job: BackgroundJob, context: JobExec
     maxTokens: number;
   };
 
-  const { aiService } = await import('./ai-service.js');
+  const { generateStatusReportContent } = await import('./status-report-generation.js');
   const { storage } = await import('../storage.js');
 
   context.assertActive();
   const project = await storage.getProject(projectId);
   if (!project) throw new Error(`Project ${projectId} not found`);
 
-  const result = await aiService.customPrompt(systemPrompt, userMessage, {
-    temperature: 0.6,
-    maxTokens,
-    usageCtx: { tenantId, userId, feature: 'status_report' as any },
-  });
+  const result = await generateStatusReportContent({ systemPrompt, userMessage, maxTokens, tenantId, userId });
 
   context.assertActive();
   const savedReport = await storage.createStatusReport({

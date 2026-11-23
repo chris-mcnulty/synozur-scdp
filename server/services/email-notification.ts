@@ -48,41 +48,48 @@ interface EmailAttachment {
   disposition?: string;
 }
 
-interface SendEmailOptions {
+export interface SendEmailOptions {
   to: EmailRecipient;
   subject: string;
   body: string;
   attachments?: EmailAttachment[];
 }
 
+export class EmailDeliveryError extends Error {
+  constructor(message: string, public readonly ambiguous: boolean) { super(message); }
+}
+
+export function escapeReportEmail(text: string) {
+  return escapeHtml(text).replace(/\n/g, "<br/>");
+}
+
 export class EmailNotificationService {
+  /** Strict delivery path: acceptance is recorded, rejection is never hidden. */
+  async sendEmailStrict({ to, subject, body, attachments }: SendEmailOptions): Promise<{ messageId: string | null }> {
+    let connection: Awaited<ReturnType<typeof getUncachableSendGridClient>>;
+    try { connection = await getUncachableSendGridClient(); }
+    catch { throw new EmailDeliveryError("Email connection unavailable. Reconnect SendGrid, then retry.", false); }
+    try {
+      const [response] = await connection.client.send({
+        to: to.email, from: { email: connection.fromEmail, name: "Constellation (SCDP)" },
+        subject, html: body, ...(attachments?.length ? { attachments } : {}),
+      });
+      return { messageId: response.headers?.["x-message-id"]?.toString() || null };
+    } catch (error: any) {
+      const code = Number(error?.code || error?.response?.statusCode);
+      const rejected = code >= 400 && code < 500;
+      throw new EmailDeliveryError(rejected
+        ? `Email provider rejected delivery (${code}). Check recipient and provider configuration, then retry.`
+        : "Email acceptance is unknown. Check the email provider delivery log before taking further action; automatic retry is blocked.", !rejected);
+    }
+  }
   /**
    * Send an email using SendGrid API
    * From address is configured in the SendGrid connection (donotreply@synozur.com)
    */
   async sendEmail({ to, subject, body, attachments }: SendEmailOptions): Promise<void> {
     try {
-      const { client, fromEmail } = await getUncachableSendGridClient();
-
-      const msg: Record<string, unknown> = {
-        to: to.email,
-        from: {
-          email: fromEmail,
-          name: 'Constellation (SCDP)'
-        },
-        subject,
-        html: body
-      };
-      if (attachments && attachments.length > 0) {
-        msg.attachments = attachments.map(a => ({
-          content: a.content,
-          filename: a.filename,
-          type: a.type,
-          disposition: a.disposition ?? 'attachment',
-        }));
-      }
-
-      await client.send(msg as unknown as Parameters<typeof client.send>[0]);
+      await this.sendEmailStrict({ to, subject, body, attachments });
       
       console.log(`[EMAIL] Sent email via SendGrid to ${to.email}: ${subject}`);
     } catch (error) {
