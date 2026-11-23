@@ -21,6 +21,7 @@ export interface SnapshotLineItem {
   totalAmount: string;
   totalCost: string | null;
   fixedCostOverride?: string | null;
+  isSalaried?: boolean;
   margin: string | null;
   marginPercent: string | null;
   comments: string | null;
@@ -55,6 +56,8 @@ export interface SnapshotHeader {
   referralFeeFlat: string | null;
   referralFeeAmount: string | null;
   netRevenue: string | null;
+  costCurrency?: string;
+  targetEffortHours?: string | null;
 }
 
 export interface SnapshotMultipliers {
@@ -166,6 +169,8 @@ export class EstimateVersionService {
       referralFeeFlat: estimate.referralFeeFlat,
       referralFeeAmount: estimate.referralFeeAmount,
       netRevenue: estimate.netRevenue,
+      costCurrency: estimate.costCurrency,
+      targetEffortHours: estimate.targetEffortHours,
     };
 
     const multipliers: SnapshotMultipliers = {
@@ -196,6 +201,7 @@ export class EstimateVersionService {
       totalAmount: li.totalAmount,
       totalCost: li.totalCost,
       fixedCostOverride: li.fixedCostOverride,
+      isSalaried: li.assignedUser ? li.assignedUser.isSalaried === true : li.role?.isAlwaysSalaried === true,
       margin: li.margin,
       marginPercent: li.marginPercent,
       comments: li.comments,

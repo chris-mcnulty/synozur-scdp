@@ -8,6 +8,7 @@ import { enqueueGalaxyEvent } from "../services/galaxy-webhook-delivery.js";
 import { eq, sql, inArray, max, and, isNull } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 import { RateResolver } from "../rate-resolver";
+import { registerEstimateIntelligenceRoutes } from "./estimate-intelligence";
 
 
 async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, status: string, amount?: string | null) {
@@ -287,6 +288,7 @@ interface EstimateRouteDeps {
 
 export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   const { requireAuth, requireRole } = deps;
+  registerEstimateIntelligenceRoutes(app, requireAuth);
 
   // Non-blocking Teams channel provisioning for new estimates
   function fireTeamsProvisioning(req: Request, estimateId: string, estimateName: string) {

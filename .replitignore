@@ -15,6 +15,7 @@
 /server-output.log
 /batch-summary.png
 /file-list-check.png
+/generated-artifacts/
 /unreachable_app.png
 
 # Do NOT exclude uploads here: current local-file storage still needs it.

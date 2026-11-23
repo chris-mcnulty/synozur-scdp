@@ -11,8 +11,10 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "npx tsx scripts/db-migrate.ts",
     "test": "npm run test:unit && npm run test:browser",
-    "test:unit": "tsx tests/run.ts && npm run test:planner-subscriptions && npm run test:invoice-payment && npm run test:estimate-fixed-cost",
+    "test:unit": "tsx tests/run.ts && npm run test:planner-subscriptions && npm run test:invoice-payment && npm run test:estimate-fixed-cost && npm run test:estimate-intelligence",
     "test:estimate-fixed-cost": "vitest run --config tests/estimate-fixed-cost.vitest.config.ts",
+    "test:estimate-intelligence": "vitest run --config tests/estimate-intelligence.vitest.config.ts",
+    "test:estimate-intelligence-ui": "tsx tests/estimate-intelligence.browser.ts",
     "test:invoice-payment": "vitest run --config tests/invoice-payment.vitest.config.ts",
     "test:invoice-payment-ui": "tsx tests/invoice-payment.browser.ts",
     "test:planner-subscriptions": "vitest run --config tests/planner-subscription.vitest.config.ts",
@@ -21,7 +23,7 @@
     "test:documentation": "tsx tests/documentation.browser.ts",
     "test:repository": "tsx tests/repository-policy.spec.ts",
     "test:background-jobs": "tsx tests/background-jobs.browser.ts",
-    "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts && npm run test:background-jobs && npm run test:invoice-payment-ui"
+    "test:browser": "tsx tests/project-time-workbench.browser.ts && tsx tests/calendar-suggestions.browser.ts && tsx tests/time-grid-bucket.browser.ts && npm run test:background-jobs && npm run test:invoice-payment-ui && npm run test:estimate-intelligence-ui"
   },
   "dependencies": {
     "@azure/msal-node": "^3.7.3",

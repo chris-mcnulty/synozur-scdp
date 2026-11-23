@@ -28,6 +28,7 @@ import { useGenerateEstimateNarrative, useAIStatus } from "@/lib/ai";
 import { ProgramEstimateView } from "@/components/ProgramEstimateView";
 import { EstimateCrmPanel } from "@/components/estimates/estimate-crm-panel";
 import { FixedCostEditor } from "@/components/estimates/fixed-cost-editor";
+import { EstimateIntelligencePanel } from "@/components/estimates/estimate-intelligence-panel";
 import { ClientSignoffPanel } from "@/components/client-signoff-panel";
 
 const EPIC_COLORS = [
@@ -1178,6 +1179,9 @@ function EstimateDetailContent() {
   });
 
   const { user, canViewCostMargins } = useAuth();
+  const { data: activeTenantContext } = useQuery<{ activeTenantId?: string }>({
+    queryKey: ["/api/auth/tenants"],
+  });
 
   const { data: epics = [], error: epicsError } = useQuery<EstimateEpic[]>({
     queryKey: ['/api/estimates', id, 'epics'],
@@ -3212,6 +3216,13 @@ function EstimateDetailContent() {
             clientId={estimate.clientId}
             clientName={estimateClient.name}
             totalFees={estimate.totalFees}
+          />
+        )}
+
+        {estimate && id && user && ["admin", "billing-admin", "executive", "pm", "portfolio-manager"].includes(user.role) && !isSharedReadOnly && (
+          <EstimateIntelligencePanel
+            key={`${estimate.id}:${activeTenantContext?.activeTenantId ?? user.primaryTenantId ?? "tenant-unset"}:${user.id}:${user.role}`}
+            estimateId={estimate.id}
           />
         )}
 
