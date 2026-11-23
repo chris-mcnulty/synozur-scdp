@@ -1,4 +1,5 @@
 - [Fixed partner cost and contingency](estimate-fixed-cost-policy.md) — fixed commitments are independent of selling-price risk factors; preserve deliberate contingency when correcting costs.
+- [Forecast planning semantics](forecast-planning-semantics.md) — bookings and billing dates do not establish delivery; unclassified CRM amounts require service-only confirmation.
 - [Private business deliverables](private-business-deliverables.md) — client estimates, internal pricing, and generated asset metadata must stay out of the open-source repository.
 - [Assignment commercial policy](assignment-commercial-policy.md) — optional planning metadata is independent of time review and Planner edits; signed-source scheduling requires review.
 - [Payroll module integration pattern](payroll-integration.md) — routes import storage modules directly, not via the storage singleton; IStorage interface still needs explicit declarations

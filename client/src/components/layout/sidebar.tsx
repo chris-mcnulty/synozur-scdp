@@ -282,6 +282,7 @@ export function Sidebar() {
                 <SidebarItem href="/estimates" icon={<FileText />} label="Estimates" />
                 <SubGroupLabel label="Pipeline" />
                 <SidebarItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm", "portfolio-manager"]} />
+                <SidebarItem href="/financials/forecast" icon={<TrendingUp />} label="Revenue Forecast" requiredRoles={["admin", "executive"]} />
               </CollapsibleSection>
             )}
             
@@ -321,6 +322,7 @@ export function Sidebar() {
                 <SidebarItem href="/invoice-report" icon={<FileText />} label="Invoice Report" />
                 <SidebarItem href="/client-revenue-report" icon={<Building2 />} label="Client Revenue" />
                 <SidebarItem href="/financials/revenue" icon={<TrendingUp />} label="Revenue Recognition" requiredRoles={["admin", "billing-admin", "executive"]} />
+                <SidebarItem href="/financials/forecast" icon={<TrendingUp />} label="Revenue Forecast" requiredRoles={["billing-admin"]} />
                 <SidebarItem href="/financials/profitability" icon={<BarChart3 />} label="Profitability" requiredRoles={["admin", "billing-admin", "executive", "pm", "portfolio-manager"]} />
                 <SubGroupLabel label="Approvals" />
                 <SidebarItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" />

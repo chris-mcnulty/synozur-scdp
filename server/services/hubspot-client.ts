@@ -93,6 +93,60 @@ async function getAccessTokenForTenant(tenantId: string): Promise<string> {
   return refreshTokenIfNeeded(tenantId);
 }
 
+export interface HubSpotForecastDeal {
+  id: string;
+  name: string;
+  amount: string | null;
+  currency: string | null;
+  probability: number | null;
+  closeDate: string | null;
+  companyId: string | null;
+  closed: boolean | null;
+  won: boolean | null;
+  stageName: string;
+}
+
+// Dedicated read path: no probability threshold, no zero/default currency
+// fallback, and no writes to CRM. Basic pagination avoids Search's 10k cap.
+export async function getHubSpotForecastDeals(tenantId: string): Promise<HubSpotForecastDeal[]> {
+  const client = await getHubSpotClient(tenantId);
+  const pipelines = await client.crm.pipelines.pipelinesApi.getAll("deals");
+  const stages = new Map(pipelines.results.flatMap(p => p.stages.map(s => [
+    `${p.id}:${s.id}`, s,
+  ] as const)));
+  const results: HubSpotForecastDeal[] = [];
+  let after: string | undefined;
+  const cursors = new Set<string>();
+  do {
+    const page = await client.crm.deals.basicApi.getPage(100, after, [
+      "dealname", "amount", "deal_currency_code", "dealstage", "pipeline",
+      "closedate", "hs_is_closed", "hs_is_closed_won",
+    ], undefined, ["companies"], false);
+    for (const deal of page.results) {
+      const props = deal.properties;
+      const stage = stages.get(`${props.pipeline}:${props.dealstage}`);
+      const raw = (stage?.metadata as any)?.probability;
+      const probability = raw == null || String(raw).trim() === "" ? null : Number(raw);
+      const booleanValue = (value: unknown) => value === "true" || value === true ? true
+        : value === "false" || value === false ? false : null;
+      results.push({
+        id: deal.id, name: props.dealname || "Untitled deal", amount: props.amount ?? null,
+        currency: props.deal_currency_code ?? null,
+        probability: probability != null && Number.isFinite(probability) && probability >= 0 && probability <= 1 ? probability : null,
+        closeDate: props.closedate ?? null,
+        companyId: deal.associations?.companies?.results?.[0]?.id ?? null,
+        closed: booleanValue(props.hs_is_closed) ?? booleanValue((stage?.metadata as any)?.isClosed),
+        won: booleanValue(props.hs_is_closed_won) ?? booleanValue((stage?.metadata as any)?.closedWon),
+        stageName: stage?.label || props.dealstage || "Unknown stage",
+      });
+    }
+    after = page.paging?.next?.after;
+    if (after && cursors.has(after)) throw new Error("HubSpot pagination repeated; forecast refresh is incomplete");
+    if (after) cursors.add(after);
+  } while (after);
+  return [...new Map(results.map(deal => [deal.id, deal])).values()];
+}
+
 export interface HubSpotDealStage {
   id: string;
   label: string;

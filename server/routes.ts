@@ -41,6 +41,7 @@ import { registerUserRoutes } from "./routes/users.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerReportsRoutes } from "./routes/reports.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
+import { registerRevenueForecastRoutes } from "./routes/revenue-forecast.js";
 import { registerPlannerRoutes } from "./routes/planner.js";
 import { registerTeamsAutomationRoutes } from "./routes/teams-automation.js";
 import { registerClientRoutes } from "./routes/clients.js";
@@ -586,6 +587,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     registerTenantRoutes(app, { requireAuth, requireRole, requirePlatformAdmin, sharePointFileStorage });
     registerReportsRoutes(app, { requireAuth, requireRole, sharePointFileStorage });
     registerAnalyticsRoutes(app, { requireAuth, requireRole });
+    registerRevenueForecastRoutes(app, { requireAuth, requireRole });
     registerPlannerRoutes(app, { requireAuth, requireRole });
     registerTeamsAutomationRoutes(app, { requireAuth, requireRole });
     registerClientRoutes(app, { requireAuth, requireRole, sharePointFileStorage });

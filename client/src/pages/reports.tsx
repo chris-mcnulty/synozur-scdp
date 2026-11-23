@@ -15,6 +15,7 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, Area, AreaChart, X
 import { format, subMonths, startOfMonth } from "date-fns";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 import type { Client, UnbilledItemsResponse } from "@shared/schema";
 
 // Color palette for charts
@@ -1567,6 +1568,12 @@ function Reports() {
       </Card>
 
       {/* Report Tabs */}
+      {hasAnyRole(["admin", "billing-admin", "executive"]) && (
+        <Link href="/financials/forecast" className="mb-4 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/[0.04] px-4 py-3 transition-colors hover:bg-primary/[0.08]">
+          <span><span className="block text-sm font-semibold">Revenue forecast</span><span className="mt-0.5 block text-xs text-muted-foreground">Forward view of commitments, delivery timing, and weighted pipeline</span></span>
+          <span className="text-sm font-medium text-primary">Open forecast</span>
+        </Link>
+      )}
       <Tabs value={reportType} onValueChange={setReportType}>
         <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="portfolio" data-testid="tab-portfolio">

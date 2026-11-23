@@ -477,6 +477,22 @@ export const tenantSettings = pgTable("tenant_settings", {
 export type TenantSetting = typeof tenantSettings.$inferSelect;
 export type InsertTenantSetting = typeof tenantSettings.$inferInsert;
 
+// Forecast-only planning assumptions never mutate source commercial records.
+export const revenueForecastAssumptions = pgTable("revenue_forecast_assumptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  sourceKind: text("source_kind").notNull(),
+  sourceId: text("source_id").notNull(),
+  deliveryStart: varchar("delivery_start", { length: 7 }).notNull(),
+  deliveryEnd: varchar("delivery_end", { length: 7 }).notNull(),
+  serviceAmount: decimal("service_amount", { precision: 14, scale: 2 }),
+  note: text("note").notNull(),
+  updatedBy: varchar("updated_by").notNull().references(() => users.id),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, table => ({
+  sourceUnique: uniqueIndex("uq_revenue_forecast_source").on(table.tenantId, table.sourceKind, table.sourceId),
+}));
+
 // Airport Codes - IATA 3-letter airport codes (system-wide, no tenant scoping)
 export const airportCodes = pgTable("airport_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

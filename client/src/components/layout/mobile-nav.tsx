@@ -313,6 +313,7 @@ export function MobileNav() {
                     <MobileNavItem href="/estimates" icon={<FileText />} label="Estimates" onClick={handleNavClick} />
                     <MobileSubGroupLabel label="Pipeline" />
                     <MobileNavItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm", "portfolio-manager"]} onClick={handleNavClick} />
+                    <MobileNavItem href="/financials/forecast" icon={<TrendingUp />} label="Revenue Forecast" requiredRoles={["admin", "executive"]} onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
               )}
@@ -328,6 +329,7 @@ export function MobileNav() {
                   >
                     <MobileSubGroupLabel label="Billing" />
                     <MobileNavItem href="/billing" icon={<DollarSign />} label="Billing & Invoicing" onClick={handleNavClick} />
+                    <MobileNavItem href="/financials/forecast" icon={<TrendingUp />} label="Revenue Forecast" requiredRoles={["billing-admin"]} onClick={handleNavClick} />
                     <MobileNavItem href="/invoice-report" icon={<FileText />} label="Invoice Report" onClick={handleNavClick} />
                     <MobileNavItem href="/client-revenue-report" icon={<Building2 />} label="Client Revenue" onClick={handleNavClick} />
                     <MobileSubGroupLabel label="Expenses" />

@@ -90,6 +90,7 @@ import PayrollAchOriginator from "@/pages/payroll-ach-originator";
 import Distributions from "@/pages/distributions";
 import FinancialsRevenue from "@/pages/financials-revenue";
 import FinancialsProfitability from "@/pages/financials-profitability";
+import RevenueForecastPage from "@/pages/revenue-forecast";
 import DistributionRunDetail from "@/pages/distribution-run-detail";
 import MyPaystubs from "@/pages/my-paystubs";
 import MyPaystubDetail from "@/pages/my-paystub-detail";
@@ -401,6 +402,13 @@ function Router() {
         {user ? (
           <PermissionGuard allowedRoles={["admin", "billing-admin", "executive", "pm", "portfolio-manager"]}>
             <FinancialsProfitability />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/financials/forecast">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "billing-admin", "executive"]}>
+            <RevenueForecastPage />
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
