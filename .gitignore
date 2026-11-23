@@ -27,4 +27,5 @@ attached_assets/
 /server-output.log
 /batch-summary.png
 /file-list-check.png
+/generated-artifacts/
 /unreachable_app.png
