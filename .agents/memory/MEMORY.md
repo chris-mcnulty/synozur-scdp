@@ -22,6 +22,7 @@
 - [Authenticated browser mocks](authenticated-browser-mocks.md) — full-page API mocks need valid shapes for always-mounted widgets; generic arrays can crash unrelated UI
 - [Required grid selectors](required-grid-selectors.md) — an empty controlled Radix Select in a grid cell can close before its choice callback; defer cancellation to preserve the selection
 - [Session recovery policy](session-recovery-policy.md) — endpoint 401s are not proof of expiration; recover in place and preserve credentials during validation outages.
+- [Entra certificate rotation](entra-certificate-rotation.md) — verify production non-secret thumbprint settings as well as secrets; live callback errors establish the selected certificate.
 - [Estimate import approval](estimate-import-approval.md) — package approval is not production execution approval; resolve cost allocations before asking to apply.
 - [Planner webhook limits](planner-webhook-expiration.md) — Graph rejects Planner plan subscriptions; corrected expiry and successful callback validation do not establish resource support.
 - [Planner test safety](planner-production-verification.md) — reopening completed tasks changes read-only completion timestamps; restoring progress does not fully restore history.
