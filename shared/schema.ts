@@ -760,6 +760,8 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_projects_tenant").on(table.tenantId),
+  statusIdx: index("idx_projects_status").on(table.status),
+  tenantStatusIdx: index("idx_projects_tenant_status").on(table.tenantId, table.status),
   scratchCreationKeyIdx: uniqueIndex("uq_projects_tenant_scratch_creation_key")
     .on(table.tenantId, table.scratchCreationKey)
     .where(sql`${table.scratchCreationKey} is not null`),
@@ -1312,6 +1314,9 @@ export const timeEntries = pgTable("time_entries", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_time_entries_tenant").on(table.tenantId),
+  tenantDateIdx: index("idx_time_entries_tenant_date").on(table.tenantId, table.date.desc()),
+  personDateIdx: index("idx_time_entries_person_date").on(table.personId, table.date.desc()),
+  projectIdx: index("idx_time_entries_project").on(table.projectId),
   submissionStatusIdx: index("idx_time_entries_submission_status").on(table.submissionStatus),
 }));
 
@@ -1934,6 +1939,7 @@ export const sows = pgTable("sows", {
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 }, (table) => ({
   // Ensure only one approved or pending initial SOW per project
+  projectStatusIdx: index("idx_sows_project_status").on(table.projectId, table.status),
   uniqueInitialSow: uniqueIndex("unique_initial_sow_per_project")
     .on(table.projectId)
     .where(sql`${table.type} = 'initial' AND ${table.status} IN ('approved', 'pending')`),
@@ -2001,7 +2007,10 @@ export const reportSchedules = pgTable("report_schedules", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, t => [
+  index("report_schedules_due").on(t.nextRunAt)
+    .where(sql`${t.paused} = false AND ${t.deletedAt} IS NULL`),
+]);
 export const reportScheduleRuns = pgTable("report_schedule_runs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
@@ -2019,7 +2028,10 @@ export const reportScheduleRuns = pgTable("report_schedule_runs", {
   leaseToken: text("lease_token"),
   lastError: text("last_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, t => [uniqueIndex("report_run_occurrence").on(t.scheduleId, t.scheduledFor)]);
+}, t => [
+  uniqueIndex("report_run_occurrence").on(t.scheduleId, t.scheduledFor),
+  index("report_runs_tenant").on(t.tenantId, t.projectId, t.createdAt),
+]);
 export const reportDeliveries = pgTable("report_deliveries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id),

@@ -12,7 +12,14 @@ The custom SQL migration runner once dropped any statement that *began with* a `
 - `drizzle-kit push` (run by dev tooling and post-merge reconciliation) DROPS any table/index not declared in `shared/schema.ts`. The `_schema_migrations` tracker and the partial unique index are declared there for this reason — never remove them from the Drizzle schema.
 
 **Why:** "migration marked applied" is not proof its data landed — verify rows when debugging missing seed data. And a vanished tracker table means push wiped it, not that migrations never ran.
-**How to apply:** new seed files must include "seed" in the filename and be fully idempotent; production only heals on republish (build runs db:migrate).
+**How to apply:** new seed files must include "seed" in the filename and be fully idempotent. Do not assume a publish replays seed data: managed production schema changes belong to Publish, and data changes need separate approved handling.
+
+## Publish owns managed production schema
+Do not run the SQL migration utility in the publishing build or at application startup.
+
+**Why:** Build-time table creation can succeed before Publish applies its previously computed CREATE TABLE statements. The publish then fails on objects that now exist, even though compilation passed.
+
+**How to apply:** Keep build commands free of database mutations, synchronize development from the canonical schema, and let Publish calculate a fresh production diff. Declare required performance indexes in the canonical schema so synchronization preserves them.
 
 ## Import ledgers must survive schema synchronization
 Treat import-run and per-row ledgers as durable operational data, not disposable staging tables. Tables created by approved import scripts must also be represented in the canonical application schema and development database.

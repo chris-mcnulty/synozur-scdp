@@ -1,7 +1,9 @@
 /**
  * db-migrate.ts — idempotent schema migration runner
  *
- * Replaces `drizzle-kit push` in the deployment build step.
+ * Local/operator migration utility, NOT a deployment build step.
+ * Replit Publish owns managed production schema synchronization. Running this
+ * utility during a build races Publish's already-computed schema diff.
  *
  * Why not `drizzle-kit push`?
  *   push generates plain CREATE TABLE (no IF NOT EXISTS) and fails when a table
