@@ -7,6 +7,7 @@ import type { Plugin } from "vite";
 export function documentationAssets(projectRoot: string): Plugin {
   const guides = ["SCDP-User-Guide.md", "SCDP-Administrator-Guide.md"];
   const assets = new Map<string, string>();
+  assets.set("/docs/RELEASE_2_8.md", path.join(projectRoot, "docs", "RELEASE_2_8.md"));
   for (const guide of guides) {
     const source = path.join(projectRoot, "docs", "user-guide", guide);
     assets.set(`/docs/user-guide/${guide}`, source);

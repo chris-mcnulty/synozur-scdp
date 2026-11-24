@@ -1,7 +1,21 @@
 # Constellation Product Backlog
 
-**Last Updated**: May 25, 2026
-**Version**: 7.3 — Added Contractor Invoice Ingestion (Accounts Payable) v1 to Recently Completed: full inbound AP workflow with AI vision extraction, candidate-based reconciliation against logged time and expenses, and atomic posting of actual cost to project margin. Profit reads across the platform now prefer `actualCostAmount` (from posted vendor invoices) over rate-card estimates. v7.2 carried Status reconciliation on Teams Integration Phase 2 and Project Creation UX Enhancement.
+**Last Updated**: November 23, 2026
+**Backlog Revision**: 7.4 — Product release 2.8 alignment. Backlog revisions are not application versions.
+
+## Integrated in source — product release 2.8
+
+- [x] Revenue Forecast: tenant-scoped finance/leadership service-delivery planning,
+  separate bookings/currencies, CRM deduplication and shared source assumptions.
+- [x] Historical estimate intelligence: deterministic advisory comparisons from
+  accessible completed projects, effort evidence and role-filtered cost signals.
+- [x] Scheduled status reports: timezone-aware weekly/monthly generation,
+  review-first or explicit auto-send, saved history and safe per-recipient retries.
+
+See [workflows, permissions, setup and limitations](docs/RELEASE_2_8.md).
+Integrated does not mean published. Alternate forecast scenarios, portfolio-wide
+accuracy analytics, provider-evidence reconciliation and recurring PPTX are not
+claimed complete. Existing unrelated statuses below have not been revalidated.
 
 ---
 
@@ -441,7 +455,7 @@ Note: AP-side `glBillNumber` export (previously tracked at line 141 as a v2.6.x 
 - [x] Financial-comparison report SQL aggregation rewrite (Task #117, v2.5) ✅
 - [ ] Client contribution analysis and rankings
 - [ ] Service line revenue breakdown
-- [ ] Revenue forecasting based on pipeline
+- [x] Revenue forecasting based on pipeline — v2.8 service-delivery planning; no FX, cash-flow or accounting recognition
 - [ ] Estimate vs Actual accuracy metrics (portfolio-wide)
 - [ ] Variance analysis by project type, client, team member
 - [ ] Interactive dashboard with drill-down
@@ -560,7 +574,7 @@ Invoice PDF files stored in SharePoint/object storage are never removed when a b
 - [ ] Receipt OCR with auto-extraction and category prediction
 - [ ] Weekly time entry suggestions based on patterns
 - [ ] Anomaly and duplicate detection
-- [ ] Estimate intelligence: similar project suggestions, risk identification
+- [x] Estimate intelligence: comparable completed projects and evidence-backed risk signals — v2.8, advisory only
 
 ### MCP Server (Model Context Protocol) ✅ COMPLETE
 **Completed:** March 2026 (v1.7) — See "Recently Completed" section above.
@@ -572,7 +586,7 @@ Invoice PDF files stored in SharePoint/object storage are never removed when a b
 - [ ] SPE file storage for PPTX reports (currently saved to DB only)
 - [ ] Bulk delete option for cleaning up older drafts
 - [ ] Auto-archive reports older than N months
-- [ ] Scheduled automatic report generation and email delivery
+- [x] Scheduled automatic report generation and email delivery — v2.8; review-first default, explicit auto-send
 
 ---
 
@@ -658,19 +672,22 @@ Invoice PDF files stored in SharePoint/object storage are never removed when a b
 
 ### Active Backlog by Priority
 
-| Priority | Items | Est. Effort |
-|----------|-------|-------------|
-| P1 - High | 3 active items (QBO, Teams Phase 3 + Planner Phase 2 webhook/multitenant, Codebase Modularization) | 18-24 weeks |
-| P2 - Important | 9 active items | 18-28 weeks |
-| P3 - AI/Automation | 2 items | 11-16 weeks |
-| P4 - Platform | 7 items | 34+ weeks |
+The previous numeric totals and effort rollups were stale and are retired.
+These are remaining areas, not counts of verified unfinished implementations:
+
+| Priority | Remaining areas |
+|----------|-----------------|
+| P1 - High | QBO deferred extensions (core phases shipped), Teams living updates/multitenant registration, modularization |
+| P2 - Important | Financial analytics beyond the delivered forecast; other unchecked feature sections |
+| P3 - AI/Automation | AI workflow ideas excluding delivered estimate intelligence; report storage/retention extensions excluding delivered scheduling |
+| P4 - Platform | Platform extensions below; historical duplicate sections are not a completion audit |
 
 ### Notes on Already Implemented Features (NOT in backlog)
 - ✅ Expense bulk upload with CSV/Excel
 - ✅ MFA via Azure Entra ID
 - ✅ Project and estimate milestones
 - ✅ Basic burn rate tracking
-- ✅ Estimate accuracy reporting
+- ✅ Estimate-level historical effort evidence (v2.8); portfolio-wide estimate accuracy remains open
 - ✅ Portfolio metrics
 - ✅ Time/expense import templates
 - ✅ Change order management

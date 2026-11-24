@@ -4,8 +4,10 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "docs:sync": "tsx scripts/sync-release-docs.ts --write",
+    "docs:check": "tsx scripts/sync-release-docs.ts",
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build": "npm run docs:check && vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "test:report-schedules": "vitest run --config tests/report-schedules.vitest.config.ts",

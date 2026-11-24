@@ -14,8 +14,10 @@ not replace narrative generation and makes no AI request. Deterministic findings
 work even when AI is unavailable; uploaded instructions are not executed or
 included in any authoritative prompt.
 
-Official guides, release communications, changelog, and application versioning
-are intentionally left to the separate release documentation work.
+This is the original feature handoff. Official guides, release communications,
+changelog and product identity are now aligned in
+[Planning & Reporting 2.8](../RELEASE_2_8.md); see the
+[combined verification record](../release-2-8-verification.md).
 
 ## Authorization and isolation
 

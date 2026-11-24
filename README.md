@@ -43,6 +43,22 @@ Constellation is also a first-class **Microsoft 365 Copilot** application, expos
 
 ## Documentation
 
+### Planning & Reporting — product release 2.8
+
+This integrated source release adds **Revenue Forecast** (finance/leadership,
+service-delivery planning with explainable CRM exclusions), **Historical estimate
+intelligence** (read-only comparable-project evidence, role-filtered costs), and
+**Scheduled status reports** (review-first recurring text/HTML email).
+See the [release workflows, permissions, setup, API and limitations](docs/RELEASE_2_8.md).
+It is not a declaration of production deployment or permission to send announcements.
+
+Product identity follows the changelog's major.minor releases, now fixed in
+`shared/release.ts`; the scaffold package and agent/protocol versions are separate.
+Edit canonical guides/changelog under `docs/`, run `npm run docs:sync` and
+`npm run docs:check`. The public mirrors feed the in-app guide, help assistant and
+What's New. `scripts/documentation-assets.ts` builds/serves the detailed guides
+and release reference. [Release-maintenance details](docs/RELEASE_2_8.md#documentation-and-release-maintenance).
+
 | Document | Description |
 |---|---|
 | [`docs/MCP_README.md`](docs/MCP_README.md) | MCP endpoint reference for Copilot integration |

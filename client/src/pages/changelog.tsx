@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
 import { History } from "lucide-react";
+import { PRODUCT_RELEASE } from "@shared/release";
 
 export default function Changelog() {
   const { data: content, isLoading } = useQuery<string>({
@@ -23,7 +24,7 @@ export default function Changelog() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Changelog</h1>
             <p className="text-xl text-muted-foreground">
-              Release history and version notes
+              Version {PRODUCT_RELEASE.version} — {PRODUCT_RELEASE.name}
             </p>
           </div>
         </div>

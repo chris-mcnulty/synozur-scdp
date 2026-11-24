@@ -3,6 +3,19 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import puppeteer from "puppeteer";
 
 const origin = process.env.TEST_APP_ORIGIN || "http://127.0.0.1:5000";
+for (const [url, source] of [
+  ["/USER_GUIDE.md", "docs/USER_GUIDE.md"],
+  ["/docs/USER_GUIDE.md", "docs/USER_GUIDE.md"],
+  ["/docs/CHANGELOG.md", "docs/CHANGELOG.md"],
+  ["/docs/RELEASE_2_8.md", "docs/RELEASE_2_8.md"],
+]) {
+  const expected = readFileSync(source, "utf8");
+  assert.equal(readFileSync(`dist/public${url}`, "utf8"), expected);
+  const response = await fetch(`${origin}${url}`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /text\/markdown/);
+  assert.equal(await response.text(), expected);
+}
 // Check the built assets, not just the dev-server routes, so publishing cannot
 // silently drop the guides again. Run npm run build first.
 for (const guide of ["SCDP-User-Guide.md", "SCDP-Administrator-Guide.md"]) {
@@ -75,7 +88,13 @@ try {
     void handle().catch((error) => failures.push(String(error)));
   });
   await page.setViewport({ width: 402, height: 874, isMobile: true, hasTouch: true });
+  await page.goto(`${origin}/user-guide`, { waitUntil: "networkidle0" });
+  await page.waitForFunction(() => document.body.textContent?.includes("Historical estimate intelligence"));
+  assert.ok(await page.$('a[href="/docs/RELEASE_2_8.md"]'));
+  await page.goto(`${origin}/changelog`, { waitUntil: "networkidle0" });
+  await page.waitForFunction(() => document.body.textContent?.includes("Version 2.8"));
   await page.goto(`${origin}/about`, { waitUntil: "networkidle0" });
+  assert.match(await page.$eval('[data-testid="badge-version"]', el => el.textContent || ""), /2\.8/);
   const trigger = '[data-testid="button-scdp-easter-egg"]';
   await page.waitForSelector(trigger);
   await page.tap(trigger);

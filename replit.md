@@ -4,6 +4,12 @@
 Constellation is a comprehensive platform for managing the entire consulting project lifecycle, from estimation and resource allocation to time tracking, expense management, and automated invoice generation. It aims to enhance efficiency, streamline operations, and support data-driven consulting practices through features like AI-powered narrative generation and automated expense calculations. The platform prioritizes improved file management, transparent quote displays, advanced resource capacity planning, and milestone-based invoice generation.
 
 ## Key Features Added
+- **Planning & Reporting 2.8**: Revenue forecast, historical estimate intelligence
+  and review-first scheduled status reports are integrated. See
+  `docs/RELEASE_2_8.md` for verified roles, assumptions, setup, API and limitations.
+  Product identity is `shared/release.ts`, not package/agent protocol versions.
+  Canonical guide/changelog edits require `npm run docs:sync` and `npm run docs:check`;
+  public mirrors power the in-app guide, AI help and What's New.
 - **Weekly Digest Emails**: Scheduled HTML digest emails for each user with open assignments, pending approvals, RAIDD items, upcoming milestones, PM project health, and personal time/expense status. Users can enable/disable, set preferred day and time via Notification Preferences. "Send me a preview" button triggers an immediate digest. Admins can run digests manually and view delivery stats from the Scheduled Jobs page.
   - Schema: `digest_sends` table (idempotency + delivery tracking), `weekly_digest_enabled/day/time` columns on `users`
   - Service: `server/services/weekly-digest-service.ts` (builder + HTML email renderer + sender)

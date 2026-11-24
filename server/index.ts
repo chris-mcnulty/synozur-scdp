@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction, type Express } from "exp
 import { createServer, type Server } from "http";
 import compression from "compression";
 import { setupVite, serveStatic, log } from "./vite";
+import { PRODUCT_RELEASE } from "../shared/release";
 
 const app = express();
 
@@ -527,7 +528,7 @@ async function updateVersionReleaseDate() {
     
     const { db } = await import('./db');
     const { sql } = await import('drizzle-orm');
-    const currentDate = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    const currentDate = PRODUCT_RELEASE.date;
     
     await db.execute(sql`
       INSERT INTO system_settings (setting_key, setting_value, description, setting_type) 
@@ -539,7 +540,7 @@ async function updateVersionReleaseDate() {
 
     await db.execute(sql`
       INSERT INTO system_settings (setting_key, setting_value, description, setting_type) 
-      VALUES ('VERSION_MAJOR', '1', 'Major version number for display purposes', 'string')
+      VALUES ('VERSION_MAJOR', ${PRODUCT_RELEASE.version.split(".")[0]}, 'Major version number for display purposes', 'string')
       ON CONFLICT (setting_key) 
       DO UPDATE SET 
         setting_value = EXCLUDED.setting_value

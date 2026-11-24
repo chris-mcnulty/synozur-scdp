@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PRODUCT_RELEASE } from "@shared/release";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { SystemSetting } from "@shared/schema";
@@ -58,21 +59,11 @@ export default function About() {
   const activeTenant = tenantsData?.tenants?.find(t => t.isActive);
 
   // Get version and company settings
-  const majorVersion = systemSettings.find((s: SystemSetting) => s.settingKey === 'VERSION_MAJOR')?.settingValue || '0';
-  const releaseDate = systemSettings.find((s: SystemSetting) => s.settingKey === 'VERSION_RELEASE_DATE')?.settingValue || new Date().toISOString().split('T')[0];
+  const releaseDate = PRODUCT_RELEASE.date;
   const companyName = systemSettings.find((s: SystemSetting) => s.settingKey === 'COMPANY_NAME')?.settingValue || 'Synozur Consulting Delivery Platform';
   
-  // Format version number (major.yyyy.mm.dd)
-  const formatVersionNumber = (major: string, dateStr: string) => {
-    const date = new Date(dateStr);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${major}.${year}.${month}.${day}`;
-  };
-
-  const versionNumber = formatVersionNumber(majorVersion, releaseDate);
-  const isProductionRelease = majorVersion !== '0';
+  const versionNumber = PRODUCT_RELEASE.version;
+  const isProductionRelease = environmentInfo?.isProduction === true;
   
   // Use backend-provided environment information
   const environment = environmentInfo?.environment || 'Development';

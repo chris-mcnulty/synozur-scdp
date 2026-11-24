@@ -17,6 +17,40 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 2.8 (November 23, 2026)
+
+**Release Date:** 2026-11-23
+**Status:** Integrated release candidate — deployment requires separate approval
+**Codename:** Planning & Reporting
+
+- **Revenue Forecast** — admins, billing admins and executives can review
+  service-delivery commitments and weighted HubSpot pipeline, with separate
+  bookings and currencies. Explainable exclusions prevent double-counting;
+  shared, attributed timing/service-only assumptions never rewrite source records.
+  No FX, accounting recognition, cash flow or margin is inferred.
+- **Historical estimate intelligence** — on-demand deterministic comparable-project
+  evidence in estimate detail. PMs see managed completed history; only admins and
+  executives see costs. Sparse evidence, provisional time and baseline limitations
+  are explicit. Advice never changes pricing, fixed costs or contingency.
+- **Scheduled status reports** — weekly/monthly timezone-aware schedules in the
+  project's Status Reports tab, review-before-send by default, explicit auto-send,
+  saved drafts, pause/resume/delete and per-recipient outcomes. Clients require
+  client-facing input. Safe retry skips accepted emails and blocks unknown
+  submissions; acceptance is not proof of inbox delivery. Tenant admins monitor
+  Scheduled Jobs → Status Reports.
+- **Documentation and identity** — synchronized public guides and release notes,
+  help-discoverable workflows and a fixed product version on About instead of
+  an identity that changes on every restart.
+
+See [setup, permissions, API and limitations](/docs/RELEASE_2_8.md).
+Apply both distinct forecast/scheduled-report additive migrations after merge.
+Historical reviews need no new schema. Recurring mail requires the existing
+AI/email configuration and worker. Scenario planning, provider-evidence
+reconciliation, scheduled PPTX and portfolio-wide estimate accuracy remain outside
+this release. Announcement copy is prepared but has not been sent or published.
+
+---
+
 ### Version 2.7 (June 5, 2026)
 
 **Release Date:** June 5, 2026

@@ -8,6 +8,7 @@ import { isQuickbooksConnected } from "../services/quickbooks-client.js";
 import { QBO_ASSISTANT_PROMPT, parseQboNeeds, runQboAssistantTool } from "../services/quickbooks-assistant.js";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
+import { readPublicDocumentation } from "../documentation";
 
 interface AiRouteDeps {
   requireAuth: any;
@@ -140,8 +141,7 @@ export function registerAiRoutes(app: Express, deps: AiRouteDeps) {
       const path = await import('path');
       let userGuideContent = '';
       try {
-        const guidePath = path.join(process.cwd(), 'client', 'public', 'docs', 'USER_GUIDE.md');
-        const fullGuide = fs.readFileSync(guidePath, 'utf-8');
+        const fullGuide = readPublicDocumentation("USER_GUIDE.md");
         const MAX_GUIDE_CHARS = 12000;
         if (fullGuide.length > MAX_GUIDE_CHARS) {
           const queryLower = validated.message.toLowerCase();

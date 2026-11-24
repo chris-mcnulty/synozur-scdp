@@ -56,7 +56,25 @@ Constellation empowers consulting organizations to deliver exceptional client va
 
 ## Recently Completed
 
-The following major features have been delivered and are live in production. See the [Changelog](/changelog) for detailed release notes.
+The following sections distinguish integrated source work from historical release
+records. Source integration is not proof of production deployment. See the
+[Changelog](/changelog) for release notes.
+
+### Integrated: Planning & Reporting (2.8)
+
+**Integrated:** November 23, 2026; deployment requires separate approval.
+- Revenue Forecast: committed/weighted service delivery, separate bookings and
+  currencies, source assumptions and CRM deduplication for finance/leadership.
+- Historical estimate intelligence: advisory evidence from accessible completed
+  work, with PM history restrictions and admin/executive-only cost findings.
+- Scheduled status reports: review-first weekly/monthly generation, explicit
+  auto-send, authorized recipients and durable per-recipient retry safeguards.
+- [Permissions, setup, API and limitations](/docs/RELEASE_2_8.md).
+
+Portfolio-wide accuracy analytics, alternate forecast scenarios, provider-evidence
+email reconciliation and recurring PPTX delivery remain outside this release.
+The dated priority sections below retain historical planning context; unrelated
+completion labels are not newly certified by this alignment.
 
 ### ✅ Galaxy Client Portal API
 **Completed:** May 2026 (v2.5)
@@ -455,14 +473,18 @@ The following major features have been delivered and are live in production. See
 - Full CRUD API with tenant isolation and project ownership enforcement
 - MCP endpoints for Copilot Agent access to saved reports
 
-#### Phase 2: Automated Scheduling (Future Enhancement)
+#### Phase 2: Automated Scheduling — Integrated in 2.8
 
 **Scheduled Report Delivery**
-- Project-level setting to enable automatic weekly or monthly reports
-- Configurable delivery day and recipients (PM, stakeholders, client contacts)
-- Reports auto-generated and emailed on schedule
-- Report history archive accessible from project detail page
-- Admin dashboard for monitoring scheduled report delivery across all projects
+- Project Status Reports tab: weekly/monthly schedule, local time and IANA timezone
+- Eligible manager/reviewer and authorized tenant/project recipients; client-facing style required for clients
+- Saved drafts with review-before-send default, explicit auto-send and safe retry
+- Run history and per-recipient outcomes; ambiguous submissions block replay
+- Tenant-admin monitoring in Scheduled Jobs → Status Reports
+
+See the [release reference](/docs/RELEASE_2_8.md) for setup and limits. Teams posts,
+SharePoint living updates, recurring PPTX and arbitrary external recipients are
+not delivered by this feature.
 
 ---
 
@@ -747,15 +769,17 @@ The following major features have been delivered and are live in production. See
 
 #### Planned Features
 
+Revenue forecasting based on pipeline is integrated in 2.8; see Recently Completed.
+
 **Annual Invoice Reporting (Remaining)**
 - Client contribution analysis and rankings
 - Service line revenue breakdown
 - Growth rate calculations and projections
-- Revenue forecasting based on pipeline
 - Seasonal trend analysis
 - Interactive dashboard with drill-down capabilities
 
 **Estimate vs. Actual Analytics**
+- Estimate-level historical intelligence is integrated in 2.8; it does not complete the portfolio-wide items below.
 - Portfolio-wide accuracy metrics
 - Variance analysis by project type, client, team member
 - Trend analysis over time with improvement tracking

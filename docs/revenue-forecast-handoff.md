@@ -47,4 +47,6 @@ The targeted migration was applied only to the development database. The normal 
 - Application restarted and public/auth-gated route rendered normally. The actual signed-in application screen was not verified through an authenticated session; the real forecast component was verified in the isolated browser harness. No live HubSpot account was modified.
 - Local application startup also reported an unrelated expired Microsoft/SharePoint certificate. Forecasting does not depend on that certificate; investigate separately if testing file uploads or Microsoft features.
 
-Release communication and version changes are intentionally left to the queued documentation/release task.
+This is the original feature verification handoff. Combined release documentation,
+communications and identity are now recorded in [Planning & Reporting 2.8](RELEASE_2_8.md)
+and the [combined verification record](release-2-8-verification.md).

@@ -1,13 +1,16 @@
 # SCDP User Guide
 ## Synozur Consulting Delivery Platform
 
-**Version:** 1.8  
-**Last Updated:** March 15, 2026  
+**Version:** 2.8
+
+**Last Updated:** November 23, 2026
 **Document Type:** Employee User Guide
 
 ---
 
 ## Table of Contents
+
+- [Planning & Reporting 2.8](#planning--reporting-28)
 
 1. [Getting Started](#1-getting-started)
 2. [User Roles & Permissions](#2-user-roles--permissions)
@@ -18,6 +21,29 @@
 7. [Getting Help](#7-getting-help)
 
 ---
+
+## Planning & Reporting 2.8
+
+- **Revenue Forecast**: Admins, billing admins and executives use
+  `/financials/forecast` for committed and weighted service delivery by currency,
+  separate from bookings. Confirm service-only CRM amounts and missing timing;
+  shared assumptions never rewrite contracts or CRM. No FX, cash flow, actual
+  revenue recognition or margin is inferred.
+- **Historical estimate intelligence**: Save edits, open the estimate's intelligence
+  review and request evidence. Admins, billing admins, executives, PMs and portfolio
+  managers can use it; PM history is limited to managed completed projects. Costs
+  are admin/executive only. Three usable effort pairs are required; sparse or
+  ambiguous evidence is disclosed. It is deterministic advice, not a price change.
+- **Scheduled status reports**: The assigned PM, portfolio manager or admin uses
+  Project → Status Reports to choose cadence, timezone, period, recipients and
+  reviewer. Review-before-send is default; inspect the saved draft and recipients
+  before confirming approval. Auto-send is explicit. Clients require client-facing
+  style. Pause/edit/delete schedules and inspect run details; unknown email
+  submissions cannot retry and accepted mail is not proof of delivery.
+
+Read the [complete workflows, role rules and limitations](/docs/RELEASE_2_8.md)
+before enabling recurring email. Older screenshots below illustrate earlier
+interfaces; use the current controls and the linked release workflows.
 
 ## 1. Getting Started
 
@@ -3625,8 +3651,9 @@ pandoc SCDP-User-Guide.md -o SCDP-User-Guide.docx \
 ## Document Information
 
 **Document Title:** SCDP User Guide  
-**Version:** 1.8  
-**Date:** March 15, 2026  
+**Version:** 2.8
+
+**Date:** November 23, 2026
 **Author:** Synozur Consulting  
 **Platform:** Synozur Consulting Delivery Platform (SCDP)  
 **Audience:** All SCDP users (Employees, Project Managers, Billing Admins, Executives, Administrators)

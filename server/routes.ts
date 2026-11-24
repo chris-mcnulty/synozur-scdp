@@ -68,26 +68,11 @@ import { enqueueGalaxyEvent } from "./services/galaxy-webhook-delivery.js";
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
 
-function resolveChangelogPath(): string {
-  try {
-    const candidates = [
-      pathNode.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md"),
-      pathNode.join(process.cwd(), "dist", "public", "docs", "CHANGELOG.md"),
-      pathNode.join(process.cwd(), "docs", "CHANGELOG.md"),
-    ];
-    for (const p of candidates) {
-      if (fsNode.existsSync(p)) return p;
-    }
-    return candidates[0];
-  } catch {
-    return "client/public/docs/CHANGELOG.md";
-  }
-}
+import { readPublicDocumentation } from "./documentation";
 
 function readChangelogContent(): string {
   try {
-    const changelogPath = resolveChangelogPath();
-    return fsNode.readFileSync(changelogPath, "utf-8");
+    return readPublicDocumentation("CHANGELOG.md");
   } catch {
     return "";
   }

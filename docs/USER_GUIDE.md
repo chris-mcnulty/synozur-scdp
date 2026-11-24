@@ -2,11 +2,15 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 2.2 | Last Updated: June 5, 2026
+Version 2.8 | Last Updated: November 23, 2026
 
 ---
 
 ## Table of Contents
+
+- [Revenue Forecast](#revenue-forecast)
+- [Historical estimate intelligence](#historical-estimate-intelligence)
+- [Scheduled status reports](#scheduled-status-reports)
 
 1. [Introduction](#introduction)
 2. [Getting Started](#getting-started)
@@ -33,6 +37,62 @@ Version 2.2 | Last Updated: June 5, 2026
 
 ---
 
+## Revenue Forecast
+
+Admins, billing admins and executives: open **Revenue Forecast**
+(`/financials/forecast`) from Reports/navigation. Select a client and 1–36 month
+range. Review committed service delivery, probability-weighted pipeline, separate
+bookings and exclusions in each currency. Save a source assumption with delivery
+months, a reason and a confirmed service-only CRM amount; reset restores source
+policy. Assumptions are shared within the tenant, never written back to CRM.
+
+Approved SOWs precede approved estimates and signed project fallbacks; linked CRM
+deals are excluded to avoid double-counting. Delivery is even over service months,
+not close dates or payment milestones. Missing timing/probability is unknown, not
+zero. Confirm CRM services exclude expenses. There is no FX conversion, actual
+revenue recognition, cash flow or margin calculation. Disconnected HubSpot means
+incomplete pipeline, not zero. [Full assumptions and limits](/docs/RELEASE_2_8.md).
+
+## Historical estimate intelligence
+
+Save estimate edits, then open **Open intelligence review → Review historical
+evidence** on the estimate detail page. Refresh explicitly when needed. Admins,
+billing admins, executives, PMs and portfolio managers can use it; PM evidence
+is limited to completed projects they manage. Only admins/executives see costs;
+read-only shares do not grant access to historical evidence.
+
+The review searches up to 200 recent accessible completed projects and shows up
+to ten comparables. Three usable baseline/actual effort pairs are required for
+evidence availability, not statistical certainty. It prefers approved estimate
+snapshots, discloses provisional time and missing inputs, and suppresses
+unsupported variance after change orders or ambiguous baselines. Costs are
+time-linked services, not total AP; expenses are excluded and currencies must
+match. Signals are advisory: no AI request or estimate/pricing/contingency changes
+occur. Results use saved inputs and are not stored as an audit record.
+[Evidence method and limitations](/docs/RELEASE_2_8.md).
+
+## Scheduled status reports
+
+In **Project → Status Reports → Scheduled status reports**, an active admin,
+portfolio manager or the assigned PM can create weekly/monthly schedules. Choose
+day, local time, IANA timezone, previous complete week/month, style, authorized
+recipients and eligible reviewer. Review-before-send is the default. The reviewer
+receives an in-app notification, opens **Review report**, edits the draft if
+needed, checks recipients, then confirms **Approve for delivery**. Automatic
+sending requires explicit opt-in. Edit, pause, resume and delete schedules here.
+
+Clients require client-facing style and project-client membership; arbitrary
+email addresses are not supported. Client-facing input excludes hidden RAIDD
+and cached internal PM notes. Only explicitly supplied schedule context is used.
+Recheck that context before enabling automatic sends. Completed/archived projects
+do not send. Run details show per-recipient outcomes; **Safe retry** retries
+known failures, not accepted emails. Unknown submissions block replay to prevent
+duplicates; ask an admin to inspect provider records. Accepted does not mean
+delivered to an inbox. These are saved text/HTML reports, not recurring PPTX.
+Missed periods are coalesced, DST gaps skipped, repeated times run once and
+short months use their last day. Admins monitor **Scheduled Jobs → Status Reports**.
+[Setup, permissions and delivery limits](/docs/RELEASE_2_8.md).
+
 ## Introduction
 
 ### What is Constellation?
@@ -42,6 +102,7 @@ Constellation is a comprehensive Consulting Delivery Platform designed to help o
 ### Key Features
 
 - **Project Management**: Complete project lifecycle from estimation to delivery
+- **Planning & Reporting 2.8**: Service-revenue forecasting, historical estimate evidence and review-first recurring reports; see the workflows above.
 - **Resource Allocation**: Assign team members to projects with role-based staffing
 - **Time & Expense Tracking**: Comprehensive time and expense management with approval workflows
 - **Financial Management**: Invoice generation, expense reimbursement, and financial reporting
@@ -134,8 +195,8 @@ The navigation menu adapts based on your role:
 
 #### Top Bar
 
-- **Search**: Quickly find projects, clients, or documents (coming soon)
-- **Notifications**: View alerts and updates (coming soon)
+- **Search**: Find accessible records and navigation destinations
+- **Notifications**: View alerts and updates from the notification bell
 - **Theme Toggle**: Switch between light and dark mode
 - **Profile Menu**: Access about, help, and logout options
 
@@ -1370,7 +1431,7 @@ Open it from the **Ask Constellation** button in the top header (or the floating
 - **This User Guide**: Overview and common tasks
 - **[Detailed User Guide](/docs/user-guide/SCDP-User-Guide.md)**: Comprehensive feature documentation
 - **[Administrator Guide](/docs/user-guide/SCDP-Administrator-Guide.md)**: System configuration and admin tasks
-- **[Changelog](CHANGELOG.md)**: Version history and release notes
+- **[Changelog](/changelog)**: Version history and release notes
 - **[Roadmap](ROADMAP.md)**: Planned features and future direction
 
 #### Support Channels
@@ -1493,7 +1554,8 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: June 5, 2026*  
-*Version: 2.2*  
+*Last Updated: November 23, 2026*
+
+*Version: 2.8*
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

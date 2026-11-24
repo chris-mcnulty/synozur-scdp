@@ -2,11 +2,15 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.6 | Last Updated: March 10, 2026
+Version 2.8 | Last Updated: November 23, 2026
 
 ---
 
 ## Table of Contents
+
+- [Revenue Forecast](#revenue-forecast)
+- [Historical estimate intelligence](#historical-estimate-intelligence)
+- [Scheduled status reports](#scheduled-status-reports)
 
 1. [Introduction](#introduction)
 2. [Getting Started](#getting-started)
@@ -17,15 +21,77 @@ Version 1.6 | Last Updated: March 10, 2026
 7. [AI-Powered Status Reports](#ai-powered-status-reports)
 8. [Portfolio Management](#portfolio-management)
 9. [User Roles](#user-roles)
-10. [Common Workflows](#common-workflows)
-11. [Microsoft 365 Integration](#microsoft-365-integration)
-12. [HubSpot CRM Integration](#hubspot-crm-integration)
-13. [Settings & Preferences](#settings--preferences)
-14. [Tips & Best Practices](#tips--best-practices)
-15. [Troubleshooting](#troubleshooting)
-16. [Detailed Documentation](#detailed-documentation)
+10. [Constellation Copilot Agent](#constellation-copilot-agent)
+11. [Microsoft Teams Custom Tab](#microsoft-teams-custom-tab)
+12. [Teams Channel Provisioning](#teams-channel-provisioning)
+13. [Executive Narrative Reporting](#executive-narrative-reporting)
+14. [Page Analytics](#page-analytics)
+15. [Navigation](#navigation)
+16. [Common Workflows](#common-workflows)
+17. [Microsoft 365 Integration](#microsoft-365-integration)
+18. [HubSpot CRM Integration](#hubspot-crm-integration)
+19. [Settings & Preferences](#settings--preferences)
+20. [Tips & Best Practices](#tips--best-practices)
+21. [Troubleshooting](#troubleshooting)
+22. [Detailed Documentation](#detailed-documentation)
 
 ---
+
+## Revenue Forecast
+
+Admins, billing admins and executives: open **Revenue Forecast**
+(`/financials/forecast`) from Reports/navigation. Select a client and 1–36 month
+range. Review committed service delivery, probability-weighted pipeline, separate
+bookings and exclusions in each currency. Save a source assumption with delivery
+months, a reason and a confirmed service-only CRM amount; reset restores source
+policy. Assumptions are shared within the tenant, never written back to CRM.
+
+Approved SOWs precede approved estimates and signed project fallbacks; linked CRM
+deals are excluded to avoid double-counting. Delivery is even over service months,
+not close dates or payment milestones. Missing timing/probability is unknown, not
+zero. Confirm CRM services exclude expenses. There is no FX conversion, actual
+revenue recognition, cash flow or margin calculation. Disconnected HubSpot means
+incomplete pipeline, not zero. [Full assumptions and limits](/docs/RELEASE_2_8.md).
+
+## Historical estimate intelligence
+
+Save estimate edits, then open **Open intelligence review → Review historical
+evidence** on the estimate detail page. Refresh explicitly when needed. Admins,
+billing admins, executives, PMs and portfolio managers can use it; PM evidence
+is limited to completed projects they manage. Only admins/executives see costs;
+read-only shares do not grant access to historical evidence.
+
+The review searches up to 200 recent accessible completed projects and shows up
+to ten comparables. Three usable baseline/actual effort pairs are required for
+evidence availability, not statistical certainty. It prefers approved estimate
+snapshots, discloses provisional time and missing inputs, and suppresses
+unsupported variance after change orders or ambiguous baselines. Costs are
+time-linked services, not total AP; expenses are excluded and currencies must
+match. Signals are advisory: no AI request or estimate/pricing/contingency changes
+occur. Results use saved inputs and are not stored as an audit record.
+[Evidence method and limitations](/docs/RELEASE_2_8.md).
+
+## Scheduled status reports
+
+In **Project → Status Reports → Scheduled status reports**, an active admin,
+portfolio manager or the assigned PM can create weekly/monthly schedules. Choose
+day, local time, IANA timezone, previous complete week/month, style, authorized
+recipients and eligible reviewer. Review-before-send is the default. The reviewer
+receives an in-app notification, opens **Review report**, edits the draft if
+needed, checks recipients, then confirms **Approve for delivery**. Automatic
+sending requires explicit opt-in. Edit, pause, resume and delete schedules here.
+
+Clients require client-facing style and project-client membership; arbitrary
+email addresses are not supported. Client-facing input excludes hidden RAIDD
+and cached internal PM notes. Only explicitly supplied schedule context is used.
+Recheck that context before enabling automatic sends. Completed/archived projects
+do not send. Run details show per-recipient outcomes; **Safe retry** retries
+known failures, not accepted emails. Unknown submissions block replay to prevent
+duplicates; ask an admin to inspect provider records. Accepted does not mean
+delivered to an inbox. These are saved text/HTML reports, not recurring PPTX.
+Missed periods are coalesced, DST gaps skipped, repeated times run once and
+short months use their last day. Admins monitor **Scheduled Jobs → Status Reports**.
+[Setup, permissions and delivery limits](/docs/RELEASE_2_8.md).
 
 ## Introduction
 
@@ -36,14 +102,17 @@ Constellation is a comprehensive Consulting Delivery Platform designed to help o
 ### Key Features
 
 - **Project Management**: Complete project lifecycle from estimation to delivery
+- **Planning & Reporting 2.8**: Service-revenue forecasting, historical estimate evidence and review-first recurring reports; see the workflows above.
 - **Resource Allocation**: Assign team members to projects with role-based staffing
 - **Time & Expense Tracking**: Comprehensive time and expense management with approval workflows
 - **Financial Management**: Invoice generation, expense reimbursement, and financial reporting
 - **Client Management**: Organize clients with custom vocabulary and branding
-- **Microsoft 365 Integration**: Seamless integration with Teams, Planner, SharePoint, and Azure AD
+- **Microsoft 365 Integration**: Seamless integration with Teams, Planner, SharePoint, and Azure AD — including Teams channel provisioning and embedded project tabs
+- **Executive Narrative Reporting**: AI-generated leadership summaries with PowerPoint export
 - **Role-Based Access**: Six-tier permission system tailored to your responsibilities
 - **HubSpot CRM Integration**: Connect your sales pipeline with project delivery
 - **Vocabulary Customization**: Use your organization's terminology throughout the platform
+- **Nebula Design System**: Modern visual experience with Aurora theme, glow effects, and animations
 
 ### Who Should Use This Guide?
 
@@ -126,8 +195,8 @@ The navigation menu adapts based on your role:
 
 #### Top Bar
 
-- **Search**: Quickly find projects, clients, or documents (coming soon)
-- **Notifications**: View alerts and updates (coming soon)
+- **Search**: Find accessible records and navigation destinations
+- **Notifications**: View alerts and updates from the notification bell
 - **Theme Toggle**: Switch between light and dark mode
 - **Profile Menu**: Access about, help, and logout options
 
@@ -241,6 +310,54 @@ The Dashboard is your central hub for tracking work and priorities.
 - Executive approval for expenses over $500
 - Approved expenses move to reimbursement processing
 - Monthly reimbursement batches via ACH or check
+
+### 3.5 Vendor Invoices (Accounts Payable)
+
+Constellation can ingest inbound invoices from subcontractors — for services (time billed) and reimbursable expenses — and reconcile them against the time entries and expenses you already have on file. Once approved and posted, the actual amount paid to a contractor flows into project margin reports in place of the rate-card cost estimate.
+
+**Who can use it.** PMs, billing admins, and admins can upload and review. Only billing admins and admins can approve, post, mark paid, or void.
+
+**Uploading a vendor invoice:**
+
+1. Go to **Financial → Accounts Payable → Vendor Invoices** in the sidebar.
+2. Click **Upload Invoice** and drop a PDF or image (PNG, JPG, HEIC).
+3. Optionally pick the vendor from the dropdown — if you skip it, Constellation tries to detect from the document; if it can't, a stub vendor record is created that you can promote later.
+4. The system extracts header fields (vendor name, invoice number, date, total, currency) and line items (services or expenses with kind, period, quantity, rate, amount) using AI vision and shows the result under **Needs Review**.
+
+> **PDF note (v1):** PDFs currently land in *Draft* status with no extracted lines — enter the line items by hand from the **Vendor Invoice Detail** screen. Image uploads (PNG / JPG / HEIC) are fully auto-extracted.
+
+**Reviewing & reconciling:**
+
+Open any invoice from the inbox to see the **split-pane reviewer screen**: the source document on the left, the extracted header plus each line on the right.
+
+For each `service` or `expense` line Constellation searches for likely source rows it can tie back to:
+
+- **Service lines** match against time entries logged by that vendor inside the line's date range, comparing hours and cost rate.
+- **Expense lines** match against logged expenses by category, date, and amount.
+
+Lines display one of five reconcile states:
+
+| State | Meaning |
+|---|---|
+| `Matched` | Auto- or manually matched within tolerance |
+| `Partial` | Some quantity matched; remainder unmatched |
+| `Variance` | Matched, but rate or amount differs from what was logged |
+| `Unmatched` | No candidate found |
+| `Overridden` | Reviewer accepted the line without a source match |
+
+Suggested matches are listed underneath each unreconciled line with a confidence score. Click **Match** to accept one, **Unlink** to remove an accepted match, or **Override — post without source match** if the vendor's line legitimately has no logged source (e.g., a fee that wasn't tracked in time entries).
+
+**The Approve → Post → Mark Paid chain:**
+
+1. **Approve** is enabled once every service/expense line is reconciled or overridden, and each line has a project assigned. Approval just confirms the invoice — no cost has been posted yet.
+2. **Post to Project Cost** writes a `project_cost_postings` row per line and back-fills `actualCostAmount` on every matched time entry and expense, so margin reports immediately reflect what you actually owe the contractor. This is the step that affects profit.
+3. **Mark Paid** records the payment with an optional reference (ACH #, check #, etc.) — note that this does not initiate a real ACH or check disbursement, only records the bookkeeping fact.
+
+**Void.** Available at any time before Paid. Voiding reverses the postings (re-clears `vendorInvoiceLineId` / `actualCostAmount` on every matched row) and requires a reason. Once an invoice is Paid, you must issue a credit memo instead.
+
+**Profit impact.** Project Variance, Portfolio Financials, the per-project margin tile, and the weekly digest all read `actualCostAmount` first and fall back to the rate-card estimate only when no contractor invoice has been posted against the row. The **Actual Cost** tile on Financial Reports notes when actuals are in play.
+
+**My Vendor Invoices.** Vendors (contractor users) get a read-only inbox of invoices billed to them at **My Workspace → Tracking → My Vendor Invoices**: status, source document link, line items, and a timeline of when each invoice was reviewed, approved, posted, and paid. Disputes go to the AP team via email — there's no in-app dispute form in v1.
 
 ### 4. Resource Allocation
 
@@ -514,6 +631,187 @@ The AI analyzes and summarizes:
 - **Copy** the report to clipboard for pasting into emails, Teams messages, or documents
 - **Download** as formatted text
 - Edit the text before sharing — AI output is a starting point you can refine
+
+### Saved Status Reports
+
+Starting in version 1.7, every generated status report (text and PPTX) is automatically saved to the database. You can access saved reports from the **Status Reports** tab on the project detail page.
+
+**Viewing Saved Reports:**
+1. Navigate to the project detail page
+2. Click the **Status Reports** tab
+3. The table shows all saved reports with title, type (text/PPTX), style, period, status, who generated it, and when
+
+**Managing Reports:**
+- **View**: Click the menu on any text report and select "View Report" to see the full content in a dialog
+- **Finalize**: Draft reports can be marked as "Final" to indicate they've been reviewed and approved for sharing
+- **Delete**: Remove reports you no longer need
+
+**Report Types:**
+- **Text**: Markdown-formatted AI narrative saved when you generate a status report from the Overview tab
+- **PPTX**: Saved when you export a PowerPoint status report — the AI-generated content is stored alongside the record
+
+Reports are scoped to your project and tenant, so you'll only see reports generated for projects you have access to.
+
+---
+
+## Constellation Copilot Agent
+
+Constellation includes a Copilot Agent that lets you query your project data conversationally through Microsoft Teams or Microsoft 365 Copilot. Instead of navigating to different pages, you can simply ask questions in natural language.
+
+### What You Can Ask
+
+The Copilot Agent can answer questions about:
+- **Your work**: assignments, time entries, expenses, and reimbursements
+- **Projects**: status, budget, milestones, deliverables, and RAIDD items
+- **Estimates**: summaries, line item breakdowns, hours, and margins
+- **Portfolio**: cross-project RAIDD, timeline, and resource views
+- **Financials**: invoices, aggregates by month/quarter/client
+- **CRM**: HubSpot deals and linked projects
+- **Status reports**: saved report history for any project
+
+### How It Works
+
+The agent uses a Power Platform Custom Connector to call Constellation's MCP server endpoints on your behalf. Your identity flows through from Teams/Copilot to Constellation, so you only see data you're authorized to access based on your role and tenant.
+
+### Getting Started
+
+1. Look for **Constellation Assistant** in your Teams app catalog or Microsoft 365 Copilot
+2. Add it to a chat or channel
+3. Start with a question like "Who am I in Constellation?" or "What are my assignments this week?"
+
+### Example Queries
+
+- "What are my assignments this week?"
+- "Show me all at-risk projects"
+- "What are the open risks across the portfolio?"
+- "Show me invoice totals by quarter for this year"
+- "What's the margin on the Contoso estimate?"
+- "How much have I spent on travel this year?"
+- "Give me a status report summary for project X"
+
+**Note:** The Copilot Agent provides read-only access. To create, edit, or approve records, use the Constellation web application.
+
+---
+
+## Microsoft Teams Custom Tab
+
+Starting in version 1.8, Constellation projects can be embedded directly as **Microsoft Teams tabs**, providing in-context project access without leaving Teams.
+
+### Adding a Constellation Tab
+
+1. In your Teams channel, click the **+** button to add a tab
+2. Search for **Constellation** in the app catalog
+3. Select the project you want to display
+4. The project detail page appears as a tab in your channel
+
+### Teams Tab Experience
+
+When viewing Constellation inside Teams:
+- The interface is **chromeless** — no sidebar or top navigation, just the project content
+- All project tabs are available: Overview, Contracts, Delivery, Time, Invoices, RAIDD, Deliverables, Status Reports, and Analytics
+- The view is **read-only** — you can browse all project data but mutating actions (uploading SOWs, editing milestones, changing assignments, etc.) are hidden
+- To make changes, click the link to open the full Constellation web app
+
+### Authentication
+
+The Teams tab uses your Microsoft identity for single sign-on. The first time you access the tab, you may see a sign-in prompt — click the sign-in button and authenticate with your Microsoft 365 credentials. After that, your session persists.
+
+---
+
+## Teams Channel Provisioning
+
+### Creating a Team
+
+You can create a Microsoft Team directly from Constellation:
+
+1. Navigate to a **Project**, **Estimate**, or **Client** detail page
+2. Look for the **"Create Team"** or **"Create Channel"** button in the Microsoft Teams section
+3. Enter a team name — Constellation checks for duplicate names and will warn you if the name is already taken
+4. Click **Create** — the system automatically sets you as the team owner and provisions the team in the background
+
+**Important notes:**
+- Teams provisioning is blocked if the project spans multiple Azure AD tenants — all team members must belong to the same tenant
+- The team owner is automatically set to your Microsoft identity (resolved from your login email)
+- Team creation happens asynchronously — the UI will show progress while Microsoft provisions the team
+
+### Creating Channels
+
+After a team exists, you can add channels for specific projects or workstreams from the same provisioning UI. Channels appear in the team's channel list in Microsoft Teams.
+
+---
+
+## Executive Narrative Reporting
+
+### What Are Executive Narratives?
+
+Executive narratives are AI-generated leadership summaries that distill project activity — time entries, milestones, RAIDD items, and financial data — into concise, polished summaries suitable for stakeholders and executives.
+
+### Generating a Narrative
+
+1. Navigate to the **Reports** page
+2. Select the **Executive Narratives** tab
+3. Choose the project(s) and date range
+4. Click **Generate Narrative** — the AI produces a structured summary
+5. Review the generated narrative and edit if needed
+
+### Saving & Exporting
+
+- **Save** narratives for future reference from the Executive Narratives tab
+- **Export as PowerPoint** — download a branded PPTX slide deck with your narrative content
+- Previously saved narratives can be viewed, re-exported, or deleted from the saved narratives list
+
+### Revenue in Narratives
+
+Revenue figures in executive narratives include only **time** and **milestone** invoice line types. Expense reimbursements, sales tax, discounts, and no-charge lines are excluded to reflect true consulting revenue.
+
+---
+
+## Page Analytics
+
+### Overview
+
+Page Analytics tracks visits to Constellation's public-facing pages (home, login, signup) and provides platform administrators with visibility into traffic patterns.
+
+### Viewing Analytics
+
+1. Navigate to **System Settings** (platform admin access required)
+2. Select the **Page Analytics** tab
+3. View page visits and unique sessions by page
+4. Use the date range filter to narrow down the time period
+
+Analytics data is session-based — unique visitors are identified by session rather than by user account, since tracking occurs on public (unauthenticated) pages.
+
+---
+
+## Navigation
+
+### Sidebar Organization
+
+The sidebar navigation is organized into collapsible sections with sub-group labels for easier browsing:
+
+**My Workspace** — your personal work area:
+- *Daily Work*: My Dashboard, Assignments, My Projects
+- *Time & Expenses*: Timesheets, Expenses, Expense Reports
+- *Tracking*: My Reimbursements, My RAIDD
+
+**Portfolio** — cross-project views (PMs, Portfolio Managers, Admins):
+- Dashboard, Timeline, RAIDD, Reports, Projects, Clients, Resource Management, Estimates, Deals
+
+**Financial** — billing and expense management:
+- Billing, Invoice Report, Client Revenue
+- *Expenses*: Expense Management, Expense Approval, Reimbursement Batches
+- *Rates*: Rate Management
+
+**Administration** — system configuration (Admins):
+- *Users & Organization*: User Management, Organization Settings, System Settings
+- *System Tools*: Scheduled Jobs, File Repository, SharePoint Diagnostics, Vocabulary Catalog
+- *AI Configuration*: AI Grounding, AI Settings
+
+**Platform** — multi-tenant management (Platform Admins):
+- *Tenant Management*: Tenants, Service Plans, Platform Users
+- *Reference Data*: Airport Codes, OCONUS Rates, Platform AI Grounding
+
+Each section shows or hides based on your role — you'll only see menu items you have access to.
 
 ---
 
@@ -852,6 +1150,59 @@ Link HubSpot deals to Constellation projects for end-to-end visibility from sale
 
 ---
 
+## QuickBooks Online Integration
+
+### Overview
+
+Constellation connects to QuickBooks Online (QBO) so your accounting stays in sync without manual re-keying. The integration is two-way and transaction-level: Constellation pushes invoices, contractor/vendor bills, and payroll accounting into QuickBooks, pulls payment status back, and surfaces core financial reports inside the app. Each tenant connects its own QuickBooks company; Synozur administrators do not see your books.
+
+Set up and most actions require **Administrator** or **Billing Admin** access; payroll posting and reports are also available to **Executives**.
+
+### Connecting QuickBooks
+
+1. Go to **Organization Settings → Integrations → QuickBooks Online**.
+2. Click **Connect to QuickBooks** and sign in to your QuickBooks company. (Toggle **Sandbox** first if you are connecting to a QuickBooks test company.)
+3. After connecting, turn on **Enable QuickBooks Sync**, then choose the default **Item** used for invoice lines and the default **expense account** used for vendor/contractor bill lines.
+4. Under **Customer Mappings**, link your Constellation clients to QuickBooks customers (or let Constellation create them on first push).
+
+### Invoicing (Accounts Receivable)
+
+Push a finalized invoice batch to QuickBooks as a real Invoice — taxes, currency, and any billed-amount adjustments carry over. Constellation records the QuickBooks invoice number and pulls **payment status** back automatically, so paid invoices update in Constellation without manual marking. Use **Cancel & Reissue** on a batch to void the QuickBooks invoice and unlock the batch for correction. The legacy CSV export remains available as a fallback.
+
+### Contractor & Vendor Bills (Accounts Payable)
+
+Approved vendor and contractor invoices push to QuickBooks as **Bills**, matching or creating the vendor automatically. If a bill needs correcting, cancel it to remove it from QuickBooks and re-push.
+
+### Payroll GL Posting
+
+When a payroll run is **finalized**, post its accounting impact to QuickBooks as a single balanced **Journal Entry** — open the run and click **Post GL to QuickBooks**. The journal uses your existing payroll GL accounts and category mappings (the same ones behind the GL CSV export): wages and employer taxes as debits; taxes withheld, deductions, garnishments, and net-pay clearing as credits.
+
+- **Account matching:** Constellation matches each payroll GL account to a QuickBooks account by **account number**. If any account isn't found, the push tells you exactly which numbers to align in QuickBooks, then retry.
+- **One per run:** each run posts a single journal entry. To correct one, click **Remove QBO Journal** — this deletes it in QuickBooks and unlocks the run so you can re-post.
+- Constellation's payroll engine still owns all computation, tax forms, and direct-deposit files; QuickBooks is the GL book of record only.
+
+### Financial Reports
+
+The QuickBooks card on **Organization Settings** can pull live, read-only reports straight from QuickBooks Online so you don't have to switch apps:
+
+- **A/R Aging Summary** — outstanding customer balances by age.
+- **A/P Aging Summary** — what you owe vendors by age.
+- **Profit & Loss** — choose a start and end date.
+
+Pick a report, set a date range if applicable, and click **Run report**.
+
+### Ask Constellation (Finance Q&A)
+
+If your organization is connected to QuickBooks and you are an Administrator, Billing Admin, or Executive, the built-in help assistant can answer live finance questions in plain language — for example:
+
+- "Which invoices are overdue?"
+- "What's our A/R aging look like?"
+- "Show me this quarter's profit and loss."
+
+Open it from the **Ask Constellation** button in the top header (or the floating Help button), and type your question. The assistant reads aging, profit & loss, open invoices, and open bills directly from QuickBooks. It is **read-only** — it never changes anything in QuickBooks; creating or editing invoices, bills, and payroll is always done through Constellation's own screens.
+
+---
+
 ## Settings & Preferences
 
 ### User Profile Settings
@@ -1080,7 +1431,7 @@ Link HubSpot deals to Constellation projects for end-to-end visibility from sale
 - **This User Guide**: Overview and common tasks
 - **[Detailed User Guide](/docs/user-guide/SCDP-User-Guide.md)**: Comprehensive feature documentation
 - **[Administrator Guide](/docs/user-guide/SCDP-Administrator-Guide.md)**: System configuration and admin tasks
-- **[Changelog](CHANGELOG.md)**: Version history and release notes
+- **[Changelog](/changelog)**: Version history and release notes
 - **[Roadmap](ROADMAP.md)**: Planned features and future direction
 
 #### Support Channels
@@ -1189,6 +1540,12 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 **Reimbursement Batch**: Collection of approved expense reports processed together for employee payment.
 
+**Vendor Invoice (Inbound)**: An invoice received *from* a subcontractor for services or expenses. Distinct from the outbound *Contractor Invoice* reimbursement PDF Constellation generates from an approved expense report. Ingested under Financial → Accounts Payable; posting one writes actual cost to project margin reports.
+
+**Actual Cost**: The amount actually paid (or owed) to a contractor for time logged or expenses incurred, sourced from a posted vendor invoice. Replaces the rate-card cost estimate in margin calculations once known.
+
+**Reconcile Status**: Per-line state on a vendor invoice indicating how well it ties back to logged time entries / expenses — one of `matched`, `partial`, `variance`, `unmatched`, or `overridden`.
+
 **SOW (Statement of Work)**: Contract document defining project scope, deliverables, timeline, and terms.
 
 **Stage**: Major phase of work within a project (e.g., Discovery, Design, Development, Deployment).
@@ -1197,7 +1554,8 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: March 1, 2026*  
-*Version: 1.4*  
+*Last Updated: November 23, 2026*
+
+*Version: 2.8*
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

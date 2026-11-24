@@ -1,14 +1,17 @@
 # SCDP Administrator Guide
 ## Synozur Consulting Delivery Platform
 
-**Version:** 1.8  
-**Last Updated:** March 15, 2026  
+**Version:** 2.8
+
+**Last Updated:** November 23, 2026
 **Document Type:** System Administrator Reference  
 **Audience:** SCDP System Administrators
 
 ---
 
 ## Table of Contents
+
+- [Planning & Reporting 2.8 operations](#planning--reporting-28-operations)
 
 1. [Introduction](#1-introduction)
 2. [Initial System Setup](#2-initial-system-setup)
@@ -24,6 +27,34 @@
 12. [Best Practices](#12-best-practices)
 
 ---
+
+## Planning & Reporting 2.8 operations
+
+Apply both distinct additive migrations for revenue forecast assumptions and
+scheduled status reports through the normal migration process after merge.
+Historical estimate intelligence needs no migration. Configure the tenant's
+existing HubSpot connection for CRM pipeline and AI/email providers plus the
+background worker for recurring reports. Forecast and historical reviews do not
+require AI. Never place credentials or client estimates in public documentation.
+
+- **Revenue Forecast**: Read/save/reset is admin, billing-admin and executive only.
+  Review missing timing, probability, currency and service-only confirmation.
+  Disconnected CRM is incomplete, not zero; do not interpret planning as accounting.
+- **Historical estimate intelligence**: PMs see only managed completed history;
+  eligible broader roles remain tenant-scoped. Costs and cost-derived findings
+  are admin/executive only. Read-only estimate shares do not unlock history.
+- **Scheduled status reports**: Active tenant admins, portfolio managers and the
+  assigned PM manage schedules, with an independently eligible designated reviewer.
+  Review-first is default; clients require client-facing style and authorized
+  project-client membership. Inspect Scheduled Jobs → Status Reports and
+  per-recipient run details. Pause before maintenance. Safe retries never replay
+  accepted or ambiguous submissions; inspect provider records for unknown outcomes.
+  No provider reconciliation UI, scheduled PPTX attachments or arbitrary external
+  recipients are included.
+
+The [release operations and API reference](/docs/RELEASE_2_8.md) is the detailed
+source for permissions, setup, calculation assumptions, DST and retry behavior.
+Older screenshots below predate this release.
 
 ## 1. Introduction
 
@@ -3267,8 +3298,9 @@ This Administrator Guide provides comprehensive information for managing SCDP. A
 **Document Information:**
 
 **Title:** SCDP Administrator Guide  
-**Version:** 1.0  
-**Date:** October 31, 2025  
+**Version:** 2.8
+
+**Date:** November 23, 2026
 **Author:** Synozur Consulting  
 **Audience:** SCDP System Administrators
 

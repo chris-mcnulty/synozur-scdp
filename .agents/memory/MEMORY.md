@@ -1,3 +1,4 @@
+- [Product release identity](release-identity-policy.md) — product versions follow changelog feature releases, not scaffold versions or restart dates.
 - [Fixed partner cost and contingency](estimate-fixed-cost-policy.md) — fixed commitments are independent of selling-price risk factors; preserve deliberate contingency when correcting costs.
 - [Forecast planning semantics](forecast-planning-semantics.md) — bookings and billing dates do not establish delivery; unclassified CRM amounts require service-only confirmation.
 - [Private business deliverables](private-business-deliverables.md) — client estimates, internal pricing, and generated asset metadata must stay out of the open-source repository.
